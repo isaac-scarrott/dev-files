@@ -7,7 +7,7 @@
   "workbench.iconTheme": "material-icon-theme",
   "workbench.sideBar.location": "right",
   "editor.cursorWidth": 3,
-  "editor.rulers": [80, 100],
+  "editor.rulers": [120],
   // Foramtting
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true
@@ -34,18 +34,17 @@
   },
   "editor.suggestSelection": "first",
   "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
-  "terminal.integrated.scrollback": 2000,
+  "terminal.integrated.scrollback": 10000,
   "javascript.updateImportsOnFileMove.enabled": "always",
   "typescript.updateImportsOnFileMove.enabled": "always",
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "workbench.colorTheme": "One Monokai",
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "[typescript]": {
-    "editor.defaultFormatter": "ms-vsliveshare.vsliveshare"
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "stories.username": "Maible_comfortable",
   "[html]": {
@@ -57,10 +56,7 @@
   "[javascriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "workbench.welcomePage.hiddenCategories": [
-    "Setup",
-    "Beginner"
-  ],
+  "workbench.welcomePage.hiddenCategories": ["Setup", "Beginner"],
   "workbench.editorAssociations": {
     "*.ipynb": "jupyter-notebook"
   },
@@ -68,12 +64,97 @@
     "default": "right",
     "jupyter-notebook": "left"
   },
-  "diffEditor.ignoreTrimWhitespace": false,
   "files.associations": {
     "*.svg": "html"
   },
-  "editor.multiCursorModifier": "ctrlCmd",
   "terminal.integrated.defaultProfile.osx": "zsh",
   "editor.inlineSuggest.enabled": true,
-  "bracket-pair-colorizer-2.depreciation-notice": false
+  "workbench.colorTheme": "GitHub Dark",
+  "bracket-pair-colorizer-2.depreciation-notice": false,
+  "go.toolsManagement.autoUpdate": true,
+  "redhat.telemetry.enabled": true,
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "cSpell.userWords": [
+    "Åland",
+    "Authorisation",
+    "authorised",
+    "AWSX",
+    "Barthélemy",
+    "Bouvet",
+    "Burkina",
+    "Caicos",
+    "camelcase",
+    "cdktf",
+    "codegen",
+    "COLOURS",
+    "Comores",
+    "Côte",
+    "d'Ivoire",
+    "DACH",
+    "dazn",
+    "documentum",
+    "Eswatini",
+    "Eustatius",
+    "eventbridge",
+    "Faso",
+    "Fastify",
+    "firstname",
+    "formik",
+    "Futuna",
+    "initialise",
+    "initialised",
+    "Islas",
+    "Kitts",
+    "knexfile",
+    "lastname",
+    "Leste",
+    "Localisation",
+    "Localisations",
+    "Luxembourgish",
+    "Maarten",
+    "mantine",
+    "Marino",
+    "Mayen",
+    "OPENAI",
+    "openapi",
+    "predev",
+    "premint",
+    "Príncipe",
+    "progressbar",
+    "Rica",
+    "Rican",
+    "ruleset",
+    "Scarrott",
+    "schemaname",
+    "Sénégal",
+    "tablename",
+    "tanstack",
+    "testid",
+    "Tokelau",
+    "Tomé",
+    "TRPC",
+    "wsrun",
+    "Xenomorphs"
+  ],
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": true,
+    "plaintext": false,
+    "markdown": true,
+    "typescript": true
+  },
+  "editor.guides.bracketPairs": true,
+  "yaml.schemas": {
+    "https://s3.eu-central-1.amazonaws.com/schemas.plat.dazn-dev.com/dazn-manifest/4.0.0.schema.json": ".dazn-manifest.yml"
+  },
+  "debug.javascript.autoAttachFilter": "disabled",
+  "vitest.enable": true,
+  "npm.keybindingsChangedWarningShown": true,
+  "editor.stickyScroll.enabled": true,
+  "[python]": {
+    "editor.formatOnType": true
+  },
+  "window.zoomLevel": -1
 }
