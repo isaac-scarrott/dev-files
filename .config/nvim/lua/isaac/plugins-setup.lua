@@ -33,21 +33,21 @@ return packer.startup(function(use)
 	use("nvim-lua/plenary.nvim")
 	use("BurntSushi/ripgrep")
 
-	use("bluz71/vim-nightfly-guicolors") -- preferred colorscheme
+	use("rebelot/kanagawa.nvim") -- colorscheme
 
 	use("christoomey/vim-tmux-navigator") -- tnux & split window navigation
 
 	use("szw/vim-maximizer") -- maximizes and restores current window
 
-	use("tpope/vim-surround") -- need to learn this
-	use("vim-scripts/ReplaceWithRegister") -- need to learn this
+	use("tpope/vim-surround") -- surround text objects with quotes, parens, etc...
+	use("vim-scripts/ReplaceWithRegister") -- replace text with contents of register
 
-	use("numToStr/Comment.nvim") -- need to learn this
+	use("numToStr/Comment.nvim") -- comment lines
 
-	use("nvim-lualine/lualine.nvim")
+	use("nvim-lualine/lualine.nvim") -- status line
 
 	use({
-		"nvim-tree/nvim-tree.lua",
+		"nvim-tree/nvim-tree.lua", -- file explorer
 		requires = {
 			"nvim-tree/nvim-web-devicons",
 		},
@@ -57,10 +57,6 @@ return packer.startup(function(use)
 	use({ "nvim-telescope/telescope-fzf-native.nvim", run = "make" }) -- dependency for better sorting performance
 	use({ "nvim-telescope/telescope.nvim", branch = "0.1.x" }) -- fuzzy finder
 	use({ "LukasPietzschmann/telescope-tabs", requires = { "nvim-telescope/telescope.nvim" } }) -- fuzzy finder for tabs
-	use({
-		"startup-nvim/startup.nvim",
-		requires = { "nvim-telescope/telescope.nvim", "nvim-lua/plenary.nvim" },
-	})
 
 	-- autocompletion
 	use("hrsh7th/nvim-cmp") -- completion plugin
@@ -89,6 +85,7 @@ return packer.startup(function(use)
 		},
 	}) -- enhanced lsp uis
 	use("jose-elias-alvarez/typescript.nvim") -- additional functionality for typescript server (e.g. rename file & update imports)
+	use("simrat39/rust-tools.nvim") -- additional functionality for rust server (e.g. run cargo commands)
 	use("onsails/lspkind.nvim") -- vs-code like icons for autocompletion
 
 	-- formatting & linting
@@ -118,6 +115,12 @@ return packer.startup(function(use)
 	use({ "ggandor/lightspeed.nvim" })
 
 	use("lukas-reineke/indent-blankline.nvim")
+
+	-- encourage good habits
+	use({
+		"m4xshen/hardtime.nvim",
+		requires = { "MunifTanjim/nui.nvim", "nvim-lua/plenary.nvim" },
+	})
 
 	if packer_bootstrap then
 		require("packer").sync()

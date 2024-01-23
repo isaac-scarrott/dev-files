@@ -1,8 +1,12 @@
-export ZSH="/Users/isaac/.oh-my-zsh"
+# Path to your oh-my-zsh installation.
+export ZSH="$HOME/.oh-my-zsh"
 
 ZSH_THEME="spaceship"
-SPACESHIP_PROMPT_SEPARATE_LINE="false"
 
-plugins=(git npm osx jira z zsh-autosuggestions)
+plugins=(z zsh-autosuggestions)
 
 source $ZSH/oh-my-zsh.sh
+
+# vim to nvim
+alias vim="nvim"
+alias vi="nvim"

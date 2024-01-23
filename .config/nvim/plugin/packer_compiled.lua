@@ -124,10 +124,20 @@ _G.packer_plugins = {
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/gitsigns.nvim",
     url = "https://github.com/lewis6991/gitsigns.nvim"
   },
+  ["hardtime.nvim"] = {
+    loaded = true,
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/hardtime.nvim",
+    url = "https://github.com/m4xshen/hardtime.nvim"
+  },
   ["indent-blankline.nvim"] = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/indent-blankline.nvim",
     url = "https://github.com/lukas-reineke/indent-blankline.nvim"
+  },
+  ["kanagawa.nvim"] = {
+    loaded = true,
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/kanagawa.nvim",
+    url = "https://github.com/rebelot/kanagawa.nvim"
   },
   ["lightspeed.nvim"] = {
     loaded = true,
@@ -168,6 +178,11 @@ _G.packer_plugins = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/neogit",
     url = "https://github.com/NeogitOrg/neogit"
+  },
+  ["nui.nvim"] = {
+    loaded = true,
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/nui.nvim",
+    url = "https://github.com/MunifTanjim/nui.nvim"
   },
   ["null-ls.nvim"] = {
     loaded = true,
@@ -226,10 +241,10 @@ _G.packer_plugins = {
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/ripgrep",
     url = "https://github.com/BurntSushi/ripgrep"
   },
-  ["startup.nvim"] = {
+  ["rust-tools.nvim"] = {
     loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/startup.nvim",
-    url = "https://github.com/startup-nvim/startup.nvim"
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/rust-tools.nvim",
+    url = "https://github.com/simrat39/rust-tools.nvim"
   },
   ["telescope-fzf-native.nvim"] = {
     loaded = true,
@@ -260,11 +275,6 @@ _G.packer_plugins = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/vim-maximizer",
     url = "https://github.com/szw/vim-maximizer"
-  },
-  ["vim-nightfly-guicolors"] = {
-    loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/vim-nightfly-guicolors",
-    url = "https://github.com/bluz71/vim-nightfly-guicolors"
   },
   ["vim-surround"] = {
     loaded = true,

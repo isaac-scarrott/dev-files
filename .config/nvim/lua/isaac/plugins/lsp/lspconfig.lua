@@ -4,6 +4,7 @@ if not lspconfig_status then
 	return
 end
 
+vim.lsp.set_log_level("debug")
 -- import cmp-nvim-lsp plugin safely
 local cmp_nvim_lsp_status, cmp_nvim_lsp = pcall(require, "cmp_nvim_lsp")
 if not cmp_nvim_lsp_status then
@@ -19,6 +20,13 @@ end
 -- import util plugin safely
 local util_status, util = pcall(require, "lspconfig/util")
 if not util_status then
+	return
+end
+
+-- import rust-tools plugin safely
+local rt_status_ok, rt = pcall(require, "rust-tools")
+if not rt_status_ok then
+	print("no rust-tools")
 	return
 end
 
@@ -73,6 +81,43 @@ typescript.setup({
 	server = {
 		capabilities = capabilities,
 		on_attach = on_attach,
+	},
+})
+
+rt.setup({
+	tools = {
+		autoSetHints = false,
+		hover_actions = { border = false },
+		cache = true,
+	},
+	server = {
+		on_attach = on_attach,
+		capabilities = capabilities,
+		cmd = {
+			"rustup",
+			"run",
+			"stable",
+			"rust-analyzer",
+		},
+		settings = {
+			["rust-analyzer"] = {
+				diagnostics = {
+					experimental = true,
+				},
+			},
+		},
+	},
+})
+
+-- configure rust_analyzer server
+lspconfig["rust_analyzer"].setup({
+	capabilities = capabilities,
+	on_attach = on_attach,
+	cmd = {
+		"rustup",
+		"run",
+		"stable",
+		"rust-analyzer",
 	},
 })
 
