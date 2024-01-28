@@ -10,3 +10,4 @@ source $ZSH/oh-my-zsh.sh
 # vim to nvim
 alias vim="nvim"
 alias vi="nvim"
+
