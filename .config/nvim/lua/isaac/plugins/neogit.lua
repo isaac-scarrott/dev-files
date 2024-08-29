@@ -3,6 +3,7 @@ local setup, neogit = pcall(require, "neogit")
 if not setup then
 	return
 end
+print("neogit loaded")
 
 neogit.setup({
 	kind = "split", -- opens neogit in a split

@@ -59,3 +59,6 @@ keymap.set("n", "<leader>gs", "<cmd>Neogit kind=split<cr>") -- open neogit in a 
 
 -- git fugitive
 keymap.set("n", "<leader>ds", ":Gvdiffsplit!<CR>") -- open git diff in a split window
+
+-- git blame
+vim.keymap.set("n", "<leader>gb", ":GitBlameToggle<CR>")

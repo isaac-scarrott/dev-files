@@ -49,8 +49,8 @@ local function save_profiles(threshold)
 end
 
 time([[Luarocks path setup]], true)
-local package_path_str = "/Users/isaac/.cache/nvim/packer_hererocks/2.1.0-beta3/share/lua/5.1/?.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.0-beta3/share/lua/5.1/?/init.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.0-beta3/lib/luarocks/rocks-5.1/?.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.0-beta3/lib/luarocks/rocks-5.1/?/init.lua"
-local install_cpath_pattern = "/Users/isaac/.cache/nvim/packer_hererocks/2.1.0-beta3/lib/lua/5.1/?.so"
+local package_path_str = "/Users/isaac/.cache/nvim/packer_hererocks/2.1.1713484068/share/lua/5.1/?.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.1713484068/share/lua/5.1/?/init.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.1713484068/lib/luarocks/rocks-5.1/?.lua;/Users/isaac/.cache/nvim/packer_hererocks/2.1.1713484068/lib/luarocks/rocks-5.1/?/init.lua"
+local install_cpath_pattern = "/Users/isaac/.cache/nvim/packer_hererocks/2.1.1713484068/lib/lua/5.1/?.so"
 if not string.find(package.path, package_path_str, 1, true) then
   package.path = package.path .. ';' .. package_path_str
 end
@@ -78,16 +78,6 @@ _G.packer_plugins = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/Comment.nvim",
     url = "https://github.com/numToStr/Comment.nvim"
-  },
-  LuaSnip = {
-    loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/LuaSnip",
-    url = "https://github.com/L3MON4D3/LuaSnip"
-  },
-  ReplaceWithRegister = {
-    loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/ReplaceWithRegister",
-    url = "https://github.com/vim-scripts/ReplaceWithRegister"
   },
   ["cmp-buffer"] = {
     loaded = true,
@@ -119,15 +109,20 @@ _G.packer_plugins = {
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/friendly-snippets",
     url = "https://github.com/rafamadriz/friendly-snippets"
   },
+  ["gen.nvim"] = {
+    loaded = true,
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/gen.nvim",
+    url = "https://github.com/David-Kunz/gen.nvim"
+  },
+  ["git-blame.nvim"] = {
+    loaded = true,
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/git-blame.nvim",
+    url = "https://github.com/f-person/git-blame.nvim"
+  },
   ["gitsigns.nvim"] = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/gitsigns.nvim",
     url = "https://github.com/lewis6991/gitsigns.nvim"
-  },
-  ["hardtime.nvim"] = {
-    loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/hardtime.nvim",
-    url = "https://github.com/m4xshen/hardtime.nvim"
   },
   ["indent-blankline.nvim"] = {
     loaded = true,
@@ -178,11 +173,6 @@ _G.packer_plugins = {
     loaded = true,
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/neogit",
     url = "https://github.com/NeogitOrg/neogit"
-  },
-  ["nui.nvim"] = {
-    loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/nui.nvim",
-    url = "https://github.com/MunifTanjim/nui.nvim"
   },
   ["null-ls.nvim"] = {
     loaded = true,
@@ -251,10 +241,10 @@ _G.packer_plugins = {
     path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/telescope-fzf-native.nvim",
     url = "https://github.com/nvim-telescope/telescope-fzf-native.nvim"
   },
-  ["telescope-tabs"] = {
+  ["telescope-ui-select.nvim"] = {
     loaded = true,
-    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/telescope-tabs",
-    url = "https://github.com/LukasPietzschmann/telescope-tabs"
+    path = "/Users/isaac/.local/share/nvim/site/pack/packer/start/telescope-ui-select.nvim",
+    url = "https://github.com/nvim-telescope/telescope-ui-select.nvim"
   },
   ["telescope.nvim"] = {
     loaded = true,
