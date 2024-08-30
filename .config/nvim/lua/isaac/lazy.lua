@@ -22,6 +22,7 @@ require("lazy").setup({
     { "christoomey/vim-tmux-navigator", lazy = false },
     "nvim-lua/plenary.nvim",
     "BurntSushi/ripgrep",
+    "github/copilot.vim",
     -- { "vim-scripts/ReplaceWithRegister", lazy = false },
     -- END COMMON --
 
