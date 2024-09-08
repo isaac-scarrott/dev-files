@@ -1,7 +1,5 @@
 return {
-  {
-    "nvim-telescope/telescope-ui-select.nvim",
-  },
+
   {
     "nvim-telescope/telescope.nvim",
     dependencies = {
@@ -14,6 +12,10 @@ return {
       { "<leader>fs", ":Telescope live_grep<CR>" },
       { "<leader>fb", ":Telescope buffers<CR>" },
       { "<leader>fr", ":Telescope resume<CR>" },
+      { "<leader>gb", ":Telescope git_branches<CR>" },
+      { "<leader>gs", ":Telescope git_status<CR>" },
+      { "<leader>gc", ":Telescope git_commits<CR>" },
+      { "<leader>gb", ":Telescope git_bcommits<CR>" },
     },
     config = function()
       local actions = require("telescope.actions")
@@ -35,12 +37,8 @@ return {
             },
           },
         },
-        ["ui-select"] = {
-          require("telescope.themes").get_dropdown({}),
-        },
       })
 
-      require("telescope").load_extension("ui-select")
       telescope.load_extension("fzf")
     end,
   },

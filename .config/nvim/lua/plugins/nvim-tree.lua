@@ -25,7 +25,9 @@ return {
       },
       actions = {
         open_file = {
-          window_picker = { chars = "hjkl" },
+          window_picker = {
+            enable = false,
+          },
         },
       },
       on_attach = function(bufnr)

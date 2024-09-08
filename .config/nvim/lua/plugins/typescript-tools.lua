@@ -9,11 +9,8 @@ return {
     local ok, tst = pcall(require, "typescript-tools")
 
     if not ok or utils.is_npm_installed("vue") then
-        print("Could not setup typescript-tools")
       return
     end
-
-        print("Could setup typescript-tools")
 
     tst.setup({
       handlers = lsp.handlers,

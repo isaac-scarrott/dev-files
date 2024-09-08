@@ -23,6 +23,7 @@ require("lazy").setup({
     "nvim-lua/plenary.nvim",
     "BurntSushi/ripgrep",
     "github/copilot.vim",
+    "ggandor/lightspeed.nvim",
     -- { "vim-scripts/ReplaceWithRegister", lazy = false },
     -- END COMMON --
 
