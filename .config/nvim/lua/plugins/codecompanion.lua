@@ -27,57 +27,108 @@ return {
         end,
       },
       prompt_library = {
-
-        ["Generate a Commit Message"] = {
-          strategy = "chat",
-          description = "Generate a commit message",
+        ["Code Review Workflow"] = {
+          strategy = "workflow",
+          description = "Comprehensive code review workflow checking GraphQL schemas, React best practices, and general code quality",
           opts = {
-            index = 10,
-            is_default = true,
-            is_slash_cmd = true,
-            short_name = "commit",
-            auto_submit = true,
+            index = 1,
           },
           prompts = {
             {
-              role = "user",
-              content = function()
-                local branch_name =
-                  vim.fn.system("git rev-parse --abbrev-ref HEAD"):gsub("%s+", ""):match("^[^-]+%-[^-]+")
+              {
+                role = "system",
+                content = [[You are a GraphQL schema reviewer who strictly checks schemas against both official specifications and internal standards. You only report violations, never positive feedback. You format your responses as [line_number] - Violation description - How to fix.
+Only review changes in the diff, not the entire schema.]],
+                opts = {
+                  visible = false,
+                  auto_submit = true,
+                },
+              },
+              {
+                role = "user",
+                content = function()
+                  -- Try to get diff against main, fallback to master if main doesn't exist
+                  local base_branch =
+                    vim.fn.system("git rev-parse --verify main >/dev/null 2>&1 && echo main || echo master")
+                  base_branch = base_branch:gsub("%s+", "") -- Remove whitespace/newlines
 
-                local diff = vim.fn.system("git diff --no-ext-diff --staged")
+                  -- Get only the schema changes from the diff
+                  local diff = vim.fn.system(string.format([[git diff %s...HEAD -- "**/schema.graphql"]], base_branch))
 
-                if branch_name and branch_name ~= "" then
-                  return string.format(
-                    [[You are an expert at writing great commit messages. Given the git diff listed below, please generate a commit message for me. The commit message should include the branch name in the format "[%s] <commit message>":
+                  return [[Check these schema changes against the official GraphQL specification (June 2018):
+
+1. Naming (Section 3.8):
+   - Type names must be PascalCase
+   - Field and argument names must be camelCase
+   - Enum values must be ALL_CAPS
+   
+2. Type System (Section 3):
+   - Objects must not implement themselves
+   - Interface implementations must include all fields
+   - Union types must include at least one type
+   - Input object fields cannot be of type union, interface, or subscription
+
+3. Schema Structure:
+   - Root types must be Object types
+   - Directives must be declared before use
+   - Field names in an object type must be unique
+   - Argument names must be unique per field
+
+4. Values and Types (Section 3.5):
+   - Default values must be compatible with input types
+   - List/Non-Null wrapping must be valid
+   - Scalars must use correct literal formats
 
 ```diff
-%s
-```
+]] .. diff .. [[
+```]]
+                end,
+                opts = {
+                  auto_submit = true,
+                },
+              },
+            },
+            {
+              {
+                role = "user",
+                content = function()
+                  -- Use same diff from above
+                  local base_branch =
+                    vim.fn.system("git rev-parse --verify main >/dev/null 2>&1 && echo main || echo master")
+                  base_branch = base_branch:gsub("%s+", "")
+                  local diff = vim.fn.system(string.format([[git diff %s...HEAD -- "**/schema.graphql"]], base_branch))
 
-]],
-                    branch_name,
-                    diff
-                  )
-                else
-                  return string.format(
-                    [[You are an expert at writing great commit messages. Given the git diff listed below, please generate a commit message for me. The commit message should not include the branch name:
+                  return [[Check these schema changes against our internal specifications:
+
+1. Naming Conventions:
+   - Use 'List' suffix instead of plurals (e.g., 'UserList' not 'Users')
+   - All mutation names must start with a verb (e.g., 'createUser', not 'userCreate')
+   - All query field names must be nouns
+   - Use 'Input' suffix for all input types
+
+2. Type Structure:
+   - All mutations must return a union type of Success or Error
+   - Every object type must have an 'id' field of type ID!
+   - No nested nullables (e.g., [String!]! is valid, [String]! is not)
+   - Maximum field arguments is 3, use input types for more
+
+3. Documentation:
+   - Every type must have a description
+   - Every field with arguments must have a description
+   - Every enum value must have a description
 
 ```diff
-%s
-```
-
-]],
-                    diff
-                  )
-                end
-              end,
-              opts = {
-                contains_code = true,
+]] .. diff .. [[
+```]]
+                end,
+                opts = {
+                  auto_submit = true,
+                },
               },
             },
           },
         },
+
         ["Pull Request Description"] = {
           strategy = "chat",
           description = "Generate a Pull Request message description",
