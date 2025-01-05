@@ -16,6 +16,8 @@ return {
       { "<leader>gs", ":Telescope git_status<CR>" },
       { "<leader>gc", ":Telescope git_commits<CR>" },
       { "<leader>gb", ":Telescope git_bcommits<CR>" },
+      { "<leader>ds", ":Telescope lsp_document_symbols<CR>" },
+      { "<leader>ws", ":Telescope lsp_workspace_symbols<CR>" },
     },
     config = function()
       local actions = require("telescope.actions")
@@ -24,6 +26,7 @@ return {
       telescope.setup({
 
         defaults = {
+          -- file_ignore_patterns = { ".git/", "node_modules/", "*.lock" }, -- Ignore patterns
           mappings = {
             i = {
               ["<C-k>"] = actions.move_selection_previous, -- move to prev result

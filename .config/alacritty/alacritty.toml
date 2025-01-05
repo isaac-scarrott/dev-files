@@ -1,3 +1,11 @@
+import = [
+    "~/.config/alacritty/kanagawa.toml"
+]
+
+[font]
+size = 12
+
+
 [font.bold]
 family = "FiraCode Nerd Font Mono"
 style = "Bold"
@@ -14,6 +22,11 @@ style = "Italic"
 family = "FiraCode Nerd Font Mono"
 style = "Regular"
 
-import = [
-    "~/.config/alacritty/themes/themes/kanagawa_dragon.toml"
-]
+[window]
+opacity = 0.95
+
+[colors]
+transparent_background_colors = true
+
+[env]
+term = "xterm-256color"
