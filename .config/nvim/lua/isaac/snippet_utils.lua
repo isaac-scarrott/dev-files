@@ -1,5 +1,5 @@
 local fn = vim.fn
-local luasnip = require "luasnip"
+local luasnip = require("luasnip")
 local snippet = luasnip.snippet
 local f = luasnip.function_node
 
@@ -18,7 +18,7 @@ end
 
 function M.file_name(without_spec)
   return f(function()
-    local name = fn.expand "%:t:r"
+    local name = fn.expand("%:t:r")
 
     if without_spec then
       return name:gsub(".spec", "")
