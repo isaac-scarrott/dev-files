@@ -1,0 +1,19 @@
+font-family = FiraCode Nerd Font Mono
+font-family-bold = FiraCode Nerd Font Mono
+font-family-italic = FiraCode Nerd Font Mono
+font-family-bold-italic = FiraCode Nerd Font Mono
+font-thicken = true
+font-size = 12
+
+shell-integration-features = no-cursor
+cursor-style = block
+
+desktop-notifications = false
+
+clipboard-read = allow
+clipboard-write = allow
+
+background-opacity = 0.9
+theme = Kanagawa Wave
+
+macos-titlebar-style = hidden
