@@ -3,8 +3,8 @@ local opt = vim.opt
 vim.g.mapleader = " "
 
 -- line numbers
-opt.relativenumber = true
-opt.number = true
+-- opt.relativenumber = true
+-- opt.number = true
 
 --tabs & indentation
 opt.tabstop = 4
