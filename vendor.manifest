@@ -1,0 +1,5 @@
+# Vendored upstream files. Run `scripts/vendor.sh` to refresh.
+# Format: OWNER/REPO REF SRC_PATH DEST_PATH
+# Prefer commit SHAs over branch names for reproducibility.
+
+mattpocock/skills main skills/productivity/grill-me/SKILL.md .claude/skills/grill-me/SKILL.md

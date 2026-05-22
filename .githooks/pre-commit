@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# When vendor.manifest is staged, refresh vendored files and stage them.
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+git diff --cached --name-only | grep -qx 'vendor.manifest' || exit 0
+
+scripts/vendor.sh
+
+while IFS= read -r line || [ -n "$line" ]; do
+    [[ -z "${line// }" || "$line" =~ ^[[:space:]]*# ]] && continue
+    read -r _ _ _ dest <<< "$line"
+    git add "$dest"
+done < vendor.manifest
