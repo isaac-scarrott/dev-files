@@ -1,0 +1,128 @@
+{
+  "effortLevel" : "high",
+  "enabledPlugins" : {
+    "code-simplifier@claude-plugins-official" : true,
+    "figma@claude-plugins-official" : false,
+    "typescript-lsp@claude-plugins-official" : true
+  },
+  "extraKnownMarketplaces" : {
+    "marketingskills" : {
+      "source" : {
+        "repo" : "coreyhaines31\/marketingskills",
+        "source" : "github"
+      }
+    }
+  },
+  "hooks" : {
+    "PermissionRequest" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "PostToolUse" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "PreCompact" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "auto"
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "manual"
+      }
+    ],
+    "PreToolUse" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "SessionEnd" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ]
+      }
+    ],
+    "Stop" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStop" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ]
+      }
+    ]
+  },
+  "skipDangerousModePermissionPrompt" : true,
+  "tui" : "fullscreen",
+  "voice" : {
+    "enabled" : true,
+    "mode" : "hold"
+  },
+  "voiceEnabled" : true
+}
