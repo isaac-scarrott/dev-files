@@ -1,12 +1,26 @@
 return {
   "neovim/nvim-lspconfig",
-  dependencies = { "j-hui/fidget.nvim", "folke/neodev.nvim" },
+  dependencies = {
+    "j-hui/fidget.nvim",
+    {
+      "folke/lazydev.nvim",
+      ft = "lua",
+      opts = {
+        library = {
+          { path = "${3rd}/luv/library", words = { "vim%.uv" } },
+        },
+      },
+    },
+  },
   event = "BufReadPre",
   config = function()
-    local lsp = require "isaac.lsp"
-    local utils = require "isaac.utils"
+    local lsp = require("isaac.lsp")
+    local utils = require("isaac.utils")
 
-    require("neodev").setup {}
+    -- Configure global LSP defaults via vim.lsp.config('*', ...)
+    vim.lsp.config("*", {
+      handlers = lsp.handlers,
+    })
 
     utils.config_autocmd("LspAttach", {
       callback = function(e)
@@ -20,10 +34,10 @@ return {
       end,
     })
 
-    require("fidget").setup {
+    require("fidget").setup({
       progress = {
         display = { progress_icon = { "moon" } },
       },
-    }
+    })
   end,
 }

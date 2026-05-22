@@ -21,8 +21,17 @@ require("lazy").setup({
     -- START COMMON --
     { "christoomey/vim-tmux-navigator", lazy = false },
     "nvim-lua/plenary.nvim",
-    "BurntSushi/ripgrep",
-    "ggandor/lightspeed.nvim",
+    {
+      "folke/flash.nvim",
+      event = "VeryLazy",
+      opts = {},
+      keys = {
+        { "s", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Flash" },
+        { "S", mode = { "n", "x", "o" }, function() require("flash").treesitter() end, desc = "Flash Treesitter" },
+        { "r", mode = "o", function() require("flash").remote() end, desc = "Remote Flash" },
+        { "R", mode = { "o", "x" }, function() require("flash").treesitter_search() end, desc = "Treesitter Search" },
+      },
+    },
     -- { "vim-scripts/ReplaceWithRegister", lazy = false },
     -- END COMMON --
 

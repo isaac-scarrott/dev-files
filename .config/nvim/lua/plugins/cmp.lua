@@ -28,7 +28,6 @@ return {
       -- ghost_text = true,
       -- },
       sources = cmp.config.sources({
-        { name = "cody" },
         { name = "luasnip" },
         { name = "nvim_lsp" },
       }, {
@@ -45,20 +44,26 @@ return {
         format = require("lspkind").cmp_format({
           max_width = 50,
           mode = "symbol_text",
-          symbol_map = {
-            Copilot = "",
-            Cody = "",
-          },
         }),
       },
       mapping = cmp.mapping.preset.insert({
-        ["<C-k>"] = cmp.mapping.select_prev_item(), -- previous suggestion
-        ["<C-j>"] = cmp.mapping.select_next_item(), -- next suggestion
+        ["<C-k>"] = cmp.mapping.select_prev_item(),
+        ["<C-j>"] = cmp.mapping.select_next_item(),
         ["<C-b>"] = cmp.mapping.scroll_docs(-4),
         ["<C-f>"] = cmp.mapping.scroll_docs(4),
-        ["<C-Space>"] = cmp.mapping.complete(), -- show completion suggestions
-        ["<C-e>"] = cmp.mapping.abort(), -- close completion window
+        ["<C-Space>"] = cmp.mapping.complete(),
+        ["<C-e>"] = cmp.mapping.abort(),
         ["<CR>"] = cmp.mapping.confirm({ select = false }),
+        ["<Tab>"] = cmp.mapping(function(fallback)
+          local copilot = require("copilot.suggestion")
+          if copilot.is_visible() then
+            copilot.accept()
+          elseif cmp.visible() then
+            cmp.select_next_item()
+          else
+            fallback()
+          end
+        end, { "i", "s" }),
       }),
     })
 
@@ -81,3 +86,4 @@ return {
     })
   end,
 }
+

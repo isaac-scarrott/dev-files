@@ -61,3 +61,12 @@ esc = 'mode main'
 2 = 'main'
 3 = 1
 4 = 1
+
+[gaps]
+    inner.horizontal = 10
+    inner.vertical =   10
+    outer.left =       10
+    outer.bottom =     10
+    outer.top =        0
+    outer.right =      10
+

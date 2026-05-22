@@ -7,8 +7,8 @@ vim.g.mapleader = " "
 -- opt.number = true
 
 --tabs & indentation
-opt.tabstop = 4
-opt.shiftwidth = 4
+opt.tabstop = 2
+opt.shiftwidth = 2
 opt.expandtab = true
 opt.autoindent = true
 opt.smartindent = true
@@ -43,3 +43,7 @@ opt.splitright = true
 opt.splitbelow = true
 
 opt.iskeyword:append("-")
+
+-- LSP performance
+vim.lsp.set_log_level("off") -- Disable LSP logging (set to "debug" when troubleshooting)
+opt.updatetime = 250 -- Faster CursorHold events (default 4000ms)

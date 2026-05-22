@@ -1,5 +1,3 @@
-local util_ok, util = pcall(require, "lspconfig.util")
-
 local PACKAGE_JSON = "package.json"
 
 local M = {}
@@ -24,18 +22,16 @@ M.resize_split_by = function(size, opts)
 end
 
 M.is_npm_installed = function(package)
-  if not util_ok then
-    return
-  end
   local file_path = vim.api.nvim_buf_get_name(0)
 
   if file_path == "" or file_path == nil then
     file_path = vim.fn.getcwd()
   end
 
-  local package_json = util.root_pattern(PACKAGE_JSON)(file_path)
-  if package_json ~= nil then
-    local content = table.concat(vim.fn.readfile(package_json .. "/" .. PACKAGE_JSON, "\n"))
+  -- Use vim.fs.root (Nvim 0.10+) to find package.json
+  local root = vim.fs.root(file_path, { PACKAGE_JSON })
+  if root then
+    local content = table.concat(vim.fn.readfile(root .. "/" .. PACKAGE_JSON, "\n"))
     local ok, json_content = pcall(vim.json.decode, content)
 
     if ok and json_content.dependencies and json_content.dependencies[package] then

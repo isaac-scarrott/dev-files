@@ -6,16 +6,17 @@ return {
   },
   event = "BufReadPre",
   cmd = "Mason",
-  disabled = true,
+
   config = function()
     local mason_lspconfig = require("mason-lspconfig")
     local tool_installer = require("mason-tool-installer")
-    local lsp = require("isaac.lsp")
 
     require("mason").setup({})
 
     mason_lspconfig.setup({
       ensure_installed = { "lua_ls", "eslint", "stylelint_lsp" },
+      -- mason-lspconfig auto-enables installed servers via vim.lsp.enable()
+      automatic_enable = true,
     })
 
     tool_installer.setup({
@@ -30,26 +31,20 @@ return {
 
     tool_installer.run_on_start()
 
-    for _, server in ipairs(mason_lspconfig.get_installed_servers()) do
-      local serverConfig = require("lspconfig")[server]
-      local setupObject = {
-        handlers = lsp.handlers,
+    -- Configure individual servers via vim.lsp.config() before they are enabled
+    -- eslint: disable formatting (handled by prettierd via conform.nvim)
+    vim.lsp.config("eslint", {
+      on_attach = function(client, bufnr)
+        client.server_capabilities.documentFormattingProvider = false
+        client.server_capabilities.documentRangeFormattingProvider = false
+      end,
+    })
 
-        on_attach = function(client, bufnr)
-          lsp.on_attach(client, bufnr)
-
-          if client.name == "eslint" then
-            client.server_capabilities.documentFormattingProvider = true
-            client.server_capabilities.documentRangeFormattingProvider = true
-          end
-        end,
-      }
-
-      if serverConfig.name == "stylelint_lsp" then
-        setupObject.filetypes = { "postcss", unpack(serverConfig.document_config.default_config.filetypes or {}) }
-      end
-
-      serverConfig.setup(setupObject)
-    end
+    -- stylelint_lsp: add postcss filetype
+    local stylelint_defaults = vim.lsp.config.stylelint_lsp or {}
+    local default_filetypes = stylelint_defaults.filetypes or { "css", "less", "scss", "sugarss", "vue", "wxss" }
+    vim.lsp.config("stylelint_lsp", {
+      filetypes = vim.list_extend({ "postcss" }, default_filetypes),
+    })
   end,
 }

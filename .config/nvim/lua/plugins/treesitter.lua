@@ -2,7 +2,10 @@ return {
   "nvim-treesitter/nvim-treesitter",
   build = ":TSUpdate",
   event = "BufReadPre",
-  dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
+  dependencies = {
+    "nvim-treesitter/nvim-treesitter-textobjects",
+    "windwp/nvim-ts-autotag",
+  },
   config = function()
     ---@diagnostic disable-next-line: missing-fields
     require("nvim-treesitter.configs").setup({
@@ -12,8 +15,6 @@ return {
       },
       -- enable indentation
       indent = { enable = true },
-      -- enable autotagging (w/ nvim-ts-autotag plugin)
-      autotag = { enable = true },
       -- ensure these language parsers are installed
       ensure_installed = {
         "json",
@@ -37,5 +38,7 @@ return {
       -- auto install above language parsers
       auto_install = true,
     })
+
+    require("nvim-ts-autotag").setup()
   end,
 }

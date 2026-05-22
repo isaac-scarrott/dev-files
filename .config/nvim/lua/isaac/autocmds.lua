@@ -27,3 +27,11 @@ vim.api.nvim_create_autocmd("TextYankPost", {
     vim.highlight.on_yank()
   end,
 })
+
+-- ESLint auto-fix on save for JS/TS files
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = { "*.js", "*.jsx", "*.ts", "*.tsx", "*.svelte" },
+  callback = function()
+    vim.cmd("silent! EslintFixAll")
+  end,
+})
