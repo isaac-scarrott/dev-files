@@ -1,0 +1,19 @@
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/crash.log
+**/crash.*.log
+**/*.tfvars
+!**/*.tfvars.example
+
+# Local env files
+**/.env
+**/.env.*
+!**/.env.example
+
+# Global Claude instructions: kept here as source for the ~/.claude/CLAUDE.md symlink, but not tracked
+/.claude/CLAUDE.md
+
+# Neovim plugin lockfile — churns on every :Lazy update
+/.config/nvim/lazy-lock.json
