@@ -1,0 +1,279 @@
+{
+  "editor.tabSize": 2,
+  "editor.renderWhitespace": "all",
+  "editor.fontFamily": "FiraCode-Retina",
+  "editor.fontLigatures": true,
+  "editor.cursorWidth": 3,
+  "editor.rulers": [120],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "files.trimTrailingWhitespace": true,
+  "files.autoSave": "afterDelay",
+  "editor.formatOnPaste": true,
+  "editor.formatOnSave": true,
+  "prettier.arrowParens": "always",
+  "prettier.jsxSingleQuote": true,
+  "files.trimFinalNewlines": true,
+  "editor.autoIndent": "full",
+  "git.autofetch": true,
+  "workbench.editor.enablePreview": true,
+  "git.enableSmartCommit": true,
+  "emmet.triggerExpansionOnTab": true,
+  "emmet.includeLanguages": {
+    "javascript": "javascriptreact"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "editor.suggestSelection": "first",
+  "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
+  "terminal.integrated.scrollback": 10000,
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "workbench.welcomePage.hiddenCategories": ["Setup", "Beginner"],
+  "workbench.editorAssociations": {
+    "*.ipynb": "jupyter-notebook"
+  },
+  "notebook.cellToolbarLocation": {
+    "default": "right",
+    "jupyter-notebook": "left"
+  },
+  "files.associations": {
+    "*.svg": "html"
+  },
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "editor.inlineSuggest.enabled": true,
+  "workbench.colorTheme": "Kanagawa",
+  "redhat.telemetry.enabled": true,
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "cSpell.userWords": [
+    "Åland",
+    "Authorisation",
+    "authorised",
+    "AWSX",
+    "Barthélemy",
+    "Bouvet",
+    "Burkina",
+    "Caicos",
+    "camelcase",
+    "cdktf",
+    "codegen",
+    "COLOURS",
+    "Comores",
+    "Côte",
+    "Curations",
+    "d'Ivoire",
+    "DACH",
+    "dazn",
+    "documentum",
+    "Eswatini",
+    "Eustatius",
+    "eventbridge",
+    "Faso",
+    "Fastify",
+    "firstname",
+    "formik",
+    "Futuna",
+    "getreg",
+    "holibob",
+    "initialise",
+    "initialised",
+    "initialising",
+    "Islas",
+    "keymap",
+    "Kitts",
+    "knexfile",
+    "Kysely",
+    "lastname",
+    "Leste",
+    "Localisation",
+    "Localisations",
+    "Luxembourgish",
+    "Maarten",
+    "mantine",
+    "Marino",
+    "Mayen",
+    "noremap",
+    "nvim",
+    "onnx",
+    "OPENAI",
+    "openapi",
+    "organisation",
+    "Personalise",
+    "predev",
+    "premint",
+    "Príncipe",
+    "progressbar",
+    "Rica",
+    "Rican",
+    "ruleset",
+    "Scarrott",
+    "schemaname",
+    "Sénégal",
+    "setreg",
+    "smartcrop",
+    "synchronisation",
+    "tablename",
+    "tanstack",
+    "testid",
+    "Tokelau",
+    "Tomé",
+    "traveller",
+    "TRPC",
+    "wsrun",
+    "Xenomorphs"
+  ],
+  "editor.guides.bracketPairs": true,
+  "yaml.schemas": {
+    "https://s3.eu-central-1.amazonaws.com/schemas.plat.dazn-dev.com/dazn-manifest/4.0.0.schema.json": ".dazn-manifest.yml"
+  },
+  "debug.javascript.autoAttachFilter": "disabled",
+  "editor.stickyScroll.enabled": true,
+  "[python]": {
+    "editor.formatOnType": true
+  },
+  "diffEditor.ignoreTrimWhitespace": false,
+  "typescript.tsserver.log": "off",
+  "typescript.tsserver.maxTsServerMemory": 8192,
+  "typescript.tsserver.enableTracinr": true,
+  "security.workspace.trust.untrustedFiles": "open",
+  "update.releaseTrack": "prerelease",
+  "vim.easymotion": true,
+  "vim.useSystemClipboard": true,
+  "vim.leader": "<space>",
+  "vim.handleKeys": {
+    "<C-j>": true,
+    "<C-k>": true,
+    "<C-h>": true,
+    "<C-l>": true
+  },
+  "vim.normalModeKeyBindingsNonRecursive": [
+    {
+      "before": ["]", "d"],
+      "commands": ["editor.action.marker.nextInFiles"],
+      "silent": true
+    },
+    {
+      "before": ["[", "d"],
+      "commands": ["editor.action.marker.prevInFiles"],
+      "silent": true
+    },
+    {
+      "before": ["<leader>", "c", "a"],
+      "commands": ["editor.action.quickFix"],
+      "silent": true
+    },
+    {
+      "before": ["<leader>", "f", "f"],
+      "commands": ["workbench.action.quickOpen"],
+      "silent": true
+    },
+    {
+      "before": ["<leader>", "f", "s"],
+      "commands": ["workbench.action.findInFiles"],
+      "silent": true
+    },
+    {
+      "before": ["K"],
+      "commands": ["editor.action.showHover"],
+      "silent": true
+    },
+    {
+      "before": ["<leader>", "r", "n"],
+      "commands": ["editor.action.rename"],
+      "silent": true
+    },
+
+    {
+      "before": ["s"],
+      "after": ["<leader>", "<leader>", "s"]
+    },
+    {
+      "before": ["<leader>", "s", "v"],
+      "commands": ["workbench.action.splitEditorRight"],
+      "silent": true
+    },
+    {
+      "before": ["<C-h>"],
+      "commands": ["workbench.action.navigateLeft"],
+      "silent": true
+    },
+    {
+      "before": ["<C-j>"],
+      "commands": ["workbench.action.navigateDown"],
+      "silent": true
+    },
+    {
+      "before": ["<C-k>"],
+      "commands": ["workbench.action.navigateUp"],
+      "silent": true
+    },
+    {
+      "before": ["<C-l>"],
+      "commands": ["workbench.action.navigateRight"],
+      "silent": true
+    },
+    {
+      "before": ["g", "r"],
+      "commands": ["editor.action.goToReferences"],
+      "silent": true
+    },
+    {
+      "before": ["<leader>", "g", "r"],
+      "commands": ["editor.action.goToReferences"],
+      "silent": true
+    }
+  ],
+  "amazonQ.suppressPrompts": {
+    "amazonQChatDisclaimer": true
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "editor.largeFileOptimizations": false,
+  "eslint.trace.server": "verbose",
+  "datadog.connection.oauth.setup.domain": "app.datadoghq.eu",
+  "workbench.navigationControl.enabled": false,
+  "typescript.tsserver.nodePath": "/Users/isaac/.nvm/versions/node/v22.16.0/bin/node",
+  "typescript.tsserver.useSyntaxServer": "never",
+  "cursor.semanticSearch.includePullRequests": false,
+  "cursor.cpp.disabledLanguages": ["plaintext"],
+  "[dockercompose]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced",
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[github-actions-workflow]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "workbench.layoutControl.enabled": false,
+  "cursor.composer.queueMessageDefaultBehavior": "queue",
+  "claudeCode.preferredLocation": "panel",
+  "claudeCode.useTerminal": true,
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.initialPermissionMode": "bypassPermissions",
+  "datadog.connection.oauth.setup.organizationId": "3115f5ec-9db7-11ee-8653-da7ad0900005",
+  "window.autoDetectColorScheme": false
+}

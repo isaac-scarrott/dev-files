@@ -4,13 +4,12 @@
   "editor.renderWhitespace": "all",
   "editor.fontFamily": "FiraCode-Retina",
   "editor.fontLigatures": true,
-  "workbench.iconTheme": "material-icon-theme",
   "workbench.sideBar.location": "right",
   "editor.cursorWidth": 3,
   "editor.rulers": [120],
   // Foramtting
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
+    "source.fixAll.eslint": "explicit"
   },
   "files.trimTrailingWhitespace": true,
   "files.autoSave": "afterDelay",
@@ -69,7 +68,7 @@
   },
   "terminal.integrated.defaultProfile.osx": "zsh",
   "editor.inlineSuggest.enabled": true,
-  "workbench.colorTheme": "GitHub Dark",
+  "workbench.colorTheme": "Kanagawa",
   "bracket-pair-colorizer-2.depreciation-notice": false,
   "go.toolsManagement.autoUpdate": true,
   "redhat.telemetry.enabled": true,
@@ -91,6 +90,7 @@
     "COLOURS",
     "Comores",
     "Côte",
+    "Curations",
     "d'Ivoire",
     "DACH",
     "dazn",
@@ -103,11 +103,15 @@
     "firstname",
     "formik",
     "Futuna",
+    "getreg",
+    "holibob",
     "initialise",
     "initialised",
     "Islas",
+    "keymap",
     "Kitts",
     "knexfile",
+    "Kysely",
     "lastname",
     "Leste",
     "Localisation",
@@ -117,8 +121,12 @@
     "mantine",
     "Marino",
     "Mayen",
+    "noremap",
+    "nvim",
     "OPENAI",
     "openapi",
+    "organisation",
+    "Personalise",
     "predev",
     "premint",
     "Príncipe",
@@ -129,11 +137,14 @@
     "Scarrott",
     "schemaname",
     "Sénégal",
+    "setreg",
+    "synchronisation",
     "tablename",
     "tanstack",
     "testid",
     "Tokelau",
     "Tomé",
+    "traveller",
     "TRPC",
     "wsrun",
     "Xenomorphs"
@@ -141,7 +152,7 @@
   "github.copilot.enable": {
     "*": true,
     "yaml": true,
-    "plaintext": false,
+    "plaintext": true,
     "markdown": true,
     "typescript": true
   },
@@ -156,5 +167,20 @@
   "[python]": {
     "editor.formatOnType": true
   },
-  "window.zoomLevel": -1
+  "githubPullRequests.pullBranch": "never",
+  "prisma.showPrismaDataPlatformNotification": false,
+  "github.copilot.editor.enableAutoCompletions": true,
+  "diffEditor.ignoreTrimWhitespace": false,
+  "playwright.reuseBrowser": false,
+  "playwright.showTrace": false,
+  "playwright.runGlobalSetupOnEachRun": false,
+  "typescript.tsserver.log": "off",
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "typescript.tsserver.enableTracing": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "security.workspace.trust.untrustedFiles": "open",
+  "amazonQ.suppressPrompts": {
+    "amazonQChatDisclaimer": true
+  },
+  "python.defaultInterpreterPath": "/opt/homebrew/bin/python3"
 }
