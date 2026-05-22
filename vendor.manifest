@@ -2,4 +2,17 @@
 # Format: OWNER/REPO REF SRC_PATH DEST_PATH
 # Prefer commit SHAs over branch names for reproducibility.
 
+# mattpocock/skills — productivity
 mattpocock/skills main skills/productivity/grill-me/SKILL.md .claude/skills/grill-me/SKILL.md
+
+# mattpocock/skills — engineering/grill-with-docs
+mattpocock/skills main skills/engineering/grill-with-docs/SKILL.md .claude/skills/grill-with-docs/SKILL.md
+mattpocock/skills main skills/engineering/grill-with-docs/ADR-FORMAT.md .claude/skills/grill-with-docs/ADR-FORMAT.md
+mattpocock/skills main skills/engineering/grill-with-docs/CONTEXT-FORMAT.md .claude/skills/grill-with-docs/CONTEXT-FORMAT.md
+
+# mattpocock/skills — engineering/improve-codebase-architecture
+mattpocock/skills main skills/engineering/improve-codebase-architecture/SKILL.md .claude/skills/improve-codebase-architecture/SKILL.md
+mattpocock/skills main skills/engineering/improve-codebase-architecture/DEEPENING.md .claude/skills/improve-codebase-architecture/DEEPENING.md
+mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REPORT.md .claude/skills/improve-codebase-architecture/HTML-REPORT.md
+mattpocock/skills main skills/engineering/improve-codebase-architecture/INTERFACE-DESIGN.md .claude/skills/improve-codebase-architecture/INTERFACE-DESIGN.md
+mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE.md .claude/skills/improve-codebase-architecture/LANGUAGE.md
