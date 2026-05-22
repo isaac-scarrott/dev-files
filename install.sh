@@ -5,11 +5,12 @@
 # - Runs vendor.sh to fetch upstream files
 # - Symlinks dev-files content into ~/, ~/.config/, ~/.claude/, Library/Application Support/
 # Idempotent: safe to re-run; existing files get backed up with timestamped .bak before linking.
+#
+# Source it (e.g. `source install.sh`) to access LINKS and link_one without running main.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
 
 # Format: <dest absolute path>|<src path relative to dev-files>
 LINKS=(
@@ -65,25 +66,36 @@ link_one() {
   echo "  link:   $dest → $abs_src"
 }
 
-echo "=== git config ==="
-git config core.hooksPath .githooks
-echo "  hooksPath = .githooks"
+link_all() {
+  for entry in "${LINKS[@]}"; do
+    link_one "${entry%%|*}" "${entry##*|}"
+  done
+}
 
-echo
-echo "=== submodules ==="
-git submodule update --init --recursive
+main() {
+  cd "$ROOT"
 
-echo
-echo "=== vendored files ==="
-scripts/vendor.sh
+  echo "=== git config ==="
+  git config core.hooksPath .githooks
+  echo "  hooksPath = .githooks"
 
-echo
-echo "=== symlinks ==="
-for entry in "${LINKS[@]}"; do
-  dest="${entry%%|*}"
-  src="${entry##*|}"
-  link_one "$dest" "$src"
-done
+  echo
+  echo "=== submodules ==="
+  git submodule update --init --recursive
 
-echo
-echo "done"
+  echo
+  echo "=== vendored files ==="
+  scripts/vendor.sh
+
+  echo
+  echo "=== symlinks ==="
+  link_all
+
+  echo
+  echo "done"
+}
+
+# Only run main when invoked directly, not when sourced.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main
+fi
