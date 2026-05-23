@@ -36,6 +36,8 @@ LINKS=(
   "$HOME/.claude/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.claude/skills/skill-creator|.claude/skills/skill-creator"
 
+  "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
+
   "$HOME/Library/Application Support/Code/User/settings.json|ide/vscode/settings.json"
   "$HOME/Library/Application Support/Cursor/User/settings.json|ide/cursor/settings.json"
 )

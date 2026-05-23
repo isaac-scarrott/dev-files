@@ -16,3 +16,6 @@ mattpocock/skills main skills/engineering/improve-codebase-architecture/DEEPENIN
 mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REPORT.md .claude/skills/improve-codebase-architecture/HTML-REPORT.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/INTERFACE-DESIGN.md .claude/skills/improve-codebase-architecture/INTERFACE-DESIGN.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE.md .claude/skills/improve-codebase-architecture/LANGUAGE.md
+
+# anthropics/claude-plugins-official — agents
+anthropics/claude-plugins-official main plugins/code-simplifier/agents/code-simplifier.md .claude/agents/code-simplifier.md
