@@ -1,44 +1,46 @@
-# Discipline lenses for the Jedi Council
+# Discipline lenses — a sampler
 
-Each role should own one lens no other role owns. "Senior engineer" is too broad. "Performance reviewer focused on N+1 queries and per-request caching" is right. Pick the lenses that match the artifact under review. Five roles is usually right. Three is the floor; convergence is meaningless below that. Ten is the ceiling for one round.
+**This is a sampler, not a catalogue.** For a fintech review you might convene Regulatory / Fraud / Treasury / Audit. For a kids' game: Child-development / Parental-controls / Reading-level / Engagement. For a CLI: DX / Composability / Backwards-compat / Error-messages. The right lenses depend on what the artifact actually is — invent them, don't pick from a fixed list.
 
-## Engineering lenses
+The constraint that matters: each role owns one lens no other role owns. "Senior engineer" is too broad. "Performance reviewer focused on cache key shape and TTL semantics" is the right granularity.
 
-- **Security / threat model** — auth, key management, token transport, attack surface
-- **Backend correctness** — semantics, ordering, edge cases, transactional safety
-- **Conventions / project idioms** — does this match how the rest of the codebase does it?
-- **Tests / test design** — coverage, fixtures, what's missing
-- **Performance** — hot paths, N+1 patterns, caching strategy, TTL semantics
-- **Side-effects / blast radius** — what fails if this is wrong, rollback story
-- **Simplicity / over-engineering** — "could this be 50 lines instead of 200?"
-- **Architecture / impedance** — fit with existing shape, layering, coupling
-- **Observability / rollout** — feature flags, metrics, alerts, dashboards
-- **Implementer-by-stack** (for SDKs/APIs): Node+jose, Python+cryptography, Go+x/crypto, Java+JCE, .NET — checks whether the artifact works in their world
+## Common engineering lenses
 
-## Design / product / UX lenses
+Pick the ones the artifact actually touches:
 
-- **Accessibility consultant** — WCAG, screen-reader paths, contrast, focus order
-- **CRO / conversion specialist** — funnel, friction, drop-off points
-- **Pricing psychologist** — anchors, framing, decoy effects
-- **Design systems lead** — token usage, component drift, consistency
-- **Information architecture** — hierarchy, discoverability, mental model
-- **Editorial / copywriter** — voice, clarity, AI-tells, cuttable filler
-- **Brand / visual hierarchy**
-- **Onboarding / first-time experience**
+- Side-effects / blast radius (what fails if this is wrong)
+- Backend correctness (semantics, ordering, edge cases)
+- Performance (hot paths, N+1, caching, TTL semantics)
+- Security / threat model
+- Tests / test design
+- Observability / on-call (what does failure look like at 3am?)
+- Conventions / project idioms
+- Architecture / impedance with existing shape
 
-## Docs / partner-facing lenses
+## Common product, design, UX lenses
 
-- **Stripe-style docs reviewer** — do the examples copy-paste? are footguns called out?
-- **Junior 3-YOE engineer** — could they ship from this doc?
-- **Appsec reviewer** — does the doc leak unsafe defaults?
-- **JSON Schema / contract correctness** — does the contract round-trip?
+- Information architecture (hierarchy, discoverability)
+- Editorial / copywriter (voice, AI-tells, cuttable filler)
+- Accessibility (WCAG, screen-reader paths, contrast)
+- CRO / conversion (funnel, friction, drop-off)
+- Pricing psychology (anchors, framing, decoy effects)
+- Design systems (token usage, drift, consistency)
+- Onboarding / first-time experience
+
+## Common docs / partner-facing lenses
+
+- Stripe-style docs reviewer (do examples copy-paste? footguns called out?)
+- Junior 3-YOE engineer (could they ship from this?)
+- Appsec reviewer (does it leak unsafe defaults?)
+
+## The contrarian
+
+For high-stakes decisions, brief one role to argue the opposite. "Argue the opposite and explain why the locked decision is wrong", or "the pragmatic veteran questioning whether this work needs to happen at all". Without an explicit contrarian, panels drift toward consensus on whatever the prompt seeded.
 
 ## Mixing across columns
 
-Mix freely when the artifact straddles them. An external-facing API doc warrants a security architect, a Stripe-style docs reviewer, an editorial copywriter, and a junior engineer in the same wave. A consumer onboarding flow warrants accessibility, CRO, pricing psychology, design systems, and an editorial copywriter together.
+The sections above are scaffolding, not categories. A partner-facing API doc wants a security architect + a Stripe-style docs reviewer + a junior engineer + an editorial copywriter — four lenses across three sections. Mix what the artifact actually touches.
 
-The menu is a buffet, not a fixed cast. The right roles depend on the artifact — pick three to seven that actually have something to say about *this* work.
+## Cast sizes
 
-## Contrarian role
-
-For high-stakes decisions, include a contrarian role by design — a "pragmatic veteran willing to disagree with the framing of the question", or one role briefed to *argue the OPPOSITE and explain why the locked decision is wrong*. Without it, panels drift toward consensus on whatever the prompt seeded.
+Three is the floor; convergence is meaningless below that. Seven is comfortable. Ten is the ceiling for one round — past that, the synthesis cost outweighs the new signal.
