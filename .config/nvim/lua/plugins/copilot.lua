@@ -1,13 +1,13 @@
 return {
   "zbirenbaum/copilot.lua",
-  lazy = false,
+  event = "InsertEnter",
   config = function()
     require("copilot").setup({
       suggestion = {
         enabled = true,
         auto_trigger = true,
         keymap = {
-          accept = "<Tab>",
+          accept = false,
         },
       },
     })

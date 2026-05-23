@@ -1,6 +1,10 @@
 return {
   "neovim/nvim-lspconfig",
   dependencies = {
+    -- mason owns its own spec (lua/plugins/mason.lua); declaring it here just
+    -- guarantees load order so mason-lspconfig.setup() runs before lspconfig
+    -- expects servers to be enabled.
+    "williamboman/mason.nvim",
     "j-hui/fidget.nvim",
     {
       "folke/lazydev.nvim",
@@ -12,15 +16,10 @@ return {
       },
     },
   },
-  event = "BufReadPre",
+  event = { "BufReadPost", "BufNewFile" },
   config = function()
     local lsp = require("isaac.lsp")
     local utils = require("isaac.utils")
-
-    -- Configure global LSP defaults via vim.lsp.config('*', ...)
-    vim.lsp.config("*", {
-      handlers = lsp.handlers,
-    })
 
     utils.config_autocmd("LspAttach", {
       callback = function(e)

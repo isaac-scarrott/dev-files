@@ -34,7 +34,9 @@ LINKS=(
   "$HOME/.claude/skills/grill-with-docs|.claude/skills/grill-with-docs"
   "$HOME/.claude/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.claude/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
-  "$HOME/.claude/skills/skill-creator|.claude/skills/skill-creator"
+  "$HOME/.claude/skills/jedi-council|.claude/skills/jedi-council"
+  "$HOME/.claude/skills/the-focus-group|.claude/skills/the-focus-group"
+  "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
 

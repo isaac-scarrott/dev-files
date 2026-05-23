@@ -1,7 +1,7 @@
 return {
   "nvim-treesitter/nvim-treesitter",
   build = ":TSUpdate",
-  event = "BufReadPre",
+  event = { "BufReadPost", "BufNewFile" },
   dependencies = {
     "nvim-treesitter/nvim-treesitter-textobjects",
     "windwp/nvim-ts-autotag",
@@ -26,17 +26,18 @@ return {
         "css",
         "markdown",
         "markdown_inline",
-        "svelte",
         "graphql",
+        "astro",
+        "python",
+        "toml",
         "bash",
         "lua",
         "vim",
         "dockerfile",
         "gitignore",
-        "rust",
       },
       -- auto install above language parsers
-      auto_install = true,
+      auto_install = false,
     })
 
     require("nvim-ts-autotag").setup()

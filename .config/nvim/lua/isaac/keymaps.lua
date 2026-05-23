@@ -16,7 +16,7 @@ keymap.set("n", "<leader>sx", ":close<CR>") -- close current split window
 keymap.set("v", "J", ":m '>+1<CR>gv=gv")
 keymap.set("v", "K", ":m '<-2<CR>gv=gv")
 
-keymap.set("n", "ln", ":set number!<CR>", { noremap = true, silent = true })
+keymap.set("n", "<leader>ln", ":set number!<CR>", { noremap = true, silent = true, desc = "Toggle line numbers" })
 
 -- rename current word
 vim.keymap.set("n", "<leader>rw", [[:%s/\<<C-r><C-w>\>//gI<Left><Left><Left>]])

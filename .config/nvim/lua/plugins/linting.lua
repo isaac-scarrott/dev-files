@@ -1,6 +1,6 @@
 local linters_by_ft = {
-  -- ESLint diagnostics handled by ESLint LSP, no need for eslint_d here
-  python = { "pylint" },
+  -- ESLint diagnostics handled by ESLint LSP, no need for eslint_d here.
+  -- Python diagnostics handled by ruff LSP, no need for ruff/pylint here.
   lua = { "luacheck" },
 }
 
@@ -33,16 +33,11 @@ return {
     end
 
     local lint_augroup = vim.api.nvim_create_augroup("lint", { clear = true })
-    local timer = vim.uv.new_timer()
 
-    vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave", "TextChanged" }, {
+    vim.api.nvim_create_autocmd({ "BufWritePost", "InsertLeave" }, {
       group = lint_augroup,
       callback = function()
-        -- Debounce linting to avoid running on every keystroke
-        timer:stop()
-        timer:start(150, 0, vim.schedule_wrap(function()
-          lint.try_lint()
-        end))
+        lint.try_lint()
       end,
     })
 
