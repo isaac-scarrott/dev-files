@@ -29,9 +29,11 @@ Do not pre-lock the option set. The panel's value is in the options it surfaces,
 Four parts, sent back in the same chat turn:
 
 1. **Convergence table** with a prod-break-mode column for every BLOCKING — the concrete bad thing that happens in production if it is not fixed.
-2. **2–3 paragraphs of prose** that cluster findings by root cause and quote the most cutting line verbatim. The table is the index; the prose is the verdict.
+2. **2–3 paragraphs of prose** that cluster findings by root cause and quote the most cutting line verbatim.
 3. **One-line punch verdict** — the sentence the user would quote in standup.
 4. **Recommended next action** — implement N items, run round 2 on X, or reframe the question.
+
+Then close with a question to the user about which action to apply. Recommendations aren't decisions — the panel surfaces, the user adjudicates. Use AskUserQuestion when the next-action options are concrete picks (flag the option you'd recommend), or a short freeform grill (in the spirit of `/grill-me`) when the right call needs context only the user has.
 
 See [references/EXAMPLE.md](references/EXAMPLE.md) for a worked example.
 

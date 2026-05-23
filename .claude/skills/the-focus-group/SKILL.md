@@ -40,8 +40,10 @@ Four parts, sent back in the same chat turn:
 
 1. **Convergence table** — what was flagged, by whom, how widely.
 2. **Predicted action distribution** — what each persona would actually *do* on landing (convert, churn, bounce, abandon mid-flow). Convergence is the grouping; action is the meaning.
-3. **Verbatim quotes** embedded in prose, not just listed. The voices are the value.
+3. **Verbatim quotes** embedded in prose, not just listed.
 4. **One-line punch verdict** — the sentence the user would quote in standup.
+
+Then close with a question to the user about which finding to act on. The panel surfaces; the user decides. Use AskUserQuestion when the next steps are concrete picks (flag the option you'd recommend), or a short freeform grill (in the spirit of `/grill-me`) when the right call needs context only the user has.
 
 See [references/EXAMPLE.md](references/EXAMPLE.md) for a worked example.
 
