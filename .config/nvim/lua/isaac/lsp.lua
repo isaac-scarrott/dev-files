@@ -17,7 +17,12 @@ function M.on_attach(client, bufnr)
   end
 
   lsp_map("n", "gd", "<cmd>Telescope lsp_definitions<CR>")
-  lsp_map("n", "gr", "<cmd>Telescope lsp_references<CR>")
+  -- include_current_line=true so a symbol's only declaration isn't filtered
+  -- out (telescope's default drops same-line refs and then reports "No LSP
+  -- References found" even when the LSP did return a result).
+  lsp_map("n", "gr", function()
+    builtin.lsp_references({ include_current_line = true })
+  end)
 
   lsp_map("n", "K", function()
     vim.lsp.buf.hover({ border = "rounded" })

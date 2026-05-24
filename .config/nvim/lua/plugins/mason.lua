@@ -15,9 +15,13 @@ return {
 
     -- Advertise blink.cmp's completion capabilities to every LSP server so they
     -- enable snippet support, additional resolve fields, etc. Must run before
-    -- mason-lspconfig.setup() since that resolves and enables servers.
+    -- mason-lspconfig.setup() since that resolves and enables servers. The
+    -- second arg (include_nvim_defaults=true) merges Nvim's full client
+    -- capabilities table so non-completion features (references, definitions,
+    -- hover, code actions) are correctly advertised — without it some telescope
+    -- LSP pickers can silently fall back to empty results.
     vim.lsp.config("*", {
-      capabilities = require("blink.cmp").get_lsp_capabilities(),
+      capabilities = require("blink.cmp").get_lsp_capabilities({}, true),
     })
 
     -- Configure individual servers via vim.lsp.config() BEFORE mason-lspconfig.setup()

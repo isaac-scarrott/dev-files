@@ -47,8 +47,10 @@ return {
               ["<CR>"] = actions.select_default + actions.center,
             },
           },
-          -- Performance optimizations
-          file_ignore_patterns = { "node_modules", ".git/", "%.lock" },
+          -- Lua patterns (not globs). `.` means any char, so `.git/` would
+          -- match `/git/` anywhere — including the user's home `~/git/`,
+          -- silently wiping every Telescope LSP result. Escape the dot.
+          file_ignore_patterns = { "node_modules", "%.git/", "%.lock" },
           path_display = { "truncate" },
         },
         pickers = {
