@@ -18,17 +18,11 @@ return {
     },
     config = function()
       local actions = require("telescope.actions")
-      local layout_actions = require("telescope.actions.layout")
       local telescope = require("telescope")
 
       telescope.setup({
 
         defaults = {
-          -- Pickers open without the previewer pane so they paint instantly;
-          -- previewer is on-demand via <C-p>. For lsp_references on a large
-          -- monorepo this is the difference between a snappy list and waiting
-          -- for tsserver + previewer file load.
-          preview = { hide_on_startup = true },
           -- Use ripgrep for live_grep (respects .gitignore, very fast)
           vimgrep_arguments = {
             "rg",
@@ -46,12 +40,10 @@ return {
               ["<C-k>"] = actions.move_selection_previous, -- move to prev result
               ["<C-j>"] = actions.move_selection_next, -- move to next result
               ["<C-q>"] = actions.send_selected_to_qflist + actions.open_qflist, -- send selected to quickfixlist
-              ["<C-p>"] = layout_actions.toggle_preview, -- show/hide previewer
               ["<CR>"] = actions.select_default + actions.center,
             },
 
             n = {
-              ["<C-p>"] = layout_actions.toggle_preview,
               ["<CR>"] = actions.select_default + actions.center,
             },
           },
