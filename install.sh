@@ -19,6 +19,7 @@ LINKS=(
   "$HOME/.zshrc|.zshrc"
 
   "$HOME/.config/aerospace|.config/aerospace"
+  "$HOME/.config/ghostty/config|.config/ghostty/config"
   "$HOME/.config/nvim|.config/nvim"
   "$HOME/.config/zed/settings.json|.config/zed/settings.json"
   "$HOME/.config/zed/keymap.json|.config/zed/keymap.json"

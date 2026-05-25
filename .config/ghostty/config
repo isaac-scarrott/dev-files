@@ -13,7 +13,8 @@ desktop-notifications = false
 clipboard-read = allow
 clipboard-write = allow
 
-background-opacity = 0.9
+background-opacity = 0.75
+background-blur = 20
 theme = Kanagawa Wave
 
 macos-titlebar-style = hidden
