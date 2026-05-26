@@ -40,7 +40,3 @@ For high-stakes decisions, brief one role to argue the opposite. "Argue the oppo
 ## Mixing across columns
 
 The sections above are scaffolding, not categories. A partner-facing API doc wants a security architect + a Stripe-style docs reviewer + a junior engineer + an editorial copywriter — four lenses across three sections. Mix what the artifact actually touches.
-
-## Cast sizes
-
-Three is the floor; convergence is meaningless below that. Seven is comfortable. Ten is the ceiling for one round — past that, the synthesis cost outweighs the new signal.

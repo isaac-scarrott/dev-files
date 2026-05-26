@@ -7,36 +7,32 @@ description: Convene the Jedi Council — a panel of expert sub-agents critiques
 
 A panel of expert sub-agents critiques an artifact through distinct discipline lenses in the third person. The unifying trait of a council member is expertise grounded in a discipline (accessibility, pricing psychology, security architecture, copywriting), not a job title.
 
-For first-person user-reaction review, use [`the-focus-group`](../the-focus-group/SKILL.md). Both can review the same artifact; the skills are interchangeable on topic but the stance is different.
+For first-person user-reaction review, use [`the-focus-group`](../the-focus-group/SKILL.md). Both can review the same artifact; the stance is what changes.
 
-## Quick start
+Start with the shared principles in [references/PANEL.md](references/PANEL.md). What's below is what's specific to the council's third-person stance.
 
-1. Point at a concrete artifact (diff, plan, design doc, copy draft). If none exists, run `/grill-me` first.
-2. Cast 3–7 roles with distinct discipline lenses. See [references/LENSES.md](references/LENSES.md) for a sampler — the right roles depend on the artifact.
-3. Dispatch in parallel and synthesize. Shared mechanics in [references/PANEL.md](references/PANEL.md).
-4. Reply in chat: convergence table → prose synthesis (opening with the strongest line) → recommended next action → a question to the user about which action to apply.
+## Casting — disciplines, not job titles
+
+Each role owns one lens no other role on the panel holds. "Senior engineer" is too broad; that's a title, not a lens. "Performance reviewer focused on cache-key shape and TTL semantics" is the right granularity — narrow enough that no other reviewer could plausibly hold the same one.
+
+Cast for what the artifact needs. A short README might warrant two lenses (editorial, new-hire onboarding). A retry policy with real prod consequences might warrant five (correctness, idempotency, observability, blast radius, contrarian). There's no minimum and no maximum that earns its keep past about ten. See [references/LENSES.md](references/LENSES.md) for a sampler — the lenses depend on what the artifact actually is, not on a fixed menu.
+
+For locked decisions or high-stakes irreversibility, brief one role to argue the opposite. Without an explicit contrarian, panels drift toward consensus on whatever the prompt seeded.
 
 ## Per-role prompts
 
-Each prompt names the role and its lens, includes the artifact once, demands evidence (file:line where applicable), sets severity labels (BLOCKING / SUGGESTION / NIT), and acknowledges the panel ("you are Expert 3 of 5 — others hold the other angles"). For high-stakes decisions, brief one role to argue the opposite; without that, panels drift toward consensus.
+Each prompt names the role and its lens, includes the artifact once (path or inline), demands evidence (file:line where applicable), and acknowledges the panel ("you are Expert 3 of 5 — others hold the other angles"). Let experts propose options; don't ask them to rank pre-listed ones. The panel's value is in what it surfaces, not what it ratifies.
 
-Let experts propose options. Don't ask them to rank pre-listed ones — the panel's value is in what it surfaces.
+## What to surface
 
-## What to reply with
+Findings grouped by who flagged them. Prose synthesis opening with the strongest line, quoting the most cutting line verbatim. Recommended next action. A question to the user about which action to apply.
 
-- **Convergence table** with a prod-break-mode column for every BLOCKING — the concrete bad thing that happens in production if it is not fixed.
-- **2–3 paragraphs of prose** that open with the strongest finding, cluster related findings by root cause, and quote the most cutting line verbatim.
-- **Recommended next action** — implement N items, run round 2 on X, or reframe the question.
-- **A question** to the user about which next action to apply.
+When the artifact has real failure consequences, a prod-break-mode column on blocking findings earns its place. When it doesn't, don't manufacture one — the shape of the synthesis should match the shape of the artifact.
 
-See [references/EXAMPLE.md](references/EXAMPLE.md) for a worked example.
-
-## Implement → review pair
-
-After synthesis, when implementation begins: dispatch an implementer with numbered acceptance criteria, then a fresh-eyes reviewer briefed *"You did NOT write this code. Verify pass/fail per criterion with one line of evidence."* The framing changes how the reviewer reads the diff.
+See [references/EXAMPLE.md](references/EXAMPLE.md) for worked examples at different scales.
 
 ## Advanced
 
-- Shared dispatch mechanics, convergence rules, round-2, closing the loop: [references/PANEL.md](references/PANEL.md)
+- Shared principles, dispatch mechanics, round 2, failure modes: [references/PANEL.md](references/PANEL.md)
 - Discipline-lens sampler: [references/LENSES.md](references/LENSES.md)
-- Worked example: [references/EXAMPLE.md](references/EXAMPLE.md)
+- Worked examples at different scales: [references/EXAMPLE.md](references/EXAMPLE.md)
