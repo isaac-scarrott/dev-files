@@ -37,9 +37,14 @@ LINKS=(
   "$HOME/.claude/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.claude/skills/jedi-council|.claude/skills/jedi-council"
   "$HOME/.claude/skills/the-focus-group|.claude/skills/the-focus-group"
+  "$HOME/.claude/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
+
+  "$HOME/.claude/commands/simplify.md|.claude/commands/simplify.md"
+
+  "$HOME/.local/bin/claudewho|bin/claudewho"
 
   "$HOME/Library/Application Support/Code/User/settings.json|ide/vscode/settings.json"
   "$HOME/Library/Application Support/Cursor/User/settings.json|ide/cursor/settings.json"

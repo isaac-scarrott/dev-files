@@ -17,5 +17,8 @@ mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REP
 mattpocock/skills main skills/engineering/improve-codebase-architecture/INTERFACE-DESIGN.md .claude/skills/improve-codebase-architecture/INTERFACE-DESIGN.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE.md .claude/skills/improve-codebase-architecture/LANGUAGE.md
 
+# cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
+cursor/plugins 3347cbab5b54136f6fba0994c3a01a56f7fb7fca cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md .claude/skills/thermo-nuclear-code-quality-review/SKILL.md
+
 # anthropics/claude-plugins-official — agents
 anthropics/claude-plugins-official main plugins/code-simplifier/agents/code-simplifier.md .claude/agents/code-simplifier.md
