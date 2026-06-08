@@ -16,3 +16,7 @@ mattpocock/skills main skills/engineering/improve-codebase-architecture/DEEPENIN
 mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REPORT.md .claude/skills/improve-codebase-architecture/HTML-REPORT.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/INTERFACE-DESIGN.md .claude/skills/improve-codebase-architecture/INTERFACE-DESIGN.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE.md .claude/skills/improve-codebase-architecture/LANGUAGE.md
+
+# cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
+# (strip disable-model-invocation so agents can run it; tracks upstream otherwise)
+cursor/plugins main cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md .claude/skills/thermo-nuclear-code-quality-review/SKILL.md | sed '/^disable-model-invocation:/d'

@@ -11,6 +11,7 @@ scripts/vendor.sh
 
 while IFS= read -r line || [ -n "$line" ]; do
     [[ -z "${line// }" || "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" == *"|"* ]] && line="${line%%|*}"
     read -r _ _ _ dest <<< "$line"
     git add "$dest"
 done < vendor.manifest

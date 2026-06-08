@@ -58,6 +58,11 @@ echo "=== vendored files (vs upstream) ==="
 if [ -f vendor.manifest ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     [[ -z "${line// }" || "$line" =~ ^[[:space:]]*# ]] && continue
+    transform=""
+    if [[ "$line" == *"|"* ]]; then
+      transform="$(printf '%s' "${line#*|}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      line="${line%%|*}"
+    fi
     read -r repo ref src dest <<< "$line"
     url="https://raw.githubusercontent.com/$repo/$ref/$src"
     if [ ! -f "$dest" ]; then
@@ -65,7 +70,11 @@ if [ -f vendor.manifest ]; then
       continue
     fi
     local_hash=$(md5 -q "$dest")
-    remote_hash=$(curl -fsSL "$url" 2>/dev/null | md5 -q || echo "FETCH_FAILED")
+    if [ -n "$transform" ]; then
+      remote_hash=$(curl -fsSL "$url" 2>/dev/null | eval "$transform" | md5 -q || echo "FETCH_FAILED")
+    else
+      remote_hash=$(curl -fsSL "$url" 2>/dev/null | md5 -q || echo "FETCH_FAILED")
+    fi
     if [ "$remote_hash" = "FETCH_FAILED" ]; then
       report "vendor" "could not fetch $url (offline?)"
     elif [ "$local_hash" != "$remote_hash" ]; then
