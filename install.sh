@@ -47,7 +47,8 @@ LINKS=(
   "$HOME/.claude/commands/commit.md|.claude/commands/commit.md"
   "$HOME/.claude/commands/commitpr.md|.claude/commands/commitpr.md"
 
-  # OpenCode — same canonical source as Claude (skills, agent, commands)
+  # OpenCode — same canonical source as Claude (config, skills, agent, commands)
+  "$HOME/.config/opencode/opencode.json|.config/opencode/opencode.json"
   "$HOME/.config/opencode/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.config/opencode/skills/grill-with-docs|.claude/skills/grill-with-docs"
   "$HOME/.config/opencode/skills/humanizer|.claude/skills/humanizer"

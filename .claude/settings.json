@@ -1,118 +1,209 @@
 {
-  "hooks": {
-    "SessionStart": [
+  "effortLevel" : "high",
+  "enabledPlugins" : {
+    "code-simplifier@claude-plugins-official" : true,
+    "holibob@dev-files" : true,
+    "personal@dev-files" : true,
+    "typescript-lsp@claude-plugins-official" : true
+  },
+  "extraKnownMarketplaces" : {
+    "dev-files" : {
+      "source" : {
+        "path" : "\/Users\/isaac\/git\/dev-files\/.claude\/marketplaces\/dev-files",
+        "source" : "directory"
+      }
+    },
+    "marketingskills" : {
+      "source" : {
+        "repo" : "coreyhaines31\/marketingskills",
+        "source" : "github"
+      }
+    }
+  },
+  "hooks" : {
+    "Notification" : [
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
           }
         ]
       }
     ],
-    "UserPromptSubmit": [
+    "PermissionRequest" : [
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "PostToolUse" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
+          }
+        ],
+        "matcher" : ""
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "PreCompact" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "auto"
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "manual"
+      }
+    ],
+    "PreToolUse" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
+          }
+        ],
+        "matcher" : ""
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
+          }
+        ],
+        "matcher" : "*"
+      }
+    ],
+    "SessionEnd" : [
+      {
+        "hooks" : [
+          {
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
+          }
+        ]
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
           }
         ]
       }
     ],
-    "PreToolUse": [
+    "SessionStart" : [
       {
-        "matcher": "",
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
+          }
+        ]
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
           }
         ]
       }
     ],
-    "PostToolUse": [
+    "Stop" : [
       {
-        "matcher": "",
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
+          }
+        ]
+      },
+      {
+        "hooks" : [
+          {
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
           }
         ]
       }
     ],
-    "Stop": [
+    "StopFailure" : [
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
           }
         ]
       }
     ],
-    "StopFailure": [
+    "SubagentStop" : [
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
           }
         ]
       }
     ],
-    "Notification": [
+    "UserPromptSubmit" : [
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\/Users\/isaac\/git\/claude-tmux\/hooks\/claude-tmux-hook.sh",
+            "type" : "command"
           }
         ]
-      }
-    ],
-    "SessionEnd": [
+      },
       {
-        "hooks": [
+        "hooks" : [
           {
-            "type": "command",
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+            "command" : "\"${CLAUDE_CONFIG_DIR:-$HOME\/.claude}\/hooks\/notchi-hook.sh\"",
+            "type" : "command"
           }
         ]
       }
     ]
   },
-  "statusLine": {
-    "type": "command",
-    "command": "bash /Users/isaac/.claude/statusline-command.sh"
+  "skipDangerousModePermissionPrompt" : true,
+  "statusLine" : {
+    "command" : "bash \/Users\/isaac\/.claude\/statusline-command.sh",
+    "type" : "command"
   },
-  "enabledPlugins": {
-    "code-simplifier@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "personal@dev-files": true,
-    "holibob@dev-files": true
+  "tui" : "fullscreen",
+  "voice" : {
+    "enabled" : true,
+    "mode" : "hold"
   },
-  "extraKnownMarketplaces": {
-    "marketingskills": {
-      "source": {
-        "source": "github",
-        "repo": "coreyhaines31/marketingskills"
-      }
-    },
-    "dev-files": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/isaac/git/dev-files/.claude/marketplaces/dev-files"
-      }
-    }
-  },
-  "effortLevel": "high",
-  "tui": "fullscreen",
-  "voice": {
-    "enabled": true,
-    "mode": "hold"
-  },
-  "skipDangerousModePermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled" : true
 }
