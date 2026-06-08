@@ -20,6 +20,34 @@
       "url": "http://127.0.0.1:29979/mcp",
       "enabled": true
     },
+    "mobbin": {
+      "type": "remote",
+      "url": "https://api.mobbin.com/mcp",
+      "enabled": true
+    },
+    "linear-server": {
+      "type": "remote",
+      "url": "https://mcp.linear.app/mcp",
+      "enabled": true
+    },
+    "redshift": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "awslabs.redshift-mcp-server@latest"
+      ],
+      "environment": {
+        "AWS_PROFILE": "default",
+        "AWS_DEFAULT_REGION": "eu-west-1",
+        "FASTMCP_LOG_LEVEL": "INFO"
+      },
+      "enabled": true
+    },
+    "datadog-mcp": {
+      "type": "remote",
+      "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
+      "enabled": true
+    },
     "context7": {
       "type": "remote",
       "url": "https://mcp.context7.com/mcp",

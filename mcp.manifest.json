@@ -9,12 +9,12 @@
     "mobbin": {
       "transport": "http",
       "url": "https://api.mobbin.com/mcp",
-      "targets": ["claude-personal"]
+      "targets": ["claude-personal", "opencode"]
     },
     "linear-server": {
       "transport": "http",
       "url": "https://mcp.linear.app/mcp",
-      "targets": ["claude-personal"]
+      "targets": ["claude-personal", "opencode"]
     },
     "redshift": {
       "transport": "stdio",
@@ -25,12 +25,12 @@
         "AWS_DEFAULT_REGION": "eu-west-1",
         "FASTMCP_LOG_LEVEL": "INFO"
       },
-      "targets": ["claude-holibob"]
+      "targets": ["claude-holibob", "opencode"]
     },
     "datadog-mcp": {
       "transport": "http",
       "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
-      "targets": ["claude-holibob"]
+      "targets": ["claude-holibob", "opencode"]
     },
     "context7": {
       "transport": "http",

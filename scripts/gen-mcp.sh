@@ -41,7 +41,9 @@ OC="$HOME/.config/opencode/opencode.json"
 if [ -f "$OC" ]; then
   mcp="$(servers_for "opencode" | jq "$OPENCODE_SHAPE")"
   tmp="$(mktemp)"
-  jq --argjson mcp "$mcp" '.mcp = $mcp' "$OC" > "$tmp" && mv "$tmp" "$OC"
+  jq --argjson mcp "$mcp" '.mcp = $mcp' "$OC" > "$tmp"
+  cat "$tmp" > "$OC"   # write through the symlink — do not mv (that replaces the link)
+  rm -f "$tmp"
   echo "  merged .mcp into $OC"
 else
   echo "  skipped OpenCode (no $OC)"
