@@ -16,6 +16,11 @@
       "url": "https://mcp.linear.app/mcp",
       "targets": ["claude-personal", "opencode"]
     },
+    "posthog": {
+      "transport": "http",
+      "url": "https://mcp.posthog.com/mcp",
+      "targets": ["claude-personal", "opencode"]
+    },
     "redshift": {
       "transport": "stdio",
       "command": "uvx",
