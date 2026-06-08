@@ -25,8 +25,8 @@ LINKS=(
   "$HOME/.config/zed/keymap.json|.config/zed/keymap.json"
   "$HOME/.config/zed/tasks.json|.config/zed/tasks.json"
 
-  "$HOME/.claude/CLAUDE.md|.claude/CLAUDE.md"
-  "$HOME/.config/opencode/AGENTS.md|.claude/CLAUDE.md"
+  "$HOME/.claude/CLAUDE.md|global/AGENTS.md"
+  "$HOME/.config/opencode/AGENTS.md|global/AGENTS.md"
   "$HOME/.claude/settings.json|.claude/settings.json"
   "$HOME/.claude/scripts/implement-ticket.sh|.claude/scripts/implement-ticket.sh"
   "$HOME/.claude/scripts/implement-ticket-folder.sh|.claude/scripts/implement-ticket-folder.sh"
