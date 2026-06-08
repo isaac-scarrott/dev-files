@@ -57,17 +57,18 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
 4. **Per slice, in order:**
    - **Build** — spawn a fresh sub-agent. It implements in the shared checkout and **must
      self-test before returning**, choosing the right method for the change — the test must
-     exercise the slice's runtime behavior end-to-end, not merely compile. It returns **evidence**:
+     exercise the slice's runtime behavior end-to-end, not merely compile. Brief it that comments
+     must earn their place — a non-obvious *why*, never narration the diff makes self-evident. It returns **evidence**:
      the *raw pasted tool output* (not a summary) and why it proves the slice works. If the
-     evidence is missing, summarized, or unconvincing, re-run the command yourself or re-spawn —
-     do not proceed. (Acceptable evidence looks like the pasted request + raw response, or test
+     evidence is missing, summarized, or unconvincing, **re-spawn it and demand raw output** — don't
+     re-run the command yourself (that drags the build into your context); do not proceed. (Acceptable evidence looks like the pasted request + raw response, or test
      output, showing the new behavior — plus one line on why it proves the slice. Not "tests pass.")
    - **Simplify** — run the `simplify` skill (main thread) on the slice's diff.
    - **Review** — run `jedi-council` (main thread) on the slice's diff.
    - **Refine** — keep only real findings; if any, **spawn a fresh sub-agent** with the diff and
      the findings to fix and re-test (same evidence bar), then re-review. Stop at zero real
      findings or after **3 rounds** — then surface the remainder to the user and continue.
-   - **Commit** the slice to the ticket branch.
+   - **Commit** the slice to the ticket branch — stage only the files the slice touched, never `git add -A`.
 5. **Final gate** (main thread, full diff): `thermo-nuclear-code-quality-review` if installed, else
    `code-review` + `jedi-council`. Real findings → fresh sub-agent fix + re-test → re-run. Same
    filter and 3-round cap.
