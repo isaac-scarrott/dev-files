@@ -13,6 +13,7 @@ Before implementing:
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
+- Don't quietly retire a known-wrong thing by calling it "low-value" or "out of scope" — that reads as restraint but isn't. Fix it, or surface it and ask.
 
 ## 2. Simplicity First
 
@@ -50,6 +51,8 @@ Transform tasks into verifiable goals:
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
+
+For bugs, find what *allowed* it, not just where it surfaced. Remove the root cause when that stays surgical (§3); if removing it would mean a refactor beyond the task, surface that and ask (§1) rather than papering over the symptom.
 
 For multi-step tasks, state a brief plan:
 ```
