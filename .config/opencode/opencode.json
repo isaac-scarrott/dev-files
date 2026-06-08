@@ -47,21 +47,6 @@
       "type": "remote",
       "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
       "enabled": true
-    },
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
-      "enabled": true
-    },
-    "chrome-devtools": {
-      "type": "local",
-      "command": [
-        "pnpm",
-        "dlx",
-        "chrome-devtools-mcp@latest"
-      ],
-      "environment": {},
-      "enabled": true
     }
   }
 }

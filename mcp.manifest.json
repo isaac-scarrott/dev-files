@@ -31,17 +31,6 @@
       "transport": "http",
       "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
       "targets": ["claude-holibob", "opencode"]
-    },
-    "context7": {
-      "transport": "http",
-      "url": "https://mcp.context7.com/mcp",
-      "targets": ["opencode"]
-    },
-    "chrome-devtools": {
-      "transport": "stdio",
-      "command": "pnpm",
-      "args": ["dlx", "chrome-devtools-mcp@latest"],
-      "targets": ["opencode"]
     }
   }
 }

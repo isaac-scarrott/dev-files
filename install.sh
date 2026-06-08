@@ -61,8 +61,6 @@ LINKS=(
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
-  "$HOME/.config/opencode/command/deploy-prod.md|.claude/commands/deploy-prod.md"
-  "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
