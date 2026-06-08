@@ -44,6 +44,25 @@ LINKS=(
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
 
   "$HOME/.claude/commands/simplify.md|.claude/commands/simplify.md"
+  "$HOME/.claude/commands/commit.md|.claude/commands/commit.md"
+  "$HOME/.claude/commands/commitpr.md|.claude/commands/commitpr.md"
+
+  # OpenCode — same canonical source as Claude (skills, agent, commands)
+  "$HOME/.config/opencode/skills/grill-me|.claude/skills/grill-me"
+  "$HOME/.config/opencode/skills/grill-with-docs|.claude/skills/grill-with-docs"
+  "$HOME/.config/opencode/skills/humanizer|.claude/skills/humanizer"
+  "$HOME/.config/opencode/skills/implement-light|.claude/skills/implement-light"
+  "$HOME/.config/opencode/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
+  "$HOME/.config/opencode/skills/jedi-council|.claude/skills/jedi-council"
+  "$HOME/.config/opencode/skills/the-focus-group|.claude/skills/the-focus-group"
+  "$HOME/.config/opencode/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
+  "$HOME/.config/opencode/skills/write-a-skill|.claude/skills/write-a-skill"
+  "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
+  "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
+  "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
+  "$HOME/.config/opencode/command/deploy-prod.md|.claude/commands/deploy-prod.md"
+  "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
+  "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
 

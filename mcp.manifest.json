@@ -1,0 +1,47 @@
+{
+  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode. Do NOT put secrets here; use env substitution if ever needed.",
+  "servers": {
+    "paper": {
+      "transport": "http",
+      "url": "http://127.0.0.1:29979/mcp",
+      "targets": ["claude-personal", "opencode"]
+    },
+    "mobbin": {
+      "transport": "http",
+      "url": "https://api.mobbin.com/mcp",
+      "targets": ["claude-personal"]
+    },
+    "linear-server": {
+      "transport": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "targets": ["claude-personal"]
+    },
+    "redshift": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["awslabs.redshift-mcp-server@latest"],
+      "env": {
+        "AWS_PROFILE": "default",
+        "AWS_DEFAULT_REGION": "eu-west-1",
+        "FASTMCP_LOG_LEVEL": "INFO"
+      },
+      "targets": ["claude-holibob"]
+    },
+    "datadog-mcp": {
+      "transport": "http",
+      "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
+      "targets": ["claude-holibob"]
+    },
+    "context7": {
+      "transport": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "targets": ["opencode"]
+    },
+    "chrome-devtools": {
+      "transport": "stdio",
+      "command": "pnpm",
+      "args": ["dlx", "chrome-devtools-mcp@latest"],
+      "targets": ["opencode"]
+    }
+  }
+}

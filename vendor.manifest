@@ -19,6 +19,3 @@ mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE
 
 # cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
 cursor/plugins main cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md .claude/skills/thermo-nuclear-code-quality-review/SKILL.md
-
-# anthropics/claude-plugins-official — agents
-anthropics/claude-plugins-official main plugins/code-simplifier/agents/code-simplifier.md .claude/agents/code-simplifier.md

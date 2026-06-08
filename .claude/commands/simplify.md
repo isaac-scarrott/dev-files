@@ -2,7 +2,7 @@
 description: Run the code-simplifier sub-agent on recently modified code.
 ---
 
-Spawn the `code-simplifier` sub-agent via the Agent tool to simplify and refine the code that has been modified in this session.
+Spawn the `code-simplifier` sub-agent to simplify and refine the code that has been modified in this session.
 
 Scope:
 - If the user passes arguments after `/simplify`, treat them as scope (e.g. specific files, a directory, or "the whole diff").

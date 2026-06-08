@@ -8,9 +8,9 @@ These aren't a checklist — they're what makes a panel actually work. Break one
 
 **Independence.** Three lenses that all react to the same baked-in framing are one voice in three hats, not three independent voices. The cast is only as strong as its actually-distinct angles. If two roles could be the same person, one of them isn't earning its slot.
 
-**Parallel dispatch.** All sub-agents in a single message via the Agent tool (`subagent_type: general-purpose`). Sequential dispatches let each agent see the previous one's output and the panel collapses to consensus. Parallel preserves independence.
+**Parallel dispatch.** Spawn all sub-agents in parallel — one per lens, dispatched together, not sequentially — using whatever subagent mechanism your environment provides. Sequential dispatch lets each agent see the previous one's output and the panel collapses to consensus; parallel preserves independence.
 
-If the Agent tool is unavailable in the current environment, stop and tell the user. Silently role-playing the panel in-context defeats the purpose — explicitly flagged as a failure mode.
+If your environment has no way to dispatch independent sub-agents, stop and tell the user. Silently role-playing the panel in-context defeats the purpose — explicitly flagged as a failure mode.
 
 **Honest synthesis.** Convergence is meaningful only if the lenses were independent. A 3/5 finding on a baked-in premise is one finding three voices repeated. A 1/5 finding from the only lens scoped to catch it can be load-bearing — flag sole-owner findings and don't dismiss them on count alone.
 
