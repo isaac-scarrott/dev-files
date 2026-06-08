@@ -21,8 +21,8 @@ CLAUDE_SHAPE='map_values(
 
 # OpenCode mcp shape: http -> remote; stdio -> local (command as array, env -> environment)
 OPENCODE_SHAPE='map_values(
-  if .transport == "http" then {type:"remote", url:.url, enabled:true}
-  else {type:"local", command:([.command] + (.args // [])), environment:(.env // {}), enabled:true} end)'
+  if .transport == "http" then {type:"remote", url:.url}
+  else {type:"local", command:([.command] + (.args // [])), environment:(.env // {})} end)'
 
 servers_for() { # <target>
   jq --arg t "$1" '.servers | with_entries(select(.value.targets | index($t)))' "$MANIFEST"
