@@ -1,24 +1,118 @@
 {
-  "effortLevel" : "high",
-  "enabledPlugins" : {
-    "code-simplifier@claude-plugins-official" : true,
-    "figma@claude-plugins-official" : false,
-    "typescript-lsp@claude-plugins-official" : true
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ]
   },
-  "extraKnownMarketplaces" : {
-    "marketingskills" : {
-      "source" : {
-        "repo" : "coreyhaines31/marketingskills",
-        "source" : "github"
+  "statusLine": {
+    "type": "command",
+    "command": "bash /Users/isaac/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "code-simplifier@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "personal@dev-files": true,
+    "holibob@dev-files": true
+  },
+  "extraKnownMarketplaces": {
+    "marketingskills": {
+      "source": {
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
+      }
+    },
+    "dev-files": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/isaac/git/dev-files/.claude/marketplaces/dev-files"
       }
     }
   },
-  "hooks" : {},
-  "skipDangerousModePermissionPrompt" : true,
-  "tui" : "fullscreen",
-  "voice" : {
-    "enabled" : true,
-    "mode" : "hold"
+  "effortLevel": "high",
+  "tui": "fullscreen",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
   },
-  "voiceEnabled" : true
+  "skipDangerousModePermissionPrompt": true,
+  "voiceEnabled": true
 }

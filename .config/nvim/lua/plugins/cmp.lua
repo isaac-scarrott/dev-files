@@ -6,7 +6,7 @@ return {
   opts = {
     snippets = { preset = "luasnip" },
     sources = {
-      default = { "lsp", "luasnip", "path", "buffer" },
+      default = { "lsp", "snippets", "path", "buffer" },
     },
     completion = {
       list = { selection = { preselect = false, auto_insert = false } },

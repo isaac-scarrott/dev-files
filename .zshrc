@@ -7,6 +7,9 @@ source $ZSH/oh-my-zsh.sh
 alias vim="nvim"
 alias vi="nvim"
 
+# claudewho shortcuts (plain `claude` is the `use` default = work)
+alias claude-personal="claudewho-personal"
+
 export_credential() {
   # The first parameter is the credential ID in 1Password
   local cred_id="$1"
