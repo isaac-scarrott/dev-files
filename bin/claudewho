@@ -1,0 +1,974 @@
+#!/bin/bash
+# Vendored from https://github.com/frisble/claudewho/blob/main/bin/claudewho
+# Pinned commit: 8e640a311642a2eca5aa1d3e7943471699492fa4 (2026-04-15)
+#
+# This is a hand-audited, frozen copy — deliberately NOT fetched at install
+# time via vendor.manifest — because we do not trust upstream to stay safe.
+# Freezing here means a malicious or compromised upstream cannot push code
+# onto this machine without us noticing in a diff.
+#
+# Before bumping the pin: re-read the diff against the pinned SHA and audit
+# for changes to filesystem writes, $PATH wrappers, `rm -rf`, `eval`, network
+# calls, and especially the `claude` wrapper installed at ~/.local/bin/claude.
+#
+# LOCAL PATCHES (deliberate divergence from upstream):
+#   - create_claude_wrapper: the generated ~/.local/bin/claude only sets
+#     CLAUDE_CONFIG_DIR when the caller hasn't already set it. Upstream
+#     overwrites unconditionally, which breaks `claudewho-<name>` once a
+#     `use` default exists (the per-account wrappers exec claude after
+#     exporting CLAUDE_CONFIG_DIR, and the use-wrapper clobbers it back to
+#     the default). Marked inline below with "# dev-files patch".
+
+set -euo pipefail
+
+VERSION="2.2.0"
+CONFIG_FILE="${CLAUDEWHO_CONFIG:-$HOME/.claudewho.conf}"
+CONFIG_DIR_PREFIX="$HOME/.claudewho-"
+WRAPPER_DIR="$HOME/.local/bin"
+CURRENT_ACCOUNT_FILE="$HOME/.claudewho-current-account"
+
+# Colors (disabled if not a terminal)
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    BLUE='\033[0;34m'
+    MAGENTA='\033[0;35m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    DIM='\033[2m'
+    NC='\033[0m'
+    # Claude orange #C15F3C
+    ORANGE='\033[38;2;193;95;60m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    MAGENTA=''
+    CYAN=''
+    BOLD=''
+    DIM=''
+    NC=''
+    ORANGE=''
+fi
+
+# Ensure config file exists
+touch_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        touch "$CONFIG_FILE"
+    fi
+}
+
+# Get all registered accounts
+get_accounts() {
+    touch_config
+    cat "$CONFIG_FILE" 2>/dev/null | grep -v '^$' | sort -u || true
+}
+
+# Check if account exists in config
+account_exists() {
+    local name="$1"
+    get_accounts | grep -qx "$name"
+}
+
+# Validate account name
+validate_name() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        echo -e "${RED}Error:${NC} Invalid account name '$name'"
+        echo "Names must be lowercase, start with a letter/number, and contain only letters, numbers, and hyphens."
+        exit 1
+    fi
+    if [[ ${#name} -gt 50 ]]; then
+        echo -e "${RED}Error:${NC} Account name too long (max 50 characters)"
+        exit 1
+    fi
+}
+
+# Check if ~/.local/bin is in PATH
+check_path() {
+    if [[ ":$PATH:" != *":$WRAPPER_DIR:"* ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Create wrapper script for an account
+create_wrapper() {
+    local name="$1"
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
+
+    # Ensure wrapper directory exists
+    mkdir -p "$WRAPPER_DIR"
+
+    # Create the wrapper script
+    cat > "$wrapper_path" << EOF
+#!/bin/bash
+export CLAUDE_CONFIG_DIR="$dir"
+exec claude "\$@"
+EOF
+
+    chmod +x "$wrapper_path"
+}
+
+# Remove wrapper script for an account
+remove_wrapper() {
+    local name="$1"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
+
+    if [[ -f "$wrapper_path" ]]; then
+        rm -f "$wrapper_path"
+    fi
+}
+
+# Create IDE wrapper that follows current account (dynamic)
+create_ide_wrapper() {
+    local wrapper_path="${WRAPPER_DIR}/claudewho-ide"
+
+    mkdir -p "$WRAPPER_DIR"
+
+    cat > "$wrapper_path" << 'WRAPPER_EOF'
+#!/bin/bash
+# Claude IDE wrapper - managed by claudewho
+# Used as claude-code.claudeProcessWrapper in VSCode
+# Follows the current account set by: claudewho use <name>
+
+CURRENT_ACCOUNT_FILE="$HOME/.claudewho-current-account"
+CONFIG_DIR_PREFIX="$HOME/.claudewho-"
+
+if [[ -f "$CURRENT_ACCOUNT_FILE" ]]; then
+    account=$(cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null)
+    if [[ -n "$account" ]]; then
+        export CLAUDE_CONFIG_DIR="${CONFIG_DIR_PREFIX}${account}"
+    fi
+fi
+
+exec "$@"
+WRAPPER_EOF
+
+    chmod +x "$wrapper_path"
+}
+
+# Create IDE wrapper for a specific account (static)
+create_ide_account_wrapper() {
+    local name="$1"
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-ide-${name}"
+
+    mkdir -p "$WRAPPER_DIR"
+
+    cat > "$wrapper_path" << EOF
+#!/bin/bash
+# Claude IDE wrapper for account '$name' - managed by claudewho
+# Used as claude-code.claudeProcessWrapper in VSCode
+export CLAUDE_CONFIG_DIR="$dir"
+exec "\$@"
+EOF
+
+    chmod +x "$wrapper_path"
+}
+
+# Remove IDE wrapper for an account
+remove_ide_account_wrapper() {
+    local name="$1"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-ide-${name}"
+
+    if [[ -f "$wrapper_path" ]]; then
+        rm -f "$wrapper_path"
+    fi
+}
+
+# Get current account name
+get_current_account() {
+    if [[ -f "$CURRENT_ACCOUNT_FILE" ]]; then
+        cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null || true
+    fi
+}
+
+# Create/update the main claude wrapper
+create_claude_wrapper() {
+    local wrapper_path="${WRAPPER_DIR}/claude"
+
+    mkdir -p "$WRAPPER_DIR"
+
+    cat > "$wrapper_path" << 'WRAPPER_EOF'
+#!/bin/bash
+# Claude wrapper - managed by claudewho
+# This wrapper allows switching accounts with: claudewho use <name>
+
+CURRENT_ACCOUNT_FILE="$HOME/.claudewho-current-account"
+CONFIG_DIR_PREFIX="$HOME/.claudewho-"
+WRAPPER_DIR="$HOME/.local/bin"
+
+# Find the real claude binary (skip our wrapper)
+find_real_claude() {
+    # First check known Claude installation locations
+    local versions_dir="$HOME/.local/share/claude/versions"
+    if [[ -d "$versions_dir" ]]; then
+        # Find the largest file (real binary, not wrapper scripts)
+        local real_binary
+        real_binary=$(find "$versions_dir" -type f -size +1M | sort -V | tail -1)
+        if [[ -n "$real_binary" && -x "$real_binary" ]]; then
+            echo "$real_binary"
+            return 0
+        fi
+    fi
+
+    # Fallback: search PATH for claude binary (skip wrapper directory)
+    local IFS=':'
+    for dir in $PATH; do
+        [[ "$dir" == "$WRAPPER_DIR" ]] && continue
+        if [[ -x "$dir/claude" ]]; then
+            echo "$dir/claude"
+            return 0
+        fi
+    done
+
+    # No real claude found - error instead of infinite loop
+    echo "Error: Could not find real Claude binary." >&2
+    echo "Expected locations:" >&2
+    echo "  - ~/.local/share/claude/versions/" >&2
+    echo "  - /usr/local/bin/claude" >&2
+    echo "  - /opt/homebrew/bin/claude" >&2
+    exit 1
+}
+
+# Check for current account
+# dev-files patch: only apply the default if caller hasn't set CLAUDE_CONFIG_DIR.
+# Lets `claudewho-<name>` wrappers win over the `use` default.
+if [[ -z "${CLAUDE_CONFIG_DIR:-}" && -f "$CURRENT_ACCOUNT_FILE" ]]; then
+    account=$(cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null)
+    if [[ -n "$account" ]]; then
+        export CLAUDE_CONFIG_DIR="${CONFIG_DIR_PREFIX}${account}"
+    fi
+fi
+
+# Find and exec real claude
+real_claude=$(find_real_claude)
+exec "$real_claude" "$@"
+WRAPPER_EOF
+
+    chmod +x "$wrapper_path"
+}
+
+# Show banner
+show_banner() {
+    echo ""
+    echo -e "${ORANGE}   ____ _        _   _   _ ____  _______        ___   _  ___  ${NC}"
+    echo -e "${ORANGE}  / ___| |      / \\ | | | |  _ \\| ____\\ \\      / / | | |/ _ \\ ${NC}"
+    echo -e "${ORANGE} | |   | |     / _ \\| | | | | | |  _|  \\ \\ /\\ / /| |_| | | | |${NC}"
+    echo -e "${ORANGE} | |___| |___ / ___ \\ |_| | |_| | |___  \\ V  V / |  _  | |_| |${NC}"
+    echo -e "${ORANGE}  \\____|_____/_/   \\_\\___/|____/|_____|  \\_/\\_/  |_| |_|\\___/ ${NC}"
+    echo ""
+}
+
+# Show usage
+usage() {
+    show_banner
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "    claudewho <command> [arguments]"
+    echo ""
+    echo -e "${BOLD}COMMANDS:${NC}"
+    echo "    list                List all configured accounts"
+    echo "    add <name> [-m]     Create a new account configuration"
+    echo "    migrate <name>      Migrate settings and projects from ~/.claude"
+    echo "    remove <name>       Remove an account (with confirmation)"
+    echo "    use <name>          Switch to an account"
+    echo "    ide-setup           Configure IDE integration (VSCode)"
+    echo "    shell-init          Print shell aliases (alternative to wrapper scripts)"
+    echo "    version             Show version information"
+    echo "    help                Show this help message"
+    echo ""
+    echo -e "${BOLD}OPTIONS (add):${NC}"
+    echo "    -m, --migrate       Also run migration after creating the account"
+    echo ""
+    echo -e "${BOLD}QUICK START:${NC}"
+    echo "    claudewho add work       # Creates 'work' account"
+    echo "    claudewho-work           # Launch Claude with 'work' account"
+    echo "    claudewho use work       # Switch default account"
+    echo "    claude                   # Uses current account"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "    claudewho add work"
+    echo "    claudewho add personal"
+    echo "    claudewho list"
+    echo "    claudewho-work"
+    echo "    claudewho-personal"
+    echo ""
+    echo -e "${BOLD}VERSION:${NC}"
+    echo "    $VERSION"
+}
+
+# List all accounts
+list_accounts() {
+    local accounts
+    accounts=$(get_accounts)
+    local current
+    current=$(get_current_account)
+
+    if [[ -z "$accounts" ]]; then
+        echo -e "${YELLOW}No accounts configured.${NC}"
+        echo ""
+        echo "Create one with:"
+        echo "    claudewho add <name>"
+        return 0
+    fi
+
+    echo -e "${BOLD}Configured Claude accounts:${NC}"
+    echo ""
+
+    while IFS= read -r name; do
+        local dir="${CONFIG_DIR_PREFIX}${name}"
+        local status
+        local marker=""
+
+        # Mark current account
+        if [[ "$name" == "$current" ]]; then
+            marker="${GREEN}*${NC} "
+        else
+            marker="  "
+        fi
+
+        if [[ -d "$dir" ]]; then
+            # Check if authenticated by looking for credentials
+            if [[ -f "$dir/.claude.json" ]] || [[ -f "$dir/.credentials.json" ]] || [[ -f "$dir/credentials.json" ]]; then
+                status="${GREEN}authenticated${NC}"
+            else
+                status="${YELLOW}not authenticated${NC}"
+            fi
+        else
+            status="${RED}directory missing${NC}"
+        fi
+
+        printf "${marker}${BLUE}%-20s${NC} %-30s (%b)\n" "$name" "$dir" "$status"
+    done <<< "$accounts"
+
+    echo ""
+    if [[ -n "$current" ]]; then
+        echo -e "${GREEN}*${NC} = current account"
+        echo ""
+    fi
+    echo -e "Switch with ${BOLD}claudewho use <name>${NC}"
+}
+
+# Convert a project directory name to a display-friendly path
+# e.g. "-Users-leolobato-Documents-Projetos-Cliq-Signos-foo" → "Documents/Projetos/Cliq/Signos/foo"
+project_display_path() {
+    local dirname="$1"
+    local path
+    path=$(echo "$dirname" | sed 's/^-/\//' | tr '-' '/')
+    # Strip home directory prefix
+    path="${path#"$HOME"/}"
+    echo "$path"
+}
+
+# Get the group key (first 4 path segments) for a project directory name
+project_group_key() {
+    local dirname="$1"
+    local display
+    display=$(project_display_path "$dirname")
+    echo "$display" | awk -F'/' '{
+        n = NF < 4 ? NF : 4
+        for (i = 1; i <= n; i++) {
+            if (i > 1) printf "/"
+            printf "%s", $i
+        }
+        print ""
+    }'
+}
+
+# Find the longest common directory prefix from lines on stdin
+find_common_prefix() {
+    local prefix=""
+    local first="true"
+    while IFS= read -r line; do
+        if [[ "$first" == "true" ]]; then
+            prefix="$line"
+            first="false"
+        else
+            # Narrow prefix character by character
+            local i=0
+            local len=${#prefix}
+            [[ ${#line} -lt $len ]] && len=${#line}
+            while [[ $i -lt $len ]] && [[ "${prefix:$i:1}" == "${line:$i:1}" ]]; do
+                ((i++))
+            done
+            prefix="${prefix:0:$i}"
+        fi
+    done
+    # Trim to last / boundary so we strip whole segments
+    if [[ "$prefix" == */* ]]; then
+        prefix="${prefix%/*}/"
+    else
+        prefix=""
+    fi
+    echo "$prefix"
+}
+
+# Interactive project group selector and copier
+# Args: $1 = source_dir (e.g. ~/.claude), $2 = target_dir (e.g. ~/.claudewho-work)
+select_and_copy_projects() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local projects_dir="$source_dir/projects"
+
+    if [[ ! -d "$projects_dir" ]]; then
+        return 0
+    fi
+
+    # Collect all project directory names
+    local all_dirs=()
+    for d in "$projects_dir"/*/; do
+        [[ -d "$d" ]] || continue
+        all_dirs+=("$(basename "$d")")
+    done
+
+    if [[ ${#all_dirs[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Build sorted group keys with counts (parallel indexed arrays, Bash 3 compatible)
+    local sorted_keys=()
+    local group_counts=()
+    while read -r count key; do
+        sorted_keys+=("$key")
+        group_counts+=("$count")
+    done < <(
+        for dirname in "${all_dirs[@]}"; do
+            project_group_key "$dirname"
+        done | sort | uniq -c | sed 's/^ *//'
+    )
+
+    # Find common prefix for shorter display
+    local common_prefix
+    common_prefix=$(printf '%s\n' "${sorted_keys[@]}" | find_common_prefix)
+
+    # Build display labels (strip common prefix)
+    local display_labels=()
+    for key in "${sorted_keys[@]}"; do
+        display_labels+=("${key#"$common_prefix"}")
+    done
+
+    # Selection state (0 = unselected, 1 = selected)
+    local selected=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        selected+=(0)
+    done
+
+    local total=${#all_dirs[@]}
+
+    # Interactive loop
+    while true; do
+        echo ""
+        echo -e "${BOLD}Select project groups to migrate${NC} ($total projects in $projects_dir/):"
+        echo ""
+        for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+            local check=" "
+            [[ "${selected[$i]}" -eq 1 ]] && check="x"
+            local count=${group_counts[$i]}
+            local label="${display_labels[$i]}"
+            local unit="projects"
+            [[ "$count" -eq 1 ]] && unit="project"
+            printf "  %2d. [%s] %s (%d %s)\n" "$((i+1))" "$check" "$label" "$count" "$unit"
+        done
+        echo ""
+        echo -e "Toggle: ${BOLD}1-${#sorted_keys[@]}${NC} (comma-separated), ${BOLD}a${NC}=all, ${BOLD}n${NC}=none, ${BOLD}d${NC}=done"
+
+        read -rp "> " input
+
+        # Handle special commands
+        case "$input" in
+            d|D)
+                break
+                ;;
+            a|A)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=1
+                done
+                continue
+                ;;
+            n|N)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=0
+                done
+                continue
+                ;;
+            "")
+                continue
+                ;;
+        esac
+
+        # Handle comma-separated numbers and individual numbers
+        IFS=',' read -ra tokens <<< "$input"
+        for token in "${tokens[@]}"; do
+            # Trim whitespace
+            token=$(echo "$token" | tr -d ' ')
+            if [[ "$token" =~ ^[0-9]+$ ]] && [[ "$token" -ge 1 ]] && [[ "$token" -le ${#sorted_keys[@]} ]]; then
+                local idx=$((token - 1))
+                if [[ "${selected[$idx]}" -eq 0 ]]; then
+                    selected[$idx]=1
+                else
+                    selected[$idx]=0
+                fi
+            fi
+        done
+    done
+
+    # Collect selected group keys
+    local selected_keys=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        if [[ "${selected[$i]}" -eq 1 ]]; then
+            selected_keys+=("${sorted_keys[$i]}")
+        fi
+    done
+
+    if [[ ${#selected_keys[@]} -eq 0 ]]; then
+        echo -e "  ${DIM}No project groups selected${NC}"
+        return 0
+    fi
+
+    # Copy matching projects
+    mkdir -p "$target_dir/projects"
+    local copied=0
+    local skipped=0
+    for dirname in "${all_dirs[@]}"; do
+        local key
+        key=$(project_group_key "$dirname")
+        local match="false"
+        for sel_key in "${selected_keys[@]}"; do
+            if [[ "$key" == "$sel_key" ]]; then
+                match="true"
+                break
+            fi
+        done
+        if [[ "$match" == "true" ]]; then
+            if [[ -d "$target_dir/projects/$dirname" ]]; then
+                ((skipped++))
+            else
+                cp -R "$projects_dir/$dirname" "$target_dir/projects/$dirname"
+                ((copied++))
+            fi
+        fi
+    done
+
+    if [[ $copied -gt 0 ]]; then
+        echo -e "  ${GREEN}Copied${NC} projects/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+    elif [[ $skipped -gt 0 ]]; then
+        echo -e "  ${YELLOW}Skipped${NC} projects/ ($skipped already exist)"
+    fi
+}
+
+# Migrate configuration from default .claude directory
+migrate_default_config() {
+    local target_dir="$1"
+    local source_dir="$HOME/.claude"
+
+    if [[ ! -d "$source_dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Default Claude directory ($source_dir) not found. Skipping migration."
+        return 0
+    fi
+
+    echo -e "${BOLD}Migrating from${NC} $source_dir..."
+    echo ""
+
+    # Configuration files (skip existing)
+    for file in CLAUDE.md settings.json settings.local.json; do
+        if [[ -f "$source_dir/$file" ]]; then
+            if [[ -f "$target_dir/$file" ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $file (already exists)"
+            else
+                cp "$source_dir/$file" "$target_dir/$file"
+                echo -e "  ${GREEN}Copied${NC} $file"
+            fi
+        fi
+    done
+
+    # Directories (copy contents, skip existing entries)
+    for dir_name in skills plugins todos tasks; do
+        if [[ -d "$source_dir/$dir_name" ]]; then
+            mkdir -p "$target_dir/$dir_name"
+            local copied=0
+            local skipped=0
+            for entry in "$source_dir/$dir_name"/*; do
+                [[ -e "$entry" ]] || continue
+                local entry_name
+                entry_name=$(basename "$entry")
+                if [[ -e "$target_dir/$dir_name/$entry_name" ]]; then
+                    ((skipped++))
+                else
+                    cp -R "$entry" "$target_dir/$dir_name/$entry_name"
+                    ((copied++))
+                fi
+            done
+            if [[ $copied -gt 0 ]]; then
+                echo -e "  ${GREEN}Copied${NC} $dir_name/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+            elif [[ $skipped -gt 0 ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $dir_name/ ($skipped already exist)"
+            fi
+        fi
+    done
+
+    # Projects (interactive selection)
+    select_and_copy_projects "$source_dir" "$target_dir"
+}
+
+# Add a new account
+add_account() {
+    local name=""
+    local migrate="false"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --migrate|-m)
+                migrate="true"
+                shift
+                ;;
+            -*)
+                echo -e "${RED}Error:${NC} Unknown option '$1'"
+                echo "Usage: claudewho add <name> [--migrate]"
+                exit 1
+                ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error:${NC} Unexpected argument '$1'"
+                    echo "Usage: claudewho add <name> [--migrate]"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho add <name> [--migrate]"
+        exit 1
+    fi
+
+    validate_name "$name"
+
+    if account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' already exists"
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ -d "$dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Directory $dir already exists"
+        read -rp "Register this existing directory as account '$name'? [y/N] " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+    else
+        mkdir -p "$dir"
+        echo -e "${GREEN}Created${NC} $dir"
+    fi
+
+    # Register the account
+    touch_config
+    echo "$name" >> "$CONFIG_FILE"
+
+    # Create wrapper scripts
+    create_wrapper "$name"
+    create_ide_account_wrapper "$name"
+    echo -e "${GREEN}Created${NC} ${WRAPPER_DIR}/claudewho-${name}"
+
+    echo -e "${GREEN}Account '$name' added successfully!${NC}"
+    echo ""
+
+    # Check if ~/.local/bin is in PATH
+    if ! check_path; then
+        echo -e "${YELLOW}Note:${NC} Add ~/.local/bin to your PATH (one-time setup):"
+        echo "    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+        echo ""
+    fi
+
+    echo "Launch Claude with this account:"
+    echo "    claudewho-${name}"
+
+    # Run migration if requested, otherwise show tip
+    if [[ "$migrate" == "true" ]]; then
+        echo ""
+        migrate_default_config "$dir"
+    else
+        echo ""
+        echo -e "${DIM}Tip: Run 'claudewho migrate ${name}' to copy settings and projects from ~/.claude${NC}"
+    fi
+}
+
+# Remove an account
+remove_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho remove <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claudewho list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    echo -e "${YELLOW}Warning:${NC} This will remove account '$name'"
+    if [[ -d "$dir" ]]; then
+        echo "  Directory: $dir (will be deleted)"
+    fi
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
+    if [[ -f "$wrapper_path" ]]; then
+        echo "  Command: $wrapper_path (will be deleted)"
+    fi
+    echo ""
+    read -rp "Are you sure? [y/N] " confirm
+
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+    # Remove directory if it exists
+    if [[ -d "$dir" ]]; then
+        rm -rf "$dir"
+        echo -e "${GREEN}Removed${NC} $dir"
+    fi
+
+    # Remove wrapper scripts
+    remove_wrapper "$name"
+    remove_ide_account_wrapper "$name"
+    echo -e "${GREEN}Removed${NC} ${WRAPPER_DIR}/claudewho-${name}"
+
+    # Remove from config (create temp file without the account)
+    local tmp_file
+    tmp_file=$(mktemp)
+    grep -vx "$name" "$CONFIG_FILE" > "$tmp_file" || true
+    mv "$tmp_file" "$CONFIG_FILE"
+
+    echo -e "${GREEN}Account '$name' removed successfully!${NC}"
+}
+
+# Switch to an account
+use_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho use <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claudewho list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ ! -d "$dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Creating missing directory $dir"
+        mkdir -p "$dir"
+    fi
+
+    # Ensure wrappers exist
+    create_claude_wrapper
+    create_ide_wrapper
+
+    # Save current account
+    echo "$name" > "$CURRENT_ACCOUNT_FILE"
+
+    echo -e "${GREEN}Switched to${NC} ${BLUE}$name${NC}"
+    echo -e "Now using: $dir"
+}
+
+# IDE integration setup
+ide_setup() {
+    local target_account=""
+
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --account|-a)
+                target_account="${2:-}"
+                if [[ -z "$target_account" ]]; then
+                    echo -e "${RED}Error:${NC} --account requires a name"
+                    exit 1
+                fi
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Error:${NC} Unknown option '$1'"
+                echo "Usage: claudewho ide-setup [--account <name>]"
+                exit 1
+                ;;
+        esac
+    done
+
+    local accounts
+    accounts=$(get_accounts)
+
+    if [[ -z "$accounts" ]]; then
+        echo -e "${YELLOW}No accounts configured.${NC}"
+        echo "Create one first with: claudewho add <name>"
+        return 0
+    fi
+
+    # Validate target account if specified
+    if [[ -n "$target_account" ]]; then
+        if ! account_exists "$target_account"; then
+            echo -e "${RED}Error:${NC} Account '$target_account' not found"
+            echo "Run 'claudewho list' to see available accounts."
+            exit 1
+        fi
+    fi
+
+    # Ensure all wrappers exist
+    create_ide_wrapper
+    while IFS= read -r name; do
+        create_ide_account_wrapper "$name"
+    done <<< "$accounts"
+
+    local current
+    current=$(get_current_account)
+
+    if [[ -n "$target_account" ]]; then
+        # Show config for a specific account
+        echo -e "${BOLD}IDE setup for account '${BLUE}${target_account}${NC}${BOLD}':${NC}"
+        echo ""
+        echo "  Add to your VSCode settings.json:"
+        echo ""
+        echo -e "    ${CYAN}\"claude-code.claudeProcessWrapper\": \"${WRAPPER_DIR}/claudewho-ide-${target_account}\"${NC}"
+        echo ""
+        echo "  For workspace-specific config, add to .vscode/settings.json instead."
+    else
+        # Show full instructions
+        echo -e "${BOLD}IDE Integration Setup${NC}"
+        echo ""
+        echo -e "${BOLD}Option 1:${NC} Follow current account ${DIM}(all IDE windows share one account)${NC}"
+        echo ""
+        echo -e "  Add to your VSCode settings.json (${BOLD}Cmd+Shift+P${NC} > \"Open Settings (JSON)\"):"
+        echo ""
+        echo -e "    ${CYAN}\"claude-code.claudeProcessWrapper\": \"${WRAPPER_DIR}/claudewho-ide\"${NC}"
+        echo ""
+        echo "  Then switch accounts with: claudewho use <name>"
+        if [[ -n "$current" ]]; then
+            echo -e "  Current account: ${GREEN}${current}${NC}"
+        fi
+        echo ""
+        echo -e "${BOLD}Option 2:${NC} Fixed account per workspace ${DIM}(supports parallel accounts)${NC}"
+        echo ""
+        echo "  Add to your workspace .vscode/settings.json:"
+        echo ""
+        echo -e "    ${CYAN}\"claude-code.claudeProcessWrapper\": \"${WRAPPER_DIR}/claudewho-ide-<name>\"${NC}"
+        echo ""
+        echo "  Available per-account wrappers:"
+        while IFS= read -r name; do
+            local marker=""
+            if [[ "$name" == "$current" ]]; then
+                marker=" ${GREEN}(current)${NC}"
+            fi
+            echo -e "    ${BLUE}${WRAPPER_DIR}/claudewho-ide-${name}${NC}${marker}"
+        done <<< "$accounts"
+    fi
+    echo ""
+}
+
+# Print shell initialization (aliases)
+shell_init() {
+    local accounts
+    accounts=$(get_accounts)
+
+    echo "# Claude Account Aliases (managed by claudewho)"
+    echo "# Generated by: claudewho shell-init"
+    echo ""
+
+    if [[ -z "$accounts" ]]; then
+        echo "# No accounts configured yet."
+        echo "# Run 'claudewho add <name>' to create one."
+        return 0
+    fi
+
+    while IFS= read -r name; do
+        local dir="${CONFIG_DIR_PREFIX}${name}"
+        echo "alias $name=\"CLAUDE_CONFIG_DIR='$dir' claude\""
+    done <<< "$accounts"
+}
+
+# Migrate configuration to an existing account
+migrate_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho migrate <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claudewho list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ ! -d "$dir" ]]; then
+        echo -e "${RED}Error:${NC} Account directory $dir is missing"
+        exit 1
+    fi
+
+    migrate_default_config "$dir"
+}
+
+# Main command router
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        list|ls)
+            list_accounts
+            ;;
+        add|create|new)
+            add_account "$@"
+            ;;
+        migrate)
+            migrate_account "$@"
+            ;;
+        remove|delete|rm)
+            remove_account "$@"
+            ;;
+        use|run|launch)
+            use_account "$@"
+            ;;
+        ide-setup|ide|vscode-setup)
+            ide_setup "$@"
+            ;;
+        shell-init|init|aliases)
+            shell_init
+            ;;
+        version|-v|--version)
+            echo "claudewho $VERSION"
+            ;;
+        help|-h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error:${NC} Unknown command '$cmd'"
+            echo "Run 'claudewho help' for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

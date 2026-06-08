@@ -1,0 +1,19 @@
+{
+  "name": "dev-files",
+  "description": "Personal Claude customizations sourced from the dev-files dotfiles repo.",
+  "owner": {
+    "name": "Isaac Scarrott"
+  },
+  "plugins": [
+    {
+      "name": "personal",
+      "description": "Personal MCP server registrations (paper, mobbin).",
+      "source": "./plugins/personal"
+    },
+    {
+      "name": "holibob",
+      "description": "Holibob/work MCP server registrations (redshift).",
+      "source": "./plugins/holibob"
+    }
+  ]
+}

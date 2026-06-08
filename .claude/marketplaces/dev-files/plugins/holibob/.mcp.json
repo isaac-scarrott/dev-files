@@ -1,0 +1,16 @@
+{
+  "redshift": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": ["awslabs.redshift-mcp-server@latest"],
+    "env": {
+      "AWS_PROFILE": "default",
+      "AWS_DEFAULT_REGION": "eu-west-1",
+      "FASTMCP_LOG_LEVEL": "INFO"
+    }
+  },
+  "datadog-mcp": {
+    "type": "http",
+    "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp"
+  }
+}
