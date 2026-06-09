@@ -1,0 +1,78 @@
+/* ArchMap runtime styles — the house style for every map. See RUNTIME.md.
+   Shift --accent for a deliberate mood; keep the roles, contrast, and one-accent discipline. */
+:root{
+  --ground:#fafaf9; --surface:#ffffff; --ink:#0f172a; --muted:#64748b;
+  --line:#e3e6ef;   --edge:#94a3b8;    --accent:#4338ca; --accent-soft:#eef0fb; --demote:#cbd5e1;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+.am-wrap{max-width:1160px;margin:0 auto;padding:40px 32px 96px}
+.am-kicker{font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+.am-title{font-size:30px;font-weight:600;letter-spacing:-.02em;margin:6px 0 4px}
+.am-sub{color:var(--muted);font-size:14.5px;max-width:680px}
+/* breadcrumb */
+.am-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;margin:22px 0 18px;min-height:18px}
+.am-crumbs button{background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font:inherit;font-weight:600}
+.am-crumbs button:hover{text-decoration:underline}
+.am-crumbs .am-sep{color:var(--demote)}
+.am-crumbs .am-here{color:var(--muted);font-weight:600}
+/* focus header (when inside a part) */
+.am-focus{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:22px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.am-focus .am-kind{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.am-focus h2{font-size:20px;font-weight:600;letter-spacing:-.01em;margin:5px 0 0;overflow-wrap:anywhere}
+.am-focus .am-detail{color:var(--muted);font-size:14px;margin:10px 0 0}
+.am-focus .am-files{margin-top:12px;display:flex;flex-direction:column;gap:3px}
+.am-focus .am-files code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#475569;background:#f1f4fa;border:1px solid #e6eaf3;border-radius:6px;padding:3px 7px;word-break:break-all}
+.am-hint{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--demote);margin:0 0 14px}
+/* stage + cards */
+.am-stage{position:relative;width:100%}
+.am-card{position:absolute;width:210px;display:flex;flex-direction:column;gap:6px;padding:14px 15px;background:var(--surface);
+  border:1px solid var(--line);border-radius:13px;box-shadow:0 1px 2px rgba(15,23,42,.05);cursor:pointer;text-align:left;
+  font:inherit;color:inherit;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;z-index:2}
+.am-card:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(15,23,42,.10);border-color:#c7d0e6}
+.am-card.am-primary{border-color:var(--accent)}
+.am-card.am-demote{border-style:dashed;border-color:var(--demote);background:#fbfbfc;opacity:.85;cursor:default}
+.am-card .am-kind{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.am-card.am-primary .am-kind{color:var(--accent)}
+.am-card .am-name{font-size:16px;font-weight:600;letter-spacing:-.01em;line-height:1.25;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.am-card .am-resp{font-size:12.5px;color:var(--muted);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.am-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:1px}
+.am-chip{font-size:10px;font-weight:500;color:var(--muted);background:#f1f4fa;border-radius:5px;padding:2px 6px}
+.am-more{font-size:11.5px;font-weight:600;color:var(--accent);margin-top:1px}
+.am-file{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* lane / layer bands */
+.am-band-label{position:absolute;left:0;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--demote);z-index:1}
+.am-band{position:absolute;left:0;right:0;border-top:1px dashed var(--line);z-index:0}
+/* edges */
+.am-edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+.am-edge{fill:none;stroke:var(--edge);stroke-width:1.75}
+.am-edge.am-edge-primary{stroke:var(--accent)}
+.am-elabel{font-size:11px;fill:var(--muted);paint-order:stroke;stroke:var(--ground);stroke-width:4px}
+.am-elabel-d{position:absolute;transform:translate(-50%,-50%);font-size:11px;color:var(--muted);background:var(--ground);padding:1px 5px;border-radius:5px;white-space:nowrap;z-index:3;pointer-events:none}
+.am-life{stroke:var(--line);stroke-width:1.4;stroke-dasharray:3 5}
+/* leaf-only note */
+.am-leafnote{color:var(--demote);font-size:13px;border-top:1px solid var(--line);padding-top:14px;margin-top:6px}
+/* ask launcher + drawer (the consistent chat surface) */
+#am-launch{position:fixed;right:20px;bottom:20px;z-index:60;display:none;align-items:center;gap:9px;padding:10px 16px;border-radius:999px;border:0;cursor:pointer;font:600 13px/1 inherit;color:#fff;background:#0b1020;box-shadow:0 10px 30px rgba(2,6,23,.28)}
+#am-launch:hover{background:#141d3a}
+.am-dot{width:8px;height:8px;border-radius:50%;background:#5cf08a;box-shadow:0 0 8px #5cf08a;flex:0 0 auto}
+#am-drawer{position:fixed;top:0;right:0;height:100vh;width:380px;max-width:92vw;z-index:61;display:flex;flex-direction:column;background:#0b1020;color:#e8eaf2;box-shadow:-18px 0 50px rgba(2,6,23,.30);transform:translateX(100%);transition:transform .22s ease}
+#am-drawer.open{transform:translateX(0)}
+#am-dhead{display:flex;align-items:center;gap:9px;padding:15px 16px;border-bottom:1px solid #1c2747;font-size:13.5px;font-weight:600}
+#am-min{margin-left:auto;background:none;border:0;color:#8a93b8;cursor:pointer;font-size:20px;line-height:1;padding:2px 6px;border-radius:7px}
+#am-min:hover{background:#16203f;color:#e8eaf2}
+#am-body{flex:1;overflow:auto;padding:16px}
+#am-empty .g{font-size:18px;font-weight:600;letter-spacing:-.01em}
+#am-empty .s{font-size:13px;color:#8a93b8;margin-top:6px;line-height:1.5}
+#am-chips{display:flex;flex-direction:column;gap:8px;margin-top:18px}
+.am-sug{text-align:left;background:#131c38;border:1px solid #24305a;color:#dfe5f5;border-radius:11px;padding:10px 13px;font-size:13px;cursor:pointer;line-height:1.35}
+.am-sug:hover{background:#1a2647;border-color:#3a4a82}
+#am-log{display:flex;flex-direction:column;gap:10px}
+.am-b{padding:9px 12px;border-radius:12px;white-space:pre-wrap;font-size:13px;line-height:1.5}
+.am-you{background:#2b3a6b;align-self:flex-end;max-width:85%;border-bottom-right-radius:4px}
+.am-ai{background:#141d3a;align-self:flex-start;max-width:94%;border-bottom-left-radius:4px}
+#am-form{display:flex;gap:8px;padding:12px;border-top:1px solid #1c2747}
+#am-in{flex:1;background:#0b1020;border:1px solid #28335a;color:#e8eaf2;border-radius:10px;padding:9px 12px;font-size:13px;outline:none}
+#am-in:focus{border-color:#4f6bff}
+#am-send{background:#4f6bff;color:#fff;border:0;border-radius:10px;padding:0 15px;font-size:13px;font-weight:600;cursor:pointer}

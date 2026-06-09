@@ -1,38 +1,33 @@
-# Report craft
+# Map craft — the judgement behind the model
 
-The report is one self-contained HTML file that opens in a browser. Beyond that you are the designer — these are principles, not a template. A map that is genuinely clear beats one that followed a recipe, so use judgement and write the HTML yourself.
+The runtime ([RUNTIME.md](RUNTIME.md)) draws the map; you decide what it draws. These are the principles for the choices you make in `model.json` — the parts, the shape, the depth. The rendering is handled and consistent; this is where your intelligence goes.
 
-## Show a shape, not a grid
+## Make it a graph, not a list
 
-This is the one that matters. A pile of boxes on a grid is the failure mode — it forces the reader to trace every line before anything makes sense. Find the system's actual shape first, then let it drive the layout:
+The runtime auto-lays-out the map (dagre): you declare nodes and the `edges` between them, and it ranks, places, and routes them — minimising crossings. So the work is getting the *graph* right, not positioning boxes:
 
-- a request or data **flow** → lay it out as a directed flow, one main direction
-- a **read-through cache, queue, or pipeline** → draw the spine and hang the rest off it
-- a request **lifecycle** → a numbered sequence or a timeline
-- peers with no flow → group by responsibility into a few labelled bands
+- **Declare every meaningful connection as an `edge`, labelled with a verb.** Edges are what turn a pile of boxes into a readable flow; a level with nodes and no edges is just a list.
+- **Pick a direction with `dir`** — `"TB"` (top-down) for deep trees, `"LR"` (left-right) for a pipeline. That's usually the only layout choice you make.
+- **Mark the spine with `primary`** so the accent traces the main path and the rest reads as supporting.
+- Reach for a non-default `shape` only when it genuinely fits: `radial` for a hub everything depends on, `sequence` for how a request moves over time.
 
-Pick the single organizing idea that makes *this* system obvious at a glance and commit to it. Arrows should mostly point one way.
+## Go deepest where the logic is
 
-## Don't overload — disclose progressively
+- The opening level is the whole system in ~5–9 parts. A part with real internal structure gets `children`, and theirs get children — as deep as it earns. Don't force uniform depth.
+- **Summarising a logic-heavy part in one line is the failure.** A generation/transform stage, an algorithm, a branchy state machine earns sub-levels down to its actual steps — what it builds, the call it makes and the schema it returns, each branch and its outcome. The most complex part should be the **deepest** in the map, never the shallowest. (`generateGuide` that builds a prompt, calls a model under a schema, and returns a skeleton is three child steps, not one sentence.)
+- One line of `resp` per part on the surface; longer prose goes in `detail`, revealed when focused.
 
-- One level at a time, but go as deep as a part earns. The opening view is the whole system in ~5–9 elements; clicking descends, and a part with real internal structure earns another level below it, and another below that — a pipeline stage worth explaining gets its own sub-steps. Stop where there's nothing left to reveal; don't force uniform depth, and don't flatten a deep part to fit a fixed number of levels.
-- One line of text per element on the map. Anything longer is detail, revealed when you focus that element — never crammed onto the surface.
-- Make the interaction and the way back obvious: a breadcrumb of the full path, and descents wired into browser history so Back / Forward and deep links work. The reader should never feel buried or lost, however deep they go.
+## Mark the meaning, and be honest
 
-## Make it scannable and crafted
+- **Primary path:** flag the spine parts and edges `primary: true` so the accent traces the main flow.
+- **Demote non-dependencies:** `demote: true` dashes and fades a part that isn't a real dependency — name it as one in its `resp`.
+- **Verbs on edges** ("reads", "publishes to", "claims") — relationships carry the story.
+- **Real names + files:** names come from the code, and every leaf carries its `file`. When a connection or step is your inference rather than something you verified, say so in the `detail` — a confident wrong arrow is worse than an honest "not sure".
 
-- Label connections with verbs — "publishes to", "reads", "claims". The relationships carry the story.
-- Demote what doesn't matter: fade or dash things that aren't real dependencies so they don't compete.
-- One accent colour plus neutrals, used to *mean* something (sync vs async, store vs step), not to decorate.
-- Clear type hierarchy, generous whitespace, small type-labels on cards. Schematic and editorial, not a corporate dashboard.
-- Use the project's real vocabulary (CONTEXT.md / the code) for names, never invented labels.
+## Consistency is handled — don't fight it
 
-## Keep the build simple
+The runtime applies the house style (`assets/map.css`) so every map reads as the same product; you don't write CSS. The one rule that's yours: **one accent, not a palette.** Encode categories with `primary`, `lane`/`layer`, and position — not invented colours. To shift the whole mood (a darker map), change `--accent` in `map.css`, not per-map hues.
 
-- Single self-contained file. A styling CDN (e.g. Tailwind) is fine; write to a temp dir and open it.
-- Drill-down is a few lines of JS over a nested model you build from exploration: render the current level, click to descend, breadcrumbs to climb. The model is the substance; keep the code minimal.
-- If a static diagram communicates a given system better than interaction, use that. Interaction serves clarity, not the reverse.
+## Before you build
 
-## Before you open it
-
-One glance gives the gist · one organizing shape · ≤~9 things per view · verbs on the connections · names match the code · nothing overloaded.
+One glance gives the gist · a shape is chosen (not a flat list) · ≤~9 parts per level · edges declared and verb-labelled · the most complex part is the deepest, not a one-liner · names match the code · honest about inference · the primary path is marked and non-deps demoted.
