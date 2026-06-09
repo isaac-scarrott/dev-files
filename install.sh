@@ -40,6 +40,7 @@ LINKS=(
   "$HOME/.claude/skills/jedi-council|.claude/skills/jedi-council"
   "$HOME/.claude/skills/the-focus-group|.claude/skills/the-focus-group"
   "$HOME/.claude/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
+  "$HOME/.claude/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
@@ -58,6 +59,7 @@ LINKS=(
   "$HOME/.config/opencode/skills/jedi-council|.claude/skills/jedi-council"
   "$HOME/.config/opencode/skills/the-focus-group|.claude/skills/the-focus-group"
   "$HOME/.config/opencode/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
+  "$HOME/.config/opencode/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.config/opencode/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
