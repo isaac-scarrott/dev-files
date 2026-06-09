@@ -2,7 +2,7 @@
 
 This example deliberately picks a very different domain from the meditation app in [EXAMPLE.md](EXAMPLE.md) — internal, enterprise, transactional, no wellness narrative. The point of having two examples is to show that the pattern adapts to anything; the personas in this file would not survive a domain swap, and that's the lesson.
 
-Everything in steps 4–6 is what to send back to the user in chat.
+Steps 4–6 below are the *content* that renders into the HTML report (see [../../jedi-council/references/REPORT.md](../../jedi-council/references/REPORT.md)). The chat keeps only the path pointer and the closing question.
 
 ---
 

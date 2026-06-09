@@ -29,11 +29,18 @@ Open with the full CV. Reference the artifact by path. Force first person, in ch
 
 ## What to surface
 
-Findings grouped by who flagged what. **Action distribution** — what each persona would actually *do* on landing (convert, churn, bounce, abandon mid-flow). Convergence groups findings; action gives them meaning. Prose with verbatim quotes — the voices are the value. Recommended next action. A question to the user about which action to apply.
+The synthesis is rendered as a **self-contained HTML report** written to the OS temp directory and opened — see [../jedi-council/references/REPORT.md](../jedi-council/references/REPORT.md) for the shared scaffold, the temp-dir mechanics, and the rule that the decision still happens in chat. The focus group's tailored design inside that scaffold:
 
-See [references/EXAMPLE.md](references/EXAMPLE.md) and [references/EXAMPLE_2.md](references/EXAMPLE_2.md) for worked examples in different domains — read both before casting your own to see the range.
+- **Persona cards** — each persona's CV up top (name, the lived-in friction, the tool they hate or metric they live by), so a reaction is read in the voice of a specific person, not an anonymous "user".
+- **First-person quotes as the centrepiece** — render each persona's verbatim lines as large pull-quotes attributed to them. The voices are the value; don't flatten them into table cells.
+- **Action distribution** — a hand-built visual (a tally or bar) of what each persona would actually *do* on landing: convert, churn, bounce, abandon mid-flow. Convergence groups findings; action gives them meaning, so make the distribution the visual anchor.
+- **Findings grouped by who flagged what**, with a **verdict badge** (`KILL` red, `High`/`Medium`/`Low` graded) and persona chips showing convergence. Flag sole-owner findings explicitly — the one persona scoped to catch something (the long-term practitioner, the accessibility edge case) is load-bearing, not a weak vote.
+- **Recommended next action** in the report; the **question about which action to apply** stays a live `AskUserQuestion` in chat.
+
+See [references/EXAMPLE.md](references/EXAMPLE.md) and [references/EXAMPLE_2.md](references/EXAMPLE_2.md) for worked examples in different domains — read both before casting your own to see the range. The convergence tables and synthesis there are the *content* that now renders into the HTML report.
 
 ## Advanced
 
 - Shared principles, dispatch mechanics, round 2, failure modes: [../jedi-council/references/PANEL.md](../jedi-council/references/PANEL.md)
+- HTML report scaffold, temp-dir mechanics, chat-vs-report split: [../jedi-council/references/REPORT.md](../jedi-council/references/REPORT.md)
 - Worked examples: [references/EXAMPLE.md](references/EXAMPLE.md), [references/EXAMPLE_2.md](references/EXAMPLE_2.md)

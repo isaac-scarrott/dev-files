@@ -2,7 +2,7 @@
 
 The methodology adapts to the artifact. These three examples show it at very different scales — small artifact / two lenses, high-stakes engineering / five lenses, and a case where the right answer is no panel. None of the shapes below is a template; each is what *that* artifact needed.
 
-Everything in the synthesis sections is what to send back to the user in chat. Nothing is written to disk.
+The findings tables and synthesis sections below are the *content* that renders into the HTML report (see [REPORT.md](REPORT.md)). The chat keeps only the path pointer and the closing question. Example 3 is the exception — too small for a panel, so it stays a direct chat answer with no report.
 
 ---
 

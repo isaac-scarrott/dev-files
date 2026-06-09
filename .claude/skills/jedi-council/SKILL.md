@@ -25,14 +25,19 @@ Each prompt names the role and its lens, includes the artifact once (path or inl
 
 ## What to surface
 
-Findings grouped by who flagged them. Prose synthesis opening with the strongest line, quoting the most cutting line verbatim. Recommended next action. A question to the user about which action to apply.
+The synthesis is rendered as a **self-contained HTML report** written to the OS temp directory and opened — see [references/REPORT.md](references/REPORT.md) for the shared scaffold, the temp-dir mechanics, and the rule that the decision still happens in chat. The council's tailored design inside that scaffold:
 
-When the artifact has real failure consequences, a prod-break-mode column on blocking findings earns its place. When it doesn't, don't manufacture one — the shape of the synthesis should match the shape of the artifact.
+- **Header roster** — each role as a chip naming its one discipline lens (the casting above), so the reader sees the angles before the findings.
+- **Findings grouped by who flagged them**, each with a **severity badge** (`BLOCKING` red, `SUGGESTION` amber, `NIT` slate) and a row of lens chips showing convergence. Flag sole-owner findings explicitly — a 1/N from the only lens scoped to catch it is load-bearing, not a weak vote.
+- **Prod-break-mode** — when the artifact has real failure consequences, blocking findings carry a prod-break-mode line (what breaks in production). When it doesn't, don't manufacture one — the shape of the report should match the shape of the artifact.
+- **Prose synthesis** opening with the strongest line and quoting the most cutting line verbatim as a pull-quote — the cutting line is the centrepiece, not a footnote.
+- **Recommended next action** in the report; the **question about which action to apply** stays a live `AskUserQuestion` in chat.
 
-See [references/EXAMPLE.md](references/EXAMPLE.md) for worked examples at different scales.
+See [references/EXAMPLE.md](references/EXAMPLE.md) for worked examples at different scales — the findings tables and synthesis there are the *content* that now renders into the HTML report.
 
 ## Advanced
 
 - Shared principles, dispatch mechanics, round 2, failure modes: [references/PANEL.md](references/PANEL.md)
+- HTML report scaffold, temp-dir mechanics, chat-vs-report split: [references/REPORT.md](references/REPORT.md)
 - Discipline-lens sampler: [references/LENSES.md](references/LENSES.md)
 - Worked examples at different scales: [references/EXAMPLE.md](references/EXAMPLE.md)

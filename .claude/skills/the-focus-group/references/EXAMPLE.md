@@ -2,7 +2,7 @@
 
 The cast below fits *this* artifact and this domain. A different product needs a different cast — the structure (CVs → in-character reactions → convergence → action distribution → question) is the pattern; the specific personas are illustrative.
 
-Everything in steps 4–6 is what to send back to the user in chat. Nothing is written to disk.
+Steps 4–6 below are the *content* that renders into the HTML report (see [../../jedi-council/references/REPORT.md](../../jedi-council/references/REPORT.md)). The chat keeps only the path pointer and the closing question.
 
 ---
 
