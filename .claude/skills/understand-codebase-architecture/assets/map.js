@@ -17,7 +17,7 @@
   const NS = "http://www.w3.org/2000/svg";
   const CARD_W = 294, GAP_X = 56, ROW_H = 176, BAND_GAP = 30;
   let MODEL = null, path = [];
-  let crumbsEl, titleEl, ledeEl, metaEl, focusEl, hintEl, stageEl;
+  let crumbsEl, titleEl, ledeEl, metaEl, focusEl, hintEl, stageEl, stageWrapEl;
 
   const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -138,6 +138,7 @@
     let maxY = 0;
     fr.nodes.forEach((n) => { const nd = g.node(n.id); if (!nd) return; const c = idEl[n.id]; c.style.left = (nd.x - nd.width / 2) + "px"; c.style.top = (nd.y - nd.height / 2) + "px"; maxY = Math.max(maxY, nd.y + nd.height / 2); });
     stage.style.minHeight = (maxY + 12) + "px";
+    stage.style.minWidth = Math.round((g.graph().width || 0) + 12) + "px"; // lets the stage scroller pan a wide map
     dagreEdges(stage, g, fr.edges);
   }
 
@@ -169,7 +170,7 @@
   }
 
   function renderStage(stage, fr) {
-    stage.innerHTML = ""; stage.style.minHeight = "";
+    stage.innerHTML = ""; stage.style.minHeight = ""; stage.style.minWidth = "";
     if (!fr.nodes.length) return;
     if (fr.shape === "sequence") return renderSequence(stage, fr);
     if (fr.shape === "radial" || fr.shape === "free") return renderPos(stage, fr);
@@ -200,9 +201,10 @@
         (n.stack ? `<div class="am-sec">Call path</div><pre class="am-stack">${esc(n.stack)}</pre>` : "");
       focusEl.style.display = "block";
     }
-    hintEl.textContent = !fr.nodes.length ? "" : n ? "Inside this part" : "Click a part to go deeper";
-    if (fr.nodes.length) { stageEl.style.display = "block"; renderStage(stageEl, fr); }
-    else { stageEl.style.display = "none"; }
+    const hint = !fr.nodes.length ? "" : n ? "Inside this part" : "Click a part to go deeper";
+    hintEl.textContent = hint; hintEl.style.display = hint ? "" : "none";
+    if (fr.nodes.length) { stageWrapEl.style.display = ""; renderStage(stageEl, fr); }
+    else { stageWrapEl.style.display = "none"; }
   }
 
   function renderCrumbs() {
@@ -245,8 +247,9 @@
     render(model) {
       MODEL = model;
       const wrap = el("div", "am-wrap");
-      wrap.innerHTML = `<nav class="am-crumbs"></nav><h1 class="am-title"></h1><div class="am-lede"></div>` +
-        `<div class="am-meta"></div><div class="am-body"></div><p class="am-hint"></p><div class="am-stage"></div>`;
+      wrap.innerHTML = `<div class="am-head am-col"><nav class="am-crumbs"></nav><h1 class="am-title"></h1><div class="am-lede"></div><div class="am-meta"></div></div>` +
+        `<div class="am-body am-col am-scroll"></div><p class="am-hint am-col"></p>` +
+        `<div class="am-stagewrap am-scroll"><div class="am-stage"></div></div>`;
       document.body.appendChild(wrap);
       crumbsEl = wrap.querySelector(".am-crumbs");
       titleEl = wrap.querySelector(".am-title");
@@ -255,6 +258,7 @@
       focusEl = wrap.querySelector(".am-body");
       hintEl = wrap.querySelector(".am-hint");
       stageEl = wrap.querySelector(".am-stage");
+      stageWrapEl = wrap.querySelector(".am-stagewrap");
       path = fromHash(); history.replaceState({ p: path }, "", "#/" + path.join("/"));
       window.addEventListener("popstate", (e) => { path = (e.state && e.state.p) || []; draw(); });
       let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(draw, 120); });

@@ -6,9 +6,15 @@
   --label:#94a3b8;  --body:#3f4b5e;
 }
 *{box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
 body{margin:0;background:var(--ground);color:var(--ink);
   font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
-.am-wrap{max-width:1160px;margin:0 auto;padding:36px 32px 96px}
+/* the page is a fixed shell — only .am-scroll regions scroll, so the header keeps your context */
+.am-wrap{height:100vh;height:100dvh;display:flex;flex-direction:column;padding:36px 0 0}
+.am-col{width:min(1096px,calc(100% - 64px));margin-left:auto;margin-right:auto;flex:0 0 auto}
+.am-scroll{overflow:auto;min-height:0;scrollbar-width:thin}
+.am-body{flex:0 1 auto;padding-bottom:48px}
+.am-stagewrap{flex:1 1 0;min-height:min(280px,36vh);padding:8px max(32px,calc((100vw - 1096px)/2)) 56px}
 /* one template every level fills: crumbs (path above) · title · lede · tags · body · stage */
 .am-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;margin:0 0 14px;min-height:20px}
 .am-crumbs button{background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font:inherit;font-weight:600}
@@ -27,7 +33,7 @@ body{margin:0;background:var(--ground);color:var(--ink);
 .am-detail{color:var(--body);font-size:15px;line-height:1.65;max-width:680px;margin:22px 0 0}
 .am-sec{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin:26px 0 10px}
 .am-stack{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.7;color:#475569;background:#eef1f7;border:1px solid #e2e7f0;border-radius:8px;padding:12px 14px;margin:0;max-width:720px;overflow-x:auto}
-.am-hint{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin:30px 0 14px}
+.am-hint{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin:30px auto 14px}
 /* stage + cards */
 .am-stage{position:relative;width:100%}
 .am-card{position:absolute;width:294px;display:flex;flex-direction:column;gap:6px;padding:14px 15px;background:var(--surface);
