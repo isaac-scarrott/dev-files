@@ -15,14 +15,16 @@ The runtime auto-lays-out the map (dagre): you declare nodes and the `edges` bet
 
 - The opening level is the whole system in ~5–9 parts. A part with real internal structure gets `children`, and theirs get children — as deep as it earns. Don't force uniform depth.
 - **Summarising a logic-heavy part in one line is the failure.** A generation/transform stage, an algorithm, a branchy state machine earns sub-levels down to its actual steps — what it builds, the call it makes and the schema it returns, each branch and its outcome. The most complex part should be the **deepest** in the map, never the shallowest. (`generateGuide` that builds a prompt, calls a model under a schema, and returns a skeleton is three child steps, not one sentence.)
-- One line of `resp` per part on the surface; longer prose goes in `detail`, revealed when focused.
+- Every part carries a `resp` that fits the card, and substance behind the click: `points` — 3–7 scannable facts, each one fact carrying its file:line — preferred over a `detail` paragraph nobody reads.
+- **Call path for the unmapped hops.** An optional `stack` on a part shows how execution reaches it — entry point down to here, one indented hop per line, branching where the call does. Use it for hops the map gives no box to (transports, layer wiring, glue); if the chain is just the part's own children, the drill-down already draws it. Each hop is a real, verified name you could set a breakpoint on.
 
 ## Mark the meaning, and be honest
 
 - **Primary path:** flag the spine parts and edges `primary: true` so the accent traces the main flow.
 - **Demote non-dependencies:** `demote: true` dashes and fades a part that isn't a real dependency — name it as one in its `resp`.
 - **Verbs on edges** ("reads", "publishes to", "claims") — relationships carry the story.
-- **Real names + files:** names come from the code, and every leaf carries its `file`. When a connection or step is your inference rather than something you verified, say so in the `detail` — a confident wrong arrow is worse than an honest "not sure".
+- **Plain surface, exact depth:** what's visible at a glance — `label`, `resp`, edge labels — is plain language for someone who doesn't know the code yet. A label is a role ("Event Filter"), never an identifier (`handleMessagesUpsert`); a `resp` is one short sentence with no symbols in it, written to fit the card whole (≲90 characters — the card clamps at two lines, and a truncated summary is a failed one). The exactness lives behind the click: open the `detail` with the implementing function and file:line, and give every leaf its `file`(s).
+- **Honest about inference:** when a connection or step is your inference rather than something you verified, say so in the `detail` — a confident wrong arrow is worse than an honest "not sure".
 
 ## Consistency is handled — don't fight it
 
@@ -30,4 +32,4 @@ The runtime applies the house style (`assets/map.css`) so every map reads as the
 
 ## Before you build
 
-One glance gives the gist · a shape is chosen (not a flat list) · ≤~9 parts per level · edges declared and verb-labelled · the most complex part is the deepest, not a one-liner · names match the code · honest about inference · the primary path is marked and non-deps demoted.
+One glance gives the gist · a shape is chosen (not a flat list) · ≤~9 parts per level · edges declared and verb-labelled · the most complex part is the deepest, not a one-liner · labels are plain-language roles from the project's vocabulary, identifiers only in `detail` · honest about inference · the primary path is marked and non-deps demoted.

@@ -24,10 +24,12 @@ The bundled runtime (`assets/map.js` + `assets/map.css`, with `assets/vendor/dag
 ```jsonc
 {
   "id": "read-api", "label": "GraphQL Read API", "kind": "Read API",
-  "resp": "one-line responsibility",        // shown on the card
-  "tech": ["graphql-compose"],              // chips
-  "file": "path/to/file.ts",                // or "files": [...] — shown on leaves
-  "detail": "longer prose for the focus view",
+  "resp": "short description",              // shown on the card — write it to fit (≲90 chars)
+  "tech": ["graphql-compose"],              // chips — don't repeat the kind (they render side by side)
+  "file": "path/to/file.ts",                // or "files": [...] — shown in the focus view
+  "points": ["one fact (file.ts:42)", "..."],  // scannable facts for the focus view — prefer this over detail
+  "detail": "prose fallback for the focus view (used when points is absent)",
+  "stack": "entry\n  -> hop\n    -> hop",      // optional: how a call reaches this part — rendered verbatim (monospace) in the focus view
   "primary": true,                          // accent: the spine / primary path
   "demote": true,                           // dashed + faded: NOT a real dependency
   "dir": "LR",                              // optional: direction for THIS node's children
@@ -36,7 +38,9 @@ The bundled runtime (`assets/map.js` + `assets/map.css`, with `assets/vendor/dag
 }
 ```
 
-A node with `children` is drillable (the runtime lays the child level out the same way); a leaf shows its `file`(s) and `detail` in the focus view. **Nest as deep as the logic earns** — a complex stage gets its own children, and theirs ([HTML-REPORT.md](HTML-REPORT.md): the most complex part is the deepest).
+A node with `children` is drillable (the runtime lays the child level out the same way). Every level fills the same page template: breadcrumb (the path above), title, lede (`resp`, or the map `summary` at root), one tag row (kind + tech + files), then the body — `points` as a scannable fact list (or `detail` prose) and the `stack` call path. **Nest as deep as the logic earns** — a complex stage gets its own children, and theirs ([HTML-REPORT.md](HTML-REPORT.md): the most complex part is the deepest).
+
+Every string renders as plain text — no markdown. Backticks show up literally, so write code names bare.
 
 You don't set positions for the default layout. Just declare the `edges` honestly and dagre ranks and places everything; `primary: true` accents an edge, `return: true` dashes it.
 

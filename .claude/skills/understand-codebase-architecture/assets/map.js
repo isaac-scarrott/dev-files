@@ -15,9 +15,9 @@
 */
 (function () {
   const NS = "http://www.w3.org/2000/svg";
-  const CARD_W = 210, GAP_X = 56, ROW_H = 176, BAND_GAP = 30;
+  const CARD_W = 294, GAP_X = 56, ROW_H = 176, BAND_GAP = 30;
   let MODEL = null, path = [];
-  let crumbsEl, focusEl, hintEl, stageEl;
+  let crumbsEl, titleEl, ledeEl, metaEl, focusEl, hintEl, stageEl;
 
   const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -70,9 +70,7 @@
     const cls = "am-card" + (n.primary ? " am-primary" : "") + (n.demote ? " am-demote" : "");
     const c = el("button", cls);
     const kids = (n.children || []).length;
-    let footer = "";
-    if (kids) footer = `<div class="am-more">${kids} inside ›</div>`;
-    else { const f = filesOf(n)[0]; if (f) footer = `<div class="am-file">${esc(f)}</div>`; }
+    const footer = kids ? `<div class="am-more">${kids} inside ›</div>` : "";
     const tech = (n.tech || []).map((t) => `<span class="am-chip">${esc(t)}</span>`).join("");
     c.innerHTML =
       `<div class="am-kind">${esc(n.kind || (kids ? "subsystem" : "module"))}</div>` +
@@ -178,28 +176,42 @@
     return renderGraph(stage, fr); // flow / lanes / layers / default → dagre
   }
 
+  // every level fills the same template: crumbs (path above) · title · lede · tags · body · stage
   function draw() {
     const fr = frameAt(path);
     renderCrumbs();
-    focusEl.innerHTML = ""; focusEl.style.display = "none";
-    if (fr.focus) {
-      const n = fr.focus; focusEl.style.display = "block";
-      const files = filesOf(n).map((f) => `<code>${esc(f)}</code>`).join("");
-      focusEl.innerHTML =
-        `<div class="am-kind">${esc(n.kind || "part")}</div><h2>${esc(n.label)}</h2>` +
-        ((n.tech || []).length ? `<div class="am-chips" style="margin-top:8px">${n.tech.map((t) => `<span class="am-chip">${esc(t)}</span>`).join("")}</div>` : "") +
-        (n.detail || n.resp ? `<div class="am-detail">${esc(n.detail || n.resp)}</div>` : "") +
-        (files ? `<div class="am-files">${files}</div>` : "");
+    const n = fr.focus;
+    titleEl.textContent = n ? n.label : (MODEL.repo || "System");
+    const lede = n ? n.resp : MODEL.summary;
+    ledeEl.textContent = lede || ""; ledeEl.style.display = lede ? "" : "none";
+    let meta = "";
+    if (n) {
+      meta = `<span class="am-chip am-chip-kind">${esc(n.kind || ((n.children || []).length ? "subsystem" : "module"))}</span>` +
+        (n.tech || []).map((t) => `<span class="am-chip">${esc(t)}</span>`).join("") +
+        filesOf(n).map((f) => `<code>${esc(f)}</code>`).join("");
     }
-    hintEl.textContent = fr.nodes.some((k) => (k.children || []).length) ? "Click a part to go deeper" : "";
+    metaEl.innerHTML = meta; metaEl.style.display = meta ? "" : "none";
+    focusEl.innerHTML = ""; focusEl.style.display = "none";
+    if (n) {
+      const points = (n.points || []).map((p) => `<li>${esc(p)}</li>`).join("");
+      focusEl.innerHTML = `<hr class="am-rule">` +
+        (points ? `<ul class="am-points">${points}</ul>` :
+          (n.detail && n.detail !== n.resp ? `<div class="am-detail">${esc(n.detail)}</div>` : "")) +
+        (n.stack ? `<div class="am-sec">Call path</div><pre class="am-stack">${esc(n.stack)}</pre>` : "");
+      focusEl.style.display = "block";
+    }
+    hintEl.textContent = !fr.nodes.length ? "" : n ? "Inside this part" : "Click a part to go deeper";
     if (fr.nodes.length) { stageEl.style.display = "block"; renderStage(stageEl, fr); }
-    else { stageEl.style.display = "none"; if (fr.focus) focusEl.appendChild(el("div", "am-leafnote", "Leaf — nothing deeper to expand.")); }
+    else { stageEl.style.display = "none"; }
   }
 
   function renderCrumbs() {
     let acc = [], parts = [{ label: MODEL.repo || "System", to: [] }];
-    for (const id of path) { acc = [...acc, id]; const n = nodeAt(acc); parts.push({ label: n ? n.label : id, to: [...acc] }); }
-    crumbsEl.innerHTML = parts.map((p, i) => i === parts.length - 1 ? `<span class="am-here">${esc(p.label)}</span>` : `<button data-i="${i}">${esc(p.label)}</button><span class="am-sep">/</span>`).join("");
+    for (const id of path) { acc = [...acc, id]; const pn = nodeAt(acc); parts.push({ label: pn ? pn.label : id, to: [...acc] }); }
+    // root: empty (reserved) row — a lone repo crumb would just duplicate the title below it
+    crumbsEl.innerHTML = !path.length ? "" : parts.map((p, i) => i === parts.length - 1
+      ? `<span class="am-here">${esc(p.label)}</span>`
+      : `<button data-i="${i}">${esc(p.label)}</button><span class="am-sep">/</span>`).join("");
     crumbsEl.querySelectorAll("button").forEach((b) => (b.onclick = () => goTo(parts[+b.dataset.i].to)));
   }
 
@@ -233,14 +245,16 @@
     render(model) {
       MODEL = model;
       const wrap = el("div", "am-wrap");
-      wrap.innerHTML = `<div class="am-kicker">Architecture map</div><div class="am-title">${esc(model.repo || "System")}</div>` +
-        (model.summary ? `<div class="am-sub">${esc(model.summary)}</div>` : "") +
-        `<nav class="am-crumbs"></nav><p class="am-hint"></p><div class="am-stage"></div>`;
+      wrap.innerHTML = `<nav class="am-crumbs"></nav><h1 class="am-title"></h1><div class="am-lede"></div>` +
+        `<div class="am-meta"></div><div class="am-body"></div><p class="am-hint"></p><div class="am-stage"></div>`;
       document.body.appendChild(wrap);
       crumbsEl = wrap.querySelector(".am-crumbs");
+      titleEl = wrap.querySelector(".am-title");
+      ledeEl = wrap.querySelector(".am-lede");
+      metaEl = wrap.querySelector(".am-meta");
+      focusEl = wrap.querySelector(".am-body");
       hintEl = wrap.querySelector(".am-hint");
       stageEl = wrap.querySelector(".am-stage");
-      focusEl = el("div", "am-focus"); focusEl.style.display = "none"; hintEl.before(focusEl);
       path = fromHash(); history.replaceState({ p: path }, "", "#/" + path.join("/"));
       window.addEventListener("popstate", (e) => { path = (e.state && e.state.p) || []; draw(); });
       let t; window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(draw, 120); });
