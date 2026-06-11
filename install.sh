@@ -32,6 +32,7 @@ LINKS=(
   "$HOME/.claude/scripts/implement-ticket-folder.sh|.claude/scripts/implement-ticket-folder.sh"
   "$HOME/.claude/scripts/implementer-prompt.md|.claude/scripts/implementer-prompt.md"
   "$HOME/.claude/scripts/implementer-prompt-folder.md|.claude/scripts/implementer-prompt-folder.md"
+  "$HOME/.claude/skills/create-worktree|.claude/skills/create-worktree"
   "$HOME/.claude/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.claude/skills/grill-with-docs|.claude/skills/grill-with-docs"
   "$HOME/.claude/skills/humanizer|.claude/skills/humanizer"
@@ -51,6 +52,7 @@ LINKS=(
 
   # OpenCode — same canonical source as Claude (config, skills, agent, commands)
   "$HOME/.config/opencode/opencode.json|.config/opencode/opencode.json"
+  "$HOME/.config/opencode/skills/create-worktree|.claude/skills/create-worktree"
   "$HOME/.config/opencode/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.config/opencode/skills/grill-with-docs|.claude/skills/grill-with-docs"
   "$HOME/.config/opencode/skills/humanizer|.claude/skills/humanizer"
