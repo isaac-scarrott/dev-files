@@ -19,7 +19,7 @@ A working dir `$BRIDGE_DIR` holds `inbox/` and `outbox/`. A question arrives as 
 
 ## The listen loop
 
-A backgrounded command re-invokes you when it exits — that is how a turn-based agent listens.
+This loop relies on your agent re-invoking you when a backgrounded command exits — Claude Code does this automatically. If your environment doesn't, run the waiter in the foreground and re-arm it each turn instead.
 
 1. Choose a working dir, e.g. `BRIDGE_DIR="$TMPDIR/arch-bridge-<timestamp>"`.
 2. Start the server in the **background**: `BRIDGE_DIR=… MAP_FILE=<the html file> node <skill-dir>/scripts/bridge-server.mjs`. Read the `BRIDGE_URL=…` line it prints.

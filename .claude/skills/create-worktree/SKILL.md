@@ -10,7 +10,7 @@ gitignored `.env` files into it. Works in any repo. Keep it simple — these are
 
 ## 1. Work out the branch name
 
-- **Linear ticket ID** (e.g. `HOL-340`, `ENG-12`): fetch it with `mcp__plugin_personal_linear-server__get_issue`,
+- **Linear ticket ID** (e.g. `HOL-340`, `ENG-12`): fetch it via Linear MCP (if connected),
   then build `<identifier-lowercased>-<kebab-title>` from the identifier + title (lowercase, dashes,
   drop punctuation, ~6 words max). Example: HOL-340 "Fix product card images" → `hol-340-fix-product-card-images`.
 - **Branch name or description**: kebab-case it. Keep any ticket prefix (e.g. `hol-340`, `eng-12`) as-is.
@@ -44,8 +44,11 @@ git -C "$ROOT" check-ignore -q .worktree/ \
 
 ## 4. Copy the .env files
 
+Run the bundled script from this skill's own directory (`<skill-dir>` = the folder this
+SKILL.md lives in — don't hardcode `~/.claude`, it differs per agent):
+
 ```bash
-~/.claude/skills/create-worktree/scripts/copy-env-files.sh "$ROOT" "$ROOT/.worktree/<branch>"
+<skill-dir>/scripts/copy-env-files.sh "$ROOT" "$ROOT/.worktree/<branch>"
 ```
 
 This copies every gitignored `.env` / `.env.*` (excluding `node_modules`, `cdk.out`, `dist`,

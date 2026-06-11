@@ -1,6 +1,6 @@
 ---
 name: implement-light
-description: Implement a Linear ticket or freetext task end-to-end using Claude's built-in sub-agents — one self-testing sub-agent per vertical slice, main-thread review between slices, one PR. Use when the user wants to autonomously implement a ticket or task in the current session with built-in sub-agents, or invokes /implement-light.
+description: Implement a Linear ticket or freetext task end-to-end using your agent's built-in sub-agents — one self-testing sub-agent per vertical slice, main-thread review between slices, one PR. Use when the user wants to autonomously implement a ticket or task in the current session with built-in sub-agents, or invokes /implement-light.
 ---
 
 # implement-light
@@ -9,9 +9,9 @@ Implement one ticket at a time with built-in sub-agents. The main thread orchest
 do the building, so the heavy build transcripts stay out of your context (review findings still
 land in it).
 
-This is the native replacement for the older `claude -p` orchestrators (`implement-ticket.sh`,
-`implement-ticket-folder.sh`) — same build→review→ship shape, run from inside a Claude session
-with zero setup. Run it once per ticket.
+This is the native replacement for the older headless CLI orchestrators (`implement-ticket.sh`,
+`implement-ticket-folder.sh`) — same build→review→ship shape, run from inside an interactive
+agent session with zero setup. Run it once per ticket.
 
 ## Philosophy
 
@@ -24,8 +24,8 @@ with zero setup. Run it once per ticket.
 
 ## Hard constraints
 
-- **Sub-agents currently can't spawn sub-agents** — so `simplify`, `jedi-council`, and
-  `thermo-nuclear-code-quality-review` all run from the main thread.
+- **Where sub-agents can't spawn sub-agents** (the case in Claude Code) — `simplify`,
+  `jedi-council`, and `thermo-nuclear-code-quality-review` all run from the main thread.
 - **Build sub-agents edit the shared checkout** (no worktree isolation); the main thread sees
   their diff.
 - **Sub-agents self-test** (Bash, HTTP, GraphQL, a backgrounded dev server, browser MCP) but
