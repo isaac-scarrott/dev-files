@@ -7,7 +7,7 @@ Both `jedi-council` and `the-focus-group` render their findings as a single self
 The report **surfaces**; the user still **decides** in chat.
 
 - **In the HTML:** the full synthesis — findings grouped by who flagged them, convergence and sole-owner flags, verbatim quotes, the prose verdict, and the recommended next action.
-- **In the chat:** a one-line pointer (`Report written to <absolute path> — opened it.`) and then the decision prompt. The "user decides" close from [PANEL.md](PANEL.md) stays a live `AskUserQuestion` (or a short freeform grill) — it can't live in static HTML, and burying the choices in the file defeats the point of asking.
+- **In the chat:** a one-line pointer (`Report written to <absolute path> — opened it.`) and then the decision prompt. The "user decides" close from [PANEL.md](PANEL.md) stays a live question via the question tool (or a short freeform grill) — it can't live in static HTML, and burying the choices in the file defeats the point of asking.
 
 **No panel, no report.** If the artifact is small enough to answer in a paragraph (PANEL.md's refuse-to-convene outcome — the Slack-status case), don't manufacture a file. Answer directly in chat. The report is for findings worth a panel, not ceremony.
 

@@ -59,7 +59,7 @@ Across six personas: Devi abandons the form on screen three and goes back to Sla
 
 Two structural changes, then re-run with the same panel: import the approved-vendor list before launch (unblocks Inga), and tier the due-diligence step by purchase size (unblocks the four-person majority). The manager/finance ordering can be a fast-follow.
 
-Then close with a question to the user, for example via AskUserQuestion:
+Then close with a question to the user, for example via the question tool:
 
 - **Implement both structural changes, re-run the panel after (Recommended)** — Inga's finding is sole-owner but a hard block; the tiered due-diligence is the convergent majority
 - Pilot the tool with one team (engineering) first; iterate based on real usage before fixing everything

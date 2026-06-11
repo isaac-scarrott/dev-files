@@ -17,7 +17,7 @@ Plain and structural: **system → subsystem → module**. Boxes are **parts**; 
 
 ## Process
 
-**1 · Scope.** Confirm the user wants the artifact, not a chat answer — a bare "explain X" usually wants prose; only build the map when they want the interactive thing (ask if unsure), and stop if there's no repo to explore. If the target is vague, ask up to ~3 quick `AskUserQuestion`s (breadth · purpose · depth).
+**1 · Scope.** Confirm the user wants the artifact, not a chat answer — a bare "explain X" usually wants prose; only build the map when they want the interactive thing (ask if unsure), and stop if there's no repo to explore. If the target is vague, ask up to ~3 quick questions via the question tool (breadth · purpose · depth).
 
 **2 · Ground in the real vocabulary.** It lives in several places — `CONTEXT.md` and `docs/adr/`, the `README` and workspace/manifest files (package names, boundaries), `git log` over the area, and the code itself as ground truth. The map's names come from there, not from you.
 

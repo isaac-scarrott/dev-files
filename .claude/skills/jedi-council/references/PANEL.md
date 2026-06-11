@@ -16,7 +16,7 @@ If your environment has no way to dispatch independent sub-agents, stop and tell
 
 **Cast for the artifact, not for the form.** Small artifact, small panel. High-stakes artifact, broader panel, maybe a contrarian. Trust your judgement — there is no minimum cast size that has to be met. If two lenses surface what's needed, two is enough. If the artifact is small enough to answer in a paragraph without a panel at all, do that. Refusing to convene is a first-class outcome; the skill exists to surface what you couldn't otherwise see, not to add ceremony to what you already see clearly.
 
-**The user decides.** The panel surfaces; recommendations aren't decisions. End the synthesis with a question to the user about which action to apply. Use AskUserQuestion for concrete picks (flag your recommended option first, suffix with "(Recommended)"). Use a short freeform grill when the right call needs context only the user has.
+**The user decides.** The panel surfaces; recommendations aren't decisions. End the synthesis with a question to the user about which action to apply. Use the question tool for concrete picks (flag your recommended option first, suffix with "(Recommended)"). Use a short freeform grill when the right call needs context only the user has.
 
 ## Round 2
 

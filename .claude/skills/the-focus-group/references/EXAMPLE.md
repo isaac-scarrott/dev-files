@@ -59,7 +59,7 @@ Across six personas: zero conversions, two angry churns, two quiet abandonments,
 
 Three changes before round 2: drop the "wellness journey" framing, move the paywall to a moment that isn't crisis-tied (or remove streak-loss notifications entirely), let users complete an onboarding-free session as the first action.
 
-Then close with a question to the user, for example via AskUserQuestion:
+Then close with a question to the user, for example via the question tool:
 
 - **Implement the three changes, then re-run the same panel (Recommended)** — keep Tenzin even though his finding was single-voice; his lens is the only one that catches the tradition-stripping critique
 - Implement only the paywall-timing fix; the copy and onboarding can wait until you have data

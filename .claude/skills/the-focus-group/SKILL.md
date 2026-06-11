@@ -35,7 +35,7 @@ The synthesis is rendered as a **self-contained HTML report** written to the OS 
 - **First-person quotes as the centrepiece** — render each persona's verbatim lines as large pull-quotes attributed to them. The voices are the value; don't flatten them into table cells.
 - **Action distribution** — a hand-built visual (a tally or bar) of what each persona would actually *do* on landing: convert, churn, bounce, abandon mid-flow. Convergence groups findings; action gives them meaning, so make the distribution the visual anchor.
 - **Findings grouped by who flagged what**, with a **verdict badge** (`KILL` red, `High`/`Medium`/`Low` graded) and persona chips showing convergence. Flag sole-owner findings explicitly — the one persona scoped to catch something (the long-term practitioner, the accessibility edge case) is load-bearing, not a weak vote.
-- **Recommended next action** in the report; the **question about which action to apply** stays a live `AskUserQuestion` in chat.
+- **Recommended next action** in the report; the **question about which action to apply** stays a live question via the question tool in chat.
 
 See [references/EXAMPLE.md](references/EXAMPLE.md) and [references/EXAMPLE_2.md](references/EXAMPLE_2.md) for worked examples in different domains — read both before casting your own to see the range. The convergence tables and synthesis there are the *content* that now renders into the HTML report.
 
