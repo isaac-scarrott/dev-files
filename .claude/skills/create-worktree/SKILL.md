@@ -51,7 +51,13 @@ git -C "$ROOT" check-ignore -q .worktree/ \
 This copies every gitignored `.env` / `.env.*` (excluding `node_modules`, `cdk.out`, `dist`,
 `build`, `.next`, `coverage`), preserving relative paths. If there are none, it says so and moves on.
 
-## 5. Report
+## 5. Report and offer to switch
 
-Tell the user the worktree path and the branch. Mention they can jump in with
-`cd .worktree/<branch>` (or open it in their editor). Do not start work in it unless asked.
+Tell the user the worktree path and the branch. Then offer to switch into it:
+
+- If the `AskUserQuestion` tool is available, ask whether to set the working directory to the
+  new worktree — two options, "Yes (Recommended)" first and "No". Otherwise ask in plain text.
+- If yes, run `cd "$ROOT/.worktree/<branch>"` as a standalone command so the working directory
+  persists for later calls.
+
+Do not start work in the worktree unless asked.
