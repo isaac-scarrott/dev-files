@@ -48,7 +48,7 @@ You don't set positions for the default layout. Just declare the `edges` honestl
 
 The default is the auto-laid-out graph — you rarely need anything else.
 
-- **(default / `flow`)** — dagre directed-graph layout. Pick orientation with `dir`: `"TB"` top-down (good for portrait / deep trees) or `"LR"` left-right (good for a pipeline). `lanes` and `layers` are accepted as aliases and behave the same; you no longer hand-assign lanes.
+- **(default / `flow`)** — dagre directed-graph layout. Pick orientation with `dir`: `"TB"` top-down (good for portrait / deep trees) or `"LR"` left-right (good for a pipeline). `lanes` and `layers` are accepted as aliases and behave the same.
 - **radial** — set `"shape": "radial"`; one `hub: true` node centres, the rest orbit it.
 - **sequence** — set `"shape": "sequence"`; `nodes` are lifelines across the top, `edges` are time-ordered messages down (`"return": true` dashes a return). The temporal view.
 - **free** — set `"shape": "free"` and give each node `x`/`y` (0–100 %); you place everything.

@@ -33,7 +33,7 @@ The synthesis is rendered as a **self-contained HTML report** written to the OS 
 - **Prose synthesis** opening with the strongest line and quoting the most cutting line verbatim as a pull-quote — the cutting line is the centrepiece, not a footnote.
 - **Recommended next action** in the report; the **question about which action to apply** stays a live question via the question tool in chat.
 
-See [references/EXAMPLE.md](references/EXAMPLE.md) for worked examples at different scales — the findings tables and synthesis there are the *content* that now renders into the HTML report.
+See [references/EXAMPLE.md](references/EXAMPLE.md) for worked examples at different scales — the findings tables and synthesis there are the *content* that renders into the HTML report.
 
 ## Advanced
 

@@ -11,8 +11,6 @@ The chat UI ships *inside* the map — the runtime ([RUNTIME.md](RUNTIME.md)) al
 - **`scripts/bridge-server.mjs`** — dependency-free Node server; serves the built map *and* the ask API; binds `127.0.0.1`; prints `BRIDGE_URL=http://127.0.0.1:<port>`.
 - **`scripts/wait-next.sh`** — blocks until a new *unanswered* question appears, prints it, exits.
 
-(The map's chat lights up only when served by the bridge; on a static `file://` open it stays hidden.)
-
 ## The contract
 
 A working dir `$BRIDGE_DIR` holds `inbox/` and `outbox/`. A question arrives as `inbox/<id>.json` (`{id, question, context, ts}`); you answer it by writing `outbox/<id>.txt`. The server long-polls the outbox back to the page; the watcher skips any question already answered.

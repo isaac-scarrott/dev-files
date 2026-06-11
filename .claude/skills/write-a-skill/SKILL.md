@@ -117,3 +117,4 @@ After drafting, verify:
 -   [ ] Consistent terminology
 -   [ ] Concrete examples included
 -   [ ] References one level deep
+-   [ ] Standalone: no predecessor/history references; nothing named that its absence already implies
