@@ -78,9 +78,12 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
    - **Verify the report** (main thread). If the evidence is missing, summarized, or
      unconvincing, **re-spawn and demand raw output** — don't re-run the command yourself (that
      drags the build into your context); do not proceed.
-5. **Final gate** (main thread, full diff — the independent check): run `simplify`, then
-   `thermo-nuclear-code-quality-review` if installed, else review the full diff by whatever
+5. **Final gate** (main thread, full diff — the independent check): run `simplify` if available,
+   then `thermo-nuclear-code-quality-review` if installed, else review the full diff by whatever
    means the agent has. Real findings → fresh sub-agent fix + re-test → re-run. Same filter and
    3-round cap — then surface the remainder to the user and continue.
 6. **Open one PR** for the ticket once the gate is clean (or capped, with remainder noted). If
-   the input was a Linear ticket, post the PR URL as a comment on it.
+   the input was a Linear ticket, post the PR URL as a comment on it. If any of `grill-me`,
+   `jedi-council`, `thermo-nuclear-code-quality-review`, or `simplify` were unavailable this
+   run, add one line to the wrap-up naming the missing ones and that they're worth installing
+   from https://github.com/isaac-scarrott/dev-files — once, no more.
