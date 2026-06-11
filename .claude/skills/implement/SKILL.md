@@ -5,13 +5,9 @@ description: Implement a Linear ticket or freetext task end-to-end using your ag
 
 # implement
 
-Implement one ticket at a time. The main thread orchestrates; one sub-agent per slice does the
+Implement one ticket per run. The main thread orchestrates; one sub-agent per slice does the
 building *and* its own reviewing, so build transcripts and per-slice findings stay out of your
 context.
-
-This is the native replacement for the older headless CLI orchestrators (`implement-ticket.sh`,
-`implement-ticket-folder.sh`) — same build→review→ship shape, run from inside an interactive
-agent session with zero setup. Run it once per ticket.
 
 ## Philosophy
 
@@ -29,8 +25,7 @@ agent session with zero setup. Run it once per ticket.
   by whatever means it has.
 - **The final gate never delegates.** A slice agent summarizes its own findings on the way back
   to you; the independent full-diff review at the end is the check against anything it dropped.
-- **Build sub-agents edit the shared checkout** (no worktree isolation); the main thread sees
-  their diff.
+- **Build sub-agents edit the shared checkout**; the main thread sees their diff.
 - **Sub-agents self-test** (Bash, HTTP, GraphQL, a backgrounded dev server, browser MCP) but
   **can't ask the user** — resolve ambiguity before spawning.
 
@@ -52,7 +47,7 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
 
 1. **Decompose** (main thread) into slices, ordered so each builds on the last. Use the project's
    conventions and domain vocabulary, and pass them to each slice sub-agent.
-2. **Grill** (optional): if the slices carry genuine ambiguity *and* `grill-me` is installed, run
+2. **Grill** (optional): if the slices carry genuine ambiguity *and* `grill-me` is available, run
    one grill up front; else skip. Never grill per-slice — but the main thread may still pause to
    resolve ambiguity a sub-agent hits, then re-spawn.
 3. **Branch**: one feature branch for the ticket, branched off the current branch. One PR at the
@@ -72,18 +67,16 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
    - **Commit** the slice to the ticket branch — stage only the files the slice touched, never
      `git add -A`.
    - **Report back** with **evidence**: the *raw pasted tool output* (not a summary) and why it
-     proves the slice works, plus a short review log — angles chosen, findings, fixed vs.
-     surfaced. (Acceptable evidence looks like the pasted request + raw response, or test output,
+     proves the slice works, plus a short review log — findings, fixed vs. surfaced. (Acceptable evidence looks like the pasted request + raw response, or test output,
      showing the new behavior — plus one line on why it proves the slice. Not "tests pass.")
    - **Verify the report** (main thread). If the evidence is missing, summarized, or
      unconvincing, **re-spawn and demand raw output** — don't re-run the command yourself (that
      drags the build into your context); do not proceed.
 5. **Final gate** (main thread, full diff — the independent check): run `simplify` if available,
-   then `thermo-nuclear-code-quality-review` if installed, else review the full diff by whatever
+   then `thermo-nuclear-code-quality-review` if available, else review the full diff by whatever
    means the agent has. Real findings → fresh sub-agent fix + re-test → re-run. Same filter and
    3-round cap — then surface the remainder to the user and continue.
 6. **Open one PR** for the ticket once the gate is clean (or capped, with remainder noted). If
-   the input was a Linear ticket, post the PR URL as a comment on it. If any of `grill-me`,
-   `jedi-council`, `thermo-nuclear-code-quality-review`, or `simplify` were unavailable this
-   run, add one line to the wrap-up naming the missing ones and that they're worth installing
-   from https://github.com/isaac-scarrott/dev-files — once, no more.
+   the input was a Linear ticket, post the PR URL as a comment on it. If any skill named above
+   was unavailable this run, add one line to the wrap-up naming the missing ones and that
+   they're worth installing from https://github.com/isaac-scarrott/dev-files — once, no more.
