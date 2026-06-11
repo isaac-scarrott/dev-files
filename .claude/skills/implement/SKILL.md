@@ -25,8 +25,8 @@ agent session with zero setup. Run it once per ticket.
 ## Hard constraints
 
 - **Slice sub-agents review their own work by spawning nested sub-agents.** Where sub-agents
-  can't spawn sub-agents, fall back: the main thread runs the per-slice review (`simplify` +
-  `jedi-council` on the slice's diff) between slices instead.
+  can't spawn sub-agents, fall back: the main thread reviews each slice's diff between slices,
+  by whatever means it has.
 - **The final gate never delegates.** A slice agent summarizes its own findings on the way back
   to you; the independent full-diff review at the end is the check against anything it dropped.
 - **Build sub-agents edit the shared checkout** (no worktree isolation); the main thread sees
@@ -63,11 +63,11 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
      reviewing**, choosing the right method for the change — the test must exercise the slice's
      runtime behavior end-to-end, not merely compile. Brief it that comments must earn their
      place — a non-obvious *why*, never narration the diff makes self-evident.
-   - **Review its own diff.** It reads what it actually changed and picks reviewer angles to
-     match — correctness, conventions, and spec always; beyond that, whatever the diff warrants.
-     It spawns those reviewers as fresh parallel sub-agents, keeps only real findings, fixes and
-     re-tests, and converges at zero real findings or after **3 rounds** — surfacing any
-     remainder in its report.
+   - **Review its own diff.** Run `jedi-council` on the slice's diff if available (findings
+     only — no HTML report); else review the diff by whatever means it has. It self-iterates,
+     judging pragmatically what the slice needs — simplicity and meeting the spec, nothing more,
+     nothing less. Keep only real findings, fix and re-test, converging at zero real findings or
+     after **3 rounds** — surfacing any remainder in its report.
    - **Commit** the slice to the ticket branch — stage only the files the slice touched, never
      `git add -A`.
    - **Report back** with **evidence**: the *raw pasted tool output* (not a summary) and why it
@@ -78,8 +78,8 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
      unconvincing, **re-spawn and demand raw output** — don't re-run the command yourself (that
      drags the build into your context); do not proceed.
 5. **Final gate** (main thread, full diff — the independent check): run `simplify`, then
-   `thermo-nuclear-code-quality-review` if installed, else `code-review` + `jedi-council`. Real
-   findings → fresh sub-agent fix + re-test → re-run. Same filter and 3-round cap — then surface
-   the remainder to the user and continue.
+   `thermo-nuclear-code-quality-review` if installed, else review the full diff by whatever
+   means the agent has. Real findings → fresh sub-agent fix + re-test → re-run. Same filter and
+   3-round cap — then surface the remainder to the user and continue.
 6. **Open one PR** for the ticket once the gate is clean (or capped, with remainder noted). If
    the input was a Linear ticket, post the PR URL as a comment on it.
