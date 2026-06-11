@@ -61,8 +61,9 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
 4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle:
    - **Build & self-test.** It implements in the shared checkout and **must self-test before
      reviewing**, choosing the right method for the change — the test must exercise the slice's
-     runtime behavior end-to-end, not merely compile. Brief it that comments must earn their
-     place — a non-obvious *why*, never narration the diff makes self-evident.
+     runtime behavior end-to-end, not merely compile. Brief it that the installed skills are at
+     its disposal — use any that genuinely serve the slice, none if none do — and that comments
+     must earn their place — a non-obvious *why*, never narration the diff makes self-evident.
    - **Review its own diff.** Run `jedi-council` on the slice's diff if available (findings
      only — no HTML report); else review the diff by whatever means it has. It self-iterates,
      judging pragmatically what the slice needs — simplicity and meeting the spec, nothing more,
