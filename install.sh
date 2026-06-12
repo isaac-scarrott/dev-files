@@ -49,6 +49,11 @@ LINKS=(
   "$HOME/.claude/commands/simplify.md|.claude/commands/simplify.md"
   "$HOME/.claude/commands/commit.md|.claude/commands/commit.md"
   "$HOME/.claude/commands/commitpr.md|.claude/commands/commitpr.md"
+  "$HOME/.claude/commands/ship.md|.claude/commands/ship.md"
+  "$HOME/.claude/commands/babysit-ci.md|.claude/commands/babysit-ci.md"
+  "$HOME/.claude/commands/babysit-comments.md|.claude/commands/babysit-comments.md"
+
+  "$HOME/.claude/statusline-command.sh|.claude/statusline-command.sh"
 
   # OpenCode — same canonical source as Claude (config, skills, agent, commands)
   "$HOME/.config/opencode/opencode.json|.config/opencode/opencode.json"
@@ -67,6 +72,7 @@ LINKS=(
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
+  "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
 

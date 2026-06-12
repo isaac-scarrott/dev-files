@@ -1,5 +1,93 @@
 {
-  "effortLevel": "high",
+  "model": "claude-fable-5[1m]",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash /Users/isaac/.claude/statusline-command.sh"
+  },
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true,
     "holibob@dev-files": true,
@@ -9,110 +97,23 @@
   "extraKnownMarketplaces": {
     "dev-files": {
       "source": {
-        "path": "/Users/isaac/git/dev-files/.claude/marketplaces/dev-files",
-        "source": "directory"
+        "source": "directory",
+        "path": "/Users/isaac/git/dev-files/.claude/marketplaces/dev-files"
       }
     },
     "marketingskills": {
       "source": {
-        "repo": "coreyhaines31/marketingskills",
-        "source": "github"
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
       }
     }
   },
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh",
-            "type": "command"
-          }
-        ]
-      }
-    ]
-  },
-  "skipDangerousModePermissionPrompt": true,
-  "statusLine": {
-    "command": "bash /Users/isaac/.claude/statusline-command.sh",
-    "type": "command"
-  },
+  "effortLevel": "high",
   "tui": "fullscreen",
   "voice": {
     "enabled": true,
     "mode": "hold"
   },
+  "skipDangerousModePermissionPrompt": true,
   "voiceEnabled": true
 }
