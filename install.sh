@@ -43,6 +43,7 @@ LINKS=(
   "$HOME/.claude/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.claude/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
+  "$HOME/.claude/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
 
