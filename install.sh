@@ -69,6 +69,7 @@ LINKS=(
   "$HOME/.config/opencode/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.config/opencode/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.config/opencode/skills/write-a-skill|.claude/skills/write-a-skill"
+  "$HOME/.config/opencode/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
