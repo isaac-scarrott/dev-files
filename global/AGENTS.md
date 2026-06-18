@@ -19,3 +19,7 @@ Cross-tool guidelines (Claude Code, opencode, others). Modern harnesses already 
 - Put meaning in the artifact itself: clear names, plain structure, direct words. If it reads unclearly, fix the artifact — don't paper over it with an explanation.
 - A comment or note must carry a non-obvious *why* the artifact can't express; if it restates what's already there, cut it.
 - Absence speaks for itself. When asked to remove something or stop doing something, the deletion is the whole change — don't add a comment marking what was removed, a guard or fallback for the now-absent case, or text stating the negation. If absence already implies it, don't say it.
+
+## Reporting
+
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
