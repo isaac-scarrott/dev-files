@@ -66,17 +66,31 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
      after **3 rounds** — surfacing any remainder in its report.
    - **Commit** the slice to the ticket branch — stage only the files the slice touched, never
      `git add -A`.
-   - **Report back** with **evidence**: the *raw pasted tool output* (not a summary) and why it
-     proves the slice works, plus a short review log — findings, fixed vs. surfaced. (Acceptable evidence looks like the pasted request + raw response, or test output,
-     showing the new behavior — plus one line on why it proves the slice. Not "tests pass.")
+   - **Report back** with a typed **verdict** — `working`, `blocked` (its behavior could not be
+     demonstrated), or `broken` (demonstrated and fails, or a dependency it needs is broken) — and
+     **evidence**: the *raw pasted tool output* (not a summary) and why it proves the slice works,
+     plus a short review log — findings, fixed vs. surfaced. The evidence must show the
+     *state-change this run caused* at the real seam the consumer touches — not an end-state a
+     default, cached, or already-on condition would produce just the same; a unit/integration test
+     counts only when it *is* that seam (a pure function, a repo method), not when it proxies a
+     seam you could have exercised. (Acceptable evidence looks like the pasted request + raw
+     response, or test output, showing the new behavior — plus one line on why it proves the slice.
+     Not "tests pass.")
    - **Verify the report** (main thread). If the evidence is missing, summarized, or
      unconvincing, **re-spawn and demand raw output** — don't re-run the command yourself (that
-     drags the build into your context); do not proceed.
-5. **Final gate** (main thread, full diff — the independent check): run `simplify` if available,
+     drags the build into your context); do not proceed. A `blocked` or `broken` slice halts its
+     dependents — resolve the blocker and re-spawn, or stop the run and hand back to the user;
+     never build the next slice on top of an unproven one.
+5. **Final gate** (main thread, full diff — the independent check): first confirm the integrated
+   result satisfies the ticket's *stated outcome*, not just the sum of per-slice specs; then run
+   `simplify` if available,
    then `thermo-nuclear-code-quality-review` if available, else review the full diff by whatever
    means the agent has. Real findings → fresh sub-agent fix + re-test → re-run. Same filter and
    3-round cap — then surface the remainder to the user and continue.
-6. **Open one PR** for the ticket once the gate is clean (or capped, with remainder noted). If
+6. **Open one PR** for the ticket once the gate is clean and every slice is `working`. Any
+   `blocked`/`broken` slice or unproven behavior **forbids a normal PR** — open a *draft* naming
+   exactly what went unproven, or stop and hand back; "remainder" covers review/polish findings
+   only, never unproven behavior. If
    the input was a Linear ticket, post the PR URL as a comment on it. If any skill named above
    was unavailable this run, add one line to the wrap-up naming the missing ones and that
    they're worth installing from https://github.com/isaac-scarrott/dev-files — once, no more.
