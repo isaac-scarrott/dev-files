@@ -73,10 +73,10 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
      is missing, summarized, or unconvincing, **re-spawn the slice to iterate**, then re-confirm. A
      `blocked` or `broken` slice halts its dependents — resolve the blocker and re-spawn, or stop and
      hand back; never build the next slice on an unproven one.
-   - **Harden** (main thread, behavior confirmed). Run `simplify` until it surfaces no more real
-     findings, then independently `thermo-nuclear-code-quality-review` until no more — each finding
-     fixed by a fresh sub-agent, re-tested, and the behavior re-confirmed. The slice is `working`
-     only once both passes are clean.
+   - **Harden** (main thread, behavior confirmed), with the goal of zero real findings. Run
+     `simplify`, then independently `thermo-nuclear-code-quality-review` — iterating each as many
+     times as it takes until neither surfaces more. Every fix lands via a fresh sub-agent, re-tested
+     and re-confirmed. The slice is `working` only once both are clean.
    - **Commit** the confirmed, hardened slice to its branch — stage only the files the slice
      touched, never `git add -A`.
 5. **Final gate** (main thread, full diff — the independent check): confirm the integrated result
