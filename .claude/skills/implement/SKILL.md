@@ -53,7 +53,10 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
 3. **Branch**: one feature branch for the ticket, branched off the current branch. One PR at the
    end; every slice's sub-agent commits to this branch. **Resume, don't clobber**: if a branch or
    open PR for this ticket already exists, continue on it.
-4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle:
+4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle. A slice
+   is done only when an **independent, unbiased sub-agent — one that took no part in building it —
+   confirms it meets the spec**; the builder never self-declares `working`. Iterate (build →
+   confirm → fix) until that holds, or the slice is `blocked`/`broken`:
    - **Build & self-test.** It implements in the shared checkout and **must self-test before
      reviewing**, choosing the right method for the change — the test must exercise the slice's
      runtime behavior end-to-end, not merely compile. Brief it that the installed skills are at
@@ -76,11 +79,13 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
      seam you could have exercised. (Acceptable evidence looks like the pasted request + raw
      response, or test output, showing the new behavior — plus one line on why it proves the slice.
      Not "tests pass.")
-   - **Verify the report** (main thread). If the evidence is missing, summarized, or
-     unconvincing, **re-spawn and demand raw output** — don't re-run the command yourself (that
-     drags the build into your context); do not proceed. A `blocked` or `broken` slice halts its
-     dependents — resolve the blocker and re-spawn, or stop the run and hand back to the user;
-     never build the next slice on top of an unproven one.
+   - **Confirm done, independently** (main thread). Spawn a **fresh sub-agent that took no part in
+     building the slice** to exercise the result against the spec and confirm it — don't re-run it
+     yourself (that drags the build into your context). If it can't reproduce the behavior, or the
+     report's evidence is missing, summarized, or unconvincing, **re-spawn the builder to iterate**,
+     then re-confirm; do not proceed until an independent agent confirms `working`. A `blocked` or
+     `broken` slice halts its dependents — resolve the blocker and re-spawn, or stop the run and
+     hand back to the user; never build the next slice on top of an unproven one.
 5. **Final gate** (main thread, full diff — the independent check): first confirm the integrated
    result satisfies the ticket's *stated outcome*, not just the sum of per-slice specs; then run
    `simplify` if available,
