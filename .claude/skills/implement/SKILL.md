@@ -50,16 +50,15 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
    end; every slice's sub-agent commits to this branch. **Resume, don't clobber**: if a branch or
    open PR for this ticket already exists, continue on it.
 4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle. A slice
-   is done only when an **independent, unbiased sub-agent — one that took no part in building it —
-   confirms it meets the spec**; the builder never self-declares `working`. Iterate (build →
-   confirm → fix) until that holds, or the slice is `blocked`/`broken`:
+   is `working` only when an **independent, unbiased sub-agent — one that took no part in building
+   it — confirms it meets the spec** *and* the harden passes (below) are clean; the builder never
+   self-declares. Iterate (build → confirm → harden → fix) until that holds, or the slice is
+   `blocked`/`broken`:
    - **Build & self-test.** It implements in the shared checkout and **must self-test**, choosing
      the right method for the change — the test must exercise the slice's runtime behavior
      end-to-end, not merely compile. Brief it that the installed skills are at
      its disposal — use any that genuinely serve the slice, none if none do — and that comments
      must earn their place — a non-obvious *why*, never narration the diff makes self-evident.
-   - **Commit** the slice to the ticket branch — stage only the files the slice touched, never
-     `git add -A`.
    - **Report back** with a typed **verdict** — `working`, `blocked` (its behavior could not be
      demonstrated), or `broken` (demonstrated and fails, or a dependency it needs is broken) — and
      **evidence**: the *raw pasted tool output* (not a summary) and why it proves the slice works.
@@ -72,16 +71,20 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
    - **Confirm done, independently** (main thread). Spawn a **fresh sub-agent that took no part in
      building the slice** to exercise the result against the spec and confirm it — don't re-run it
      yourself (that drags the build into your context). If it can't reproduce the behavior, or the
-     report's evidence is missing, summarized, or unconvincing, **re-spawn the builder to iterate**,
-     then re-confirm; do not proceed until an independent agent confirms `working`. A `blocked` or
-     `broken` slice halts its dependents — resolve the blocker and re-spawn, or stop the run and
-     hand back to the user; never build the next slice on top of an unproven one.
-5. **Final gate** (main thread, full diff — the independent check): first confirm the integrated
-   result satisfies the ticket's *stated outcome*, not just the sum of per-slice specs. Then run
-   `simplify` until it surfaces no more real findings, then independently
-   `thermo-nuclear-code-quality-review` until it surfaces no more real findings (else review the
-   full diff by whatever means the agent has). Each finding → fresh sub-agent fix + re-test →
-   re-run that pass from the top.
+     report's evidence is missing, summarized, or unconvincing, **re-spawn the builder to
+     iterate**, then re-confirm. A `blocked` or `broken` slice halts its dependents — resolve the
+     blocker and re-spawn, or stop the run and hand back to the user; never build the next slice on
+     top of an unproven one.
+   - **Harden** (main thread, behavior confirmed). Run `simplify` until it surfaces no more real
+     findings, then independently `thermo-nuclear-code-quality-review` until no more — each finding
+     fixed by a fresh sub-agent, re-tested, and the behavior re-confirmed. The slice is `working`
+     only once both passes are clean.
+   - **Commit** the confirmed, hardened slice to the ticket branch — stage only the files the slice
+     touched, never `git add -A`.
+5. **Final gate** (main thread, full diff — the independent check): confirm the integrated result
+   satisfies the ticket's *stated outcome*, not just the sum of per-slice specs, and review the
+   full diff for what per-slice hardening can't see — cross-slice interactions and integration.
+   Each finding → fresh sub-agent fix + re-test → re-confirm.
 6. **Open one PR** for the ticket once the gate is clean and every slice is `working`. Any
    `blocked`/`broken` slice **forbids a normal PR** — open a *draft* naming exactly what went
    unproven, or stop and hand back. If
