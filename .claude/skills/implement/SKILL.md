@@ -1,12 +1,13 @@
 ---
 name: implement
-description: Implement a Linear ticket, a parent ticket with sub-tickets, a milestone, or a freetext task end-to-end using your agent's sub-agents — one sub-agent per vertical slice that builds and self-tests; the main thread orchestrates, independently confirms each slice against spec, and holds the final gate. Use when the user wants to autonomously implement a ticket or task in the current session, or invokes /implement.
+description: Implement a Linear ticket, a parent ticket with sub-tickets, a milestone, or a freetext task end-to-end using your agent's sub-agents — one sub-agent per vertical slice that builds, self-tests, and commissions its own independent in-depth review; the main thread orchestrates, runs a light confirmation pass, and holds the final gate. Use when the user wants to autonomously implement a ticket or task in the current session, or invokes /implement.
 ---
 
 # implement
 
-The main thread orchestrates and owns every check; one sub-agent per slice does the building and
-self-testing, so build transcripts stay out of your context.
+The main thread orchestrates; one sub-agent per slice does the building, self-testing, and commissions
+its own independent in-depth review — so the heavy verification stays out of your context. The main
+thread keeps only a light confirmation pass and the final gate.
 
 ## Philosophy
 
@@ -19,8 +20,9 @@ self-testing, so build transcripts stay out of your context.
 
 ## Hard constraints
 
-- **Review lives with the main thread.** It checks each slice's diff as it needs to; the final
-  gate is its own independent full-diff pass — the check against anything a slice dropped.
+- **The deep review lives inside the slice; the main thread stays light.** Each slice's own
+  independent reviewer does the in-depth confirmation; the main thread only spot-checks each slice
+  and runs the final full-diff gate — its check against anything a slice dropped.
 - **Build sub-agents edit the shared checkout**; the main thread sees their diff.
 - **Sub-agents self-test** (Bash, HTTP, GraphQL, a backgrounded dev server, browser MCP) but
   **can't ask the user** — resolve ambiguity before spawning.
@@ -51,32 +53,46 @@ can't be tested end-to-end, so the self-test gate becomes meaningless. Always sl
    Match it to the input: an atomic ticket is usually one PR; a milestone or parent with sub-tickets
    often one per slice. Branch off the current branch. **Resume, don't clobber**: if a branch or
    open PR for this work already exists, continue on it.
-4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle. A slice
+4. **Per slice, in order** — spawn one fresh sub-agent that owns the whole slice lifecycle, and that
+   can spawn its own reviewer sub-agent (give it an agent type that carries the sub-agent tool). A slice
    is `working` only when an **independent, unbiased sub-agent — one that took no part in building
    it — confirms it meets the spec** *and* the harden passes (below) are clean; the builder never
-   self-declares. Iterate (build → confirm → harden → fix) until that holds, or the slice is
+   self-declares. Iterate (build → review → confirm → harden → fix) until that holds, or the slice is
    `blocked`/`broken`:
    - **Build & self-test.** It implements in the shared checkout and **must self-test**, choosing
      the right method for the change — the test must exercise the slice's runtime behavior
      end-to-end, not merely compile. Brief it that the installed skills are at
      its disposal — use any that genuinely serve the slice, none if none do — and that comments
      must earn their place — a non-obvious *why*, never narration the diff makes self-evident.
-   - **Report back** with a typed **verdict** — `working`, `blocked` (its behavior could not be
-     demonstrated), or `broken` (demonstrated and fails, or a dependency it needs is broken) — and
-     **evidence**: the *raw pasted tool output* (not a summary) and why it proves the slice works.
+   - **Independent in-depth review (inside the slice).** Before it reports back, the slice sub-agent
+     spawns a **fresh reviewer sub-agent that took no part in building**, and hands it the spec and
+     any design references — not its own account of what it did. The reviewer exercises the slice the
+     way a user actually would and satisfies itself it is built right, picking whatever methods fit
+     the slice: e.g. clicking through the flow end-to-end, comparing the result against the design
+     references (Paper/Figma) and using browser dev tools to check spacing and responsiveness across
+     breakpoints, firing real API/GraphQL requests, or running throwaway scripts with logging.
+     Nothing here is mandatory and the list isn't exhaustive; the bar is that the reviewer is
+     **confident the slice works as the user would expect and is faithful enough to demo proudly** —
+     not merely that it compiles or passes one narrow test. If it isn't convinced, the builder
+     iterates and re-reviews until it is.
+   - **Report back** to the main thread with a typed **verdict** — `working`, `blocked` (its behavior
+     could not be demonstrated), or `broken` (demonstrated and fails, or a dependency it needs is
+     broken) — and **evidence** from both the self-test and the in-depth review: the *raw pasted tool
+     output* (not a summary) and why it proves the slice works.
      The evidence must show the *state-change this run caused* at the real seam the consumer
      touches — not an end-state a default, cached, or already-on condition would produce just the
      same; a unit/integration test counts only when it *is* that seam (a pure function, a repo
      method), not when it proxies a seam you could have exercised. (Acceptable evidence looks like the pasted request + raw
      response, or test output, showing the new behavior — plus one line on why it proves the slice.
      Not "tests pass.")
-   - **Confirm done, independently** (main thread). Spawn a **fresh sub-agent that took no part in
-     building the slice** to exercise the result against the spec and confirm it — don't re-run it
-     yourself (that drags the build into your context). If it can't reproduce the behavior, or the
-     report's evidence is missing, summarized, or unconvincing, **re-spawn the builder to
-     iterate**, then re-confirm. A `blocked` or `broken` slice halts its dependents — resolve the
-     blocker and re-spawn, or stop the run and hand back to the user; never build the next slice on
-     top of an unproven one.
+   - **Confirm (main thread, light).** The deep review already happened inside the slice and stays
+     out of your context — don't re-run it. Do a quick spot-check against the spec on the same
+     principles: glance at the key screen against its design, click the main path, or hit the primary
+     endpoint — enough to catch a verdict that doesn't hold up. If the spot-check fails, or the
+     report's evidence is missing, summarized, or unconvincing, **re-spawn the slice to iterate**,
+     then re-confirm. A `blocked` or `broken` slice halts its dependents — resolve the blocker and
+     re-spawn, or stop the run and hand back to the user; never build the next slice on top of an
+     unproven one.
    - **Harden** (main thread, behavior confirmed). Run `simplify` until it surfaces no more real
      findings, then independently `thermo-nuclear-code-quality-review` until no more — each finding
      fixed by a fresh sub-agent, re-tested, and the behavior re-confirmed. The slice is `working`
