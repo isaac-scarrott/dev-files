@@ -34,7 +34,8 @@ scripts/grab-frames.sh video.webm outdir 44:past-dated-item 78:menu-all-disabled
 Notes that matter:
 
 - **`-ss` before `-i`** — seeks by keyframe index, near-instant. After `-i` it decodes from zero and is unusably slow on a long video.
-- **Speech lags the visual.** Someone says "you'll notice this looks good" a beat *after* clicking. Sample around the timestamp, not on it.
+- **Narration drifts both ways.** Sometimes the description trails the click ("you'll notice this looks good"), sometimes it runs ahead of it ("this is what it should do, so it should open like this"). There is no reliable offset to correct for. Grab a spread around each timestamp, look, then narrow.
+- **Name frames `t<seconds>` on the first pass.** Naming from the transcript encodes a guess about what the frame contains, and a wrong guess reads as confirmed fact later. Rename to something descriptive only after you have looked at the image; that name then becomes the attachment title.
 - **Crop the chrome.** Screen recordings carry a browser sidebar, OS menu bar, a screen-share banner, notification toasts. A cropped frame reads as evidence; an uncropped one reads as a screenshot of someone's desktop. Get the crop box from one full frame, then apply it to all: `crop=W:H:X:Y`.
 - **Before/after pairs** beat single frames for anything about layout, state or movement. Two frames of the same page in two states show a layout shift that no prose can.
 - Name files for what they show, not the timestamp. The name becomes the attachment title.

@@ -24,7 +24,9 @@ Writes `video.*`, `transcript.vtt`, `transcript.txt` (flat `[mm:ss] text`) and `
     - **Retractions** — "actually that's a non-issue, ignore that". Honour them; do not file them.
     - **"That's its own issue"** — the speaker separating concerns. Note it, but check whether two symptoms share one root cause before splitting.
     - **Vague deixis** — "this", "that", "it doesn't appear at the top". Unresolvable from text. Resolve it in step 3.
-3. **Extract and look at frames** at the timestamps the claims point to. `grab-frames.sh` handles this. **Actually Read the images** — this is the step that earns the ticket its detail, and the step that catches misreadings of the transcript. Speech usually lags what it describes by 1–3s; sample a spread and refine.
+3. **Extract and look at frames** at the timestamps the claims point to, naming them neutrally (`t44`, `t65`). `grab-frames.sh` handles this. **Actually Read the images** — this is the step that earns the ticket its detail, and the step that catches misreadings of the transcript.
+    - **Name frames after looking, never before.** A name like `itinerary-page` written from the transcript bakes in the very assumption the frame exists to test, and it will quietly survive into the ticket when the frame turns out to show something else. Rename once you have seen them.
+    - **Narration does not line up with the screen.** Speakers describe things seconds after clicking, and also seconds before ("this is what it should do..."). Sample either side of each timestamp and expect to re-sample.
 4. **Search the tracker before writing anything.** Query the issue tracker for the feature area. Video reviews routinely restate, contradict or supersede existing tickets. A contradiction found here is worth more than any ticket you write.
 5. **Confirm with `AskUserQuestion`.** Ask only what changes the output — see [REFERENCE.md](REFERENCE.md#what-to-ask). Use `preview` to show the proposed ticket shape.
 6. **Write the tickets.** Record the observation; do not invent the fix. See "Ticket voice" below.
