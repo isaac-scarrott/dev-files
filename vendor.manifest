@@ -7,15 +7,10 @@ mattpocock/skills main skills/productivity/grill-me/SKILL.md .claude/skills/gril
 
 # mattpocock/skills — engineering/grill-with-docs
 mattpocock/skills main skills/engineering/grill-with-docs/SKILL.md .claude/skills/grill-with-docs/SKILL.md
-mattpocock/skills main skills/engineering/grill-with-docs/ADR-FORMAT.md .claude/skills/grill-with-docs/ADR-FORMAT.md
-mattpocock/skills main skills/engineering/grill-with-docs/CONTEXT-FORMAT.md .claude/skills/grill-with-docs/CONTEXT-FORMAT.md
 
 # mattpocock/skills — engineering/improve-codebase-architecture
 mattpocock/skills main skills/engineering/improve-codebase-architecture/SKILL.md .claude/skills/improve-codebase-architecture/SKILL.md
-mattpocock/skills main skills/engineering/improve-codebase-architecture/DEEPENING.md .claude/skills/improve-codebase-architecture/DEEPENING.md
 mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REPORT.md .claude/skills/improve-codebase-architecture/HTML-REPORT.md
-mattpocock/skills main skills/engineering/improve-codebase-architecture/INTERFACE-DESIGN.md .claude/skills/improve-codebase-architecture/INTERFACE-DESIGN.md
-mattpocock/skills main skills/engineering/improve-codebase-architecture/LANGUAGE.md .claude/skills/improve-codebase-architecture/LANGUAGE.md
 
 # cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
 # (strip disable-model-invocation so agents can run it; tracks upstream otherwise)
