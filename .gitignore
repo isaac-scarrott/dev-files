@@ -14,3 +14,9 @@
 
 # Neovim plugin lockfile — churns on every :Lazy update
 /.config/nvim/lazy-lock.json
+
+# Synth drops per-tool MCP config, with absolute paths, into whatever repo it opens.
+# Root-anchored so the tracked plugin and OpenCode configs still count.
+/.mcp.json
+/opencode.json
+/.agents/
