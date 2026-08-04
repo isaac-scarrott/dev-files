@@ -76,3 +76,13 @@ export EDITOR="nvim"
 
 # Added by Antigravity
 export PATH="/Users/isaac/.antigravity/antigravity/bin:$PATH"
+
+# Upload an HTML file to my personal S3 share bucket and print a public (unindexed) URL.
+# Usage: share-html report.html
+share-html() {
+  local bucket=holibob-isaac-shares region=eu-west-1
+  if [[ -z "$1" || ! -f "$1" ]]; then echo "usage: share-html <file.html>" >&2; return 1; fi
+  local key="${1:t:r}-$(openssl rand -hex 8).html"
+  aws s3 cp "$1" "s3://$bucket/$key" --content-type "text/html; charset=utf-8" --cache-control no-store >/dev/null \
+    && echo "https://$bucket.s3.$region.amazonaws.com/$key"
+}
