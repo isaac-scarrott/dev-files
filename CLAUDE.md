@@ -34,6 +34,7 @@ Codex's `~/.codex/config.toml` is **never symlinked** — Codex owns and rewrite
 ## Rules for changes in this repo
 
 - **Adding a tracked file**: append to `LINKS` in `install.sh`, then run `./install.sh`. Don't `ln -s` by hand.
+- **Linking something from a sibling repo**: give `LINKS` an absolute src instead of a repo-relative one (`claude-orchestrate` is the only case). Those links are best-effort — `install.sh` warns and moves on when the repo isn't cloned, and `drift.sh` stays quiet rather than calling it drift.
 - **Adding an upstream file**: add a line to `vendor.manifest` and stage it. The pre-commit hook handles the fetch and re-stage. Prefer a commit SHA over `main` when pinning matters.
 - **Adding a submodule**: avoid unless the upstream is a whole repo we want as-is. `humanizer` is the only one. For individual files, use `vendor.manifest`.
 - **Touching `install.sh` or anything under `scripts/`**: run `./scripts/test-install.sh` before committing.

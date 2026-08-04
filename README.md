@@ -72,4 +72,5 @@ Sandboxed in a `mktemp -d` HOME. Covers fresh install, idempotent re-run, backup
 
 - Editors that save by atomic replace (write a new file, rename over the old) turn a symlink into a real file the first time you save. Neovim, Zed, VS Code and Cursor all save in place, so they're fine. Worth knowing if a config ever quietly stops syncing.
 - `core.hooksPath` doesn't travel with a clone (security feature). `install.sh` sets it. Skip the install step and the manifest auto-refetch won't fire.
+- The `/orchestrate` command and the `implement-ticket` wrappers link to `~/git/claude-orchestrate`. Clone that repo too, or `install.sh` skips those six links with a warning and the wrappers exit with "orchestrate package not installed".
 - Codex's `~/.codex/config.toml` is the one config that isn't symlinked — Codex rewrites it itself and it holds secrets. `scripts/gen-mcp.sh` only maintains a marked MCP block inside it from `mcp.manifest.json`; rerun it after editing the manifest. Codex's `AGENTS.md` and skills *are* symlinked to the same canonical files Claude and OpenCode use.

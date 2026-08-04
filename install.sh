@@ -12,7 +12,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Format: <dest absolute path>|<src path relative to dev-files>
+# Format: <dest absolute path>|<src path relative to dev-files, or an absolute path
+# for a sibling repo — those are skipped when the repo isn't cloned>
 LINKS=(
   "$HOME/.tmux.conf|.tmux.conf"
   "$HOME/tmux-profile.json|tmux-profile.json"
@@ -32,6 +33,15 @@ LINKS=(
   "$HOME/.claude/scripts/implement-ticket-folder.sh|.claude/scripts/implement-ticket-folder.sh"
   "$HOME/.claude/scripts/implementer-prompt.md|.claude/scripts/implementer-prompt.md"
   "$HOME/.claude/scripts/implementer-prompt-folder.md|.claude/scripts/implementer-prompt-folder.md"
+
+  # The implement-ticket wrappers above exec these; they live in claude-orchestrate.
+  "$HOME/.claude/scripts/orchestrate.sh|$HOME/git/claude-orchestrate/orchestrate.sh"
+  "$HOME/.claude/scripts/claude_user.sh|$HOME/git/claude-orchestrate/claude_user.sh"
+  "$HOME/.claude/scripts/orchestrator-planner-prompt.md|$HOME/git/claude-orchestrate/orchestrator-planner-prompt.md"
+  "$HOME/.claude/scripts/orchestrator-worker-prompt.md|$HOME/git/claude-orchestrate/orchestrator-worker-prompt.md"
+  "$HOME/.claude/scripts/orchestrator-conflict-resolver-prompt.md|$HOME/git/claude-orchestrate/orchestrator-conflict-resolver-prompt.md"
+  "$HOME/.claude/commands/orchestrate.md|$HOME/git/claude-orchestrate/orchestrate.md"
+
   "$HOME/.claude/skills/github-image-upload|.claude/skills/github-image-upload"
   "$HOME/.claude/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.claude/skills/grill-with-docs|.claude/skills/grill-with-docs"
@@ -99,12 +109,25 @@ LINKS=(
   "$HOME/Library/Application Support/Cursor/User/settings.json|ide/cursor/settings.json"
 )
 
+# An absolute src points outside dev-files, at a sibling repo that may not be cloned.
+resolve_src() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *)  printf '%s\n' "$ROOT/$1" ;;
+  esac
+}
+
 link_one() {
   local dest="$1" src="$2"
-  local abs_src="$ROOT/$src"
+  local abs_src
+  abs_src="$(resolve_src "$src")"
   if [ ! -e "$abs_src" ]; then
     echo "  ! source missing: $src"
-    return 1
+    # Only a src inside dev-files is guaranteed present; an external one is best-effort.
+    case "$src" in
+      /*) return 0 ;;
+      *)  return 1 ;;
+    esac
   fi
   mkdir -p "$(dirname "$dest")"
   if [ -L "$dest" ]; then

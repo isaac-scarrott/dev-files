@@ -37,7 +37,12 @@ echo "=== symlinks (vs install.sh LINKS) ==="
 for entry in "${LINKS[@]}"; do
   dest="${entry%%|*}"
   src="${entry##*|}"
-  want="$ROOT/$src"
+  want="$(resolve_src "$src")"
+  # An uncloned sibling repo is a missing prerequisite, not drift in dev-files.
+  # A missing src inside the repo still gets reported, via the checks below.
+  case "$src" in
+    /*) [ -e "$want" ] || continue ;;
+  esac
   if [ ! -L "$dest" ]; then
     if [ -e "$dest" ]; then
       report "symlink" "$dest is a real file/dir, not a symlink"

@@ -39,11 +39,14 @@ link_all > /dev/null
 for entry in "${LINKS[@]}"; do
   dest="${entry%%|*}"
   src="${entry##*|}"
+  want="$(resolve_src "$src")"
+  # $HOME is the sandbox here, so sibling-repo sources don't exist and get skipped.
+  [ -e "$want" ] || continue
   if [ ! -L "$dest" ]; then
     expect "exists: $dest" "missing" "symlink"
     continue
   fi
-  expect "target: $dest" "$(readlink "$dest")" "$ROOT/$src"
+  expect "target: $dest" "$(readlink "$dest")" "$want"
 done
 
 echo
@@ -74,6 +77,25 @@ link_all > /dev/null
 bak_after=$(find "$SANDBOX" -maxdepth 1 -name '.zshrc.bak.*' | wc -l | tr -d ' ')
 expect "no new .bak for wrong symlink" "$bak_after" "$bak_before"
 expect "wrong symlink fixed" "$(readlink "$target")" "$ROOT/.zshrc"
+
+echo
+echo "=== test 5: a src outside dev-files links when present, skips when absent ==="
+outside="$SANDBOX/sibling-repo/thing.sh"
+mkdir -p "$(dirname "$outside")"
+echo "#!/bin/sh" > "$outside"
+link_one "$SANDBOX/.claude/scripts/thing.sh" "$outside" > /dev/null
+expect "external src linked" "$(readlink "$SANDBOX/.claude/scripts/thing.sh")" "$outside"
+
+rm "$outside"
+missing_status=0
+link_one "$SANDBOX/.claude/scripts/gone.sh" "$SANDBOX/sibling-repo/gone.sh" > /dev/null || missing_status=$?
+expect "absent external src doesn't fail install" "$missing_status" "0"
+expect "absent external src creates nothing" \
+  "$([ -e "$SANDBOX/.claude/scripts/gone.sh" ] && echo created || echo none)" "none"
+
+missing_status=0
+link_one "$SANDBOX/.claude/gone-from-repo" "does/not/exist/in/repo" > /dev/null || missing_status=$?
+expect "absent repo src still fails loudly" "$missing_status" "1"
 
 echo
 echo "=== summary ==="
