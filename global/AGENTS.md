@@ -23,3 +23,9 @@ Cross-tool guidelines (Claude Code, opencode, others). Modern harnesses already 
 ## Reporting
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
+
+## Token budget guards
+
+- At **90%** of the 5-hour or weekly token allowance: warn me, then wind down to a good stopping point — finish the current unit of work, don't start new tasks or fan out sub-agents.
+- You cannot query remaining quota directly — treat any usage signal as authoritative: harness/API rate-limit warnings, `/usage` output I share, 429 errors, or me mentioning limits.
+- Before stopping, snapshot state (done/pending, exact next steps) to `~/.claude/token-guard/snapshot-<YYYY-MM-DD-HHMM>.md` and tell me when to resume.
