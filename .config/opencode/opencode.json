@@ -1,17 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "agent": {
-    "plan": {
-      "model": "openai/gpt-5.5"
-    },
-    "build": {
-      "model": "openai/gpt-5.5"
-    },
-    "explore": {
-      "model": "github-copilot/claude-haiku-4.5"
-    }
-  },
-  "default_agent": "plan",
+  "default_agent": "build",
   "mcp": {
     "paper": {
       "type": "remote",
@@ -28,6 +17,10 @@
     "posthog": {
       "type": "remote",
       "url": "https://mcp.posthog.com/mcp"
+    },
+    "ticktick": {
+      "type": "remote",
+      "url": "https://mcp.ticktick.com"
     },
     "redshift": {
       "type": "local",

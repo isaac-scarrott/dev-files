@@ -14,5 +14,9 @@
   "posthog": {
     "type": "http",
     "url": "https://mcp.posthog.com/mcp"
+  },
+  "ticktick": {
+    "type": "http",
+    "url": "https://mcp.ticktick.com"
   }
 }

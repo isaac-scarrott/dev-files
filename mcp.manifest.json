@@ -1,41 +1,76 @@
 {
-  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode. Do NOT put secrets here; use env substitution if ever needed.",
+  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode | codex. Do NOT put secrets here; use env substitution if ever needed.",
   "servers": {
     "paper": {
       "transport": "http",
       "url": "http://127.0.0.1:29979/mcp",
-      "targets": ["claude-personal", "opencode"]
+      "targets": [
+        "claude-personal",
+        "opencode",
+        "codex"
+      ]
     },
     "mobbin": {
       "transport": "http",
       "url": "https://api.mobbin.com/mcp",
-      "targets": ["claude-personal", "opencode"]
+      "targets": [
+        "claude-personal",
+        "opencode",
+        "codex"
+      ]
     },
     "linear-server": {
       "transport": "http",
       "url": "https://mcp.linear.app/mcp",
-      "targets": ["claude-personal", "opencode"]
+      "targets": [
+        "claude-personal",
+        "opencode",
+        "codex"
+      ]
     },
     "posthog": {
       "transport": "http",
       "url": "https://mcp.posthog.com/mcp",
-      "targets": ["claude-personal", "opencode"]
+      "targets": [
+        "claude-personal",
+        "opencode",
+        "codex"
+      ]
+    },
+    "ticktick": {
+      "transport": "http",
+      "url": "https://mcp.ticktick.com",
+      "targets": [
+        "claude-personal",
+        "opencode",
+        "codex"
+      ]
     },
     "redshift": {
       "transport": "stdio",
       "command": "uvx",
-      "args": ["awslabs.redshift-mcp-server@latest"],
+      "args": [
+        "awslabs.redshift-mcp-server@latest"
+      ],
       "env": {
         "AWS_PROFILE": "default",
         "AWS_DEFAULT_REGION": "eu-west-1",
         "FASTMCP_LOG_LEVEL": "INFO"
       },
-      "targets": ["claude-holibob", "opencode"]
+      "targets": [
+        "claude-holibob",
+        "opencode",
+        "codex"
+      ]
     },
     "datadog-mcp": {
       "transport": "http",
       "url": "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp",
-      "targets": ["claude-holibob", "opencode"]
+      "targets": [
+        "claude-holibob",
+        "opencode",
+        "codex"
+      ]
     }
   }
 }

@@ -35,6 +35,7 @@ LINKS=(
   "$HOME/.claude/skills/github-image-upload|.claude/skills/github-image-upload"
   "$HOME/.claude/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.claude/skills/grill-with-docs|.claude/skills/grill-with-docs"
+  "$HOME/.claude/skills/handoff|.claude/skills/handoff"
   "$HOME/.claude/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.claude/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.claude/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
@@ -59,6 +60,7 @@ LINKS=(
   "$HOME/.config/opencode/skills/github-image-upload|.claude/skills/github-image-upload"
   "$HOME/.config/opencode/skills/grill-me|.claude/skills/grill-me"
   "$HOME/.config/opencode/skills/grill-with-docs|.claude/skills/grill-with-docs"
+  "$HOME/.config/opencode/skills/handoff|.claude/skills/handoff"
   "$HOME/.config/opencode/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.config/opencode/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.config/opencode/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
@@ -71,6 +73,22 @@ LINKS=(
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
   "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
+
+  # Codex — shares ~/.codex across CLI, IDE extension, and desktop app.
+  # Same canonical AGENTS.md and SKILL.md sources as Claude/OpenCode (zero copies).
+  # MCP servers are NOT here: they render into ~/.codex/config.toml via scripts/gen-mcp.sh.
+  "$HOME/.codex/AGENTS.md|global/AGENTS.md"
+  "$HOME/.codex/skills/github-image-upload|.claude/skills/github-image-upload"
+  "$HOME/.codex/skills/grill-me|.claude/skills/grill-me"
+  "$HOME/.codex/skills/grill-with-docs|.claude/skills/grill-with-docs"
+  "$HOME/.codex/skills/handoff|.claude/skills/handoff"
+  "$HOME/.codex/skills/humanizer|.claude/skills/humanizer"
+  "$HOME/.codex/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
+  "$HOME/.codex/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
+  "$HOME/.codex/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
+  "$HOME/.codex/skills/video-to-tickets|.claude/skills/video-to-tickets"
+  "$HOME/.codex/skills/write-a-skill|.claude/skills/write-a-skill"
+  "$HOME/.codex/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
 

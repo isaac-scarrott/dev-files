@@ -17,6 +17,19 @@ macOS only. `install.sh` hardcodes Library paths.
 - `.githooks/pre-commit` — re-runs `vendor.sh` and re-stages destinations when `vendor.manifest` is in the commit.
 - `scripts/drift.sh` — read-only by default; `--fix` re-vendors, bumps submodules, re-links. Refuses on a dirty tree.
 - `scripts/test-install.sh` — sandboxed bash tests for `install.sh` against a `mktemp -d` HOME. ~1s.
+- `mcp.manifest.json` — canonical MCP server list. `scripts/gen-mcp.sh` renders it per tool: Claude plugin `.mcp.json` files, OpenCode's `opencode.json` `.mcp` key, and Codex's `~/.codex/config.toml`. The `targets` array on each server picks which tools get it.
+
+## Three agent harnesses, one source
+
+Claude Code, OpenCode, and Codex (CLI / IDE extension / desktop app — they share `~/.codex/`) all read the same canonical files, never copies:
+
+- **Instructions**: `global/AGENTS.md` symlinks to `~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`, and `~/.codex/AGENTS.md`.
+- **Skills**: `.claude/skills/*` symlink into each tool's skills dir. The `SKILL.md` frontmatter format is identical across all three.
+- **MCP**: rendered from `mcp.manifest.json` (above), not symlinked.
+
+What does *not* port to Codex: slash commands (`.claude/commands/*` depend on `` !`bash` `` injection or sub-agents — neither exists in Codex; Codex is also deprecating prompts in favour of skills) and the `code-simplifier` agent (Codex has no sub-agents). Express anything reusable as a skill if it should reach Codex.
+
+Codex's `~/.codex/config.toml` is **never symlinked** — Codex owns and rewrites it (hook/marketplace state) and it holds secrets. `gen-mcp.sh` only maintains a marked `# >>> dev-files managed MCP` block inside it; everything else is left alone. Don't hand-add an `[mcp_servers.NAME]` to `config.toml` for a name already in the manifest — TOML rejects duplicate tables.
 
 ## Rules for changes in this repo
 
