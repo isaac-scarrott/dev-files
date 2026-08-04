@@ -91,7 +91,8 @@
     "code-simplifier@claude-plugins-official": true,
     "holibob@dev-files": true,
     "personal@dev-files": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "swift-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "dev-files": {
@@ -113,6 +114,7 @@
     "enabled": true,
     "mode": "hold"
   },
+  "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "voiceEnabled": true
 }
