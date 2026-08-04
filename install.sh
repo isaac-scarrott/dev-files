@@ -43,6 +43,7 @@ LINKS=(
   "$HOME/.claude/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.claude/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.claude/skills/x-shot|.claude/skills/x-shot"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
 
@@ -68,6 +69,7 @@ LINKS=(
   "$HOME/.config/opencode/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.config/opencode/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.config/opencode/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.config/opencode/skills/x-shot|.claude/skills/x-shot"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
@@ -89,6 +91,7 @@ LINKS=(
   "$HOME/.codex/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.codex/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.codex/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.codex/skills/x-shot|.claude/skills/x-shot"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
 
