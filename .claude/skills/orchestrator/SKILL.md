@@ -19,7 +19,8 @@ Three things outrank everything below. When principles pull against each other, 
 
 - Keep your own context for decisions. Delegate wide reading, research and implementation. Read the conclusion, not the file dumps.
 - Do small, mechanical, high-conflict edits yourself: shared indexes, manifests, registries, generated lists, config test lists. Builders list the lines they need in their reports. You apply them once, at landing time.
-- Scale the fleet to the work. Group related items so one builder owns one coherent area. A builder that already holds the context is cheaper to message again than a fresh one.
+- Scale the fleet to the work. Group related items so one builder owns one coherent area. A builder that already holds the context is cheaper to message again than a fresh one, but only for work in the same area. Don't queue unrelated work behind a busy builder. A queue on one agent is a delay to the user.
+- Parallelise everything that doesn't share files, and serialise only what does. Land each piece the moment it is verified, rather than waiting to batch it with slower siblings.
 
 ## Split by ownership to avoid conflicts
 
