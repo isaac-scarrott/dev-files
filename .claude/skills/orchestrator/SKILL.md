@@ -55,7 +55,7 @@ Three things outrank everything below. When principles pull against each other, 
 
 ## Land cleanly
 
-- One change per PR unless changes genuinely belong together. Give each PR a plain description, verification notes, and before/after screenshots where the change is visible.
+- One change per PR unless changes genuinely belong together. Give each PR a plain description, verification notes, and before/after screenshots where the change is visible. When a PR changes after review, replace its screenshots and description rather than appending, so it always shows the current state, with "before" meaning the PR's base.
 - Follow the repository's conventions for assignment, labels, risk and previews. The user merges unless they say otherwise.
 - After pushing, watch the checks that gate the merge. Diagnose failures to root cause, and tell a flake apart from a regression.
 
