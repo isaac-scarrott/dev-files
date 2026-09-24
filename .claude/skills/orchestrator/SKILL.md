@@ -32,7 +32,7 @@ Three things outrank everything below. When principles pull against each other, 
 
 - Quote the user's words verbatim, then add what you know: likely files, prior decisions, traps, what's out of bounds, and who else is working nearby.
 - State the goal as a verifiable outcome. Say which tests pin it and which checks must pass.
-- Fix the report format (a few lines: SHAs, what changed, results, open decisions). Ask for evidence such as screenshots and paths, not adjectives.
+- Fix the report format (a few lines: SHAs, what changed, results, open decisions). Ask for evidence such as screenshots and paths, not adjectives. For any visible change, have the builder capture the *before* screenshots first, before touching code, at the widths and in the engines that matter. A before taken afterwards needs an old build and tends to get skipped.
 - Keep shared rules in one brief file that every builder reads, and update it when rules change. Correct a live builder by message; don't wait for it to finish. When a brief turns out to be wrong, fix the shared file and message every builder it reached.
 - When feedback is visual or ambiguous (a screenshot, "this is broken"), say your reading back in one line before briefing. A confident misread builds the wrong fix.
 
