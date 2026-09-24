@@ -43,6 +43,7 @@ Three things outrank everything below. When principles pull against each other, 
 - Verify in a workspace nobody else is using. A builder switching branches under your test run produces false results.
 - Say exactly what was and wasn't verified. Known flakes get a re-run and a name, not a shrug.
 - Measure fresh. Rebuild before quoting a size, a count or a budget; stale artefacts make confident wrong numbers.
+- Size verification to the risk of what changed. A clean rebase, a doc or index edit, or a conflict resolved by taking one side needs a quick sanity check, not the full suite, especially when the user is waiting. CI re-runs everything anyway. Save the full pass for changes to behaviour.
 
 ## Keep the user in control
 
