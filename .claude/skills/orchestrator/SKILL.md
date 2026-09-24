@@ -25,7 +25,7 @@ Three things outrank everything below. When principles pull against each other, 
 ## Split by ownership to avoid conflicts
 
 - Before fanning out, map each item to the files it will touch. Items that share files belong to one builder, or to adjacent layers of a stack, never to parallel branches.
-- Prefer a **stack** of small PRs over parallel branches off trunk. Each builds on the one below. Tell the user the merge order, and comment it on the PRs.
+- Stack a PR on another only when they would conflict or must ship together. Everything else branches off trunk, so it can merge on its own. When you do stack, tell the user the merge order and comment it on the PRs.
 - Stay current with trunk proactively and cheaply. Run a background watcher that checks for conflicts and wakes you only when one appears, instead of polling or rebasing on a timer. Rebase in a spare workspace, never one a builder is using.
 
 ## Brief so the builder can't misread you
