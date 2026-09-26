@@ -98,6 +98,56 @@ link_one "$SANDBOX/.claude/gone-from-repo" "does/not/exist/in/repo" > /dev/null 
 expect "absent repo src still fails loudly" "$missing_status" "1"
 
 echo
+echo "=== test 6: every canonical skill is installed for all three tools ==="
+for skill in "$ROOT"/.claude/skills/*/SKILL.md; do
+  name="$(basename "$(dirname "$skill")")"
+  for dir in "$HOME/.claude/skills" "$HOME/.config/opencode/skills" "$HOME/.codex/skills"; do
+    expect "skill: $dir/$name" "$(readlink "$dir/$name" || true)" "$ROOT/.claude/skills/$name"
+  done
+done
+
+echo
+echo "=== test 7: MCP rendering detects drift and preserves tool-owned settings ==="
+fixture="$SANDBOX/repo"
+mkdir -p "$fixture/scripts" "$fixture/.claude/marketplaces/dev-files/plugins/"{personal,holibob}
+cp "$ROOT/scripts/gen-mcp.sh" "$fixture/scripts/"
+cp "$ROOT/mcp.manifest.json" "$fixture/"
+# Replace the sandbox link so generation cannot write through to the real repo.
+rm "$HOME/.config/opencode/opencode.json"
+printf '%s\n' '{"model":"test/model","mcp":{"servers":{},"timeout":{"startup":45000}}}' > "$SANDBOX/opencode.json"
+ln -s "$SANDBOX/opencode.json" "$HOME/.config/opencode/opencode.json"
+printf '%s\n' 'model = "test-model"' > "$HOME/.codex/config.toml"
+check_status=0
+bash "$fixture/scripts/gen-mcp.sh" --check > /dev/null || check_status=$?
+expect "check detects stale config" "$check_status" "1"
+expect "check leaves Codex untouched" "$(cat "$HOME/.codex/config.toml")" 'model = "test-model"'
+bash "$fixture/scripts/gen-mcp.sh" > /dev/null
+check_status=0
+bash "$fixture/scripts/gen-mcp.sh" --check > /dev/null || check_status=$?
+expect "generated configs are in sync" "$check_status" "0"
+expect "OpenCode symlink preserved" "$(readlink "$HOME/.config/opencode/opencode.json")" "$SANDBOX/opencode.json"
+expect "OpenCode model preserved" "$(jq -r .model "$SANDBOX/opencode.json")" "test/model"
+expect "V2 timeout preserved" "$(jq -r .mcp.timeout.startup "$SANDBOX/opencode.json")" "45000"
+expect "all OpenCode servers rendered" "$(jq '.mcp.servers | length' "$SANDBOX/opencode.json")" \
+  "$(jq '[.servers[] | select(.targets | index("opencode"))] | length' "$fixture/mcp.manifest.json")"
+expect "Codex model preserved" "$(head -n 1 "$HOME/.codex/config.toml")" 'model = "test-model"'
+sed -i '' '/^# <<< dev-files managed MCP/i\
+[mcp_servers.tool-owned]\
+command = "tool-server"\
+[mcp_servers.tool-owned.env]\
+EXAMPLE = "preserve-me"\
+' "$HOME/.codex/config.toml"
+bash "$fixture/scripts/gen-mcp.sh" > /dev/null
+expect "tool-owned server survives inside markers" "$(grep -c '^command = "tool-server"' "$HOME/.codex/config.toml")" "1"
+expect "tool-owned server environment survives" "$(grep -c '^EXAMPLE = "preserve-me"' "$HOME/.codex/config.toml")" "1"
+expect "Codex managed block not duplicated" "$(grep -c '^# >>> dev-files managed MCP' "$HOME/.codex/config.toml")" "1"
+rm "$HOME/.config/opencode/opencode.json" "$HOME/.codex/config.toml"
+bash "$fixture/scripts/gen-mcp.sh" > /dev/null
+expect "fresh OpenCode config rendered" "$(jq '.mcp | length' "$HOME/.config/opencode/opencode.json")" \
+  "$(jq '[.servers[] | select(.targets | index("opencode"))] | length' "$fixture/mcp.manifest.json")"
+expect "fresh Codex config is private" "$(stat -f '%Lp' "$HOME/.codex/config.toml")" "600"
+
+echo
 echo "=== summary ==="
 echo "  $pass passed, $fail failed"
 exit "$fail"

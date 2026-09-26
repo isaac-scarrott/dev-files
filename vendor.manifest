@@ -8,6 +8,10 @@ mattpocock/skills main skills/productivity/grilling/SKILL.md .claude/skills/gril
 mattpocock/skills main skills/productivity/handoff/SKILL.md .claude/skills/handoff/SKILL.md
 mattpocock/skills main skills/productivity/wait-what/SKILL.md .claude/skills/wait-what/SKILL.md
 
+# mattpocock/skills — productivity/writing-for-agents
+mattpocock/skills main skills/productivity/writing-for-agents/SKILL.md .claude/skills/writing-for-agents/SKILL.md
+mattpocock/skills main skills/productivity/writing-for-agents/SKILL-MECHANICS.md .claude/skills/writing-for-agents/SKILL-MECHANICS.md
+
 # mattpocock/skills — engineering/wizard
 mattpocock/skills main skills/engineering/wizard/SKILL.md .claude/skills/wizard/SKILL.md
 mattpocock/skills main skills/engineering/wizard/template.sh .claude/skills/wizard/template.sh
@@ -22,3 +26,10 @@ mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REP
 # cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
 # (strip disable-model-invocation so agents can run it; tracks upstream otherwise)
 cursor/plugins main cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md .claude/skills/thermo-nuclear-code-quality-review/SKILL.md | sed '/^disable-model-invocation:/d'
+
+# humanlayer/skills — show-me
+humanlayer/skills main plugins/show-me/skills/show-me/SKILL.md .claude/skills/show-me/SKILL.md
+
+# mattpocock/skills — in-progress
+mattpocock/skills main skills/in-progress/pr/SKILL.md .claude/skills/pr/SKILL.md
+mattpocock/skills main skills/in-progress/retro/SKILL.md .claude/skills/retro/SKILL.md

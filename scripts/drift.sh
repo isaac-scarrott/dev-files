@@ -57,6 +57,13 @@ for entry in "${LINKS[@]}"; do
   fi
 done
 
+# ---- MCP config drift --------------------------------------------------------
+echo
+echo "=== MCP config (vs mcp.manifest.json) ==="
+if ! scripts/gen-mcp.sh --check; then
+  report "MCP" "generated config differs from mcp.manifest.json"
+fi
+
 # ---- 2. Vendored-file drift --------------------------------------------------
 echo
 echo "=== vendored files (vs upstream) ==="
@@ -139,6 +146,8 @@ git submodule update --remote --recursive || true
 echo
 echo "3) re-applying symlinks"
 link_all
+
+scripts/gen-mcp.sh
 
 echo
 echo "done — review the diff with: git status && git diff"

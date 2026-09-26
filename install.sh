@@ -50,13 +50,17 @@ LINKS=(
   "$HOME/.claude/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.claude/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.claude/skills/orchestrator|.claude/skills/orchestrator"
+  "$HOME/.claude/skills/pr|.claude/skills/pr"
+  "$HOME/.claude/skills/product-update|.claude/skills/product-update"
+  "$HOME/.claude/skills/retro|.claude/skills/retro"
+  "$HOME/.claude/skills/show-me|.claude/skills/show-me"
   "$HOME/.claude/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.claude/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.claude/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.claude/skills/wait-what|.claude/skills/wait-what"
   "$HOME/.claude/skills/wizard|.claude/skills/wizard"
-  "$HOME/.claude/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.claude/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.claude/skills/writing-for-agents|.claude/skills/writing-for-agents"
   "$HOME/.claude/skills/x-shot|.claude/skills/x-shot"
 
   "$HOME/.claude/agents/code-simplifier.md|.claude/agents/code-simplifier.md"
@@ -80,13 +84,17 @@ LINKS=(
   "$HOME/.config/opencode/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.config/opencode/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.config/opencode/skills/orchestrator|.claude/skills/orchestrator"
+  "$HOME/.config/opencode/skills/pr|.claude/skills/pr"
+  "$HOME/.config/opencode/skills/product-update|.claude/skills/product-update"
+  "$HOME/.config/opencode/skills/retro|.claude/skills/retro"
+  "$HOME/.config/opencode/skills/show-me|.claude/skills/show-me"
   "$HOME/.config/opencode/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.config/opencode/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.config/opencode/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.config/opencode/skills/wait-what|.claude/skills/wait-what"
   "$HOME/.config/opencode/skills/wizard|.claude/skills/wizard"
-  "$HOME/.config/opencode/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.config/opencode/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.config/opencode/skills/writing-for-agents|.claude/skills/writing-for-agents"
   "$HOME/.config/opencode/skills/x-shot|.claude/skills/x-shot"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
@@ -106,13 +114,17 @@ LINKS=(
   "$HOME/.codex/skills/humanizer|.claude/skills/humanizer"
   "$HOME/.codex/skills/improve-codebase-architecture|.claude/skills/improve-codebase-architecture"
   "$HOME/.codex/skills/orchestrator|.claude/skills/orchestrator"
+  "$HOME/.codex/skills/pr|.claude/skills/pr"
+  "$HOME/.codex/skills/product-update|.claude/skills/product-update"
+  "$HOME/.codex/skills/retro|.claude/skills/retro"
+  "$HOME/.codex/skills/show-me|.claude/skills/show-me"
   "$HOME/.codex/skills/thermo-nuclear-code-quality-review|.claude/skills/thermo-nuclear-code-quality-review"
   "$HOME/.codex/skills/understand-codebase-architecture|.claude/skills/understand-codebase-architecture"
   "$HOME/.codex/skills/video-to-tickets|.claude/skills/video-to-tickets"
   "$HOME/.codex/skills/wait-what|.claude/skills/wait-what"
   "$HOME/.codex/skills/wizard|.claude/skills/wizard"
-  "$HOME/.codex/skills/write-a-skill|.claude/skills/write-a-skill"
   "$HOME/.codex/skills/write-in-my-voice|.claude/skills/write-in-my-voice"
+  "$HOME/.codex/skills/writing-for-agents|.claude/skills/writing-for-agents"
   "$HOME/.codex/skills/x-shot|.claude/skills/x-shot"
 
   "$HOME/.local/bin/claudewho|bin/claudewho"
@@ -184,6 +196,10 @@ main() {
   echo
   echo "=== symlinks ==="
   link_all
+
+  echo
+  echo "=== MCP config ==="
+  scripts/gen-mcp.sh
 
   echo
   echo "done"

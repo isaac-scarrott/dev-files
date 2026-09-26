@@ -29,6 +29,7 @@
         "awslabs.redshift-mcp-server@latest"
       ],
       "environment": {
+        "PATH": "{env:HOME}/.local/bin:{env:PATH}",
         "AWS_PROFILE": "default",
         "AWS_DEFAULT_REGION": "eu-west-1",
         "FASTMCP_LOG_LEVEL": "INFO"

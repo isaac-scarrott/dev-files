@@ -42,4 +42,4 @@ Codex's `~/.codex/config.toml` is **never symlinked** — Codex owns and rewrite
 
 ## Vendored content
 
-Anything under `.claude/skills/{grill-me,grill-with-docs,improve-codebase-architecture,thermo-nuclear-code-quality-review}/` is fetched by `vendor.sh` from upstream repos listed in `vendor.manifest`. Editing those files by hand is pointless because the next vendor run overwrites them. Patch upstream, or change the manifest source.
+Anything under `.claude/skills/{grill-me,grill-with-docs,improve-codebase-architecture,show-me,thermo-nuclear-code-quality-review}/` is fetched by `vendor.sh` from upstream repos listed in `vendor.manifest`. Editing those files by hand is pointless because the next vendor run overwrites them. Patch upstream, or change the manifest source.

@@ -116,5 +116,8 @@
   },
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "custom:synth",
+  "agentPushNotifEnabled": true,
   "voiceEnabled": true
 }
