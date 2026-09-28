@@ -11,6 +11,7 @@ checks: <green | pending | failing: name — real | known (why, link)>
 known master failures: <test ids that fail on trunk too, or none>
 door: <one-way | two-way> — <why, e.g. a public contract that changes>
 blast radius: <one word> — <what breaks if wrong>
+risk label: <the repo's required risk label, set on the PR at open>
 parity / spec deviations: <none | list>
 owner: <approved in <session> "<words>" | not yet asked | testing>
 conflict risk: <files likely to collide with other open PRs, or none>
