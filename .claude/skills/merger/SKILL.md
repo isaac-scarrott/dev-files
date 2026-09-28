@@ -12,6 +12,8 @@ Read the protocol before the first PR, because it sets who may touch what: `~/.c
 
 ## Per PR
 
+Each PR walks these steps on its own clock, and many PRs are in flight at once (see Throughput).
+
 1. **Take the baton.** When a ready-for-merge message arrives, check every field is filled against MESSAGES.md, and ask the implementer for anything missing in a single message. Then run `ledger.py set <pr> holder=merger state=review head=<sha>`.
    *Done when* the ledger shows you holding the PR at the head SHA the message named.
 2. **Preview and review.** Read the diff against the PR body, since the body is a claim. Open the preview (preview deploy, harness or local build) and look at the change at the widths and in the engines it affects. Classify every red check as **real** or **known**, and prove "known" from trunk, the base or the known-failures record. Don't take the message's word for it.
@@ -19,15 +21,25 @@ Read the protocol before the first PR, because it sets who may touch what: `~/.c
 3. **Put it to the owner.** Give a short explanation: what changed, the risk and door, what you saw in the preview, real failures, and parity differences. Ask with a structured question: approve / I'll test / change.
    *Done when* the owner has answered in this session. A decision relayed from another session gets one line of confirmation from the owner here first (BATON.md, "Owner decisions").
 4. **Act on the verdict.** Broadcast it straight away (MESSAGES.md, "decision broadcast") and update the ledger.
-   - **Approve:** add the repo's release labels, then run `gh pr merge <pr>` (it queues, or sets auto-merge). Run `scripts/watch-queue.sh <pr>` in the background. When it has merged, run `scripts/watch-deploy.sh <merge-sha>` in the background. For each stacked child, run `scripts/stacked-merge.sh <parent> <child>` as soon as the parent is queued, so the child moves the moment the parent lands.
+   - **Approve:** add the repo's release labels and confirm every label a required check demands is present, then run `gh pr merge <pr>` (it queues, or sets auto-merge). Run `scripts/watch-queue.sh <pr>` in the background. When it has merged, run `scripts/watch-deploy.sh <merge-sha>` in the background. For each stacked child, run `scripts/stacked-merge.sh <parent> <child>` as soon as the parent is queued, so the child moves the moment the parent lands.
    - **Change:** dequeue it if it's queued, send a change request, and set the ledger to `holder=orchestrator state=changes`. When the fix comes back as a new ready-for-merge, go back to step 1.
    - **Testing:** leave it as it is, with the ledger at `state=review` and owner `testing`.
    *Done when* the PR is merged and its deploy has concluded, or the baton is back with the implementer.
 5. **Report only what's actionable.** Send `LANDED` to the implementer for a failed deploy, a child that needs a restack, or the end of a batch. After a merge, delete the ledger row once its deploy has been reported.
 
+## Throughput
+
+The owner's attention is the only serial resource. Everything else runs as a pipeline, so the goal for any approved set is the shortest wall-clock to all of it deployed, with each PR still landing on its own.
+
+- **Keep the owner moving.** Put the next PR to them while earlier ones are still rebasing, in CI or in the queue. Approval of one never waits on another's merge.
+- **Prepare approved PRs in parallel.** Dispatch one agent per PR that needs updating or conflict fixes, all at once. Use the same work for any PR that's approved but blocked, so it's ready the moment it's unblocked.
+- **Queue on green; don't wait for deploys.** Every approved PR goes on auto-merge or into the queue as soon as its checks can pass, so several land in one deploy. Deploys are watched in the background, and only failures are reported.
+- **Restack stacks ahead of the merge.** Move each child onto its parent's final head as soon as it exists, and let `stacked-merge.sh` retarget and queue it the moment the parent lands.
+- **Anticipate the next conflict.** When a queued PR is known to collide with another (shared generated files, the same hot file), have the fix ready for whichever lands second rather than finding out from the queue.
+- **A new deploy failure stops the queue.** Hold the PRs that would ride on it and tell the owner. A failure already known on trunk, whose cause and owner are recorded, doesn't.
+
 ## Standing practice
 
-- **Queue on green; don't wait for deploys.** Batching merges while their deploys are watched in the background is the default. A failed deploy stops the queue: hold the PRs behind it and tell the owner.
 - **Keep branches you hold current yourself:** run update-branch, and regenerate generated files on conflict, then push. A source conflict goes back as a change request.
 - **Permission boundaries are per session.** When a label or queue action is blocked, that's the owner's call. Surface it, and never ask another session to do it.
 - A PR the owner hasn't approved in your session stays out of the queue, however green it is.
