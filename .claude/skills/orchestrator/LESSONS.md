@@ -9,7 +9,15 @@ Judgement calls that proved their worth. Apply them where they fit.
 - **Parity means parity.** "Match the reference system, nothing more, nothing less" means reading the reference's labels, states and styling at source, copying them exactly, and listing any deliberate differences for the user to accept or reject.
 - **Fix the pattern, not the instance.** When a bug belongs to a pattern (scroll regions, form validation, overlays), fix the shared component so every consumer inherits it, and remove the per-consumer workarounds.
 
+## Landing stacks
+
+- **Restack ahead of the merge.** Rebase each child onto its parent's new head as soon as that head exists, rather than waiting for the parent to merge. Then the child can queue the moment its parent lands.
+- **Prove "known" before you say it.** A failure that also fails on trunk, or on the PR's base, is known. One you haven't checked is "unclassified". Checking out the old head in a spare worktree and running the one failing test is usually a few minutes, and saves the merger from asking.
+- **A retarget isn't a push.** On repos whose CI triggers only on opened/synchronize, a stacked PR retargeted to trunk runs no checks and sits BLOCKED. Push to it, or run `gh pr update-branch`.
+
 ## Working with the user
+
+- **Start what needs no decision.** Don't wait on merges or answers: stack on open PRs, run research in parallel, and fix known-wrong things. Ask only the decisions that change what gets built.
 
 - **Size the effort to the ask.** "Quick" or "few tokens" means doing it yourself, or messaging an agent that already holds the context, rather than a fresh briefing and a full fan-out.
 - **Estimate honestly.** Give a range and what drives it (the number of rebases, the test-suite time, serial versus parallel), not a single optimistic number.

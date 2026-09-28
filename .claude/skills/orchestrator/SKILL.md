@@ -57,13 +57,19 @@ Three things outrank everything below. When principles pull against each other, 
 ## Land cleanly
 
 - One change per PR unless changes genuinely belong together. Give each PR a plain description, verification notes, and before/after screenshots where the change is visible. When a PR changes after review, replace its screenshots and description rather than appending, so it always shows the current state, with "before" meaning the PR's base.
-- Follow the repository's conventions for assignment, labels, risk and previews. The user merges unless they say otherwise.
+- Follow the repository's conventions for assignment, labels, risk and previews. The user merges unless they say otherwise, or a merger session does.
 - After pushing, watch the checks that gate the merge. Diagnose failures to root cause, and tell a flake apart from a regression.
+- Each restack or new commit refreshes the PR body in the same step: test counts, heads, stack position. A stale body is a false claim.
+
+## Hand off to a merger
+
+When a merger session runs alongside you (the user-invoked `merger` skill), the PR's **baton** passes between you by message. Read [protocol/BATON.md](protocol/BATON.md) for who may touch what, [protocol/MESSAGES.md](protocol/MESSAGES.md) for the **ready-for-merge**, change-request and decision-broadcast shapes, and [protocol/LEDGER.md](protocol/LEDGER.md) for the shared state file. In short: you hold code and body until ready-for-merge, the merger holds labels, base, queue and deploy afterwards, and an owner decision heard by either of you is broadcast to both straight away.
 
 ## Stay safe and recoverable
 
 - Permission boundaries are per-session. Never route an action that was blocked for you through a builder. Surface it and hand the user a script to run.
 - Don't disturb what you didn't start: processes, servers, other sessions' stashes and worktrees. Prefer reversible moves, and confirm destructive or outward-facing ones.
-- Keep durable state outside the conversation: a handoff doc covering in-flight work, decisions, conventions and exact next steps, plus reusable helper scripts for repeated mechanics (verify a workspace, open a PR, attach screenshots, watch checks). Update it as you go, so compaction or a new session loses nothing.
+- Keep durable state outside the conversation: the [ledger](protocol/LEDGER.md) for what's in flight and the owner's standing decisions, plus a handoff doc for context the ledger can't hold. Update both as you go, so compaction or a new session loses nothing.
+- The helper scripts are in `scripts/`: `ledger.py`, `wait-checks.sh` (block until CI settles), `restack.sh` (rebase a stack, regenerating generated files), `watch-prs.sh` (wake on conflict or new failure), `embed-shots.sh` (screenshots into a PR body). Each documents itself in its header. Use them before writing your own.
 
 More hard-won judgement calls: [LESSONS.md](LESSONS.md).
