@@ -13,6 +13,7 @@ Judgement calls that proved their worth. Apply them where they fit.
 
 - **Restack ahead of the merge.** Rebase each child onto its parent's new head as soon as that head exists, rather than waiting for the parent to merge. Then the child can queue the moment its parent lands.
 - **Prove "known" before you say it.** A failure that also fails on trunk, or on the PR's base, is known. One you haven't checked is "unclassified". Checking out the old head in a spare worktree and running the one failing test is usually a few minutes, and saves the merger from asking.
+- **Hooks are checks.** A push that skips hooks (`--no-verify`) skips the formatter and linter too, and CI fails on them after the merge queue has already moved on. Run the formatter on the touched files first, or push with hooks on.
 - **A retarget isn't a push.** On repos whose CI triggers only on opened/synchronize, a stacked PR retargeted to trunk runs no checks and sits BLOCKED. Push to it, or run `gh pr update-branch`.
 
 ## Working with the user
