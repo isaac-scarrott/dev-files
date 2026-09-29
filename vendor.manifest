@@ -30,6 +30,6 @@ cursor/plugins main cursor-team-kit/skills/thermo-nuclear-code-quality-review/SK
 # humanlayer/skills — show-me
 humanlayer/skills main plugins/show-me/skills/show-me/SKILL.md .claude/skills/show-me/SKILL.md
 
-# mattpocock/skills — in-progress
-mattpocock/skills main skills/in-progress/pr/SKILL.md .claude/skills/pr/SKILL.md
-mattpocock/skills main skills/in-progress/retro/SKILL.md .claude/skills/retro/SKILL.md
+# mattpocock/skills — engineering (moved from in-progress)
+mattpocock/skills main skills/engineering/pr/SKILL.md .claude/skills/pr/SKILL.md
+mattpocock/skills main skills/engineering/retro/SKILL.md .claude/skills/retro/SKILL.md
