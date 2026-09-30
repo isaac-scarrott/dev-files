@@ -35,7 +35,7 @@ The owner's attention is the only serial resource. Everything else runs as a pip
 - **Prepare approved PRs in parallel.** Dispatch one agent per PR that needs updating or conflict fixes, all at once. Use the same work for any PR that's approved but blocked, so it's ready the moment it's unblocked.
 - **Queue on green; don't wait for deploys.** Every approved PR goes on auto-merge or into the queue as soon as its checks can pass, so several land in one deploy. Deploys are watched in the background, and only failures are reported.
 - **Restack stacks ahead of the merge.** Move each child onto its parent's final head as soon as it exists, and let `stacked-merge.sh` retarget and queue it the moment the parent lands.
-- **Anticipate the next conflict.** When a queued PR is known to collide with another (shared generated files, the same hot file), have the fix ready for whichever lands second rather than finding out from the queue.
+- **Anticipate the next conflict.** Keep `scripts/conflict-scan.sh --watch` running in the background whenever approved PRs are open. It test-merges each one against trunk and the queue every time trunk moves, fixes generated-file conflicts itself, and reports `CONFLICT` (a source conflict: dispatch a resolver agent or send a change request) and `AHEAD` (it will conflict once a queued PR lands). Act on every `CONFLICT` line before the queue finds it.
 - **A new deploy failure stops the queue.** Hold the PRs that would ride on it and tell the owner. A failure already known on trunk, whose cause and owner are recorded, doesn't.
 
 ## Stacks
