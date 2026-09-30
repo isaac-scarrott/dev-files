@@ -5,11 +5,16 @@
 set -u
 S=$(cd "$(dirname "$0")" && pwd); . "$S/_stack-env.sh"
 top=$1
+# `gh pr checks --required` lists only the required checks that have reported, so a PR whose CI hasn't
+# started reads as green. Every required name seen on any PR is kept in $REQ, and each one must pass.
+REQ=$STATE/required-checks.txt; touch "$REQ"
 for i in $(seq 1 40); do
   "$S/unstick.sh" >/dev/null
   bad=""
   for p in $(awk '{print $1}' "$ST"); do
-    s=$(gh pr checks "$p" --repo "$R" --required 2>/dev/null | awk -F'\t' '$2!="pass" && $2!="skipping"{printf "%s=%s ", $1, $2}')
+    c=$(gh pr checks "$p" --repo "$R" --required 2>/dev/null)
+    printf '%s\n' "$c" | awk -F'\t' 'NF>1{print $1}' | sort -u - "$REQ" | grep . > "$REQ.tmp"; mv "$REQ.tmp" "$REQ"
+    s=$(printf '%s\n' "$c" | awk -F'\t' -v req="$REQ" 'BEGIN{while((getline n<req)>0) want[n]=1} NF>1{seen[$1]=$2} END{for(n in want) if(!(n in seen)) printf "%s=missing ", n; else if(seen[n]!="pass" && seen[n]!="skipping") printf "%s=%s ", n, seen[n]}')
     [ -n "$s" ] && bad="$bad #$p[$s]"
     [ "$p" = "$top" ] && break
   done
