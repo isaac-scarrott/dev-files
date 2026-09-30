@@ -2,6 +2,7 @@
 # watch-queue.sh <pr>: follows a PR through the merge queue (or auto-merge) and exits with
 #   0 merged ("MERGED #pr <sha>")   1 closed unmerged   2 left the queue unmerged
 #   3 checks failing before it ever entered the queue (skip that pre-check with SKIP_PRECHECK=1)
+# Runs unstick.sh on the PR each loop (stuck runners, checkout glitches); NO_UNSTICK=1 turns it off.
 # Checks named in IGNORE_CHECKS (space-separated) don't count as failing.
 set -u
 pr=$1; seen=0
@@ -28,5 +29,6 @@ while true; do
     [ "$st" = MERGED ] && { echo "MERGED #$pr $sha"; exit 0; }
     [ "$qs" = none ] && { echo "DEQUEUED #$pr (state $st, not merged)"; exit 2; }
   fi
+  [ -n "${NO_UNSTICK:-}" ] || "$(dirname "$0")/unstick.sh" "$pr" >&2
   sleep 30
 done

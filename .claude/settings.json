@@ -119,5 +119,12 @@
   "skipWorkflowUsageWarning": true,
   "theme": "custom:synth",
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "permissions": {
+    "allow": [
+      "Bash(bash /Users/isaac/.claude/skills/merger/scripts/*)",
+      "Bash(/Users/isaac/.claude/skills/merger/scripts/*)",
+      "Bash(gh stack:*)"
+    ]
+  }
 }

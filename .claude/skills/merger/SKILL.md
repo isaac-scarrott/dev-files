@@ -21,7 +21,7 @@ Each PR walks these steps on its own clock, and many PRs are in flight at once (
 3. **Put it to the owner.** Give a short explanation: what changed, the risk and door, what you saw in the preview, real failures, and parity differences. Ask with a structured question: approve / I'll test / change.
    *Done when* the owner has answered in this session. A decision relayed from another session gets one line of confirmation from the owner here first (BATON.md, "Owner decisions").
 4. **Act on the verdict.** Broadcast it straight away (MESSAGES.md, "decision broadcast") and update the ledger.
-   - **Approve:** add the repo's release labels and confirm every label a required check demands is present, then run `gh pr merge <pr>` (it queues, or sets auto-merge). Run `scripts/watch-queue.sh <pr>` in the background. When it has merged, run `scripts/watch-deploy.sh <merge-sha>` in the background. For each stacked child, run `scripts/stacked-merge.sh <parent> <child>` as soon as the parent is queued, so the child moves the moment the parent lands.
+   - **Approve:** add the repo's release labels with `scripts/authorise.sh <pr> [label...]`. It also reruns the label-requirement check, whose run from before the label otherwise leaves the PR BLOCKED with everything else green. Confirm every label a required check demands is present, then run `gh pr merge <pr>` (it queues, or sets auto-merge). Run `scripts/watch-queue.sh <pr>` in the background. When it has merged, run `scripts/watch-deploy.sh <merge-sha>` in the background. For each stacked child, run `scripts/stacked-merge.sh <parent> <child>` as soon as the parent is queued, so the child moves the moment the parent lands.
    - **Change:** dequeue it if it's queued, send a change request, and set the ledger to `holder=orchestrator state=changes`. When the fix comes back as a new ready-for-merge, go back to step 1.
    - **Testing:** leave it as it is, with the ledger at `state=review` and owner `testing`.
    *Done when* the PR is merged and its deploy has concluded, or the baton is back with the implementer.
@@ -37,6 +37,22 @@ The owner's attention is the only serial resource. Everything else runs as a pip
 - **Restack stacks ahead of the merge.** Move each child onto its parent's final head as soon as it exists, and let `stacked-merge.sh` retarget and queue it the moment the parent lands.
 - **Anticipate the next conflict.** When a queued PR is known to collide with another (shared generated files, the same hot file), have the fix ready for whichever lands second rather than finding out from the queue.
 - **A new deploy failure stops the queue.** Hold the PRs that would ride on it and tell the owner. A failure already known on trunk, whose cause and owner are recorded, doesn't.
+
+## Stacks
+
+When the owner wants a batch landed at once, build one GitHub stack (`gh stack`, native stacked PRs) instead of queueing each PR. The state lives in `~/.claude/orchestrator-state/merger/<repo>/`, so it survives a crash.
+
+- **Add** each READY with `scripts/stack-add.sh <pr>`. It merges the top into the PR (normal push, never force), links the PR, and checks that CI ran. On exit 4, resolve the conflict in the state worktree with an agent, commit with hooks on, then run `stack-add.sh <pr> --resume`.
+- **Link before pushing.** CI that triggers only for PRs against trunk skips a push made while the PR's base is another branch. `stack-add.sh` links first, and makes an empty commit when a head has no CI run.
+- **Two to link:** `gh stack link` needs at least two PRs, so the first PR is recorded and linked when the second arrives.
+- **Order by risk:** the lowest-risk PRs and fixes that trunk needs go at the bottom, and High risk goes at the top. `gh stack merge <pr>` lands everything up to <pr> atomically, so a PR the owner holds leaves everything below it mergeable.
+- **Cascade** with `scripts/stack-cascade.sh` whenever trunk moves, and again right before merging.
+- **Merge:** run `scripts/wait-green.sh <pr> && gh stack merge <pr> --merge --yes` in the background. The merge goes through the queue as one group.
+- **Combined budgets:** every PR can fit a size ceiling on its own while the stack together goes over it. Measure at the stack top. A queue that skips that gate won't catch it.
+
+## CI stalls
+
+`scripts/unstick.sh [pr...]` cancels and reruns a run whose job has been queued without a runner for 8 minutes or more, and reruns a checkout that failed with "from promisor remote". It acts at most once per run and logs every action. `watch-queue.sh` and `wait-green.sh` call it on every loop. Queue-group runs (`gh-readonly-queue/*`) aren't covered, so a PR dropped from the queue with `failed_checks` needs its merge-group run read and the PR re-queued by hand.
 
 ## Standing practice
 
