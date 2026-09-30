@@ -52,7 +52,7 @@ When the owner wants a batch landed at once, build one GitHub stack (`gh stack`,
 
 ## CI stalls
 
-`scripts/unstick.sh [pr...]` cancels and reruns a run whose job has been queued without a runner for 8 minutes or more, and reruns a checkout that failed with "from promisor remote". It acts at most once per run and logs every action. `watch-queue.sh` and `wait-green.sh` call it on every loop. Queue-group runs (`gh-readonly-queue/*`) aren't covered, so a PR dropped from the queue with `failed_checks` needs its merge-group run read and the PR re-queued by hand.
+`scripts/unstick.sh [pr...]` cancels and reruns a run whose job has been queued without a runner for 8 minutes or more, and reruns a checkout that failed with "from promisor remote". It acts at most once per run and logs every action. `watch-queue.sh` and `wait-green.sh` call it on every loop. It also scans live merge-queue group runs (`gh-readonly-queue/*`), where a stuck job holds the whole stack. A PR dropped from the queue with `failed_checks` still needs its group run read and the PR re-queued by hand.
 
 ## Standing practice
 
