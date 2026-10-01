@@ -42,7 +42,7 @@ The owner's attention is the only serial resource. Everything else runs as a pip
 
 When the owner wants a batch landed at once, build one GitHub stack (`gh stack`, native stacked PRs) instead of queueing each PR. The state lives in `~/.claude/orchestrator-state/merger/<repo>/`, so it survives a crash.
 
-- **Add** each READY with `scripts/stack-add.sh <pr>`. It merges the top into the PR (normal push, never force), links the PR, and checks that CI ran. On exit 4, resolve the conflict in the state worktree with an agent, commit with hooks on, then run `stack-add.sh <pr> --resume`.
+- **Add** each READY with `scripts/stack-add.sh <pr>`. It merges the top into the PR (normal push, never force), links the PR, and checks that CI ran. On exit 4, resolve the conflict with an agent in the worktree it prints (`$STATE/conflict-<pr>`), commit with hooks on, then run `stack-add.sh <pr> --resume`.
 - **Link before pushing.** CI that triggers only for PRs against trunk skips a push made while the PR's base is another branch. `stack-add.sh` links first, and makes an empty commit when a head has no CI run.
 - **Two to link:** `gh stack link` needs at least two PRs, so the first PR is recorded and linked when the second arrives.
 - **Order by risk:** the lowest-risk PRs and fixes that trunk needs go at the bottom, and High risk goes at the top. `gh stack merge <pr>` lands everything up to <pr> atomically, so a PR the owner holds leaves everything below it mergeable.
