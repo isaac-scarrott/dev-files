@@ -1,24 +1,39 @@
 # The ledger
 
-A table of the current state of every open PR, shared by all sessions on one repo. It shows who holds the baton, what the head is, and where each PR stands. It holds state, not history: rows are overwritten in place, and a merged PR's row is deleted once its deploy has been reported.
+A table of the current state of every piece of work in flight, shared by all sessions on one repo. It shows who holds the baton, what the head is, and where each PR stands. It holds state, not history: rows are overwritten in place, and a merged PR's row is deleted once its deploy has been reported.
 
 ## Location
 
 `$(git rev-parse --git-common-dir)/orchestration/ledger.md`
 
-It lives in the repo's common `.git` directory, so every worktree and every session sees the same file, and it's never committed. `scripts/ledger.sh` reads and writes it. Use the script rather than editing by hand, so two sessions can't interleave half-written rows.
+It lives in the repo's common `.git` directory, so every worktree and every session sees the same file, and it's never committed. `scripts/ledger.py` reads and writes it. Use the script rather than editing by hand, so two sessions can't interleave half-written rows.
+
+The `orchestration-view` mod draws this file as a pane, so what you record here is what the owner sees without asking.
 
 ## Format
 
 ```text
-| pr | holder | head | base | state | owner | note |
-|---|---|---|---|---|---|---|
-| 6861 | merger | 740d210e6a | master | queued | approved (merger, 11:01) | after #6847 |
+| pr | holder | head | base | state | owner | note | what | since |
+|---|---|---|---|---|---|---|---|---|
+| 6861 | merger | 740d210e6a | master | queued | approved (merger, 11:01) | after #6847 | Lift tracking banner | 2026-10-11T11:55 |
+| payments-retry | orchestrator |  |  | planned |  | needs a data contract first | Retry failed payments | 2026-10-11T10:00 |
 ```
 
+- **pr**: the PR number, or a slug for work that has no PR yet (a planned item, a parked idea).
 - **holder**: `orchestrator`, `merger`, or another session's name, such as a builder that owns a branch.
-- **state**: `building`, `ready`, `review`, `queued`, `merged`, `deploying`, `held`, or `changes`.
+- **state**: one of
+  - `planned` — agreed, not started.
+  - `building`, `draft`, `changes` — a builder is on it.
+  - `input` — stopped until the owner answers; put the question in `note`.
+  - `review` — with the merger. It counts as the owner's until the `owner` column opens with a verdict
+    (`approved`, `standing`, `ship`), so a routing note such as "owner merges" leaves it under NEEDS YOU.
+  - `ready`, `queued`, `merged`, `deploying` — on its way in.
+  - `held`, `blocked` — parked: open, deliberately not moving. Why, in `note`.
+  - `landed`, `closed` — over. The pane lists these for four hours after `since`, then counts them at its foot.
+    A row whose deploy has been reported is dropped, so a ledger full of landed rows is a teardown that didn't happen.
 - **owner**: the owner's latest verdict, with the session it was given in.
+- **what**: the change in a few words, for whoever reads the row without the PR open.
+- **since**: when the row last changed state. `ledger.py` stamps it, so nobody has to.
 
 ## Decisions
 

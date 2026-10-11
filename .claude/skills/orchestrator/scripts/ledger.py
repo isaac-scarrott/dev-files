@@ -2,7 +2,9 @@
 """The shared PR ledger (see ../protocol/LEDGER.md).
 
   ledger.py show                         print the ledger
-  ledger.py set <pr> key=value ...       create or update a row (keys: holder head base state owner note)
+  ledger.py set <pr> key=value ...       create or update a row (keys: holder head base state owner note what)
+                                         <pr> is a PR number, or a slug for work with no PR yet.
+                                         A change of state stamps "since", so a watcher can age the row.
   ledger.py drop <pr>                    remove a row
   ledger.py decide "<rule>"              append a standing owner decision, dated
   ledger.py path                         print the ledger's path
@@ -15,7 +17,7 @@ import subprocess
 import sys
 import time
 
-COLUMNS = ["pr", "holder", "head", "base", "state", "owner", "note"]
+COLUMNS = ["pr", "holder", "head", "base", "state", "owner", "note", "what", "since"]
 
 
 def ledger_path() -> str:
@@ -92,11 +94,16 @@ def main(argv: list[str]) -> None:
             if row is None:
                 row = {column: "" for column in COLUMNS} | {"pr": pr}
                 rows.append(row)
+            was = row["state"]
+            given = set()
             for pair in pairs:
                 key, _, value = pair.partition("=")
                 if key not in COLUMNS[1:]:
                     sys.exit(f"unknown key {key!r}; use one of {COLUMNS[1:]}")
                 row[key] = value
+                given.add(key)
+            if "since" not in given and (row["state"] != was or not row["since"]):
+                row["since"] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M")
         elif command == "drop":
             rows = [row for row in rows if row["pr"] != arguments[0].lstrip("#")]
         elif command == "decide":

@@ -1,0 +1,6 @@
+{
+  "name": "orchestration-view",
+  "version": "0.1.0",
+  "author": { "name": "isaac-scarrott" },
+  "description": "A pane over the orchestrator/merger ledger: what is planned, building, waiting on you, parked and merging."
+}

@@ -14,6 +14,11 @@
       "name": "holibob",
       "description": "Holibob/work MCP server registrations (redshift).",
       "source": "./plugins/holibob"
+    },
+    {
+      "name": "orchestration-view",
+      "description": "A pane over the orchestrator/merger ledger: what is planned, being worked on, waiting on you, parked and merging.",
+      "source": "./plugins/orchestration-view"
     }
   ]
 }

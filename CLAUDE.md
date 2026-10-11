@@ -17,6 +17,9 @@ macOS only. `install.sh` hardcodes Library paths.
 - `.githooks/pre-commit` — re-runs `vendor.sh` and re-stages destinations when `vendor.manifest` is in the commit.
 - `scripts/drift.sh` — read-only by default; `--fix` re-vendors, bumps submodules, re-links. Refuses on a dirty tree.
 - `scripts/test-install.sh` — sandboxed bash tests for `install.sh` against a `mktemp -d` HOME. ~1s.
+- `.claude/marketplaces/dev-files/plugins/orchestration-view` — a mod (Claude Code function hooks): the pane over the
+  orchestrator/merger ledger. Enabled through `enabledPlugins` in `.claude/settings.json`, loaded from this directory, so
+  there is nothing to symlink. Run `claude plugin validate` and `claude plugin test` on its folder before committing.
 - `mcp.manifest.json` — canonical MCP server list. `scripts/gen-mcp.sh` renders it per tool: Claude plugin `.mcp.json` files, OpenCode's `opencode.json` `.mcp` key, and Codex's `~/.codex/config.toml`. The `targets` array on each server picks which tools get it.
 
 ## Three agent harnesses, one source
