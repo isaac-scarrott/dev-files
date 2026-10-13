@@ -93,6 +93,9 @@ find_stale_node_modules() {
   done
 }
 
+# Prints the line for the reader and leaves the byte total in REPORT_BYTES, because a
+# function can only return one stream and the caller needs both.
+REPORT_BYTES=0
 report() { # label, NUL-stream producer
   local label="$1" producer="$2" count=0 bytes=0 path sz
   while IFS= read -r -d '' path; do
@@ -101,15 +104,15 @@ report() { # label, NUL-stream producer
     bytes=$((bytes + sz))
   done < <("$producer")
   printf '  %-26s %5d items  %8s\n' "$label" "$count" "$(human "$bytes")"
-  echo "$bytes"
+  REPORT_BYTES=$bytes
 }
 
 cmd_scan() {
   echo "TMPDIR: $TMP_DIR"
   echo "Reclaimable (older than ${AGE_DAYS}d):"
-  local total=0 b
-  b="$(report 'tmpdir build leaks' find_tmp_leaks | tail -1)"; total=$((total + b))
-  b="$(report 'worktree node_modules' find_stale_node_modules | tail -1)"; total=$((total + b))
+  local total=0
+  report 'tmpdir build leaks' find_tmp_leaks;        total=$((total + REPORT_BYTES))
+  report 'worktree node_modules' find_stale_node_modules; total=$((total + REPORT_BYTES))
 
   local cache_bytes=0 p
   for p in "${CACHE_PATHS[@]}"; do cache_bytes=$((cache_bytes + $(size_of "$p"))); done
