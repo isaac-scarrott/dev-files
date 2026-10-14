@@ -3,7 +3,7 @@ input=$(cat)
 
 dir=$(echo "$input" | jq -r '.cwd')
 short_dir=$(basename "$dir")
-session_name=$(echo "$input" | jq -r '.session_name // empty')
+session_id=$(echo "$input" | jq -r '.session_id // empty')
 remaining=$(echo "$input" | jq -r '.context_window.remaining_percentage // empty')
 five_hour_used=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 week_used=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
@@ -12,6 +12,14 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 thinking=$(echo "$input" | jq -r '.thinking.enabled | if . == null then "" else tostring end')
 fast=$(echo "$input" | jq -r '.fast_mode | if . == null then "" else tostring end')
 branch=$(git -C "$dir" --no-optional-locks rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+# The address other sessions message this one by. It lives in the session registry, not in the
+# statusline payload, and the registry is keyed by pid, so find the entry by session id.
+peer_name=""
+if [ -n "$session_id" ]; then
+    reg=$(grep -l "\"sessionId\":\"$session_id\"" "$HOME"/.claude/sessions/*.json 2>/dev/null | head -1)
+    [ -n "$reg" ] && peer_name=$(jq -r '.name // empty' "$reg" 2>/dev/null)
+fi
 
 ESC=$(printf '\033')
 RESET="${ESC}[0m"
@@ -62,8 +70,18 @@ model_chip=""
 [ -n "$model_chip" ] && [ -n "$thinking_label" ] && model_chip="${model_chip} ${DIM}${thinking_label}${RESET}"
 [ -z "$model_chip" ] && [ -n "$thinking_label" ] && model_chip="${DIM}${thinking_label}${RESET}"
 
-line="${YELLOW}${BOLD}${short_dir}${RESET}"
-[ -n "$session_name" ] && line="${BOLD}${session_name}${RESET}${sep}${line}"
+# The address is usually the directory plus a suffix, so printing both says it twice.
+dir_chip="${YELLOW}${BOLD}${short_dir}${RESET}"
+case "$peer_name" in
+    "$short_dir"-*) dir_chip="" ;;
+esac
+
+if [ -n "$peer_name" ]; then
+    line="${BOLD}${peer_name}${RESET}"
+    [ -n "$dir_chip" ] && line="${line}${sep}${dir_chip}"
+else
+    line="$dir_chip"
+fi
 [ -n "$branch" ] && line="${line}${sep}${GREEN}${branch}${RESET}"
 [ -n "$model_chip" ] && line="${line}${sep}${model_chip}"
 [ "$fast" = "true" ] && line="${line}${sep}${DIM}fast${RESET}"
