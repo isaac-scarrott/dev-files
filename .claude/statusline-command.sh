@@ -3,6 +3,7 @@ input=$(cat)
 
 dir=$(echo "$input" | jq -r '.cwd')
 short_dir=$(basename "$dir")
+session_name=$(echo "$input" | jq -r '.session_name // empty')
 remaining=$(echo "$input" | jq -r '.context_window.remaining_percentage // empty')
 five_hour_used=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 week_used=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
@@ -62,6 +63,7 @@ model_chip=""
 [ -z "$model_chip" ] && [ -n "$thinking_label" ] && model_chip="${DIM}${thinking_label}${RESET}"
 
 line="${YELLOW}${BOLD}${short_dir}${RESET}"
+[ -n "$session_name" ] && line="${BOLD}${session_name}${RESET}${sep}${line}"
 [ -n "$branch" ] && line="${line}${sep}${GREEN}${branch}${RESET}"
 [ -n "$model_chip" ] && line="${line}${sep}${model_chip}"
 [ "$fast" = "true" ] && line="${line}${sep}${DIM}fast${RESET}"
