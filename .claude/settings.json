@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(bash /Users/isaac/.claude/skills/merger/scripts/*)",
+      "Bash(/Users/isaac/.claude/skills/merger/scripts/*)",
+      "Bash(gh stack:*)",
+      "mcp__plugin_holibob_redshift__execute_query",
+      "mcp__plugin_holibob_redshift__list_clusters",
+      "mcp__plugin_holibob_redshift__list_databases",
+      "mcp__plugin_holibob_redshift__list_schemas",
+      "mcp__plugin_holibob_redshift__list_tables",
+      "mcp__plugin_holibob_redshift__list_columns"
+    ]
+  },
+  "model": "opus",
   "hooks": {
     "Notification": [
       {
@@ -48,6 +62,15 @@
           {
             "type": "command",
             "command": "/Users/isaac/git/claude-tmux/hooks/claude-tmux-hook.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/isaac/.claude/skills/orchestrator/scripts/session-start.sh",
+            "timeout": 15
           }
         ]
       }
@@ -120,12 +143,5 @@
   "skipWorkflowUsageWarning": true,
   "theme": "custom:synth",
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true,
-  "permissions": {
-    "allow": [
-      "Bash(bash /Users/isaac/.claude/skills/merger/scripts/*)",
-      "Bash(/Users/isaac/.claude/skills/merger/scripts/*)",
-      "Bash(gh stack:*)"
-    ]
-  }
+  "voiceEnabled": true
 }

@@ -1,0 +1,2 @@
+# Frozen copies of third-party pages: large, and not ours to redistribute. Recreate with: node eval.mjs capture
+*.mhtml

@@ -1,0 +1,92 @@
+# Changelog
+
+One dated line per fix to `serialise.js`, `simplify.mjs`, `snap.mjs`, `canvas.mjs`, `transfer.mjs`, `fidelity.mjs` and `lib.mjs`, with the symptom it cured. Read it when a frame renders wrong, before changing a script; add a line when you fix something.
+
+2026-10-11
+- serialise: unroll walks shadow roots, so web-component app shells (scroller inside a custom element) capture full height instead of 900px.
+- serialise: fixed full-screen shells become absolute (keep top offset, grow) and inset-stretched absolute panes go in flow while unrolling.
+- serialise: page height measured before restoring the unrolled page (was the viewport height).
+- serialise: `system-ui`/`-apple-system`/Segoe UI map to Inter (Paper fell back to a serif/Times look).
+- serialise: hoisted fixed boxes carry the page's font/colour (they lost body inheritance).
+- serialise: hoisted fixed boxes drop translate transforms (floating-ui popovers were offset twice).
+- serialise: hoisted boxes keep document order, sort by z-index, and top-layer content (open popovers, modal dialogs) is lifted to z-index 10000; fixed app shells get z-index 0 so cards' z-indexes cannot paint over scrims.
+- serialise: sticky elements drop z-index while an overlay is open (sticky search bar painted over modal scrim).
+- serialise: grid items pinned to their used width (Paper ignored `grid-auto-columns` carousels and squashed cards).
+- serialise: flex/grid placement (flex-grow, basis, align-self, order, grid lines) judged against initial values, not the sibling probe (shared `li > *` rules cancelled them).
+- serialise: scrolled containers shift their content by scrollTop/scrollLeft (bottom sheets parked at a snap point, slid pagers rendered blank).
+- serialise: % heights pinned to used height (sheets collapsed in Paper).
+- serialise: `-webkit-line-clamp` emits `display: -webkit-box` and drops fixed/flexed heights so Paper clamps; other clipped text gets an inner span so Paper clips it.
+- serialise: single-line text in a hugging box gets `nowrap` (Paper metrics wrapped "1 / 20", badges).
+- serialise: stacked panes: covered panes (and their scrim) are hidden during full-page captures, so the product page over discovery captures as the product page.
+- serialise: bottom-pinned fixed bars go to the page bottom in full mode; stuck sticky bars stay on screen in viewport mode with a placeholder in flow.
+- serialise: viewport mode replaces off-screen blocks with sized empty boxes (390 product viewport 392 KB → 83 KB).
+- snap: `--lazy` walks shadow roots for lazy images and waits on them; `--width N` guards a dropped viewport override.
+- SKILL: viewport-override drops, shadow-root clicking, and Paper's file-size warning documented.
+- snap: every Paper call aborts on the "file is too large" warning, so a run cannot keep writing into a file at its limit.
+- SKILL: `browser_viewport` can report the override while the page still lays out at the pane size; `browser_viewport reset` then set again (the `--width` guard catches it). Clicks by coordinate can miss while the pane is scaled; `.click()` the element from `browser_evaluate` instead.
+- snap: `--component [css]` captures only the open overlay (+ attached trigger) on a #F9F9FA ground with 24px padding; serialise selectors reach into shadow roots and a component root drops its own transform/insets. Open states are captured this way; full page only for each screen's default.
+- SKILL: the file-size warning can be stale after deletions; reconnect the Paper MCP / reload the file and re-check with one read.
+- snap: component triggers climb from a bare button to the field box that draws it; full-width overlays (390 sheets) skip the trigger.
+- simplify: new size pass (simplify.mjs, `--raw` skips). Checked raw vs simplified in Paper on a 1440 full page, a 390 full page and a component: identical by eye. 158.7→91.3 KB, 137.8→81.1 KB, 76.1→32.3 KB.
+- simplify: drops styles Paper does not draw (appearance, unicode-bidi, logical border radii, overflow-clip-margin, scrollbar-*, …) and SVG-child text/display styles.
+- simplify: drops inherited text styles equal to the parent's value (Paper inherits color, font-*, line-height, text-align, white-space).
+- simplify: drops `box-sizing: border-box` (Paper's default; measured).
+- simplify: oklab()/color(srgb)/rgb() → hex (rgba kept for alpha < 1), also on SVG fill/stroke.
+- simplify: four equal sides → padding/margin/border-radius/border shorthands; equal row/column gap merged (overflow-x/y merge dropped as a precaution while bisecting).
+- simplify: px values capped at 2 decimals. Rounding to .5 was dropped: it shrank hugging badges and wrapped their text.
+- simplify: strips class/role/tabindex/focusable/aria-*/data-* attributes and merges adjacent text runs.
+- simplify: unwraps style-less block wrappers around one block child (rare in practice, ~1% of nodes). Node counts barely move because almost every wrapper carries layout; bytes are where the savings are. <style> class dedupe not attempted.
+- simplify: inherited-style dedupe skips form controls (button/input/select/textarea/th): Paper applies their own defaults, so a deduped `text-align: left` centred a cart item title.
+- serialise: buttons always carry their text-align (Paper centres button text by default; left-aligned card titles rendered centred).
+- serialise: text-only flex boxes carry text-align and drop justify-content when the text wraps (Paper read `justify-content: center` as centred text).
+- serialise: full-page unroll ignores panes parked off screen and, when the top pane does not scroll (a short cart sheet), all scrollers under it; the in-trip 390 discovery and the 390 cart were twice their height.
+- serialise: component captures unroll the overlay's own scroller (pinning its width), so a long dialog (availability) is captured whole; snap sizes component parts from the serialiser.
+- snap: `--lazy eager` loads lazy images without scrolling (scrolling tripped infinite-scroll lists).
+- snap: large overlays (>30% of the viewport) never take a trigger (a sticky bar's date button had attached to the availability dialog).
+- simplify: keeps `isolation` (it scopes z-indexes in Paper too; dropping it let map tiles paint over the 390 sticky Book bar). Rules can be switched off for bisecting with SIMPLIFY_OFF=noise,dedupe,boxsizing,color,shorthand,round,unwrap.
+- serialise: hoisted fixed/stuck boxes get z-index 5000+ so headers and Book bars stay above in-flow z-indexes.
+- SKILL: open only states that change nothing; destructive controls are captured on data the run created, and personal details are swapped for placeholders (a bin on a shared test cart removed the line with no confirmation).
+- transfer: new `transfer.mjs copy` copies or moves frames between Paper files (get_jsx inline styles → write_html; the Tailwind export swaps values for token class names, so it does not round-trip). Checked source vs copy in Paper on a 1440 trip page, a 390 home page and a background group: identical by eye, 44.3 / 59.0 / 0.6 KB, 252 / 341 / 4 nodes on both sides.
+- transfer: hidden layers are written visible and re-hidden with update_styles (write_html dropped `display: none` elements: a badge and its text went missing).
+- transfer: a text layer whose font is a token holding a family list is inlined as the family it inherits (Paper renders such a token as the inherited font, so inlining its own value turned a Lato header into Source Sans 3).
+- transfer: `<br />` inside a text layer is a line break in its text, not a node (note frames counted 15 nodes against 3 layers).
+- transfer: layer names come from get_tree_summary, matched to the export in order; only a name equal to its layer type is left to Paper (frames named "Text" came back as "Frame").
+- transfer: `--move` waits for image fills to finish uploading to the target (`….tmp` asset URLs) before a source frame is deleted.
+- transfer: `opacity: 0` and `visibility: hidden` layers are lifted and restored like `display: none` (write_html dropped invisible badges on five 1440 frames: 2–8 nodes each).
+- skill: `paper-snapshot` became `paper`: SKILL.md routes to SNAPSHOT.md, TRANSFER.md, LAYOUT.md and CANVAS.md; shared plumbing moved to `lib.mjs`.
+- snap: `journey <journey.json>` drives its own tab over CDP (navigate, viewport incl. mobile, click/hover/type/key by label or selector through shadow roots, wait) and captures per step, one line per frame, continuing past failures; `--only`, `--dry-run`. Its own tab keeps the viewport a browser shell would drop on navigation.
+- snap: navigation waits for a new document to finish loading (a capture taken 400ms after `Page.navigate` held the previous page's 21 nodes).
+- snap: `layout` stacks groups top to bottom with each group's frames in one row, derives groups from frame names (`--order`), and replaces a previous layout's backgrounds and title instead of adding a second set.
+- canvas: new `canvas.mjs`: `boards`, `tree`, `find`, `tokens` as compact lines; `rename`, `move`, `style`, `delete` by name glob with `--dry-run`; `verify` pixel-diffs frames against the screenshot taken at capture (or another node / a png) in a browser tab and names the worst region.
+- lib: `--key=value` accepted, for values that start with `--`.
+- simplify: shared `<style>` classes not adopted: Paper's `write_html` drops a classed element with no inline style and ignores class rules on text (tested 2026-10-11).
+- transfer: artboard width/height come from get_computed_styles (get_jsx left them off some roots, so `fit-content` pages were created 900px tall and clipped).
+- canvas: `size` (per-page frames, layers, ~bytes; file total) and journey `--dry-run` prints what the run would add beside the file's current size.
+- canvas: `lint` checks frame names, group membership, repeated action-colour buttons and data-claiming phrases (`lint-phrases.txt`); exit 1 on any.
+- snap: journey gained `--start <url>` (a one-time sign-in link stays off disk), `mutates` steps skipped by a dry run, `--widths`, per-step `page`, `stylesheets`.
+- snap: a remembered browser zoom for an origin made a 1440 viewport lay out 1600 wide; the window is resized until innerWidth matches.
+- snap: a covered trigger is clicked with pointer events before `click()` (menu and sheet triggers open on pointerdown; a plain DOM click left them shut at 390).
+- snap: a failed click lists the labels on screen (a restore of `Cancel` had matched a product card containing "cancel"; `Escape` is the safer restore).
+- snap: `layout` places a `(next)` frame directly after the frame it changes.
+
+- transfer: parser takes unescaped quotes inside style values (data-URI SVG backgrounds), a bare `<` in text ("<3 stars") and literal braces; whole captured sites failed to parse.
+- transfer: layer lists are refetched child by child when get_tree_summary cuts a large frame short (1,347 of 1,530 layers came back, so names and hidden layers were skipped).
+- transfer: a frame whose export cannot be matched to its layer list keeps its hiding styles, so write_html drops those layers instead of showing them (`layerNames.hiddenDropped`).
+- transfer: a frame with no width/height hugs its content and a flex root with no direction is a row (artboards default to 1440×900 and a column: a captured-site board came out clipped and stacked). Reads retry while Paper digests a large write.
+
+- serialise: a collapsed accordion panel (`grid-template-rows: 0fr` over a clipping child) is left out; Paper does not collapse the track and drew every panel open (Tiqets FAQs).
+- serialise: a block whose children are all inline-block/flex boxes becomes a wrapping flex row (Paper read a row of chips as one run of text and dropped the boxes).
+- serialise: a wrapping flex column the browser kept in one column gets `nowrap` (Paper's taller text broke a stretched card into a second column).
+- serialise: a wrapping flex row the browser kept on one line gets `nowrap` (five 215.594px columns in 1078px wrapped in Paper once widths were rounded: Klook quick facts).
+- serialise: a line-clamped box whose text sits in inline children keeps its clamped height and clips an inner frame (Paper only clamps text-only layers: a one-line notice ran to three lines and pushed the page down).
+- simplify: a wrapper is not unwrapped around a child with % padding (the % then resolved against the wider grandparent: Klook gallery tiles grew to 359px and hid the second row).
+- snap: `--inline-images host[,host]` / journey `"inlineImages"`: pictures from hosts Paper cannot fetch (it leaves `….tmp` assets, as with res.klook.com) are read in the tab and sent as data URIs, which Paper uploads; SVGs are drawn at 4x to PNG, and a host with no CORS header (cdn.klook.com) is fetched from Node instead.
+
+- lib: the skill's browser is its own headless Chrome (`--headless=new`, temp profile, free port; reused within a command; killed and removed on exit, on a signal, and by a watchdog when the command is killed outright). It used to open tabs on Synth's debugging port 9300, which crashed Synth (CEF context bug) and opened windows over the owner's work; `PAPER_CDP` pointing at 9300 is now refused.
+- snap: `snap` / `capture` open and prepare their own tab (`--url`, `--width` with phone emulation under 500, `--height`, `--start`, `--wait`); `--target` and a journey's `tab` attach only to a browser named by `PAPER_CDP`. `capture` prints simplified bytes and node counts.
+- snap, canvas, transfer: run through the `~/.claude/skills/paper` symlink (snap printed nothing: its main guard compared the symlink path with the real one).
+- fidelity: new `fidelity.mjs` lists how a built page differs from a frame (structure, size and spacing, text style, text). Reuses `transfer.mjs` (`exportFrame`, `html`), `canvas.mjs` (`comparePictures`, `paperShot`) and `snap.mjs` (`navigate`, `setViewport`), now exported; `lib.mjs` sessions take CDP events (`on`).
+- fidelity: Paper reports no position or size for auto-sized layers (`get_node_info`, `get_tree_summary` and `get_computed_styles` all leave them out), so the frame's export is laid out in the page's tab inside a shadow root; on the Discovery capture that layout was 1846px tall, as in Paper.
+- fidelity: a text is a block of inline content, styled by the innermost element wrapping all of it (captures hold "<b>2</b> hr 30 min" as one layer; reading each element's own text reported every duration and price as reworded).
+- fidelity: text edges come from the text nodes' own boxes (a padded button on the page against a bare text layer in the frame read as a 15px margin difference), and margins are compared only at the ends of a row (a card moving one cell read as a 356px margin change).
+- fidelity: `line-height: normal` is compared by the height of the line the browser drew.

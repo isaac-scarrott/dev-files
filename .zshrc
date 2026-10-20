@@ -86,3 +86,12 @@ share-html() {
   aws s3 cp "$1" "s3://$bucket/$key" --content-type "text/html; charset=utf-8" --cache-control no-store >/dev/null \
     && echo "https://$bucket.s3.$region.amazonaws.com/$key"
 }
+
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+export ANDROID_SDK_ROOT=$ANDROID_HOME
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export PATH="$JAVA_HOME/bin:$PATH"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"
+
+# Vite+ bin (https://viteplus.dev)
+. "/Users/isaac/.config/vite-plus/env"

@@ -35,6 +35,10 @@ The `orchestration-view` mod draws this file as a pane, so what you record here 
 - **what**: the change in a few words, for whoever reads the row without the PR open.
 - **since**: when the row last changed state. `ledger.py` stamps it, so nobody has to.
 
+## The merger's row
+
+The merger announces itself in a row keyed `merger`: `holder` is its session name (the name peers address it by), `state` is `active`, and `note` carries `seen <UTC time>`. It writes the row when it starts, rewrites `holder` after every restart (peer names are re-derived each run; the SessionStart hook `scripts/session-start.sh` prints the new one and the command), and refreshes `note` on every ready-for-merge it acts on. Orchestrators find the merger here, not through `ListAgents`. A `seen` older than an hour while ready-for-merge messages go unanswered means the merger may be gone: tell the owner rather than guess a replacement.
+
 ## Decisions
 
 Standing rules the owner sets, such as "be proactive" or "never queue at night", go under a `## Decisions` heading at the foot of the same file. Each is one line with a date. Keep them to rules that still apply, and remove any the owner withdraws.

@@ -1,0 +1,11 @@
+# Phrases that claim data the design cannot back. One per line; matched case-insensitively
+# anywhere in a text layer by `canvas.mjs lint`.
+trending
+popular with
+loved by
+top rated by
+best seller
+bestseller
+most booked
+selling fast
+people are viewing

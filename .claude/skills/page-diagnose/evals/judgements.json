@@ -1,0 +1,126 @@
+{
+ "headout-home:zooming-inputs": {
+  "verdict": "real",
+  "why": "The search input is set under 16px on the phone layout."
+ },
+ "airbnb-home:low-contrast": {
+  "verdict": "relative",
+  "why": "Pale grey secondary text is under 4.5:1, but the share swings from 4% to 13% between measurements of this frozen copy (its layout settles at different heights), so the size of the problem is not known."
+ },
+ "airbnb-home:static": {
+  "verdict": "false",
+  "why": "Frozen-copy artefact, confirmed: the live page measures 71% of buttons responding to hover against 14% on the frozen copy."
+ },
+ "tiqets-home:hero-takes-fold": {
+  "verdict": "relative",
+  "why": "The phone hero is 57% of the first screen: larger than the others', within reason."
+ },
+ "booking-home:competing-actions": {
+  "verdict": "real",
+  "why": "Register and Sign in sit side by side with the same white fill in the header. Minor."
+ },
+ "booking-home:text-on-photos": {
+  "verdict": "real",
+  "why": "Product titles and ratings are drawn on the photos of the 'Recommended' cards."
+ },
+ "booking-home:low-contrast": {
+  "verdict": "false",
+  "why": "The boxed 'Search' label is white on Booking blue and reads fine; pixel sampling over the button edge misjudged it."
+ },
+ "booking-home:no-focus": {
+  "verdict": "false",
+  "why": "Not confirmed either way: 67% on the frozen copy, 71% on the live page, which is just inside what the tool tolerates. Counted as false."
+ },
+ "musement-home:low-contrast": {
+  "verdict": "real",
+  "why": "Card descriptions are pale grey at 3.9:1, under the 4.5:1 minimum. The live page measures the same, so it is not a frozen-copy artefact."
+ },
+ "musement-home:equally-loud": {
+  "verdict": "relative",
+  "why": "37% bold on the phone layout against 5–21%: heavier than the references, not broken."
+ },
+ "headout-listing:zooming-inputs": {
+  "verdict": "real",
+  "why": "Same input as the home page."
+ },
+ "headout-listing:noisy-type": {
+  "verdict": "relative",
+  "why": "Nine sizes on the phone layout against five to eight."
+ },
+ "tiqets-listing:nothing-to-browse": {
+  "verdict": "relative",
+  "why": "32 cards against Headout's 71: shorter, still a full page."
+ },
+ "tiqets-listing:hero-takes-fold": {
+  "verdict": "relative",
+  "why": "A third of the first screen is the city banner."
+ },
+ "tiqets-listing:soft-images": {
+  "verdict": "real",
+  "why": "The city banner and several tiles are served smaller than they are shown."
+ },
+ "musement-listing:low-contrast": {
+  "verdict": "real",
+  "why": "The same pale grey card descriptions at 3.9:1; identical on the live page."
+ },
+ "musement-listing:nothing-to-browse": {
+  "verdict": "relative",
+  "why": "20 cards against 32–71."
+ },
+ "musement-listing:no-focus": {
+  "verdict": "real",
+  "why": "Checked by pixels on the live page: the date, category, filter and 'view more' buttons and the sort select look the same focused and unfocused."
+ },
+ "musement-listing:static": {
+  "verdict": "real",
+  "why": "Checked by pixels on the live page: none of the five buttons tried changes when pressed. Minor."
+ },
+ "airbnb-detail:low-contrast": {
+  "verdict": "real",
+  "why": "A line of pale grey text under 4.5:1. Minor."
+ },
+ "airbnb-detail:static": {
+  "verdict": "false",
+  "why": "Frozen-copy artefact: the same buttons as the home page, which respond on the live page."
+ },
+ "tiqets-detail:static": {
+  "verdict": "real",
+  "why": "Checked by pixels: the four date buttons do not change when pressed. Minor."
+ },
+ "booking-detail:broken-images": {
+  "verdict": "false",
+  "why": "Frozen-copy artefact: one picture did not survive freezing."
+ },
+ "booking-detail:buy-below-fold": {
+  "verdict": "real",
+  "why": "At 1440 the first screen shows title and gallery; the price is in the ticket panel below."
+ },
+ "booking-detail:competing-actions": {
+  "verdict": "real",
+  "why": "Register and Sign in again."
+ },
+ "musement-detail:buy-below-fold": {
+  "verdict": "real",
+  "why": "At 1440 the price sits under a full-width photo, below the first screen."
+ },
+ "musement-detail:low-contrast": {
+  "verdict": "real",
+  "why": "Pale grey text at 2.7 to 3.9:1; identical on the live page."
+ },
+ "musement-detail:no-focus": {
+  "verdict": "real",
+  "why": "The main 'Check availability' button and the chat button show no change when focused; identical on the live page."
+ },
+ "musement-detail:few-photos": {
+  "verdict": "real",
+  "why": "One large photo at the top against four or five on the references."
+ },
+ "tiqets-listing:no-focus": {
+  "verdict": "real",
+  "why": "Checked by pixels: the carousel 'Next' and 'Show more' buttons show nothing when focused."
+ },
+ "tiqets-detail:no-focus": {
+  "verdict": "real",
+  "why": "Half the controls tried at 1440 show no change when focused."
+ }
+}

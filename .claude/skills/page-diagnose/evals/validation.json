@@ -1,0 +1,189 @@
+{
+ "nothing-to-browse": {
+  "found": 5,
+  "of": 5,
+  "good": {
+   "pages": 8,
+   "fired": 2,
+   "real": 0,
+   "relative": 2,
+   "false": 0
+  }
+ },
+ "hero-takes-fold": {
+  "found": 4,
+  "of": 4,
+  "good": {
+   "pages": 8,
+   "fired": 2,
+   "real": 0,
+   "relative": 2,
+   "false": 0
+  }
+ },
+ "buy-below-fold": {
+  "found": 3,
+  "of": 3,
+  "good": {
+   "pages": 5,
+   "fired": 2,
+   "real": 2,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "few-photos": {
+  "found": 4,
+  "of": 4,
+  "good": {
+   "pages": 5,
+   "fired": 1,
+   "real": 1,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "equally-loud": {
+  "found": 5,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 1,
+   "real": 0,
+   "relative": 1,
+   "false": 0
+  }
+ },
+ "text-on-photos": {
+  "found": 4,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 1,
+   "real": 1,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "low-contrast": {
+  "found": 3,
+  "of": 3,
+  "good": {
+   "pages": 13,
+   "fired": 6,
+   "real": 4,
+   "relative": 1,
+   "false": 1
+  }
+ },
+ "noisy-type": {
+  "found": 5,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 1,
+   "real": 0,
+   "relative": 1,
+   "false": 0
+  }
+ },
+ "small-text": {
+  "found": 3,
+  "of": 3,
+  "good": {
+   "pages": 13,
+   "fired": 0,
+   "real": 0,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "competing-actions": {
+  "found": 2,
+  "of": 2,
+  "good": {
+   "pages": 13,
+   "fired": 2,
+   "real": 2,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "hidden-actions": {
+  "found": 2,
+  "of": 2,
+  "good": {
+   "pages": 13,
+   "fired": 0,
+   "real": 0,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "static": {
+  "found": 4,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 4,
+   "real": 2,
+   "relative": 0,
+   "false": 2
+  }
+ },
+ "no-focus": {
+  "found": 2,
+  "of": 3,
+  "good": {
+   "pages": 13,
+   "fired": 5,
+   "real": 4,
+   "relative": 0,
+   "false": 1
+  }
+ },
+ "soft-images": {
+  "found": 5,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 1,
+   "real": 1,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "broken-images": {
+  "found": 5,
+  "of": 5,
+  "good": {
+   "pages": 13,
+   "fired": 1,
+   "real": 0,
+   "relative": 0,
+   "false": 1
+  }
+ },
+ "sideways-scroll": {
+  "found": 2,
+  "of": 3,
+  "good": {
+   "pages": 13,
+   "fired": 0,
+   "real": 0,
+   "relative": 0,
+   "false": 0
+  }
+ },
+ "zooming-inputs": {
+  "found": 1,
+  "of": 2,
+  "good": {
+   "pages": 13,
+   "fired": 2,
+   "real": 2,
+   "relative": 0,
+   "false": 0
+  }
+ }
+}

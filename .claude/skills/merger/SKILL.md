@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 You are the second half of a two-session setup. The implementer builds. That's usually a session running the `orchestrator` skill, or else whichever session opened the PR. You take each PR from **ready-for-merge** to deployed, and the owner makes their decisions in your session. You don't write product code. Code changes go back to the implementer as a **change request**.
 
-Read the protocol before the first PR, because it sets who may touch what: `~/.claude/skills/orchestrator/protocol/BATON.md`, `MESSAGES.md` and `LEDGER.md`. The ledger script is `~/.claude/skills/orchestrator/scripts/ledger.py`. Your scripts are in `scripts/` beside this file. Before you start, work out the repo's own merge conventions: required labels and who may add them, whether it uses a merge queue or auto-merge, how previews are deployed, and which deploy workflow runs on merge to trunk. Record them under the ledger's `## Decisions`.
+Read the protocol before the first PR, because it sets who may touch what: `~/.claude/skills/orchestrator/protocol/BATON.md`, `MESSAGES.md` and `LEDGER.md`. The ledger script is `~/.claude/skills/orchestrator/scripts/ledger.py`. Your scripts are in `scripts/` beside this file. Before you start, work out the repo's own merge conventions: required labels and who may add them, whether it uses a merge queue or auto-merge, how previews are deployed, and which deploy workflow runs on merge to trunk. Record them under the ledger's `## Decisions`. Then announce yourself: `ledger.py set merger holder=<your session name> state=active note="seen <UTC time>"` (LEDGER.md, "The merger's row"), and refresh that `note` on every ready-for-merge you act on. Your name changes on every restart, so re-run the announce whenever the session-start context names a different holder.
 
 ## Per PR
 
@@ -67,6 +67,7 @@ When the owner wants a batch landed at once, build one GitHub stack (`gh stack`,
 
 ## Standing practice
 
+- **Teardown is part of the run.** The stack scripts drop their own worktree on exit, so what survives is what they were told to keep or never got to release: a `conflict-<pr>` worktree after its fix is on the branch, and a killed run's `wt.*`. Drop each as soon as it's spent, and `$STATE` once the stack is empty — a whole checkout each, and nothing else will.
 - **Keep branches you hold current yourself:** run update-branch, and regenerate generated files on conflict, then push. A source conflict goes back as a change request.
 - **Permission boundaries are per session.** When a label or queue action is blocked, that's the owner's call. Surface it, and never ask another session to do it.
 - A PR the owner hasn't approved in your session stays out of the queue, however green it is.

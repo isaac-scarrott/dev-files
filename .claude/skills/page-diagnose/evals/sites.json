@@ -1,0 +1,447 @@
+{
+ "note": "Real public pages the evals run on, in the tours, activities and travel-booking sector. `node eval.mjs capture` freezes each to evals/snapshots/<id>/. group: good | poor | other (marketing or out-of-sector pages, reported separately and never tuned on). split: tune | held (held-out pages were not looked at while choosing checks, weights or tolerances).",
+ "fidelity": [
+  "headout-home",
+  "tiqets-listing",
+  "airbnb-detail"
+ ],
+ "sites": {
+  "headout": {
+   "group": "good",
+   "split": "tune",
+   "why": "Owner-named."
+  },
+  "airbnb": {
+   "group": "good",
+   "split": "tune",
+   "why": "Owner-named."
+  },
+  "tiqets": {
+   "group": "good",
+   "split": "tune",
+   "why": "Owner-listed candidate, and one of the three inspiration sites of the 9 Oct hand diagnosis."
+  },
+  "booking": {
+   "group": "good",
+   "split": "held",
+   "why": "Owner-listed candidate (Booking.com attractions)."
+  },
+  "musement": {
+   "group": "good",
+   "split": "held",
+   "why": "My pick, not the owner's: TUI's marketplace, a peer of the owner-listed candidates that blocked us. Looked at before measuring: search on the first screen, rows of photo cards each with rating and from-price, one type family."
+  },
+  "britishtours": {
+   "group": "poor",
+   "split": "tune",
+   "why": "Looked at before measuring: at 1440 the page is a narrow column of small text; tour cards carry no price or rating; there is no way to search or filter tours; the product page has one photo and an enquiry form instead of a booking step; a reCAPTCHA badge overlaps the content."
+  },
+  "walks": {
+   "group": "poor",
+   "split": "tune",
+   "why": "Looked at before measuring: a fixed-width layout of red and black text blocks; the listing is a plain list of links with no photos, prices or ratings; navigation is rows of text links around a calendar widget."
+  },
+  "tickitaly": {
+   "group": "poor",
+   "split": "tune",
+   "why": "Looked at before measuring: listing and product pages are long paragraphs of small text rather than cards; clip-art icons and boxed blue and green navigation; no ratings anywhere."
+  },
+  "pragueticketoffice": {
+   "group": "poor",
+   "split": "tune",
+   "why": "Looked at before measuring: the home page leads with a four-field search form over a banner; results are table-like rows of small text with no ratings; several text sizes and colours compete in each row."
+  },
+  "florencemuseum": {
+   "group": "poor",
+   "split": "held",
+   "why": "Looked at before measuring: a fixed-width layout that does not adapt to a phone; gold buttons with tiny labels; museum blocks are paragraphs with a thumbnail; the booking form sits in the middle of the product text."
+  },
+  "internationalfriends": {
+   "group": "poor",
+   "split": "held",
+   "why": "Looked at before measuring: three stacked header bands of small links and badges; the listing at 390 is headings and paragraphs with no cards or prices; the product page opens with a map and small photos. The weakest case for 'plainly poor' in the set."
+  },
+  "weekendinitaly": {
+   "group": "poor",
+   "split": "held",
+   "why": "Looked at before measuring: the listing is a column of category links beside text-heavy tiles; small text throughout; the home page is a hero with a centred form and little else."
+  },
+  "gotobus": {
+   "group": "poor",
+   "split": "held",
+   "why": "Looked at before measuring: the home page under the search form is three columns of small blue text links with prices: a link directory, no photos, no cards. Home page only."
+  },
+  "viennaticketoffice": {
+   "group": "poor",
+   "split": "held",
+   "why": "Looked at before measuring: red, black and white panels of different sizes compete on the first screen; numbered thumbnails with tiny captions; a floating chat widget and voucher box overlap content. Home page only."
+  }
+ },
+ "pages": [
+  {
+   "id": "headout-home",
+   "site": "headout",
+   "type": "home",
+   "url": "https://www.headout.com/"
+  },
+  {
+   "id": "headout-listing",
+   "site": "headout",
+   "type": "listing",
+   "url": "https://www.headout.com/things-to-do-city-london/"
+  },
+  {
+   "id": "headout-detail",
+   "site": "headout",
+   "type": "detail",
+   "url": "https://www.headout.com/london-eye-tickets/london-eye-entry-tickets-e-3336/"
+  },
+  {
+   "id": "headout-availability",
+   "site": "headout",
+   "type": "availability",
+   "url": "https://www.headout.com/book/3336/select/"
+  },
+  {
+   "id": "airbnb-home",
+   "site": "airbnb",
+   "type": "home",
+   "url": "https://www.airbnb.co.uk/"
+  },
+  {
+   "id": "airbnb-listing",
+   "site": "airbnb",
+   "type": "listing",
+   "url": "https://www.airbnb.co.uk/s/London/experiences"
+  },
+  {
+   "id": "airbnb-detail",
+   "site": "airbnb",
+   "type": "detail",
+   "url": "https://www.airbnb.co.uk/experiences/6922228"
+  },
+  {
+   "id": "tiqets-home",
+   "site": "tiqets",
+   "type": "home",
+   "url": "https://www.tiqets.com/en/"
+  },
+  {
+   "id": "tiqets-listing",
+   "site": "tiqets",
+   "type": "listing",
+   "url": "https://www.tiqets.com/en/london-attractions-c67458/"
+  },
+  {
+   "id": "tiqets-detail",
+   "site": "tiqets",
+   "type": "detail",
+   "url": "https://www.tiqets.com/en/london-attractions-c67458/tickets-for-the-view-from-the-shard-p973995/"
+  },
+  {
+   "id": "tiqets-availability",
+   "site": "tiqets",
+   "type": "availability",
+   "url": "https://www.tiqets.com/en/checkout/tickets-for-the-view-from-the-shard-p973995/booking_details/"
+  },
+  {
+   "id": "booking-home",
+   "site": "booking",
+   "type": "home",
+   "url": "https://www.booking.com/attractions/index.en-gb.html"
+  },
+  {
+   "id": "booking-detail",
+   "site": "booking",
+   "type": "detail",
+   "url": "https://www.booking.com/attractions/gb/prfuy8pijecu-admission-to-the-london-eye-with-4d-cinema-experience.en-gb.html"
+  },
+  {
+   "id": "musement-home",
+   "site": "musement",
+   "type": "home",
+   "url": "https://www.musement.com/uk/"
+  },
+  {
+   "id": "musement-listing",
+   "site": "musement",
+   "type": "listing",
+   "url": "https://www.musement.com/uk/london/"
+  },
+  {
+   "id": "musement-detail",
+   "site": "musement",
+   "type": "detail",
+   "url": "https://www.musement.com/uk/london/london-river-cruise-with-afternoon-tea-or-two-course-dinner-520749/"
+  },
+  {
+   "id": "britishtours-home",
+   "site": "britishtours",
+   "type": "home",
+   "url": "https://www.britishtours.com/"
+  },
+  {
+   "id": "britishtours-listing",
+   "site": "britishtours",
+   "type": "listing",
+   "url": "https://www.britishtours.com/london-tours"
+  },
+  {
+   "id": "britishtours-detail",
+   "site": "britishtours",
+   "type": "detail",
+   "url": "https://www.britishtours.com/tower-of-london-private-tours"
+  },
+  {
+   "id": "britishtours-form",
+   "site": "britishtours",
+   "type": "form",
+   "url": "https://www.britishtours.com/about-us/contact-us"
+  },
+  {
+   "id": "walks-home",
+   "site": "walks",
+   "type": "home",
+   "url": "https://www.walks.com/"
+  },
+  {
+   "id": "walks-listing",
+   "site": "walks",
+   "type": "listing",
+   "url": "https://www.walks.com/walks-by-day/saturday/"
+  },
+  {
+   "id": "walks-detail",
+   "site": "walks",
+   "type": "detail",
+   "url": "https://www.walks.com/our-walks/the-cotswolds-excursion/"
+  },
+  {
+   "id": "tickitaly-home",
+   "site": "tickitaly",
+   "type": "home",
+   "url": "https://www.tickitaly.com/"
+  },
+  {
+   "id": "tickitaly-listing",
+   "site": "tickitaly",
+   "type": "listing",
+   "url": "https://www.tickitaly.com/tickets/florence-ticket-booking.php"
+  },
+  {
+   "id": "tickitaly-detail",
+   "site": "tickitaly",
+   "type": "detail",
+   "url": "https://www.tickitaly.com/tickets/uffizi-ticket-booking.php"
+  },
+  {
+   "id": "pragueticketoffice-home",
+   "site": "pragueticketoffice",
+   "type": "home",
+   "url": "https://www.pragueticketoffice.com/"
+  },
+  {
+   "id": "pragueticketoffice-listing",
+   "site": "pragueticketoffice",
+   "type": "listing",
+   "url": "https://www.pragueticketoffice.com/events/classical-music"
+  },
+  {
+   "id": "pragueticketoffice-detail",
+   "site": "pragueticketoffice",
+   "type": "detail",
+   "url": "https://www.pragueticketoffice.com/event/from-baroque-to-jazz/2026-10-12-18-00"
+  },
+  {
+   "id": "florencemuseum-home",
+   "site": "florencemuseum",
+   "type": "home",
+   "url": "https://www.florence-museum.com/"
+  },
+  {
+   "id": "florencemuseum-listing",
+   "site": "florencemuseum",
+   "type": "listing",
+   "url": "https://www.florence-museum.com/museums-florence.php"
+  },
+  {
+   "id": "florencemuseum-detail",
+   "site": "florencemuseum",
+   "type": "detail",
+   "url": "https://www.florence-museum.com/uffizi-gallery-tickets.php"
+  },
+  {
+   "id": "internationalfriends-home",
+   "site": "internationalfriends",
+   "type": "home",
+   "url": "https://www.internationalfriends.co.uk/"
+  },
+  {
+   "id": "internationalfriends-listing",
+   "site": "internationalfriends",
+   "type": "listing",
+   "url": "https://www.internationalfriends.co.uk/page/small_friendly_day_trips"
+  },
+  {
+   "id": "internationalfriends-detail",
+   "site": "internationalfriends",
+   "type": "detail",
+   "url": "https://www.internationalfriends.co.uk/trip/stonehenge_bath_windsor_small_group_day_trip"
+  },
+  {
+   "id": "weekendinitaly-home",
+   "site": "weekendinitaly",
+   "type": "home",
+   "url": "https://www.weekendinitaly.com/en/"
+  },
+  {
+   "id": "weekendinitaly-listing",
+   "site": "weekendinitaly",
+   "type": "listing",
+   "url": "https://www.weekendinitaly.com/en/florence"
+  },
+  {
+   "id": "gotobus-home",
+   "site": "gotobus",
+   "type": "home",
+   "url": "https://www.gotobus.com/"
+  },
+  {
+   "id": "viennaticketoffice-home",
+   "site": "viennaticketoffice",
+   "type": "home",
+   "url": "https://www.viennaticketoffice.com/home_en.php"
+  },
+  {
+   "id": "x-stripe-landing",
+   "group": "other",
+   "type": "landing",
+   "sector": "out",
+   "url": "https://stripe.com/",
+   "why": "Marketing landing page, out of sector."
+  },
+  {
+   "id": "x-linear-landing",
+   "group": "other",
+   "type": "landing",
+   "sector": "out",
+   "url": "https://linear.app/",
+   "why": "Marketing landing page, out of sector."
+  },
+  {
+   "id": "x-holibob-landing",
+   "group": "other",
+   "type": "landing",
+   "sector": "in",
+   "url": "https://holibob.tech/",
+   "why": "Marketing site in our sector."
+  },
+  {
+   "id": "x-airbnbhost-landing",
+   "group": "other",
+   "type": "landing",
+   "sector": "in",
+   "url": "https://www.airbnb.co.uk/host/experiences",
+   "why": "Marketing landing page of a sector site."
+  },
+  {
+   "id": "x-tiqetsvenues-landing",
+   "group": "other",
+   "type": "landing",
+   "sector": "in",
+   "url": "https://www.tiqets.com/venues/",
+   "why": "Supplier-facing marketing page of a sector site."
+  },
+  {
+   "id": "x-govuk-home",
+   "group": "other",
+   "type": "home",
+   "sector": "out",
+   "url": "https://www.gov.uk/",
+   "why": "Transactional home with search, out of sector."
+  },
+  {
+   "id": "x-govuk-form",
+   "group": "other",
+   "type": "form",
+   "sector": "out",
+   "url": "https://www.gov.uk/contact/govuk",
+   "why": "Real public form, out of sector; a base for the form defects."
+  },
+  {
+   "id": "x-wikipedia-table",
+   "group": "other",
+   "type": "table",
+   "sector": "out",
+   "url": "https://en.wikipedia.org/wiki/List_of_most-visited_museums",
+   "why": "Real data table; a base for the table defects."
+  },
+  {
+   "id": "x-wikipedia-table2",
+   "group": "other",
+   "type": "table",
+   "sector": "out",
+   "url": "https://en.wikipedia.org/wiki/List_of_busiest_airports_by_passenger_traffic",
+   "why": "Real data table; a base for the table defects."
+  },
+  {
+   "id": "x-wikipedia-article",
+   "group": "other",
+   "type": "article",
+   "sector": "out",
+   "url": "https://en.wikipedia.org/wiki/London_Eye",
+   "why": "Real long-form article, out of sector; a base for the article defect."
+  },
+  {
+   "id": "x-headout-article",
+   "group": "other",
+   "type": "article",
+   "sector": "in",
+   "url": "https://www.headout.com/blog/london-eye-facts/",
+   "why": "Real long-form article on a sector site; a base for the article defect."
+  }
+ ],
+ "dropped": [
+  {
+   "site": "Viator",
+   "why": "HTTP 403 bot wall on the home page (headless and headed)."
+  },
+  {
+   "site": "Klook",
+   "why": "HTTP 403 bot wall on the home page."
+  },
+  {
+   "site": "GetYourGuide",
+   "why": "HTTP 403 \"Just a moment...\" challenge."
+  },
+  {
+   "site": "Tripadvisor",
+   "why": "HTTP 403."
+  },
+  {
+   "site": "Expedia things-to-do",
+   "why": "HTTP 429 \"Bot or Not?\"."
+  },
+  {
+   "site": "KKday",
+   "why": "Home loaded, listing returned a 403 challenge."
+  },
+  {
+   "site": "Civitatis",
+   "why": "Loads, but its frozen copy loses the web font and icon font, so the copy does not reproduce the page."
+  },
+  {
+   "site": "attractiontix.co.uk, trustedtours.com",
+   "why": "HTTP 403 challenge."
+  },
+  {
+   "site": "Booking.com results page (booking-listing)",
+   "why": "Its frozen copy lost 75 result thumbnails and the live page never finishes loading its pictures in our browser, so it cannot be measured fairly either way. Booking's home and product pages stay."
+  }
+ ],
+ "reportGuard": [
+  "britishtours-home",
+  "walks-listing",
+  "tickitaly-detail"
+ ]
+}

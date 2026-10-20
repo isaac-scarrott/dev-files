@@ -4,6 +4,8 @@
 #                         so concurrent scripts never merge or check out under each other
 #   $STATE/conflict-<pr>  a run's worktree kept, mid-merge, for a conflict someone has to resolve
 #   $STATE/unstick.{log,done}
+# The EXIT trap below only covers a run that gets to exit, so a kept conflict, a killed run's
+# wt.* and $STATE itself are the caller's to reclaim.
 R=${GH_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 trunk=${TRUNK:-$(gh repo view "$R" --json defaultBranchRef -q .defaultBranchRef.name)}
 STATE=${MERGER_STATE:-$HOME/.claude/orchestrator-state/merger/${R//\//-}}
