@@ -38,6 +38,17 @@ The owner's attention is the only serial resource. Everything else runs as a pip
 - **Anticipate the next conflict.** Keep `scripts/conflict-scan.sh --watch` running in the background whenever approved PRs are open. It test-merges each one against trunk and the queue every time trunk moves, fixes generated-file conflicts itself, and reports `CONFLICT` (a source conflict: dispatch a resolver agent or send a change request) and `AHEAD` (it will conflict once a queued PR lands). Act on every `CONFLICT` line before the queue finds it.
 - **A new deploy failure stops the queue.** Hold the PRs that would ride on it and tell the owner. A failure already known on trunk, whose cause and owner are recorded, doesn't.
 
+## Land order
+
+Own the order PRs land in, and keep conflicts from happening instead of fixing them after. Don't wait for ready-for-merge to think about it: plan from every open PR, not only the ones you've been handed.
+
+- **Keep a plan.** Whenever PRs open, land or move, list the open PRs with their files (`gh pr list --json number,baseRefName,mergeStateStatus,files`) and find the real overlaps. Ignore generated files and indexes (`MANIFEST.md`, `schema.graphql`, `graphql-types`, lockfiles); they regenerate. Write the order into the ledger's `## Decisions` and send it to every owning session. Say it with confidence: this PR first, then these, each rebasing onto the one before.
+- **Order by what a PR forces.** Deploy dependencies first (a server registration before the client that uses it), then breaking changes after what they break, then the PR with the most overlaps (it conflicts with most, so land it early while others still rebase once), then the rest by risk.
+- **Retarget before the parent lands.** A child that only needs a parent for ordering gets rebased onto trunk the moment the parent has queued, and one that truly needs its parent's code stays stacked and goes through `stacked-merge.sh`. Never leave a child based on a merged branch.
+- **Re-plan on every landing and every new READY.** Tell each owner when its predecessor has landed and that it should rebase now, before the queue finds the conflict.
+- **Hold the PR that would conflict.** When two PRs edit the same source file, only one is queued at a time; the second rebases first. Say which, and why, to the owner.
+- A session that can't retarget or push a branch says so. That is the owner's call: ask the owner in this session, never route around it.
+
 ## Stacks
 
 When the owner wants a batch landed at once, build one GitHub stack (`gh stack`, native stacked PRs) instead of queueing each PR. The state lives in `~/.claude/orchestrator-state/merger/<repo>/`, so it survives a crash.
