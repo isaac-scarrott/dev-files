@@ -20,7 +20,7 @@ while true; do
   [ "$st" = CLOSED ] && { echo "CLOSED #$pr unmerged"; exit 1; }
   [ "$qs" != none ] && seen=1
   if [ -z "${SKIP_PRECHECK:-}" ] && [ "$qs" = none ] && [ $seen = 0 ]; then
-    failing=$(gh pr checks "$pr" --repo "$R" 2>/dev/null | awk -F'\t' -v ignore="$ignore" '$2=="fail" && index(ignore, " " $1 " ")==0 {printf "%s; ", $1}')
+    failing=$(gh pr checks "$pr" --repo "$R" --required 2>/dev/null | awk -F'\t' -v ignore="$ignore" '$2=="fail" && index(ignore, " " $1 " ")==0 {printf "%s; ", $1}')
     [ -n "$failing" ] && { echo "CHECKS FAILING #$pr before queue: $failing"; exit 3; }
   fi
   if [ "$qs" = none ] && [ $seen = 1 ]; then
