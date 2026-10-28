@@ -4,6 +4,7 @@
 # - Initializes submodules
 # - Runs vendor.sh to fetch upstream files
 # - Symlinks dev-files content into ~/, ~/.config/, ~/.claude/, Library/Application Support/
+# - Builds apps/notch-usage and loads its login LaunchAgent
 # Idempotent: safe to re-run; existing files get backed up with timestamped .bak before linking.
 #
 # Source it (e.g. `source install.sh`) to access LINKS and link_one without running main.
@@ -212,6 +213,10 @@ main() {
   echo
   echo "=== MCP config ==="
   scripts/gen-mcp.sh
+
+  echo
+  echo "=== notch-usage ==="
+  apps/notch-usage/install.sh
 
   echo
   echo "done"

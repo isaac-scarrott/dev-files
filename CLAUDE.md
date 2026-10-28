@@ -20,6 +20,9 @@ macOS only. `install.sh` hardcodes Library paths.
 - `.claude/marketplaces/dev-files/plugins/orchestration-view` — a mod (Claude Code function hooks): the pane over the
   orchestrator/merger ledger. Enabled through `enabledPlugins` in `.claude/settings.json`, loaded from this directory, so
   there is nothing to symlink. Run `claude plugin validate` and `claude plugin test` on its folder before committing.
+- `apps/notch-usage/` — Swift notch app showing each cliproxy Claude account's 5h/7d usage. Its own `install.sh`
+  (called from the root one) builds it and renders a LaunchAgent with the absolute binary path. Anthropic's
+  `/api/oauth/usage` rate-limits hard, so keep its 5-minute poll floor and backoff; check layout with `--worst-case`.
 - `mcp.manifest.json` — canonical MCP server list. `scripts/gen-mcp.sh` renders it per tool: Claude plugin `.mcp.json` files, OpenCode's `opencode.json` `.mcp` key, and Codex's `~/.codex/config.toml`. The `targets` array on each server picks which tools get it.
 
 ## Three agent harnesses, one source

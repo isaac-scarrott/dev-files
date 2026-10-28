@@ -20,6 +20,7 @@ macOS only for now. The Library paths are baked in.
 
 ```
 .claude/         claude code: skills, scripts, settings
+apps/            notch-usage: Claude account limits in the MacBook notch
 .config/         editor + wm config (nvim, zed, aerospace, ghostty, alacritty)
 .githooks/       pre-commit re-runs vendor.sh when the manifest changes
 ide/             vscode + cursor settings.json (live under Library/Application Support/)
