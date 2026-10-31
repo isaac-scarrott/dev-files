@@ -12,7 +12,7 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   doc.body.innerHTML = `<aside><header>Host controls</header><div id="host"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><span data-slot="tab-title">Rename me</span></div></div></div><footer>Native footer</footer></aside>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let woke = 0
-  const row = { key: "a\ns", title: "Session", detail: "Later", action: "Wake", avatar, run: () => { woke++ } }
+  const row = { key: "a\ns", title: "Session", detail: "Later", badge: "repo · main", action: "Wake", avatar, run: () => { woke++ } }
   sidebar.update({ rows: [row], count: 1 }, { rows: [], count: 100 })
   const buttons = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")
   assert.equal(buttons.length, 2)
@@ -106,7 +106,7 @@ test("rows animate only when open after first content; leaving rows are interrup
   let n = 0
   const frames: (() => void)[] = []
   const sidebar = createSidebar(doc, fakeHost(doc), (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
-  const row = (key: string) => ({ key, title: key, detail: "d", action: "Wake", avatar, run() {} })
+  const row = (key: string) => ({ key, title: key, detail: "d", badge: "d", action: "Wake", avatar, run() {} })
   const empty = { rows: [] }
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
   assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
@@ -136,7 +136,7 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let deleted = 0
-  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
+  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", badge: "repo · main", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
   sidebar.update({ rows: [], count: 0 }, { rows: [archived], count: 1 })
   const row = doc.querySelector<HTMLElement>("[data-sa-row]")!
   assert.ok(row.hasAttribute("data-titlebar-tab"))
@@ -144,7 +144,7 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   assert.equal(row.dataset.orientation, "vertical")
   assert.equal(row.hasAttribute("data-tab-key"), false, "sidebar-repos and tab logic key on data-tab-key")
   assert.equal(row.querySelector('[data-slot="tab-title"]')?.textContent, "Fix bug")
-  assert.equal(row.querySelector('[data-slot="tab-project"]')?.textContent, "Local · /repo")
+  assert.equal(row.querySelector("[data-sidebar-repo]")?.textContent, "repo · main")
   assert.equal(row.querySelector('[data-component="project-avatar-v2"] [data-slot="project-avatar-surface"]')?.getAttribute("data-variant"), "blue")
   assert.equal(row.querySelector('[data-slot="project-avatar-surface"]')?.textContent, "R")
   assert.deepEqual([...row.querySelectorAll('[data-slot="tab-close"] button')].map((b) => b.getAttribute("aria-label")), ["Restore Fix bug"], "hover shows one primary action")

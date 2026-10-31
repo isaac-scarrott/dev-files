@@ -234,6 +234,13 @@ export default Plugin.define({
       else void deleteAction(server, target.id)
     }
     // Cold stores may lack the session or its project; the letter then falls back to the fallback name.
+    const repoLabel = (server: string, info: { location?: { directory: string } } | undefined, fallback = "") => {
+      const directory = info?.location?.directory ?? fallback
+      const name = directory.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || directory
+      let branch: string | undefined
+      try { branch = info?.location ? ctx.servers.get(server)?.data.location.vcs.info(info.location as never)?.branch.current : undefined } catch {}
+      return branch ? `${name} · ${branch}` : name
+    }
     const avatarOf = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") =>
       avatarFor(info?.projectID ? ctx.servers.get(server)?.data.project?.get(info.projectID) : undefined, info?.location?.directory ?? fallback)
     const currentSession = () => { const s = ctx.sessions.current(); return s && !s.pending ? s : undefined }
@@ -304,7 +311,7 @@ export default Plugin.define({
       const ids = ctx.servers.list()
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
-        key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
+        key: sessionKey(id, info.id), title: info.title ?? "Session", badge: repoLabel(id, info), detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         avatar: avatarOf(id, info), action: "Restore",
         // Reading an archived session does not unarchive it; only Restore does.
         open: () => openInCurrentTab(document, id, info.id),
@@ -324,7 +331,7 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${formatWake(entry.until, Date.now())} · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), badge: repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${formatWake(entry.until, Date.now())} · device-local`, action: "Wake", run: () => wake(entry, true),
         menu: [
           { label: "Wake", run: () => wake(entry, true) },
           { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },

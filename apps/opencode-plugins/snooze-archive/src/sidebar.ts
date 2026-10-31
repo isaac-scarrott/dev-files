@@ -3,14 +3,14 @@ import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
 
-export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
+export interface GroupRow { key: string; title: string; badge: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
 
 // Verbatim from the app's session tab (TabNavItem), so its own CSS styles the row.
 const ROW_CLASS = "group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5 [container-type:inline-size]"
-const LINK_CLASS = "flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint [-webkit-user-drag:none]"
+const LINK_CLASS = "flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base [-webkit-user-drag:none]"
 const AVATAR_SLOT_CLASS = "flex size-4 shrink-0 items-center justify-center"
 const TITLE_CLASS = "min-w-0 flex-1 outline-none leading-4 overflow-hidden text-clip whitespace-nowrap"
 
@@ -107,9 +107,11 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
     title.setAttribute("data-titlebar-tab-title", "")
     title.dir = "auto"
     title.className = TITLE_CLASS
-    const detail = doc.createElement("span")
-    detail.dataset.slot = "tab-project"
-    link.append(avatarSlot, title, detail)
+    // The sidebar-repos row layout (52px, repo · branch line above the title) keys on this attribute, so these rows
+    // take the same layout, type and spacing as the live rows with no styles of our own.
+    const badge = doc.createElement("span")
+    badge.setAttribute("data-sidebar-repo", "")
+    link.append(avatarSlot, badge, title)
     const close = doc.createElement("div")
     close.dataset.slot = "tab-close"
     el.append(link, close)
@@ -124,17 +126,16 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
       openMenu(doc, keyboard ? { x: rect.left, y: rect.bottom } : { x: event.clientX, y: event.clientY }, current().menu ?? [], { label: `${current().title} actions` })
     }
     const act = (run: () => void) => (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); run() }
-    const dispose = host.mount(close, () => createComponent(host.ui.Tooltip, {
-      get value() { return current().action },
-      get children() {
-        return createComponent(host.ui.IconButton, {
-          icon: "outline-undo", size: "small",
-          get label() { return `${current().action} ${current().title}` },
-          onClick: act(() => current().run()),
-        })
-      },
+    // The same IconButton the host renders for its close X (small, ghost-muted, hover-reveal), so the slot's own rules
+    // place and reveal it; pointer and mouse down are swallowed as the X does.
+    const dispose = host.mount(close, () => createComponent(host.ui.IconButton, {
+      icon: "outline-undo", size: "small", variant: "ghost-muted", class: "hover-reveal relative z-10",
+      get label() { return `${current().action} ${current().title}` },
+      onClick: act(() => current().run()),
     }))
-    return { el, set, title, detail, avatarSlot, dispose }
+    const button = close.firstElementChild as HTMLElement | null
+    for (const type of ["pointerdown", "mousedown"]) button?.addEventListener(type, (event) => { event.preventDefault(); event.stopPropagation() })
+    return { el, set, title, detail: badge, avatarSlot, dispose }
   }
   return {
     section,
@@ -176,8 +177,10 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
         }
         row.set(item)
         row.el.dataset.active = String(!!item.active)
+        if (item.active) row.el.dataset.state = "pressed"; else delete row.el.dataset.state
         if (row.title.textContent !== item.title) row.title.textContent = item.title
-        if (row.detail.textContent !== item.detail) row.detail.textContent = item.detail
+        if (row.detail.textContent !== item.badge) row.detail.textContent = item.badge
+        row.detail.title = item.badge
         const link = row.el.firstElementChild as HTMLElement
         link.title = `${item.title}\n${item.detail}`
         const avatarKey = JSON.stringify(item.avatar)
@@ -244,12 +247,12 @@ export const css = `
 [data-sa-clip] { min-height: 0; overflow: hidden; }
 [data-sa-contents] { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
+/* The host sets these per tab by position (first row 0/2px, the rest 2px/0) and its link padding reads them. */
+[data-sa-row] { --tab-hit-before: 2px; --tab-hit-after: 0px; }
+[data-sa-row]:first-of-type { --tab-hit-before: 0px; --tab-hit-after: 2px; }
 [data-sa-row] { transition: opacity 160ms cubic-bezier(0.23,1,0.32,1), transform 160ms cubic-bezier(0.23,1,0.32,1); }
 [data-sa-row][data-entering], [data-sa-row][data-leaving] { opacity: 0; transform: translateY(-4px); }
 [data-sa-row][data-leaving] { pointer-events: none; }
-[data-sa-row] [data-slot="tab-close"] { width: auto; gap: 2px; opacity: 0; }
-[data-sa-row]:is(:hover, :focus-within) [data-slot="tab-close"] { opacity: 1; }
-@media (hover: none) { [data-sa-row] [data-slot="tab-close"] { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .sa-chevron { transition: none; }
   [data-sa-panel], [data-sa-panel][data-open] { transition: opacity 150ms linear, visibility 0s; }
