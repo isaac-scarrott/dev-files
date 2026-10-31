@@ -1,8 +1,10 @@
-import { Command, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
+import { Command, Plugin, Slot, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
 import { createEffect, createSignal, untrack } from "solid-js"
-import { loadArchive, setArchived, type ArchivedSession } from "./archive"
+import { actionsCss, createActions, type ActionName, type Target } from "./actions"
+import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { createSidebar, css } from "./sidebar"
+import { createTabActions } from "./tabrows"
 import { customTime, presets, sessionKey, wakeReason, type Snooze } from "./snooze"
 
 const SnoozeSchema = Schema.Struct({
@@ -14,7 +16,7 @@ const definition = Plugin.define({ stores: { snoozes: Store.global(Schema.Struct
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css)
+    ctx.add(Style, css + actionsCss)
     const sidebar = createSidebar(document, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
     const changed = () => setRevision((n) => n + 1)
@@ -122,9 +124,7 @@ export default Plugin.define({
         }
       } catch (cause) { error(cause) }
     }
-    const snooze = async () => {
-      const session = ctx.sessions.current()
-      if (!session || session.pending) return
+    const snooze = async (session: { id: string; server: ServerRef }) => {
       const choices = presets(new Date())
       const choice = await ctx.dialogs.select({
         title: "Snooze session · this device only",
@@ -163,9 +163,52 @@ export default Plugin.define({
         ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${new Date(until).toLocaleString()} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
       } catch (cause) { error(cause) }
     }
-    ctx.add(Command, (): Command => ({ id: "snooze", title: "Snooze session…", section: "session", enabled: !!ctx.sessions.current(), run: snooze }))
-    ctx.add(Command, (): Command => ({ id: "archive", title: "Archive session", section: "session", enabled: !!ctx.sessions.current(), run: async () => {
-      const session = ctx.sessions.current()
+    const deleteAction = async (server: ServerRef, id: string) => {
+      const key = sessionKey(server.id, id)
+      if (actionKeys.has(key)) return
+      actionKeys.add(key)
+      try {
+        const title = server.data.session.get(id)?.title ?? "this session"
+        const confirmed = await ctx.dialogs.confirm({
+          title: `Delete “${title}” permanently?`,
+          description: `This permanently deletes the session and its history from ${server.name}. It cannot be undone. To keep it, archive it instead.`,
+          confirm: "Delete permanently", danger: true,
+        })
+        if (!confirmed || disposed) return
+        await removeSession(server, id, ctx.signal)
+        if (disposed) return
+        remove(server.id, id)
+        hiddenSnoozes.delete(key)
+        closeTabs(server.id, id)
+        await refresh(server)
+      } catch (cause) { error(cause) }
+      finally { actionKeys.delete(key) }
+    }
+    const runAction = (action: ActionName, target: Target) => {
+      const server = ctx.servers.get(target.server)
+      if (!server) return
+      if (action === "snooze") void snooze({ id: target.id, server })
+      else if (action === "archive") void archiveAction(server, target.id, true)
+      else void deleteAction(server, target.id)
+    }
+    const currentSession = () => { const s = ctx.sessions.current(); return s && !s.pending ? s : undefined }
+    ctx.add(Slot, {
+      at: "session.header", order: 100,
+      render: (input) => createActions(document, "header",
+        () => { const s = input.session; return s && !s.pending ? { server: s.server.id, id: s.id } : undefined },
+        () => input.session?.server.data.session.get(input.session.id)?.title ?? "",
+        { run: runAction }, () => !!input.session?.pending),
+    })
+    ctx.add(Command, (): Command => ({ id: "delete", title: "Delete session…", section: "session", enabled: !!currentSession(), run: () => {
+      const session = currentSession()
+      if (session) return deleteAction(session.server, session.id)
+    } }))
+    ctx.add(Command, (): Command => ({ id: "snooze", title: "Snooze session…", section: "session", enabled: !!currentSession(), run: () => {
+      const session = currentSession()
+      if (session) return snooze(session)
+    } }))
+    ctx.add(Command, (): Command => ({ id: "archive", title: "Archive session", section: "session", enabled: !!currentSession(), run: async () => {
+      const session = currentSession()
       if (session) await archiveAction(session.server, session.id, true)
     } }))
     ctx.add(Command, { id: "refresh", title: "Refresh archived sessions", run: () => {
@@ -220,6 +263,7 @@ export default Plugin.define({
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         action: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
+        secondary: { label: "Delete…", run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
       })))
       const errors = ids.flatMap((id) => {
         const server = ctx.servers.get(id)
@@ -231,6 +275,15 @@ export default Plugin.define({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
         detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
       })) }, { rows, count: complete ? rows.length : undefined, status: errors.length ? errors.join("; ") : complete ? undefined : "Loading complete archived history…" })
+    })
+    const tabActions = createTabActions(document, requestAnimationFrame, cancelAnimationFrame, (key) => {
+      const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
+      if (!session) return
+      return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
+    }, { run: runAction })
+    createEffect(() => {
+      for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
+      tabActions.sync()
     })
     const timer = window.setInterval(() => {
       for (const entry of entries()) {
@@ -246,6 +299,7 @@ export default Plugin.define({
       subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
       subscriptions.clear()
       sidebar.dispose()
+      tabActions.dispose()
     }
   },
 })

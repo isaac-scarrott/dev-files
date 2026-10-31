@@ -76,3 +76,54 @@ test("attachment survives cold startup, sidebar replacement and cleanup/reload",
   assert.equal(frames.size, 0)
   await window.happyDOM.close()
 })
+
+test("group toggle sets aria-expanded, data-open and inert together; collapsed content is inert", () => {
+  const doc = new Window().document as unknown as Document
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  const sidebar = createSidebar(doc, () => 1, () => {})
+  const toggle = doc.querySelector<HTMLButtonElement>("[data-sa-toggle]")!
+  const panel = doc.querySelector<HTMLElement>("[data-sa-panel]")!
+  assert.equal(panel.hasAttribute("data-open"), false)
+  assert.equal(panel.hasAttribute("inert"), true)
+  toggle.click()
+  assert.equal(toggle.getAttribute("aria-expanded"), "true")
+  assert.equal(panel.hasAttribute("data-open"), true)
+  assert.equal(panel.hasAttribute("inert"), false)
+  toggle.click()
+  assert.equal(panel.hasAttribute("inert"), true)
+  assert.match(css, /grid-template-rows: 0fr/)
+  assert.match(css, /prefers-reduced-motion/)
+  sidebar.dispose()
+})
+
+test("rows animate only when open after first content; leaving rows are interruptible and cleared", () => {
+  const doc = new Window().document as unknown as Document
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  const timers = new Map<number, () => void>()
+  let n = 0
+  const frames: (() => void)[] = []
+  const sidebar = createSidebar(doc, (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
+  const row = (key: string) => ({ key, title: key, detail: "d", action: "Wake", run() {} })
+  const empty = { rows: [] }
+  sidebar.update({ rows: [row("a")], count: 1 }, empty)
+  assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
+  doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle]")[0].click()
+  sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
+  assert.ok(doc.querySelector('[data-sa-row="b"][data-entering]'))
+  assert.equal(doc.querySelector('[data-sa-row="a"]')?.hasAttribute("data-entering"), false)
+  frames.forEach((fn) => fn())
+  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-entering"), false)
+  sidebar.update({ rows: [row("a")], count: 1 }, empty)
+  assert.ok(doc.querySelector('[data-sa-row="b"][data-leaving]'))
+  sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
+  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-leaving"), false)
+  assert.equal(timers.size, 0, "re-adding cancels the pending removal")
+  sidebar.update({ rows: [row("a")], count: 1 }, empty)
+  ;[...timers.values()].forEach((fn) => fn())
+  timers.clear()
+  assert.equal(doc.querySelector('[data-sa-row="b"]'), null)
+  sidebar.update({ rows: [row("a"), row("c")], count: 2 }, empty)
+  sidebar.update({ rows: [row("a")], count: 1 }, empty)
+  sidebar.dispose()
+  assert.equal(timers.size, 0)
+})
