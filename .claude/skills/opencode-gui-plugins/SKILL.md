@@ -17,6 +17,7 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 - Touching the app's real DOM or CSS (sidebar tabs, timeline, status marks) → [reference/dom-map.md](reference/dom-map.md)
 - An icon the catalog lacks, or which catalog icon to use → [reference/icons.md](reference/icons.md)
 - Any transition, fade or accordion → [reference/animation.md](reference/animation.md)
+- Verifying a plugin in the real UI (screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
 - A first build in a new checkout, an install/build failure, or a plugin that does not appear → [reference/build.md](reference/build.md)
 
 ## Workflow
@@ -25,7 +26,8 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 2. Choose a public registry or host API. If it lacks the requested surface, isolate the DOM workaround and verify selectors against the installed app before editing.
 3. Use `~/git/dev-files/apps/opencode-plugins/sidebar-repos` as the tested scaffold; read its manifest, Vite and workspace config rather than guessing the build contract. Preserve package identity when moving a plugin.
 4. Separate pure logic from setup, test it, and run every declared package check. Register the built package through the global config.
-5. Check the actual UI, including cleanup/reload and session switching. Report tests separately from live verification; a working bundle does not prove virtualized navigation works.
+5. Test in the real UI with `scripts/desktop-harness.sh` (isolated second app driven over CDP; not `opencode serve`, which never loads GUI plugins) when you can; see the browser-testing reference.
+6. Check the actual UI, including cleanup/reload and session switching. Report tests separately from live verification; a working bundle does not prove virtualized navigation works.
 
 ## Scaffold
 
