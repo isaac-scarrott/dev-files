@@ -1,7 +1,7 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { dockState } from "./dock"
+import { chatCard, dockState } from "./dock"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast">
@@ -43,6 +43,13 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
     setWindowOpen(false)
     const timer = setTimeout(() => setMounted(false), DOCK_EXIT_MS)
     onCleanup(() => clearTimeout(timer))
+  })
+
+  // The window lives in the chat card, which holds this header; it is resolved once the header is in the document.
+  const [card, setCard] = createSignal<Element>()
+  createEffect(() => {
+    session().key
+    queueMicrotask(() => setCard(chatCard(wrap)))
   })
 
   let wrap!: HTMLSpanElement
@@ -124,8 +131,9 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
           />
         </span>
       </ctx.ui.Tooltip>
-      <Show when={props.input.active && mounted()}>
-        <Portal>
+      <Show when={props.input.active && mounted() ? card() : undefined}>
+        {(mount) => (
+        <Portal mount={mount() as HTMLElement}>
           <div
             id={DOCK_ID}
             data-agents-dock
@@ -135,10 +143,11 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
             inert={!(windowOpen() && state().shown)}
           >
             <div data-component="menu-v2-content">
-              <SubagentsList ctx={ctx} session={session} onClose={() => props.dock.setVisible(false)} />
+              <SubagentsList ctx={ctx} session={session} />
             </div>
           </div>
         </Portal>
+        )}
       </Show>
       <Show when={open()}>
         <Portal>
