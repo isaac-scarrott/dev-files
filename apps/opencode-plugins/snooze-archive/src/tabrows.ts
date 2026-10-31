@@ -3,11 +3,10 @@ import type { Host } from "./host"
 
 export interface TabInfo { target: Target; title: string; disabled: boolean }
 
-// Adds a hover/focus action cluster beside each vertical session tab. It is a sibling of the host's link,
-// so the title, rename, close button and status marks are untouched.
+// Mounts Archive into each vertical session tab's own close slot, in place of the X; title, rename and status marks are untouched.
 export function createTabActions(doc: Document, shell: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, info: (key: string) => TabInfo | undefined, handlers: Handlers) {
   const hosts = new Map<HTMLElement, ReturnType<typeof createActions>>()
-  const drop = (actions: ReturnType<typeof createActions>) => { actions.dispose(); actions.el.remove() }
+  const drop = (actions: ReturnType<typeof createActions>) => { actions.dispose() }
   const sync = () => {
     const live = new Set<HTMLElement>()
     for (const host of doc.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]')) {
@@ -16,11 +15,11 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
       let actions = hosts.get(host)
       if (!tab) { if (actions) { drop(actions); host.removeAttribute("data-sa-tab-host"); hosts.delete(host) } continue }
       live.add(host)
-      if (!actions || actions.el.parentElement !== host) {
+      const slot = host.querySelector<HTMLElement>('[data-slot="tab-close"]') ?? host
+      if (!actions || actions.slot !== slot) {
         if (actions) drop(actions)
-        actions = createActions(doc, shell, () => info(key!)?.target, () => info(key!)?.title ?? "", handlers, () => info(key!)?.disabled ?? true)
+        actions = createActions(shell, slot, () => info(key!)?.target, () => info(key!)?.title ?? "", handlers, () => info(key!)?.disabled ?? true)
         hosts.set(host, actions)
-        host.append(actions.el)
       }
       host.setAttribute("data-sa-tab-host", "")
     }

@@ -322,9 +322,9 @@ test("tab hover shows only Archive beside the host title and cleans up; the nati
     const host = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
     assert.equal(host.querySelectorAll('[data-sa-actions="tab"]').length, 1)
     assert.equal(host.querySelector('[data-slot="tab-title"]')?.textContent, "Host title")
-    assert.deepEqual([...host.querySelectorAll("[data-sa-actions] button")].map((b) => b.getAttribute("aria-label")), ["Archive Session"])
+    assert.deepEqual([...host.querySelectorAll("button[data-sa-actions]")].map((b) => b.getAttribute("aria-label")), ["Archive Session"])
     assert.equal(f.doc.querySelector('[data-slot="session.header"], [data-sa-actions="header"]'), null)
-    click(host.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
+    click(host.querySelector('button[data-sa-actions][data-icon="archive"]')); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     f.stop()
     assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0)
