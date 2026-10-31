@@ -12,7 +12,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | `claude-proxy` | Server plugin: routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | Loads; env pass-through not verified |
 | `blindfold` | Vendored vimtor/opencode-blindfold 0.5.0 (MIT, pinned in vendor.manifest): agents use secrets without seeing them; shell approval on | Typecheck, build, smoke; 21/24 tests (3 fail on local bun 1.2.4); audit in PROVENANCE.md; live UI not verified |
 | `visual-replies` | `publish_html` tool; agent HTML pages render inline in the timeline in a sandboxed iframe (opaque origin, CSP), zoom/expand | Typecheck, 20 tests, build; live UI not verified |
-| `agents-panel` | Docked side-region "Agents · N running" panel (titlebar toggle): running subagents/shells with elapsed time, click to open, X to stop. Set Settings → Background activity to Hidden to avoid the duplicate above the composer | Typecheck, 10 tests, build; live UI not verified |
+| `agents-panel` | "Subagents · N running" for the routed session only (its own descendants and shells): a header icon button (after session details) docks a column in the timeline row, and the chat reflows and stays centred in the space left; while the host side panel is open the same button opens the list as a popover. Rows: description, elapsed, X to stop, click opens the tab. Set Settings → Background activity to Hidden to avoid the duplicate above the composer | Typecheck, 12 tests, build; live-tested in the isolated desktop (running status mocked: no model call can make a subagent run) |
 | `sidepanel` | Original pinned counter-panel experiment | Build only; no typecheck/test scripts |
 
 Message jump binds through each session's header slot, follows its active state,

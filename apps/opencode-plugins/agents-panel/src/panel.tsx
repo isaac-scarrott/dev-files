@@ -1,6 +1,6 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
-import { formatElapsed, runningAgents, type AgentRow } from "./agents"
+import { formatElapsed, runningSubagents, type SubagentRow } from "./agents"
 import { SessionProgressIndicator } from "./spinner"
 
 type Ctx = Pick<Context, "ui" | "tabs" | "toast">
@@ -18,10 +18,10 @@ function createClock(active: () => boolean) {
 }
 
 /**
- * Running agents of a session as one list: the host's expanded subagent rows (the markup of the composer's
+ * Running subagents of a session as one list: the host's expanded subagent rows (the markup of the composer's
  * background-activity menu), so the app's own `menu-v2-item` CSS styles them.
  */
-function createAgents(session: () => MountedSession) {
+export function createSubagents(session: () => MountedSession) {
   // Shell start times are not exposed; the first sighting stands in. Cleared per session so a switch starts fresh.
   const seen = new Map<string, number>()
   const shellStarted = (id: string) => {
@@ -32,16 +32,16 @@ function createAgents(session: () => MountedSession) {
   }
   createEffect(on(() => session().key, () => seen.clear()))
 
-  return createMemo(() => runningAgents(session(), shellStarted), [], {
+  return createMemo(() => runningSubagents(session(), shellStarted), [], {
     equals: (a, b) => a.length === b.length && a.every((row, i) => row.key === b[i].key && row.label === b[i].label && row.started === b[i].started),
   })
 }
 
-export function AgentsPanel(props: { ctx: Ctx; session: () => MountedSession }) {
-  const rows = createAgents(props.session)
+export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }) {
+  const rows = createSubagents(props.session)
   const now = createClock(() => rows().length > 0)
 
-  const stop = (row: AgentRow) => {
+  const stop = (row: SubagentRow) => {
     const session = props.session()
     const request = row.sessionID
       ? session.server.client.session.interrupt({ sessionID: row.sessionID })
@@ -58,16 +58,16 @@ export function AgentsPanel(props: { ctx: Ctx; session: () => MountedSession }) 
     })
   }
 
-  const openRow = (row: AgentRow) => {
+  const openRow = (row: SubagentRow) => {
     if (!row.sessionID) return
     const session = props.session()
     props.ctx.tabs.open({ server: session.server.id, id: row.sessionID }, { focus: true })
   }
 
   return (
-    <div data-agents-panel role="region" aria-label="Agents">
+    <div data-agents-panel role="region" aria-label="Subagents">
       <div data-agents-heading>
-        <span>Agents</span>
+        <span>Subagents</span>
         <span aria-hidden="true">·</span>
         <span data-agents-count>{rows().length} running</span>
       </div>
@@ -135,7 +135,7 @@ export function AgentsPanel(props: { ctx: Ctx; session: () => MountedSession }) 
           )}
         </For>
         <Show when={rows().length === 0}>
-          <div data-agents-empty>No agents running</div>
+          <div data-agents-empty>No subagents running</div>
         </Show>
       </div>
     </div>
@@ -145,16 +145,10 @@ export function AgentsPanel(props: { ctx: Ctx; session: () => MountedSession }) 
 // Bespoke: the host scopes its row/end-swap rules to the composer menu's content, so the heading and the
 // elapsed/stop swap are restated here with the host's tokens. Layout, surface and width come from the side region.
 export const styles = `
-  [data-agents-panel] { display: flex; flex-direction: column; height: 100%; overflow-y: auto; padding: 8px; box-sizing: border-box; }
+  [data-agents-panel] { display: flex; flex-direction: column; min-height: 0; max-height: inherit; overflow-y: auto; padding: 4px; box-sizing: border-box; }
   [data-agents-heading] {
     display: flex; gap: 4px; padding: 4px 6px 2px; font-size: 12px; font-weight: 440; line-height: 16px;
     letter-spacing: -.04px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums;
-  }
-  [data-agents-toggle] { position: relative; display: inline-flex; }
-  [data-agents-badge] {
-    position: absolute; top: -2px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; box-shadow: 0 0 0 1.5px var(--v2-background-bg-base); box-sizing: border-box;
-    border-radius: 7px; background: var(--v2-icon-icon-accent); color: var(--v2-background-bg-base);
-    font-size: 10px; line-height: 14px; font-weight: 530; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none;
   }
   [data-agents-empty] { padding: 8px 6px; font-size: 13px; color: var(--v2-text-text-muted); }
   [data-agents-row] { cursor: default; }
@@ -172,5 +166,26 @@ export const styles = `
   }
   @media (prefers-reduced-motion: reduce) {
     [data-slot=spinner-dots] rect { animation: none !important; opacity: var(--still); }
+  }
+  [data-agents-toggle] { position: relative; display: inline-flex; }
+  [data-agents-badge] {
+    position: absolute; top: -2px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
+    box-shadow: 0 0 0 1.5px var(--v2-background-bg-base); border-radius: 7px; background: var(--v2-icon-icon-accent);
+    color: var(--v2-background-bg-base); font-size: 10px; line-height: 14px; font-weight: 530; text-align: center;
+    font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  /* Docked: the timeline row reserves a column, so the chat reflows and stays centred in the space left. The host
+     draws the review toggle at the row's top end, so the column starts below it. */
+  [data-pane-row][data-agents-docked] { padding-inline-end: 328px; }
+  [data-agents-dock] {
+    position: absolute; z-index: 20; inset-block: 48px 0; inset-inline-end: 0; width: 320px; display: flex; flex-direction: column;
+    box-sizing: border-box; border-radius: 10px; background: var(--v2-background-bg-base); box-shadow: var(--v2-elevation-raised);
+    overflow: hidden;
+  }
+  /* The popover reuses the host's menu surface; the host positions menu-v2-content itself, so it is made static here. */
+  [data-agents-popover] { position: fixed; z-index: 60; width: 320px; max-width: calc(100vw - 32px); outline: none; }
+  [data-agents-popover] > [data-component=menu-v2-content] {
+    position: static; display: flex; flex-direction: column; min-width: 0; width: 100%; max-height: min(270px, 50vh);
+    overflow-y: auto; box-sizing: border-box; padding: 0;
   }
 `

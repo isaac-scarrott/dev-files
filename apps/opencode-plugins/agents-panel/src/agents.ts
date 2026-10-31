@@ -1,6 +1,6 @@
 import type { MountedSession } from "@opencode/plugin/gui"
 
-export type AgentRow = {
+export type SubagentRow = {
   key: string
   type: "subagent" | "shell"
   /** The child session of a subagent; opens it and interrupts it. */
@@ -24,7 +24,7 @@ const description = (title: string) => title.replace(/\s*\(@[^)\s]+ subagent\)\s
  * is running; shells come from the session's background tasks. Shell start times are not exposed, so the caller
  * supplies the first time it saw each one.
  */
-export function runningAgents(session: MountedSession, shellStarted: (id: string) => number): AgentRow[] {
+export function runningSubagents(session: MountedSession, shellStarted: (id: string) => number): SubagentRow[] {
   const sessions = session.server.data.session as unknown as Sessions
   const infos = new Map((sessions.list?.() ?? []).map((info) => [info.id, info]))
   const ids = new Set([...(sessions.family?.(session.id) ?? []), ...infos.keys()])
@@ -40,7 +40,7 @@ export function runningAgents(session: MountedSession, shellStarted: (id: string
     return false
   }
 
-  const subagents = [...ids].flatMap((id): AgentRow[] => {
+  const subagents = [...ids].flatMap((id): SubagentRow[] => {
     const info = infos.get(id)
     if (!info || id === session.id || !descends(id) || sessions.status?.(id) !== "running") return []
     return [
@@ -54,7 +54,7 @@ export function runningAgents(session: MountedSession, shellStarted: (id: string
     ]
   })
 
-  const shells = (session.background ?? []).flatMap((task): AgentRow[] =>
+  const shells = (session.background ?? []).flatMap((task): SubagentRow[] =>
     task.type === "shell"
       ? [{ key: task.id, type: "shell", label: task.label, started: shellStarted(task.id) }]
       : [],
