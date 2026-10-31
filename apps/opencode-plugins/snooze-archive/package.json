@@ -9,7 +9,7 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=browser --import tsx --test src/*.test.ts"
+    "test": "node --conditions=browser --import tsx --import ../native-ui/test/register.mjs --test src/*.test.ts"
   },
   "dependencies": {
     "effect": "4.0.6",

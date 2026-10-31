@@ -12,7 +12,7 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   doc.body.innerHTML = `<aside><header>Host controls</header><div id="host"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><span data-slot="tab-title">Rename me</span></div></div></div><footer>Native footer</footer></aside>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let woke = 0
-  const row = { key: "a\ns", title: "Session", detail: "Later", badge: "repo · main", action: "Wake", avatar, run: () => { woke++ } }
+  const row = { key: "a\ns", title: "Session", detail: "Later", project: "repo · main", action: "Wake", avatar, run: () => { woke++ } }
   sidebar.update({ rows: [row], count: 1 }, { rows: [], count: 100 })
   const buttons = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")
   assert.equal(buttons.length, 2)
@@ -106,7 +106,7 @@ test("rows animate only when open after first content; leaving rows are interrup
   let n = 0
   const frames: (() => void)[] = []
   const sidebar = createSidebar(doc, fakeHost(doc), (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
-  const row = (key: string) => ({ key, title: key, detail: "d", badge: "d", action: "Wake", avatar, run() {} })
+  const row = (key: string) => ({ key, title: key, detail: "d", project: "d", action: "Wake", avatar, run() {} })
   const empty = { rows: [] }
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
   assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
@@ -134,12 +134,15 @@ test("rows animate only when open after first content; leaving rows are interrup
 test("rows reuse the session tab markup so the app styles them, without acting as live tabs", async () => {
   const doc = new Window().document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let deleted = 0
-  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", badge: "repo · main", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
+  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", project: "repo · main", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
   sidebar.update({ rows: [], count: 0 }, { rows: [archived], count: 1 })
-  const row = doc.querySelector<HTMLElement>("[data-sa-row]")!
-  assert.ok(row.hasAttribute("data-titlebar-tab"))
+  const slot = doc.querySelector<HTMLElement>("[data-sa-row]")!
+  assert.ok(slot.hasAttribute("data-titlebar-tab-slot"), "the row is the native-ui slot")
+  const row = slot.querySelector<HTMLElement>("[data-titlebar-tab]")!
+  assert.ok(row)
   assert.equal(row.dataset.slot, "titlebar-tab-item")
   assert.equal(row.dataset.orientation, "vertical")
   assert.equal(row.hasAttribute("data-tab-key"), false, "sidebar-repos and tab logic key on data-tab-key")
@@ -149,7 +152,7 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   assert.equal(row.querySelector('[data-slot="project-avatar-surface"]')?.textContent, "R")
   assert.deepEqual([...row.querySelectorAll('[data-slot="tab-close"] button')].map((b) => b.getAttribute("aria-label")), ["Restore Fix bug"], "hover shows one primary action")
   const event = new (doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
-  row.dispatchEvent(event)
+  row.querySelector("a")!.dispatchEvent(event)
   assert.ok(event.defaultPrevented)
   const items = [...doc.querySelectorAll<HTMLElement>('[data-sa-popup] [role="menuitem"]')]
   assert.deepEqual(items.map((i) => i.textContent), ["Restore", "Delete…"])
@@ -164,5 +167,26 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   sidebar.update({ rows: [], count: 0 }, { rows: [{ ...archived, menu: undefined }], count: 1 })
   row.dispatchEvent(new (doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
   assert.equal(doc.querySelector("[data-sa-popup]"), null)
+  sidebar.dispose()
+})
+
+test("snoozed second line keeps the time whole: project truncates, time is its own flex:none part; archived rows are unsplit", () => {
+  const doc = new Window().document as unknown as Document
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  const long = "a-very-long-repository-name · feature/an-extremely-long-branch-name-that-cannot-fit"
+  const snoozed = { key: "s", title: "T", project: long, until: "2d 3h", detail: "d", action: "Wake", avatar, run() {} }
+  const archived = { ...snoozed, key: "a", until: undefined, action: "Restore" }
+  sidebar.update({ rows: [snoozed], count: 1 }, { rows: [archived], count: 1 })
+  const line = doc.querySelector<HTMLElement>('[data-sa-kind="snoozed"] [data-sidebar-repo]')!
+  assert.equal(line.querySelector("[data-sidebar-repo-main]")?.textContent, long)
+  assert.equal(line.querySelector("[data-sidebar-repo-detail]")?.textContent, " · 2d 3h", "the time is whole and in the DOM")
+  assert.equal(line.textContent, `${long} · 2d 3h`)
+  const archivedLine = doc.querySelector<HTMLElement>('[data-sa-kind="archived"] [data-sidebar-repo]')!
+  assert.equal(archivedLine.querySelector("[data-sidebar-repo-main], [data-sidebar-repo-detail]"), null)
+  assert.equal(archivedLine.textContent, long)
+  assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-main\] \{ flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/)
+  assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-detail\] \{ flex: none; white-space: nowrap; \}/)
   sidebar.dispose()
 })

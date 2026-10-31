@@ -1,36 +1,15 @@
 import { createComponent, createSignal } from "solid-js"
+import type { ProjectAvatarStyle } from "../../native-ui/src"
+import { SessionTabRow, TabRowAction } from "../../native-ui/src"
 import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
 
-export interface GroupRow { key: string; title: string; badge: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
+// project: the second line ("repo · branch"); until: the trailing detail on it (time until wake); detail: the hover title.
+export interface GroupRow { key: string; title: string; project: string; until?: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
-
-// Verbatim from the app's session tab (TabNavItem), so its own CSS styles the row.
-const ROW_CLASS = "group relative flex h-7 w-full min-w-0 select-none flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] px-1.5 [container-type:inline-size]"
-const LINK_CLASS = "flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base [-webkit-user-drag:none]"
-const AVATAR_SLOT_CLASS = "flex size-4 shrink-0 items-center justify-center"
-const TITLE_CLASS = "min-w-0 flex-1 outline-none leading-4 overflow-hidden text-clip whitespace-nowrap"
-
-function avatarNode(doc: Document, avatar: Avatar) {
-  const root = doc.createElement("div")
-  root.dataset.component = "project-avatar-v2"
-  const surface = doc.createElement("div")
-  surface.dataset.slot = "project-avatar-surface"
-  surface.dataset.variant = avatar.variant
-  if (avatar.src) {
-    surface.dataset.hasImage = ""
-    const img = doc.createElement("img")
-    img.src = avatar.src
-    img.draggable = false
-    img.dataset.slot = "project-avatar-image"
-    surface.append(img)
-  } else surface.textContent = avatar.letter
-  root.append(surface)
-  return root
-}
 
 function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
   const section = doc.createElement("section")
@@ -48,6 +27,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   const content = doc.createElement("div")
   content.dataset.saContents = ""
   content.id = `snooze-archive-${name.toLowerCase()}`
+  content.dataset.saKind = name.toLowerCase()
   content.setAttribute("role", "region")
   content.setAttribute("aria-label", name)
   let open = false
@@ -76,66 +56,47 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   clip.append(content)
   panel.append(clip)
   section.append(header, panel)
-  type Row = { el: HTMLElement; set(item: GroupRow): void; title: HTMLElement; detail: HTMLElement; avatarSlot: HTMLElement; avatar?: string; dispose(): void; leaving?: number }
+  type Row = { el: HTMLElement; link: HTMLElement; set(item: GroupRow): void; dispose(): void; leaving?: number }
   const rows = new Map<string, Row>()
   let populated = false
   const status = doc.createElement("p")
   status.setAttribute("role", "status")
   content.append(status)
   const createRow = (item: GroupRow): Row => {
-    const el = doc.createElement("div")
-    el.dataset.saRow = item.key
-    // Same hooks as a session tab: the app styles on [data-titlebar-tab]. No data-tab-key, so the tab strip,
-    // tab actions and the sidebar-repos badge (which key on it) never treat this row as a live tab.
-    el.setAttribute("data-titlebar-tab", "")
-    el.dataset.slot = "titlebar-tab-item"
-    el.dataset.orientation = "vertical"
-    el.className = ROW_CLASS
-    const link = doc.createElement("a")
-    link.dataset.slot = "tab-link"
-    link.setAttribute("data-titlebar-tab-link", "")
-    link.href = "#"
-    link.draggable = false
-    // Rows that open something are keyboard-reachable (Enter on the link opens); otherwise the close-slot buttons are the keyboard path.
-    link.tabIndex = item.open ? 0 : -1
-    link.className = LINK_CLASS
-    const avatarSlot = doc.createElement("span")
-    avatarSlot.dataset.slot = "project-avatar-slot"
-    avatarSlot.className = AVATAR_SLOT_CLASS
-    const title = doc.createElement("span")
-    title.dataset.slot = "tab-title"
-    title.setAttribute("data-titlebar-tab-title", "")
-    title.dir = "auto"
-    title.className = TITLE_CLASS
-    // The sidebar-repos row layout (52px, repo · branch line above the title) keys on this attribute, so these rows
-    // take the same layout, type and spacing as the live rows with no styles of our own.
-    const badge = doc.createElement("span")
-    badge.setAttribute("data-sidebar-repo", "")
-    link.append(avatarSlot, badge, title)
-    const close = doc.createElement("div")
-    close.dataset.slot = "tab-close"
-    el.append(link, close)
     const [current, set] = createSignal(item)
-    link.onclick = (event) => { event.preventDefault(); const row = current(); (row.open ?? row.run)() }
+    const container = doc.createElement("div")
     // Right-click, or the keyboard menu key from a focused button (which reports 0,0): the row's other actions.
-    el.oncontextmenu = (event) => {
+    const showMenu = (event: MouseEvent) => {
       if (!current().menu?.length) return
       event.preventDefault()
       const rect = el.getBoundingClientRect()
       const keyboard = event.clientX === 0 && event.clientY === 0
       openMenu(doc, keyboard ? { x: rect.left, y: rect.bottom } : { x: event.clientX, y: event.clientY }, current().menu ?? [], { label: `${current().title} actions` })
     }
-    const act = (run: () => void) => (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); run() }
-    // The same IconButton the host renders for its close X (small, ghost-muted, hover-reveal), so the slot's own rules
-    // place and reveal it; pointer and mouse down are swallowed as the X does.
-    const dispose = host.mount(close, () => createComponent(host.ui.IconButton, {
-      icon: "outline-undo", size: "small", variant: "ghost-muted", class: "hover-reveal relative z-10",
-      get label() { return `${current().action} ${current().title}` },
-      onClick: act(() => current().run()),
+    const disposeRow = host.mount(container, () => createComponent(SessionTabRow, {
+      ui: host.ui,
+      get title() { return current().title },
+      get avatar() { const a = current().avatar; return { fallback: a.letter, src: a.src, variant: a.variant as ProjectAvatarStyle } },
+      get project() { return current().project },
+      get detail() { return current().until },
+      get active() { return current().active },
+      get onContextMenu() { return current().menu?.length ? showMenu : undefined },
+      onOpen: () => { const row = current(); (row.open ?? row.run)() },
+      // Replace: the action sits where the live row's X does, as these rows have no close button.
+      get action() {
+        return createComponent(TabRowAction, {
+          ui: host.ui, icon: "outline-undo", replace: true,
+          get label() { return `${current().action} ${current().title}` },
+          onClick: () => current().run(),
+        })
+      },
     }))
-    const button = close.firstElementChild as HTMLElement | null
-    for (const type of ["pointerdown", "mousedown"]) button?.addEventListener(type, (event) => { event.preventDefault(); event.stopPropagation() })
-    return { el, set, title, detail: badge, avatarSlot, dispose }
+    const el = container.firstElementChild as HTMLElement
+    el.dataset.saRow = item.key
+    // The slot's keyboard menu key arrives from the action button, outside the link that carries the handler.
+    const link = el.querySelector<HTMLElement>("[data-slot=tab-link]")!
+    el.addEventListener("contextmenu", (event) => { if (!link.contains(event.target as Node)) showMenu(event) })
+    return { el, link, set, dispose: disposeRow }
   }
   return {
     section,
@@ -176,15 +137,8 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
           }
         }
         row.set(item)
-        row.el.dataset.active = String(!!item.active)
-        if (item.active) row.el.dataset.state = "pressed"; else delete row.el.dataset.state
-        if (row.title.textContent !== item.title) row.title.textContent = item.title
-        if (row.detail.textContent !== item.badge) row.detail.textContent = item.badge
-        row.detail.title = item.detail
-        const link = row.el.firstElementChild as HTMLElement
-        link.title = `${item.title}\n${item.detail}`
-        const avatarKey = JSON.stringify(item.avatar)
-        if (row.avatar !== avatarKey) { row.avatar = avatarKey; row.avatarSlot.replaceChildren(avatarNode(doc, item.avatar)) }
+        const tip = `${item.title}\n${item.detail}`
+        if (row.link.title !== tip) row.link.title = tip
         while (cursor && [...rows.values()].some((r) => r.el === cursor && r.leaving !== undefined)) cursor = cursor.nextSibling
         if (cursor === row.el) cursor = cursor.nextSibling
         else content.insertBefore(row.el, cursor)
@@ -247,6 +201,13 @@ export const css = `
 [data-sa-clip] { min-height: 0; overflow: hidden; }
 [data-sa-contents] { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
+/* Snoozed: the time until wake outranks the branch. The second line is a flex row; the project part gives way with an
+   ellipsis and the time never shrinks. The link's end fade (the action's reveal) would mask a time that reaches the
+   edge, so while the fade is on the line stops short of it (the fade starts 46px from the link's edge, the line ends 6px inside it). */
+[data-sa-kind="snoozed"] [data-sidebar-repo]:has([data-sidebar-repo-detail]) { display: flex; }
+[data-sa-kind="snoozed"] [data-sidebar-repo-main] { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-sa-kind="snoozed"] [data-sidebar-repo-detail] { flex: none; white-space: nowrap; }
+[data-sa-kind="snoozed"] [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-sidebar-repo] { padding-inline-end: 40px; }
 /* The host sets these per tab by position (first row 0/2px, the rest 2px/0) and its link padding reads them. */
 [data-sa-row] { --tab-hit-before: 2px; --tab-hit-after: 0px; }
 [data-sa-row]:first-of-type { --tab-hit-before: 0px; --tab-hit-after: 2px; }

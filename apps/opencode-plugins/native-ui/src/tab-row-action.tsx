@@ -53,6 +53,7 @@ export const tabRowActionCss = `
 [data-titlebar-tab][data-editing=true] [data-slot=tab-row-action] { display: none; }
 [data-titlebar-tab]:has([data-slot=tab-row-action]:not([data-replace])):is(:hover, :has(:focus-visible)):not([data-editing=true]) [data-slot=tab-link] { --tab-title-fade-offset: calc(48px + var(--tab-link-inset, 0px)); }
 [data-slot=tab-row-action][data-replace] { inset-inline-end: 4px; }
+[data-slot=tab-close] > [data-slot=tab-row-action] { position: static; margin: 0; }
 [data-titlebar-tab]:has([data-slot=tab-row-action][data-replace]) [data-slot=tab-close] > button { display: none; }
 @media (hover: none) { [data-titlebar-tab] [data-slot=tab-row-action] { background: linear-gradient(var(--tab-overlay), var(--tab-overlay)), var(--tab-base); } }
 `

@@ -4,17 +4,18 @@ import { createRoot, createSignal } from "solid-js"
 import { Window } from "happy-dom"
 import plugin from "./gui"
 import type { Snooze } from "./snooze"
-import { fakeUi } from "./testui"
+import { delegate, fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
 function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = []) {
   const window = new Window()
   const doc = window.document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><span data-slot="tab-title">Host title</span></div></div></aside>`
-  const globals = { window, document: doc, Node: window.Node, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></aside>`
+  const globals = { window, document: doc, Node: window.Node, HTMLElement: window.HTMLElement, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
+  delegate(doc)
   const [servers, setServers] = createSignal<string[]>([])
   const [state, setState] = createSignal({ entries: initial })
   const [wokeState, setWokeState] = createSignal({ entries: initialWoke })
@@ -325,9 +326,9 @@ test("tab hover shows only Archive beside the host title and cleans up; the nati
     const host = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
     assert.equal(host.querySelectorAll('[data-sa-actions="tab"]').length, 1)
     assert.equal(host.querySelector('[data-slot="tab-title"]')?.textContent, "Host title")
-    assert.deepEqual([...host.querySelectorAll("button[data-sa-actions]")].map((b) => b.getAttribute("aria-label")), ["Archive Session"])
+    assert.deepEqual([...host.querySelectorAll("[data-sa-actions] button")].map((b) => b.getAttribute("aria-label")), ["Archive Session"])
     assert.equal(f.doc.querySelector('[data-slot="session.header"], [data-sa-actions="header"]'), null)
-    click(host.querySelector('button[data-sa-actions][data-icon="archive"]')); await f.flush()
+    click(host.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     f.stop()
     assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0)

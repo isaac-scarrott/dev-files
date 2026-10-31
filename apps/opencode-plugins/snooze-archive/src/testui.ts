@@ -1,7 +1,7 @@
 import { createRenderEffect, type JSX } from "solid-js"
 import type { Ui } from "@opencode/plugin/gui"
 import type { Host } from "./host"
-import { render } from "solid-js/web"
+import { delegateEvents, render } from "solid-js/web"
 
 // Stand-ins for the host components: same props contract, plain elements. The real look comes from the app.
 export function fakeUi(doc: Document): Ui {
@@ -39,8 +39,12 @@ export function fakeUi(doc: Document): Ui {
   return ui as unknown as Ui
 }
 
+// Solid delegates these once per document, when the compiled component loads; a Window made later needs them registered.
+export const delegate = (doc: Document) => delegateEvents(["click", "mousedown", "contextmenu", "auxclick", "dragstart"], doc)
+
 // Solid's DOM renderer reads the document and Node globals.
 export const fakeHost = (doc: Document): Host => {
-  Object.assign(globalThis, { document: doc, Node: doc.defaultView!.Node })
+  Object.assign(globalThis, { document: doc, Node: doc.defaultView!.Node, HTMLElement: doc.defaultView!.HTMLElement })
+  delegate(doc)
   return { ui: fakeUi(doc), mount: (el: HTMLElement, view: () => JSX.Element) => render(view, el) }
 }
