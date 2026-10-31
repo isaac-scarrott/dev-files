@@ -87,7 +87,7 @@ export default {
       native: nativeRow,
       ...rowCommon,
       // Snoozed ends its second line with the time until wake, which the live row does not have.
-      allow: { ...FIRST_ROW },
+      allow: { ...FIRST_ROW, "badge.display": "Snoozed only, by request: the second line is a flex row so the time until wake stays whole while repo and branch truncate; the live line is a block" },
       behaviour: [
         { name: "link-events", check: "event-contract", target: "[data-slot=tab-link]", events: ["pointerdown", "dblclick", "dragstart", "contextmenu"] },
         { name: "link-aria", check: "aria", target: "[data-slot=tab-link]" },

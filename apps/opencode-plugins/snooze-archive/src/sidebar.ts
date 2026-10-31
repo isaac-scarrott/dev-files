@@ -27,6 +27,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   const content = doc.createElement("div")
   content.dataset.saContents = ""
   content.id = `snooze-archive-${name.toLowerCase()}`
+  content.dataset.saKind = name.toLowerCase()
   content.setAttribute("role", "region")
   content.setAttribute("aria-label", name)
   let open = false
@@ -200,6 +201,13 @@ export const css = `
 [data-sa-clip] { min-height: 0; overflow: hidden; }
 [data-sa-contents] { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
+/* Snoozed: the time until wake outranks the branch. The second line is a flex row; the project part gives way with an
+   ellipsis and the time never shrinks. The link's end fade (the action's reveal) would mask a time that reaches the
+   edge, so while the fade is on the line stops short of it (the fade starts 46px from the link's edge, the line ends 6px inside it). */
+[data-sa-kind="snoozed"] [data-sidebar-repo]:has([data-sidebar-repo-detail]) { display: flex; }
+[data-sa-kind="snoozed"] [data-sidebar-repo-main] { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-sa-kind="snoozed"] [data-sidebar-repo-detail] { flex: none; white-space: nowrap; }
+[data-sa-kind="snoozed"] [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-sidebar-repo] { padding-inline-end: 40px; }
 /* The host sets these per tab by position (first row 0/2px, the rest 2px/0) and its link padding reads them. */
 [data-sa-row] { --tab-hit-before: 2px; --tab-hit-after: 0px; }
 [data-sa-row]:first-of-type { --tab-hit-before: 0px; --tab-hit-after: 2px; }

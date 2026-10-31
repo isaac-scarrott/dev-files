@@ -127,7 +127,11 @@ export function SessionTabRow(props: SessionTabRowProps) {
             </span>
             <Show when={twoLine()}>
               <span data-sidebar-repo title={secondLine()}>
-                {secondLine()}
+                {/* Split only when there is a detail, so a consumer can truncate the project and keep the detail whole. */}
+                <Show when={props.detail} fallback={props.project}>
+                  <span data-sidebar-repo-main>{props.project}</span>
+                  <span data-sidebar-repo-detail>{` · ${props.detail}`}</span>
+                </Show>
               </span>
             </Show>
             <span data-slot="tab-title" data-titlebar-tab-title dir="auto" class={sessionTabRowClass.title}>

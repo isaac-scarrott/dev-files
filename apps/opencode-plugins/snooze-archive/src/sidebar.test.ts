@@ -169,3 +169,24 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   assert.equal(doc.querySelector("[data-sa-popup]"), null)
   sidebar.dispose()
 })
+
+test("snoozed second line keeps the time whole: project truncates, time is its own flex:none part; archived rows are unsplit", () => {
+  const doc = new Window().document as unknown as Document
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  const long = "a-very-long-repository-name · feature/an-extremely-long-branch-name-that-cannot-fit"
+  const snoozed = { key: "s", title: "T", project: long, until: "2d 3h", detail: "d", action: "Wake", avatar, run() {} }
+  const archived = { ...snoozed, key: "a", until: undefined, action: "Restore" }
+  sidebar.update({ rows: [snoozed], count: 1 }, { rows: [archived], count: 1 })
+  const line = doc.querySelector<HTMLElement>('[data-sa-kind="snoozed"] [data-sidebar-repo]')!
+  assert.equal(line.querySelector("[data-sidebar-repo-main]")?.textContent, long)
+  assert.equal(line.querySelector("[data-sidebar-repo-detail]")?.textContent, " · 2d 3h", "the time is whole and in the DOM")
+  assert.equal(line.textContent, `${long} · 2d 3h`)
+  const archivedLine = doc.querySelector<HTMLElement>('[data-sa-kind="archived"] [data-sidebar-repo]')!
+  assert.equal(archivedLine.querySelector("[data-sidebar-repo-main], [data-sidebar-repo-detail]"), null)
+  assert.equal(archivedLine.textContent, long)
+  assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-main\] \{ flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/)
+  assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-detail\] \{ flex: none; white-space: nowrap; \}/)
+  sidebar.dispose()
+})
