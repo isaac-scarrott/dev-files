@@ -4,13 +4,13 @@ const ON = "data-agents-on"
 
 export type BackgroundOption = {
   label: string
-  /** Whether "Subagents panel" is the chosen mode. Reactive reads are fine; it is polled on every pass. */
+  /** Whether "Panel" is the chosen mode. Reactive reads are fine; it is polled on every pass. */
   enabled(): boolean
   set(enabled: boolean): void
 }
 
 /**
- * Adds "Subagents panel" as a fifth choice of Settings > Timeline > Background activity. The host exposes no way to add
+ * Adds "Panel" as a fifth choice of Settings > Timeline > Background activity. The host exposes no way to add
  * an option to its select and stores the value as a closed enum (`off | left | center | right`), so the choice is a
  * clone of a host option that, when picked, commits the host's own "Hidden" and records the mode in the plugin's store.
  * Picking any host option turns the mode off again, so the host value is never one it cannot validate.

@@ -6,10 +6,10 @@ import { styles } from "./panel"
 import { installBackgroundOption } from "./setting"
 import { SubagentsToggle } from "./toggle"
 
-const OPTION_LABEL = "Subagents panel"
+const OPTION_LABEL = "Panel"
 
 export default Plugin.define({
-  // Off until the user picks "Subagents panel" in Settings > Timeline > Background activity.
+  // Off until the user picks "Panel" in Settings > Timeline > Background activity.
   stores: { mode: Store.global(Schema.Struct({ enabled: Schema.Boolean }), { enabled: false }) },
   setup(ctx) {
     ctx.add(Style, styles)
