@@ -54,28 +54,31 @@ export default Plugin.define({
       [data-action='vertical-tabs-home'] {
         display: none !important;
       }
-      /* The native list and link fades are masks that ignore the status mark; replaced by the title fade below. */
+      /* The native list fade masks the status mark too. */
       [data-slot='vertical-tabs-scroll'] {
         -webkit-mask-image: none !important;
         mask-image: none !important;
+      }
+      /*
+       * Text yields to whatever sits at the row's trailing edge (a status mark, or the close button on hover) through
+       * one mask on the full-height link, so the badge and title lines fade as a single band. The marks live outside
+       * the link and are never masked. Same shape as the native link mask: 16px ramp, clear from --sidebar-fade in
+       * (24px mark + 6px gap); idle rows keep no fade. Not animated, like the native one.
+       */
+      [data-titlebar-tab][data-orientation='vertical'] {
+        --sidebar-fade: 30px;
+      }
+      /* The archive action sits left of the close button: 30px in, 20px wide. */
+      [data-titlebar-tab-slot]:has(> [data-sa-actions]) [data-titlebar-tab][data-orientation='vertical']:is(:hover, :focus-within) {
+        --sidebar-fade: 56px;
       }
       [data-titlebar-tab][data-orientation='vertical'] [data-slot='tab-link'] {
         -webkit-mask-image: none !important;
         mask-image: none !important;
       }
-      /* Text yields to whatever sits at the row's trailing edge: a status mark, or the close button on hover. */
-      [data-titlebar-tab][data-orientation='vertical'] {
-        --sidebar-fade: 0px;
-      }
-      [data-titlebar-tab][data-orientation='vertical']:is([data-status='busy'], [data-status='attention'], [data-status='unread'], [data-sidebar-attention]) {
-        --sidebar-fade: 28px;
-      }
-      [data-titlebar-tab][data-orientation='vertical']:is(:hover, :focus-within) {
-        --sidebar-fade: 32px;
-      }
-      [data-titlebar-tab][data-orientation='vertical'] :is([data-slot='tab-title'], [data-sidebar-repo]) {
-        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
-        mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
+      [data-titlebar-tab][data-orientation='vertical']:is([data-status='busy'], [data-status='attention'], [data-status='unread'], [data-sidebar-attention], :hover, :focus-within) [data-slot='tab-link'] {
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade) - 16px), transparent calc(100% - var(--sidebar-fade))) !important;
+        mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade) - 16px), transparent calc(100% - var(--sidebar-fade))) !important;
       }
       /* Attention shows a catalog icon instead of the dot; unread keeps its blue dot, busy its ring. */
       [data-titlebar-tab][data-sidebar-attention] [data-slot='tab-status'] > [data-mark='attention'] {

@@ -199,3 +199,19 @@ test("sessions without a location still sync attention requests", async () => {
     assert.equal(f.document.querySelector("[data-titlebar-tab]")?.getAttribute("data-sidebar-attention"), "permission")
   } finally { await f.close() }
 })
+
+test("the trailing fade is one mask on the link, not on the title or badge lines", async () => {
+  const f = fixture()
+  try {
+    f.start()
+    const css = f.styles[0]
+    const masks = [...css.matchAll(/([^{}]+)\{[^}]*(?<!-webkit-)mask-image: linear-gradient/g)].map((match) => match[1].trim())
+    assert.equal(masks.length, 1)
+    assert.match(masks[0], /\[data-slot='tab-link'\]$/)
+    assert.doesNotMatch(masks[0], /tab-title|data-sidebar-repo/)
+    assert.match(css, /--sidebar-fade: 30px/)
+    assert.match(css, /--sidebar-fade: 56px/)
+  } finally {
+    await f.close()
+  }
+})
