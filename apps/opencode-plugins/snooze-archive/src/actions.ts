@@ -41,4 +41,6 @@ export function createActions(host: Host, slot: HTMLElement, target: () => Targe
 
 export const actionsCss = `
 [data-sa-tab-host] [data-slot="tab-close"] > button:not([data-sa-actions]) { display: none; }
+/* The host paints this slot with an opaque fill to hide the text under its X; the row fade already does that, and the fill shows as a block on the active row. */
+[data-sa-tab-host] [data-titlebar-tab] [data-slot="tab-close"] { background: none !important; }
 `
