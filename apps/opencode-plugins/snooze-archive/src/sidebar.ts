@@ -4,7 +4,7 @@ import type { Host } from "./host"
 import { clockIcon } from "./icons"
 import { openMenu, type MenuLine } from "./menu"
 
-export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; menu?: MenuLine[] }
+export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
@@ -98,8 +98,8 @@ function group(doc: Document, host: Host, name: string, icon: boolean, schedule:
     link.setAttribute("data-titlebar-tab-link", "")
     link.href = "#"
     link.draggable = false
-    // The close-slot buttons are the keyboard path; the link only extends the click target.
-    link.tabIndex = -1
+    // Rows that open something are keyboard-reachable (Enter on the link opens); otherwise the close-slot buttons are the keyboard path.
+    link.tabIndex = item.open ? 0 : -1
     link.className = LINK_CLASS
     const avatarSlot = doc.createElement("span")
     avatarSlot.dataset.slot = "project-avatar-slot"
@@ -116,7 +116,7 @@ function group(doc: Document, host: Host, name: string, icon: boolean, schedule:
     close.dataset.slot = "tab-close"
     el.append(link, close)
     const [current, set] = createSignal(item)
-    link.onclick = (event) => { event.preventDefault(); current().run() }
+    link.onclick = (event) => { event.preventDefault(); const row = current(); (row.open ?? row.run)() }
     // Right-click, or the keyboard menu key from a focused button (which reports 0,0): the row's other actions.
     el.oncontextmenu = (event) => {
       if (!current().menu?.length) return

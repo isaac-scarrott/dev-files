@@ -62,7 +62,6 @@ export default Plugin.define({
       try {
         const rows = await loadArchive(server, ctx.signal)
         if (disposed) return
-        for (const row of rows) closeTabs(server.id, row.id)
         archives.set(server.id, { rows, loading: false, complete: true })
       } catch (cause) {
         if (disposed) return
@@ -242,7 +241,7 @@ export default Plugin.define({
           for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
         }
         const off = [
-          data.on("session.archived", (e) => { remove(id, e.data.sessionID); closeTabs(id, e.data.sessionID); void refresh(server) }),
+          data.on("session.archived", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
           data.on("session.unarchived", () => void refresh(server)),
           data.on("session.deleted", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
           data.on("session.renamed", () => void refresh(server)),
@@ -265,6 +264,8 @@ export default Plugin.define({
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         avatar: avatarOf(id, info), action: "Restore",
+        // Reading an archived session does not unarchive it; only Restore does.
+        open: () => ctx.tabs.open({ server: id, id: info.id }, { focus: true }),
         run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
         menu: [
           { label: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) } },

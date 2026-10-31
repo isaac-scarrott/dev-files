@@ -442,3 +442,33 @@ test("cold SDK state: tab actions tolerate undefined titles and lists", async ()
     assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
   } finally { await f.close() }
 })
+
+test("clicking an Archived row opens it without unarchiving; refresh and events leave user-opened archived tabs alone", async () => {
+  const f = fixture()
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    assert.deepEqual(f.calls.closed, [], "refresh must not close a tab the user opened")
+    const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
+    const link = row.querySelector<HTMLElement>("a")!
+    assert.equal(link.tabIndex, 0, "Enter on the row link opens it")
+    click(link); await f.flush()
+    assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+    assert.deepEqual(f.calls.updates, [], "opening is not a restore")
+    f.emit("session.archived"); f.emit("session.renamed"); await f.flush()
+    assert.deepEqual(f.calls.closed, [])
+    assert.equal(f.doc.querySelectorAll("[data-sa-row]").length, 1, "still listed as archived")
+  } finally { await f.close() }
+})
+
+test("archiving closes the tab at that moment; Restore is the only unarchive and opens the session", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    await f.commands.get("archive")!.run(); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
+    assert.deepEqual(f.calls.closed, ["tab"])
+    click(f.doc.querySelector('[data-sa-row] button[data-icon="outline-undo"]')); await f.flush()
+    assert.deepEqual(f.calls.updates.at(-1), { sessionID: "s", archived: false })
+    assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+  } finally { await f.close() }
+})
