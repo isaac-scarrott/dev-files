@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { layout, MIN_PITCH, promptLabel, prompts, stripMarkdown, tickOf, type Message } from "./rail"
+import { fisheyeBand, indexFromPointer, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -91,26 +91,46 @@ test("markdown falls away: fences, lists, quotes, links, images, tables, emphasi
   assert.equal(stripMarkdown("snake_case_name stays"), "snake_case_name stays")
 })
 
-test("layout: one tick per prompt at a pitch that fits 60% of the height, compressing before bucketing", () => {
-  assert.deepEqual(layout(0, 600), { pitch: MIN_PITCH, ticks: [] })
-  const few = layout(5, 600)
-  assert.equal(few.pitch, 10)
-  assert.equal(few.ticks.length, 5)
-  assert.deepEqual(few.ticks[4], { start: 4, end: 4 })
-  const many = layout(60, 600)
-  assert.equal(many.pitch, 6)
-  assert.equal(many.ticks.length, 60)
+test("rail height: one gap per prompt, capped by the window, independent of anything on screen", () => {
+  assert.equal(railHeightStyle(2), "max(0px, min(8px, calc(100vh - 18rem)))")
+  assert.equal(railHeightStyle(11), "max(0px, min(80px, calc(100vh - 18rem)))")
+  assert.equal(railHeightStyle(5000), "max(0px, min(39992px, calc(100vh - 18rem)))")
+  assert.equal(topPercent(0, 5), 0)
+  assert.equal(topPercent(2, 5), 50)
+  assert.equal(topPercent(4, 5), 100)
+  assert.equal(topPercent(0, 1), 0)
 })
 
-test("layout: beyond the tightest pitch, prompts are bucketed into evenly sized ticks covering every prompt", () => {
-  const { pitch, ticks } = layout(200, 600)
-  assert.equal(pitch, MIN_PITCH)
-  assert.equal(ticks.length, 90)
-  assert.equal(ticks[0]!.start, 0)
-  assert.equal(ticks.at(-1)!.end, 199)
-  for (let index = 1; index < ticks.length; index += 1) assert.equal(ticks[index]!.start, ticks[index - 1]!.end + 1)
-  assert.equal(tickOf(ticks, 199), 89)
-  assert.equal(tickOf(ticks, 0), 0)
-  assert.equal(tickOf(ticks, 500), -1)
-  assert.equal(tickOf(ticks, -1), -1)
+test("index from pointer: linear to the nearest prompt, clamped, every index reachable at any count", () => {
+  const at = (count: number, y: number) => indexFromPointer({ count, top: 100, height: 200, y })
+  assert.equal(at(0, 150), null)
+  assert.equal(at(1, 150), 0)
+  assert.equal(at(5, 100), 0)
+  assert.equal(at(5, 300), 4)
+  assert.equal(at(5, 200), 2)
+  assert.equal(at(5, 20), 0, "above the strip")
+  assert.equal(at(5, 999), 4, "below the strip")
+  assert.equal(indexFromPointer({ count: 5, top: 0, height: 0, y: 3 }), 0)
+  // 5,000 prompts on 200px: ticks overlap 25 to a pixel, yet the pointer still lands on all of them.
+  const reached = new Set<number>()
+  for (let y = 100; y <= 300; y += 0.01) reached.add(at(5000, y)!)
+  assert.equal(reached.size, 5000)
+})
+
+test("fisheye band: the active prompt and two neighbours each side, clipped to the list", () => {
+  assert.equal(fisheyeBand(undefined, 10), undefined)
+  assert.equal(fisheyeBand(10, 10), undefined)
+  assert.deepEqual(fisheyeBand(5, 10), [3, 7])
+  assert.deepEqual(fisheyeBand(0, 10), [0, 2])
+  assert.deepEqual(fisheyeBand(9, 10), [7, 9])
+})
+
+test("visible range: owners of rows that intersect the box; off-screen rows and unlisted owners are ignored", () => {
+  const indexOf = new Map([["a", 0], ["b", 1], ["c", 2], ["d", 3]])
+  const row = (owner: string, top: number, bottom: number) => ({ owner, prompt: false, top, bottom })
+  const box = { top: 50, bottom: 650 }
+  assert.deepEqual(visibleRange(indexOf, [row("a", -300, 40), row("b", 40, 400), row("c", 400, 700), row("d", 700, 900)], box), [1, 2])
+  assert.deepEqual(visibleRange(indexOf, [row("b", 100, 200), row("x", 200, 300)], box), [1, 1])
+  assert.equal(visibleRange(indexOf, [row("d", 900, 1000)], box), undefined)
+  assert.equal(visibleRange(indexOf, [], box), undefined)
 })
