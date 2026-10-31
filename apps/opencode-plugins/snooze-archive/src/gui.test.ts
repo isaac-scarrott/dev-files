@@ -19,7 +19,7 @@ function fixture(initial: Snooze[] = []) {
   const [connected, setConnected] = createSignal(true)
   const listeners = new Map<string, Set<(e: any) => void>>()
   const commands = new Map<string, { run(): Promise<void> | void }>()
-  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, requestSync: 0, metadataReads: 0 }
+  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[] }
   let permissions: unknown[] | undefined = []
   let forms: unknown[] | undefined = []
   let family: string[] | undefined = []
@@ -28,6 +28,9 @@ function fixture(initial: Snooze[] = []) {
   let sync = async () => {}
   let archiveError = false
   let select = ""
+  let confirmResult = true
+  let removeError = false
+  const slots: any[] = []
   let archived = false
   const info = () => { calls.metadataReads++; return metadata === "missing" ? undefined : ({ id: "s", title: "Session", time: metadata === "no-time" ? undefined : { updated: 1, ...(archived ? { archived: 1 } : {}) }, location: { directory: "/repo" } }) }
   const server = {
@@ -35,6 +38,7 @@ function fixture(initial: Snooze[] = []) {
     client: { session: {
       list: async () => { calls.list++; if (archiveError) throw new Error("offline"); return { data: archived ? [info()] : [], cursor: {} } },
       get: async () => info(),
+      remove: async (input: unknown) => { calls.removed.push(input); if (removeError) throw new Error("server refused") },
       update: async (input: { archived: boolean }) => { calls.updates.push(input); if (archiveError) throw new Error("denied"); archived = input.archived },
     } },
     data: {
@@ -57,11 +61,11 @@ function fixture(initial: Snooze[] = []) {
     stores: { snoozes: { get value() { return state() }, update: (fn: (draft: { entries: Snooze[] }) => void) => {
       const draft = structuredClone(state()); fn(draft); setState(draft)
     } } },
-    add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.id) commands.set(value.id, value) },
+    add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value) },
     servers: { list: servers, get: (id: string) => servers().includes(id) ? server : undefined },
     sessions: { current: () => session },
     tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => calls.opened.push(args) },
-    dialogs: { select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
+    dialogs: { confirm: async (options: unknown) => { calls.confirms.push(options); return confirmResult }, select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
   let cleanup: ReturnType<NonNullable<typeof plugin.setup>>
@@ -78,6 +82,7 @@ function fixture(initial: Snooze[] = []) {
     metadata: (value: typeof metadata) => { metadata = value },
     sync: (value: () => Promise<void>) => { sync = value },
     archived: (value: boolean) => { archived = value },
+    slots, confirm: (value: boolean) => { confirmResult = value }, removeError: (value: boolean) => { removeError = value },
     fail: (value: boolean) => { archiveError = value },
     select: (value: string) => { select = value },
     reopen: () => setTabs([{ key: "tab", session }]),
@@ -279,5 +284,93 @@ test("deadline wake never reopens a session already known to be natively archive
     f.start(); await f.flush()
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 0)
+  } finally { await f.close() }
+})
+
+const click = (el: Element | null | undefined) => (el as HTMLElement).click()
+
+test("tab row actions attach once, are siblings of host title, snooze/archive/delete call exact APIs and clean up", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    f.doc.querySelector('[data-slot="vertical-tabs"]')!.dispatchEvent(new (f.doc.defaultView as any).CustomEvent("x"))
+    const host = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
+    assert.equal(host.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+    assert.equal(host.querySelector('[data-slot="tab-title"]')?.textContent, "Host title")
+    const labels = [...host.querySelectorAll("[data-sa-action]")].map((b) => b.getAttribute("aria-label"))
+    assert.deepEqual(labels, ["Snooze… Session", "Archive Session", "Delete… Session"])
+    click(host.querySelector('[data-sa-action="archive"]')); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
+    f.stop()
+    assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0)
+    assert.equal(f.doc.querySelector("[data-sa-tab-host]"), null)
+    f.archived(false); f.reopen(); f.start(); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+    f.stop(); f.start(); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+  } finally { await f.close() }
+})
+
+test("snooze action opens preset picker for that tab's session", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    click(f.doc.querySelector('[data-sa-action="snooze"]')); await f.flush()
+    assert.equal(f.state().entries.length, 1)
+    assert.equal(f.state().entries[0].id, "s")
+  } finally { await f.close() }
+})
+
+test("delete confirms permanently; cancel does nothing; confirm calls session.remove, closes tab", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    f.confirm(false)
+    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    assert.equal(f.calls.confirms.length, 1)
+    assert.match(f.calls.confirms[0].description, /permanently/)
+    assert.equal(f.calls.confirms[0].danger, true)
+    assert.deepEqual(f.calls.removed, [])
+    assert.deepEqual(f.calls.closed, [])
+    f.confirm(true)
+    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
+    assert.deepEqual(f.calls.closed, ["tab"])
+  } finally { await f.close() }
+})
+
+test("delete failure shows an error and keeps the tab", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    f.removeError(true)
+    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    assert.deepEqual(f.calls.closed, [])
+    assert.equal(f.calls.toasts.at(-1).variant, "error")
+    assert.match(f.calls.toasts.at(-1).description, /server refused/)
+  } finally { await f.close() }
+})
+
+test("archived rows can be deleted from the Archived group; header slot renders the same actions", async () => {
+  const f = fixture()
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    const row = f.doc.querySelector('[data-sa-row] [data-sa-danger]')
+    assert.ok(row)
+    click(row); await f.flush()
+    assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
+    const header = f.slots.find((slot) => slot.at === "session.header")
+    const el = header.render({ session: { id: "s", server: { id: "server", data: { session: { get: () => ({ title: "T" }) } } }, pending: false } })
+    click(el.querySelector('[data-sa-action="archive"]')); await f.flush()
+    assert.equal(f.calls.updates.length, 1)
+  } finally { await f.close() }
+})
+
+test("cold SDK state: tab actions tolerate undefined titles and lists", async () => {
+  const f = fixture()
+  try {
+    f.metadata("missing"); f.permissions(undefined); f.forms(undefined); f.family(undefined)
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
   } finally { await f.close() }
 })

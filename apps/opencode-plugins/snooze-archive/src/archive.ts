@@ -23,3 +23,8 @@ export async function setArchived(server: ServerRef, id: string, archived: boole
   if ((info.time.archived !== undefined) !== archived) throw new Error("Server did not confirm archive state")
   return info
 }
+
+// Native permanent delete; works for archived sessions too, which are ordinary stored sessions.
+export async function removeSession(server: ServerRef, id: string, signal: AbortSignal) {
+  await server.client.session.remove({ sessionID: id }, { signal })
+}
