@@ -15,6 +15,7 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 
 - Choosing where a piece of UI belongs, or the host API's shape → [reference/host-api.md](reference/host-api.md)
 - Touching the app's real DOM or CSS (sidebar tabs, timeline, status marks) → [reference/dom-map.md](reference/dom-map.md)
+- Any transition, fade or accordion → [reference/animation.md](reference/animation.md)
 - A first build in a new checkout, an install/build failure, or a plugin that does not appear → [reference/build.md](reference/build.md)
 
 ## Workflow
@@ -94,5 +95,5 @@ export default Plugin.define({
 - **Injection is idempotent and reversible.** Query for your own hook before creating a node, key it on `data-tab-key` / a row key, write only when the value changes, and remove every node and attribute in the cleanup. The setup can run more than once in a window's life.
 - **Never rewrite app-owned text.** Inject a sibling node instead: the app rebuilds titles from its own store, and a rewritten `textContent` is lost or duplicated depending on render order (and renaming a session must keep working).
 - **A `MutationObserver` filters.** Observe the smallest attribute set that matters (`attributeFilter: ["data-tab-key", "data-orientation", "data-status"]`) and coalesce work into one `requestAnimationFrame`; an unfiltered observer over `documentElement` re-enters on its own writes.
-- **Animation: transitions on `transform` and `opacity` only.** 120–180ms, `cubic-bezier(0.23, 1, 0.32, 1)`, never `scale(0)` (start at 0.97), and keep a `prefers-reduced-motion` branch that drops movement but keeps opacity. Override the app's own motion with `!important` only where it is a `mask-image` fade, not a transform.
+- **Animation earns a purpose first.** Gate by frequency, then follow [reference/animation.md](reference/animation.md): ease-out curve, 150-250ms, `transform`/`opacity`, interruptible transitions, reduced-motion branch, accordions via `grid-template-rows`. Override the app's own motion with `!important` only where it is a `mask-image` fade.
 - **Assume the app is hostile to long-lived references.** Elements unmount on session switch; re-resolve your container from the DOM rather than caching an element across renders.
