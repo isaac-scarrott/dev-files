@@ -1,78 +1,53 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
-import { Portal, render } from "solid-js/web"
+import { Portal } from "solid-js/web"
 import { runningSubagents } from "./agents"
 import { SubagentsList } from "./panel"
 
-type Ctx = Pick<Context, "ui" | "tabs" | "toast" | "layout" | "storage">
+type Ctx = Pick<Context, "ui" | "tabs" | "toast">
 type Input = { readonly session: MountedSession; readonly active: boolean }
 
-const ROW = "[data-pane-row]"
 const GAP = 8
 
 /**
- * The header toggle for a session's subagents. With the host's right side panel closed it docks a column in the
- * timeline's row (the chat reflows and stays centred in the space left); with it open the same button opens the list
- * as a popover under the button.
+ * The header toggle for a session's subagents: one floating popover under the button, whatever the side panel does.
+ * The popover is transient (it closes on outside click, Esc, or leaving the session), so nothing is stored.
  */
 export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
   const { ctx } = props
   const session = () => props.input.session
-  const [docked, setDocked] = ctx.storage.memory<{ keys: Record<string, boolean> }>("docked", { initial: { keys: {} } })
-  const [popover, setPopover] = createSignal(false)
-  const sideOpen = () => ctx.layout.side.opened(session())
-  const dockOpen = () => !!docked.keys[session().key]
-  const showDock = () => props.input.active && dockOpen() && !sideOpen()
+  const [open, setOpen] = createSignal(false)
 
   const count = () => (props.input.active ? runningSubagents(session(), () => 0).length : 0)
   const label = () => (count() > 0 ? `Subagents · ${count()}` : "Subagents")
-  const pressed = () => (sideOpen() ? popover() : dockOpen())
 
-  let marker!: HTMLSpanElement
   let wrap!: HTMLSpanElement
   let pop: HTMLDivElement | undefined
   const button = () => wrap.querySelector("button") ?? undefined
 
-  const toggle = () => {
-    if (sideOpen()) return setPopover((open) => !open)
-    setDocked((draft) => {
-      draft.keys[session().key] = !draft.keys[session().key]
-    })
-  }
-
-  // Docking: the host has no registry for a column inside the timeline row, so the row gets a reserved end padding
-  // and one absolutely placed host node. Both are removed with the effect.
   createEffect(() => {
-    if (!showDock()) return
-    let dispose: (() => void) | undefined
-    let host: HTMLElement | undefined
-    let row: Element | null = null
-    let frame = 0
-    let tries = 0
-    const attach = () => {
-      row = marker.closest(ROW)
-      if (!row) {
-        if (tries++ < 20) frame = requestAnimationFrame(attach)
-        return
-      }
-      host = document.createElement("div")
-      host.setAttribute("data-agents-dock", "")
-      row.append(host)
-      row.setAttribute("data-agents-docked", "")
-      dispose = render(() => <SubagentsList ctx={ctx} session={session} />, host)
-    }
-    attach()
-    onCleanup(() => {
-      cancelAnimationFrame(frame)
-      dispose?.()
-      host?.remove()
-      row?.removeAttribute("data-agents-docked")
-    })
+    if (!props.input.active) setOpen(false)
+  })
+  // Another session's list must not stay open under this button.
+  createEffect(() => {
+    session().key
+    setOpen(false)
   })
 
-  // The popover exists only while the side panel is open; closing the side panel or leaving the session closes it.
+  // The host's popover triggers carry aria-expanded and data-expanded; its ghost-muted pressed look keys on them (hover
+  // would otherwise win over data-state=pressed), so the button wears them while the popover is open.
   createEffect(() => {
-    if (!sideOpen() || !props.input.active) setPopover(false)
+    const trigger = button()
+    if (!trigger) return
+    const expanded = open()
+    trigger.setAttribute("aria-haspopup", "dialog")
+    trigger.setAttribute("aria-expanded", String(expanded))
+    trigger.toggleAttribute("data-expanded", expanded)
+    onCleanup(() => {
+      trigger.removeAttribute("aria-haspopup")
+      trigger.removeAttribute("aria-expanded")
+      trigger.removeAttribute("data-expanded")
+    })
   })
 
   const place = () => {
@@ -83,16 +58,16 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
   }
 
   createEffect(() => {
-    if (!popover()) return
+    if (!open()) return
     const outside = (event: PointerEvent) => {
       const target = event.target as Node
       if (pop?.contains(target) || wrap.contains(target)) return
-      setPopover(false)
+      setOpen(false)
     }
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
       event.stopPropagation()
-      setPopover(false)
+      setOpen(false)
       button()?.focus()
     }
     document.addEventListener("pointerdown", outside, true)
@@ -111,22 +86,21 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
 
   return (
     <>
-      <span ref={marker} hidden />
       <ctx.ui.Tooltip value={label()}>
         <span ref={wrap} data-agents-toggle>
           <ctx.ui.IconButton
             icon="bullet-list"
             size="large"
             label={label()}
-            pressed={pressed()}
-            onClick={toggle}
+            pressed={open()}
+            onClick={() => setOpen((value) => !value)}
           />
           <Show when={count() > 0}>
             <span data-agents-badge>{count()}</span>
           </Show>
         </span>
       </ctx.ui.Tooltip>
-      <Show when={popover()}>
+      <Show when={open()}>
         <Portal>
           <div ref={pop} data-agents-popover tabIndex={-1} data-prevent-autofocus aria-label="Subagents">
             <div data-component="menu-v2-content">

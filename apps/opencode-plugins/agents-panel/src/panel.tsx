@@ -174,14 +174,9 @@ export const styles = `
     color: var(--v2-background-bg-base); font-size: 10px; line-height: 14px; font-weight: 530; text-align: center;
     font-variant-numeric: tabular-nums; pointer-events: none;
   }
-  /* Docked: the timeline row reserves a column, so the chat reflows and stays centred in the space left. The host
-     draws the review toggle at the row's top end, so the column starts below it. */
-  [data-pane-row][data-agents-docked] { padding-inline-end: 328px; }
-  [data-agents-dock] {
-    position: absolute; z-index: 20; inset-block: 48px 0; inset-inline-end: 0; width: 320px; display: flex; flex-direction: column;
-    box-sizing: border-box; border-radius: 10px; background: var(--v2-background-bg-base); box-shadow: var(--v2-elevation-raised);
-    overflow: hidden;
-  }
+  /* The host lays the header actions out as a flex row, and slot content renders before the host's own items. The
+     context button moves ahead of the toggle so the toggle sits directly after it. */
+  .session-header-actions > :has(> button[data-component="button-v2"]) { order: -1 }
   /* The popover reuses the host's menu surface; the host positions menu-v2-content itself, so it is made static here. */
   [data-agents-popover] { position: fixed; z-index: 60; width: 320px; max-width: calc(100vw - 32px); outline: none; }
   [data-agents-popover] > [data-component=menu-v2-content] {
