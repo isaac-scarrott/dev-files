@@ -24,6 +24,17 @@ export interface LayoutInput {
   providerName(id: string): string
 }
 
+// The Claude Agent provider runs through the claude CLI on a subscription, so the catalog gives its models no price at
+// all. Rank the families by their relative output price instead of letting four zeros fall back to alphabetical order.
+const CLAUDE_AGENT_RANK: readonly (readonly [RegExp, number])[] = [
+  [/fable/i, 100],
+  [/opus/i, 75],
+  [/sonnet/i, 15],
+  [/haiku/i, 5],
+]
+const unpriced = (model: HostModel) =>
+  providerOf(model.key) === "claude-agent" ? (CLAUDE_AGENT_RANK.find(([family]) => family.test(model.key) || family.test(model.name))?.[1] ?? 0) : 0
+
 export const providerOf = (key: string) => key.slice(0, key.indexOf(":"))
 
 const compare = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0)
@@ -36,7 +47,7 @@ export function layout(input: LayoutInput): Section[] {
     const id = providerOf(model.key)
     byProvider.set(id, [...(byProvider.get(id) ?? []), model])
   }
-  const price = (model: HostModel) => input.price.get(model.key) ?? 0
+  const price = (model: HostModel) => input.price.get(model.key) || unpriced(model)
   const providers = [...byProvider.keys()].sort((a, b) => compare(input.providerName(a), input.providerName(b)) || compare(a, b))
   return [
     ...(favorite.length > 0 ? [{ id: "favorite", keys: favorite.map((model) => model.key) }] : []),

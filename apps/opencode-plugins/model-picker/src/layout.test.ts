@@ -70,3 +70,9 @@ test("presses takes the shorter way round the host's order", () => {
   assert.deepEqual(presses(host, undefined, "c"), { key: "ArrowDown", count: 2 })
   assert.deepEqual(presses(host, "a", "zzz"), { key: "ArrowDown", count: 0 })
 })
+
+test("claude-agent models have no catalog price: ranked fable, opus, sonnet, haiku", () => {
+  const models = [m("claude-agent:haiku", "Haiku", "recent"), m("claude-agent:opus", "Opus", "claude-agent"), m("claude-agent:fable", "Fable", "claude-agent"), m("claude-agent:sonnet", "Sonnet", "claude-agent")]
+  const [section] = layout({ models, price: new Map(models.map((model) => [model.key, 0])), providerName: (id) => id })
+  assert.deepEqual(section!.keys, ["claude-agent:fable", "claude-agent:opus", "claude-agent:sonnet", "claude-agent:haiku"])
+})
