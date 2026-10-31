@@ -4,7 +4,7 @@ import { Portal } from "solid-js/web"
 import { runningSubagents } from "./agents"
 import { SubagentsList } from "./panel"
 
-type Ctx = Pick<Context, "ui" | "tabs" | "toast">
+type Ctx = Pick<Context, "ui" | "toast">
 type Input = { readonly session: MountedSession; readonly active: boolean }
 
 const GAP = 8

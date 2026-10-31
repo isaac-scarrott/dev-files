@@ -1,9 +1,10 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { formatElapsed, runningSubagents, type SubagentRow } from "./agents"
+import { openInCurrentTab } from "./open-child"
 import { SessionProgressIndicator } from "./spinner"
 
-type Ctx = Pick<Context, "ui" | "tabs" | "toast">
+type Ctx = Pick<Context, "ui" | "toast">
 
 /** Seconds-resolution clock for the elapsed column, ticking only while `active`. */
 function createClock(active: () => boolean) {
@@ -60,8 +61,7 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }
 
   const openRow = (row: SubagentRow) => {
     if (!row.sessionID) return
-    const session = props.session()
-    props.ctx.tabs.open({ server: session.server.id, id: row.sessionID }, { focus: true })
+    openInCurrentTab(props.session(), row.sessionID)
   }
 
   return (
