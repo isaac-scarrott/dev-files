@@ -47,6 +47,8 @@ export async function ancestors(host, info) {
 export async function reachable(host, caller, target, scope) {
     if (target.id === caller.id)
         return true;
+    if (scope === "all")
+        return true;
     if (marker(target)?.creator === caller.id)
         return true;
     if (caller.parentID !== undefined && target.parentID === caller.parentID)

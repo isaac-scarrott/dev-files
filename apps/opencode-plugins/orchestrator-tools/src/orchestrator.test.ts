@@ -175,6 +175,14 @@ test("a session outside the tree is out of scope; project scope widens it", asyn
   assert.equal(read.session.id, "ses_other")
 })
 
+test("all scope reaches a session in another project; project scope does not", async () => {
+  const f = fake([idle("ses_a"), idle("ses_far", { projectID: "prj_other" as any })])
+  await assert.rejects(make(f, { scope: "project" }).sendMessage(caller("ses_a"), { sessionID: "ses_far", text: "hi" }), /outside/)
+  await make(f, { scope: "all" }).sendMessage(caller("ses_a"), { sessionID: "ses_far", text: "hi" })
+  assert.ok(f.calls.some((c) => c.name === "prompt" && (c.input as any).sessionID === "ses_far"))
+  assert.equal(parseOptions({ scope: "all" }).scope, "all")
+})
+
 test("descendants, siblings and independents the caller created are in scope", async () => {
   const f = fake([
     idle("ses_root"),
@@ -381,5 +389,5 @@ test("options are validated", () => {
   assert.equal(parseOptions({ maxDepth: 5, scope: "project" }).scope, "project")
   assert.throws(() => parseOptions({ maxDepth: 0 }), /positive integer/)
   assert.throws(() => parseOptions({ models: "x" }), /list/)
-  assert.throws(() => parseOptions({ scope: "all" }), /scope/)
+  assert.throws(() => parseOptions({ scope: "everyone" }), /scope/)
 })

@@ -19,7 +19,7 @@ what lets `execute` hand the result back as a value. A tool error reaches the mo
 | `read_session` | `{ sessionID, limit?, offset? }` | `{ session, total, offset, messages, finalText, truncated }` |
 | `wait_for_sessions` | `{ sessionIDs, timeoutMs?, mode?: "all" \| "any" }` | `{ results: [{ sessionID, state, outcome?, reason?, finalText? }], timedOut, aborted }` |
 | `interrupt_session` | `{ sessionID }` | `{ sessionID, interrupted }` |
-| `list_sessions` | `{ scope?: "children" \| "siblings" \| "project", limit? }` | `{ sessions: SessionSummary[] }` |
+| `list_sessions` | `{ scope?: "children" \| "siblings" \| "project" \| "all", limit? }` | `{ sessions: SessionSummary[] }` |
 | `delegate_task` | `{ prompt, title?, directory?, agent?, model?, context?, wait?, timeoutMs?, clientRequestId? }` | `{ session, state, outcome?, reason?, result?, timedOut }` |
 
 `SessionSummary` is `{ id, title, parentID, agent, model, directory, state: "running" | "idle", outcome, created,
@@ -66,7 +66,7 @@ caller. A target is reachable when any of these hold:
 2. The caller is one of its ancestors (walk `parentID`, at most 32 hops).
 3. The caller created it through this plugin (`metadata.orchestrator.creator`), or created one of its ancestors.
 4. It shares the caller's parent (sibling).
-5. Plugin option `scope` is `"project"` and it is in the caller's project.
+5. Plugin option `scope` is `"project"` and it is in the caller's project, or `"all"` (any session on the server).
 
 Interrupting or messaging the caller itself is refused: the caller is mid tool call and has its own reply channel.
 
@@ -85,7 +85,7 @@ Plugin options, with defaults:
 | `maxWaitSessions` | 16 | Sessions one wait may cover |
 | `maxReadChars` | 20000 | Character budget for the messages a read returns |
 | `messageLimit` | 5 | Default number of messages a read returns (max 50) |
-| `scope` | `"tree"` | `"project"` widens reachability to the caller's project |
+| `scope` | `"tree"` | `"project"` widens reachability to the caller's project; `"all"` to every session on the server |
 | `assertSubagentPermission` | true | Run the `subagent` permission assertion before creating |
 
 The plugin cannot read `experimental.subagent_depth` from its context, so `maxDepth` is a separate option.

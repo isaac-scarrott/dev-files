@@ -8,7 +8,7 @@ export interface Options {
     readonly maxWaitSessions: number;
     readonly maxReadChars: number;
     readonly messageLimit: number;
-    readonly scope: "tree" | "project";
+    readonly scope: "tree" | "project" | "all";
     readonly assertSubagentPermission: boolean;
 }
 export declare const DEFAULTS: Options;

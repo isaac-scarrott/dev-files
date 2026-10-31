@@ -140,11 +140,11 @@ export function registerTools(editor: Editor, orchestrator: Orchestrator, option
 
   add(
     "list_sessions",
-    `Sessions this one can reach. scope "children" (default) lists sessions it created, "siblings" those sharing its parent${options.scope === "project" ? ', "project" every session in the project' : ""}.`,
+    `Sessions this one can reach. scope "children" (default) lists sessions it created, "siblings" those sharing its parent${options.scope === "tree" ? "" : ', "project" every session in the project'}${options.scope === "all" ? ', "all" every session on the server' : ""}.`,
     {
       type: "object",
       properties: {
-        scope: { type: "string", enum: options.scope === "project" ? ["children", "siblings", "project"] : ["children", "siblings"] },
+        scope: { type: "string", enum: options.scope === "all" ? ["children", "siblings", "project", "all"] : options.scope === "project" ? ["children", "siblings", "project"] : ["children", "siblings"] },
         limit: { type: "integer", minimum: 1, maximum: 100 },
       },
       additionalProperties: false,

@@ -22,4 +22,4 @@ export interface SessionSummary {
 export declare function describe(info: SessionInfo): SessionSummary;
 /** Parent, grandparent, … of a session. Stops at a missing parent or a cycle. */
 export declare function ancestors(host: Host, info: SessionInfo): Promise<SessionInfo[]>;
-export declare function reachable(host: Host, caller: SessionInfo, target: SessionInfo, scope: "tree" | "project"): Promise<boolean>;
+export declare function reachable(host: Host, caller: SessionInfo, target: SessionInfo, scope: "tree" | "project" | "all"): Promise<boolean>;

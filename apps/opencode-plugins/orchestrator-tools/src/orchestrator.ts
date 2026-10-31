@@ -49,7 +49,7 @@ export interface WaitInput {
 }
 
 export interface ListInput {
-  readonly scope?: "children" | "siblings" | "project"
+  readonly scope?: "children" | "siblings" | "project" | "all"
   readonly limit?: number
 }
 
@@ -215,7 +215,11 @@ export class Orchestrator {
       const siblings = (await this.host.session.list({ parentID: me.parentID, limit })).data
       return { sessions: siblings.filter((s) => s.id !== me.id).map(describe) }
     }
-    if (this.options.scope !== "project") throw fail('Listing project sessions needs the plugin option scope: "project"')
+    if (scope === "all") {
+      if (this.options.scope !== "all") throw fail('Listing every session needs the plugin option scope: "all"')
+      return { sessions: (await this.host.session.list({ limit })).data.map(describe) }
+    }
+    if (this.options.scope === "tree") throw fail('Listing project sessions needs the plugin option scope: "project" or "all"')
     const all = (await this.host.session.list({ project: me.projectID, limit })).data
     return { sessions: all.map(describe) }
   }

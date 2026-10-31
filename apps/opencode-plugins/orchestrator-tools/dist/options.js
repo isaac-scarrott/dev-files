@@ -25,8 +25,8 @@ export function parseOptions(raw = {}) {
         throw new Error("orchestrator-tools option models must be a list of provider/model strings");
     }
     const scope = raw.scope ?? DEFAULTS.scope;
-    if (scope !== "tree" && scope !== "project")
-        throw new Error('orchestrator-tools option scope must be "tree" or "project"');
+    if (scope !== "tree" && scope !== "project" && scope !== "all")
+        throw new Error('orchestrator-tools option scope must be "tree", "project" or "all"');
     const assert = raw.assertSubagentPermission ?? DEFAULTS.assertSubagentPermission;
     if (typeof assert !== "boolean")
         throw new Error("orchestrator-tools option assertSubagentPermission must be a boolean");

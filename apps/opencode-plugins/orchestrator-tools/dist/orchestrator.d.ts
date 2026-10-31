@@ -42,7 +42,7 @@ export interface WaitInput {
     readonly mode?: "all" | "any";
 }
 export interface ListInput {
-    readonly scope?: "children" | "siblings" | "project";
+    readonly scope?: "children" | "siblings" | "project" | "all";
     readonly limit?: number;
 }
 export interface DelegateInput extends Omit<CreateSpec, "mode"> {

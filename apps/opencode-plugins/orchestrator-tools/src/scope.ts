@@ -69,8 +69,9 @@ export async function ancestors(host: Host, info: SessionInfo): Promise<SessionI
   return chain
 }
 
-export async function reachable(host: Host, caller: SessionInfo, target: SessionInfo, scope: "tree" | "project"): Promise<boolean> {
+export async function reachable(host: Host, caller: SessionInfo, target: SessionInfo, scope: "tree" | "project" | "all"): Promise<boolean> {
   if (target.id === caller.id) return true
+  if (scope === "all") return true
   if (marker(target)?.creator === caller.id) return true
   if (caller.parentID !== undefined && target.parentID === caller.parentID) return true
   if (target.parentID !== undefined) {

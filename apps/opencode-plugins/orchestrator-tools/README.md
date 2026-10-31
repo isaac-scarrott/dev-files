@@ -21,7 +21,7 @@ See `DESIGN.md` for the scope rules, limits and the permission model.
 
 All options are optional. `models` restricts the `model` input to a list of `provider/model` ids. `scope: "project"`
 lets the tools reach any session in the caller's project instead of only the caller's children, siblings and
-sessions it created. `assertSubagentPermission: false` skips the `subagent` permission check before creating.
+sessions it created; `scope: "all"` reaches any session on the server, whatever its project. `assertSubagentPermission: false` skips the `subagent` permission check before creating.
 
 ## Tools
 
