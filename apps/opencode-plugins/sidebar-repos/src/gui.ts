@@ -56,7 +56,7 @@ export default Plugin.define({
         mask-image: none !important;
       }
       /* Attention shows a Phosphor icon instead of the dot; unread keeps its blue dot, busy its ring. */
-      [data-titlebar-tab] [data-slot='tab-status'] > [data-mark='attention'] {
+      [data-titlebar-tab][data-sidebar-attention] [data-slot='tab-status'] > [data-mark='attention'] {
         display: none !important;
       }
       [data-titlebar-tab] [data-sidebar-status-icon] {
@@ -95,7 +95,7 @@ export default Plugin.define({
       return truncateMiddle(full, available, (value) => measure(font, value))
     }
 
-    const observed = new WeakSet<HTMLElement>()
+    const observed = new Set<HTMLElement>()
 
     let names = new Map<string, string>()
     let attention = new Map<string, AttentionKind>()
@@ -105,6 +105,11 @@ export default Plugin.define({
       frame = requestAnimationFrame(() => {
         frame = undefined
         badges(document, names, display, attention)
+        for (const element of observed) {
+          if (element.isConnected && element.matches("[data-titlebar-tab][data-orientation='vertical']")) continue
+          resizeObserver.unobserve(element)
+          observed.delete(element)
+        }
         document
           .querySelectorAll<HTMLElement>("[data-titlebar-tab][data-orientation='vertical']")
           .forEach((element) => {
@@ -119,11 +124,12 @@ export default Plugin.define({
 
     createEffect(() => {
       for (const session of ctx.sessions.list()) {
-        if (!session.location) continue
         const data = session.server.data
-        void data.location.vcs.sync(session.location).catch((error: unknown) => {
-          console.warn("sidebar-repos: could not load workspace branch", error)
-        })
+        if (session.location) {
+          void data.location.vcs.sync(session.location).catch((error: unknown) => {
+            console.warn("sidebar-repos: could not load workspace branch", error)
+          })
+        }
         // A pending permission or question form reads as attention; errors surface as unread, not a mark.
         void data.session.permission.sync(session.id).catch(() => undefined)
         void data.session.form.sync(session.id).catch(() => undefined)
@@ -152,7 +158,17 @@ export default Plugin.define({
       refresh()
     })
 
-    const observer = new MutationObserver(refresh)
+    const owned = (node: Node) => {
+      const element = node.nodeType === 1 ? node as Element : node.parentElement
+      return !!element?.closest("[data-sidebar-repo], [data-sidebar-status-icon]")
+    }
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => {
+        if (owned(record.target)) return false
+        if (record.type === "attributes") return true
+        return [...record.addedNodes, ...record.removedNodes].some((node) => !owned(node))
+      })) refresh()
+    })
     observer.observe(document.documentElement, {
       subtree: true,
       childList: true,
@@ -163,6 +179,7 @@ export default Plugin.define({
     return () => {
       observer.disconnect()
       resizeObserver.disconnect()
+      observed.clear()
       if (frame !== undefined) cancelAnimationFrame(frame)
       document.querySelectorAll("[data-sidebar-repo]").forEach((badge) => badge.remove())
       document.querySelectorAll("[data-sidebar-status-icon]").forEach((icon) => icon.remove())

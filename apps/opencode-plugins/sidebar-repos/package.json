@@ -9,7 +9,7 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts"
+    "test": "tsx --conditions=browser --test src/*.test.ts"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.5",
