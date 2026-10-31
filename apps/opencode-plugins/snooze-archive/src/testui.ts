@@ -22,10 +22,19 @@ export function fakeUi(doc: Document): Ui {
     IconButton: (props) => node("button", props as never),
     Button: (props) => {
       const el = node("button", props as never)
-      el.append(...([] as unknown[]).concat((props as { children: unknown }).children).filter((c): c is Node => c instanceof (doc.defaultView as any).Node))
+      el.append(...([] as unknown[]).concat((props as { children: unknown }).children).filter((c) => c != null).map((c) => c instanceof (doc.defaultView as any).Node ? (c as Node) : doc.createTextNode(String(c))))
+      if (props.variant) el.dataset.variant = String(props.variant)
       return el
     },
     Tooltip: (props) => props.children,
+    TextInput: (props) => {
+      const el = doc.createElement("input") as HTMLInputElement
+      createRenderEffect(() => { el.value = String(props.value); el.setAttribute("aria-label", String(props.label)); if (props.invalid) el.setAttribute("aria-invalid", "true"); else el.removeAttribute("aria-invalid") })
+      el.oninput = () => props.onInput(el.value)
+      el.onkeydown = (event) => { if (event.key === "Enter") props.onSubmit?.(el.value) }
+      return el
+    },
+    Dialog: (props) => { const el = doc.createElement("div"); el.setAttribute("role", "dialog"); el.append(props.children as Node, props.footer as Node); return el },
   }
   return ui as unknown as Ui
 }

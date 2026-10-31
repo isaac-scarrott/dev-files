@@ -1,13 +1,19 @@
-import { Command, Plugin, Slot, Store, Style, type ServerRef } from "@opencode/plugin/gui"
+import { Command, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
-import { actionsCss, createActions, type ActionName, type Target } from "./actions"
+import { createEffect, createSignal, untrack } from "solid-js"
+import { actionsCss, labels, type ActionName, type Target } from "./actions"
+import { iconCss } from "./icons"
+import { menuCss } from "./menu"
+import { createTabMenu } from "./tabmenu"
 import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
 import { createHost } from "./host"
 import { createTabActions } from "./tabrows"
-import { customTime, presets, sessionKey, wakeReason, type Snooze } from "./snooze"
+import { sessionKey, wakeReason, type Snooze } from "./snooze"
+import { openCustom, customCss } from "./custom"
+import { openMenu, type MenuLine } from "./menu"
+import { checkWake, formatHint, formatWake, presets, uses12Hour } from "./time"
 
 const SnoozeSchema = Schema.Struct({
   server: Schema.String, id: Schema.String, title: Schema.String,
@@ -18,7 +24,7 @@ const definition = Plugin.define({ stores: { snoozes: Store.global(Schema.Struct
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css + actionsCss)
+    ctx.add(Style, css + actionsCss + iconCss + menuCss + customCss)
     const host = createHost(ctx.ui)
     const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
@@ -59,7 +65,6 @@ export default Plugin.define({
       try {
         const rows = await loadArchive(server, ctx.signal)
         if (disposed) return
-        for (const row of rows) closeTabs(server.id, row.id)
         archives.set(server.id, { rows, loading: false, complete: true })
       } catch (cause) {
         if (disposed) return
@@ -127,22 +132,23 @@ export default Plugin.define({
         }
       } catch (cause) { error(cause) }
     }
+    // Preset menu in the app's menu markup. Times are resolved when it opens, so they are never stale.
+    const chooseTime = () => new Promise<number | undefined>((resolve) => {
+      const now = new Date()
+      const options = { hour12: uses12Hour() ? true : false }
+      const lines: MenuLine[] = [
+        ...presets(now).map((p): MenuLine => ({ label: p.label, hint: formatHint(p, +now, options), run: () => resolve(p.until) })),
+        "separator",
+        { label: "Custom…", run: () => { void openCustom((render) => ctx.dialogs.open(render), host).then(resolve) } },
+      ]
+      openMenu(document, { x: Math.round(window.innerWidth / 2 - 130), y: Math.round(window.innerHeight * 0.22) }, lines, { label: "Snooze until", onClose: (chosen) => { if (!chosen) resolve(undefined) } })
+    })
     const snooze = async (session: { id: string; server: ServerRef }) => {
-      const choices = presets(new Date())
-      const choice = await ctx.dialogs.select({
-        title: "Snooze session · this device only",
-        options: [...choices.map((p) => ({ title: p.label, value: String(p.until), description: new Date(p.until).toLocaleString() })),
-          { title: "Custom duration or date…", value: "custom", description: "30m, 2h, 3d, or YYYY-MM-DDTHH:mm (local time)" }],
-      })
-      if (!choice || disposed) return
-      let until = Number(choice)
-      if (choice === "custom") {
-        const text = await ctx.dialogs.prompt({ title: "Snooze until", description: "30m, 2h, 3d, or YYYY-MM-DDTHH:mm (local time)" })
-        if (!text || disposed) return
-        until = customTime(text, new Date()) ?? NaN
-      }
+      const until = await chooseTime()
+      if (until === undefined || disposed) return
       try {
-        if (!Number.isFinite(until) || until <= Date.now()) throw new Error("Choose a future time; nonexistent DST times are not accepted.")
+        const valid = checkWake(until, Date.now())
+        if (!valid.ok) throw new Error(valid.reason)
         const server = session.server
         await server.data.session.sync(session.id, { children: true })
         if (disposed) return
@@ -163,7 +169,7 @@ export default Plugin.define({
         })
         closeTabs(entry.server, entry.id)
         hiddenSnoozes.add(sessionKey(entry.server, entry.id))
-        ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${new Date(until).toLocaleString()} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
+        ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${formatWake(until, Date.now())} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
       } catch (cause) { error(cause) }
     }
     const deleteAction = async (server: ServerRef, id: string) => {
@@ -198,17 +204,6 @@ export default Plugin.define({
     const avatarOf = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") =>
       avatarFor(info?.projectID ? ctx.servers.get(server)?.data.project?.get(info.projectID) : undefined, info?.location?.directory ?? fallback)
     const currentSession = () => { const s = ctx.sessions.current(); return s && !s.pending ? s : undefined }
-    ctx.add(Slot, {
-      at: "session.header", order: 100,
-      render: (input) => {
-        const actions = createActions(document, host, "header",
-          () => { const s = input.session; return s && !s.pending ? { server: s.server.id, id: s.id } : undefined },
-          () => input.session?.server.data.session.get(input.session.id)?.title ?? "",
-          { run: runAction }, () => !!input.session?.pending)
-        onCleanup(actions.dispose)
-        return actions.el
-      },
-    })
     ctx.add(Command, (): Command => ({ id: "delete", title: "Delete session…", section: "session", enabled: !!currentSession(), run: () => {
       const session = currentSession()
       if (session) return deleteAction(session.server, session.id)
@@ -250,7 +245,7 @@ export default Plugin.define({
           for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
         }
         const off = [
-          data.on("session.archived", (e) => { remove(id, e.data.sessionID); closeTabs(id, e.data.sessionID); void refresh(server) }),
+          data.on("session.archived", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
           data.on("session.unarchived", () => void refresh(server)),
           data.on("session.deleted", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
           data.on("session.renamed", () => void refresh(server)),
@@ -272,8 +267,15 @@ export default Plugin.define({
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
-        avatar: avatarOf(id, info), action: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
-        secondary: { label: "Delete…", run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
+        avatar: avatarOf(id, info), action: "Restore",
+        // Reading an archived session does not unarchive it; only Restore does.
+        open: () => ctx.tabs.open({ server: id, id: info.id }, { focus: true }),
+        run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
+        menu: [
+          { label: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) } },
+          "separator" as const,
+          { label: labels.delete, danger: true, run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
+        ],
       })))
       const errors = ids.flatMap((id) => {
         const server = ctx.servers.get(id)
@@ -283,33 +285,49 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${formatWake(entry.until, Date.now())} · device-local`, action: "Wake", run: () => wake(entry, true),
+        menu: [
+          { label: "Wake", run: () => wake(entry, true) },
+          { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },
+          "separator" as const,
+          { label: labels.delete, danger: true, run: () => runAction("delete", { server: entry.server, id: entry.id }) },
+        ],
       })) }, { rows, count: complete ? rows.length : undefined, status: errors.length ? errors.join("; ") : complete ? undefined : "Loading complete archived history…" })
     })
-    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, (key) => {
+    const tabInfo = (key: string) => {
       const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
       if (!session) return
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
-    }, { run: runAction })
+    }
+    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
+    const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels)
     createEffect(() => {
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
       tabActions.sync()
     })
-    const timer = window.setInterval(() => {
+    const recheck = () => {
       for (const entry of entries()) {
         if (entry.until <= Date.now()) wake(entry)
         else void reconcile(entry)
       }
-    }, 30_000)
+    }
+    const timer = window.setInterval(recheck, 30_000)
+    // Sleep, resume and clock or time zone changes: the absolute deadline is re-read as soon as the window is back.
+    const visible = () => { if (document.visibilityState !== "hidden") recheck() }
+    document.addEventListener("visibilitychange", visible)
+    window.addEventListener("focus", recheck)
     // Hydrated snoozes keep working even when no session tabs are open.
     for (const entry of entries()) if (entry.until <= Date.now()) wake(entry)
     return () => {
       disposed = true
       clearInterval(timer)
+      document.removeEventListener("visibilitychange", visible)
+      window.removeEventListener("focus", recheck)
       subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
       subscriptions.clear()
       sidebar.dispose()
       tabActions.dispose()
+      tabMenu.dispose()
     }
   },
 })

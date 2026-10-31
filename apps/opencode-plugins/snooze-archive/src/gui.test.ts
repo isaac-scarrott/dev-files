@@ -118,10 +118,10 @@ test("snooze persists server+session, closes only tab, offers undo, and rejects 
   const f = fixture()
   try {
     f.start(); f.setServers(["server"]); await f.flush()
-    f.permissions([{}]); await f.commands.get("snooze")!.run()
+    f.permissions([{}]); await runSnooze(f)
     assert.equal(f.state().entries.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /waiting/)
-    f.permissions([]); await f.commands.get("snooze")!.run(); await f.flush()
+    f.permissions([]); await runSnooze(f); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].server, "server")
     assert.deepEqual(f.calls.closed, ["tab"])
@@ -140,7 +140,7 @@ test("new events wake only matching snoozed server/session; archived events do n
     f.emit("session.execution.succeeded", "other"); assert.equal(f.state().entries.length, 1)
     f.emit("session.execution.succeeded"); assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
-    await f.commands.get("snooze")!.run()
+    await runSnooze(f)
     f.emit("session.archived"); await f.flush()
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
@@ -210,12 +210,12 @@ for (const unloaded of ["parent permissions", "parent forms", "child permissions
       if (unloaded === "metadata") f.metadata("missing")
       if (unloaded === "metadata time") f.metadata("no-time")
       if (unloaded === "family") f.family(undefined)
-      await f.commands.get("snooze")!.run(); await f.flush()
+      await runSnooze(f); await f.flush()
       assert.equal(f.state().entries.length, 0)
       assert.equal(f.calls.closed.length, 0)
       assert.match(f.calls.toasts.at(-1).description, /still loading.*Retry snooze/)
       f.permissions([]); f.forms([]); f.family(["child"]); f.child("child", { permissions: [], forms: [] }); f.metadata("ready")
-      await f.commands.get("snooze")!.run(); await f.flush()
+      await runSnooze(f); await f.flush()
       assert.equal(f.state().entries.length, 1)
       assert.deepEqual(f.calls.closed, ["tab"])
     } finally { await f.close() }
@@ -265,7 +265,7 @@ for (const action of ["snooze", "reconcile"] as const) {
     try {
       f.metadata("missing"); f.permissions(undefined); f.forms(undefined); f.sync(() => gate)
       f.start(); f.setServers(["server"]); await f.flush()
-      const pending = action === "snooze" ? f.commands.get("snooze")!.run() : undefined
+      const pending = action === "snooze" ? runSnooze(f) : undefined
       await f.flush(); f.stop()
       const reads = f.calls.metadataReads
       release(); await pending; await f.flush()
@@ -290,17 +290,36 @@ test("deadline wake never reopens a session already known to be natively archive
 })
 
 const click = (el: Element | null | undefined) => (el as HTMLElement).click()
+// Runs the palette command and chooses the first preset (In 1 hour) in the menu it opens.
+async function runSnooze(f: { commands: Map<string, { run(): Promise<void> | void }>; doc: Document }, index = 0) {
+  const pending = f.commands.get("snooze")!.run()
+  for (let i = 0; i < 40 && !f.doc.querySelector("[data-sa-popup]"); i++) await Promise.resolve()
+  click(f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")[index])
+  await new Promise((r) => setTimeout(r, 5))
+  await pending
+}
 
-test("tab row actions attach once, are siblings of host title, snooze/archive/delete call exact APIs and clean up", async () => {
+const NATIVE_MENU = `<div role="menu" data-component="menu-v2-content" data-appearance="compact"><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Rename</span></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Close tab</span></div><div data-slot="menu-v2-separator"></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item" data-variant="critical"><span data-slot="menu-v2-item-content">Delete session…</span></div></div>`
+const key = (el: Element, name: string) => el.dispatchEvent(new (el.ownerDocument.defaultView as any).KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
+const labelsOf = (menu: Element) => [...menu.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent)
+// The live menu has no aria-labelledby; the contextmenu event on the tab is the only link.
+function openNativeMenu(f: { doc: Document }, target: Element = f.doc.querySelector("[data-tab-key] [data-slot='tab-title']")!) {
+  target.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+  const portal = f.doc.createElement("div")
+  portal.innerHTML = NATIVE_MENU
+  f.doc.body.append(portal)
+  return portal.firstElementChild as HTMLElement
+}
+
+test("tab hover shows only Archive beside the host title and cleans up; the native close control is untouched", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
-    f.doc.querySelector('[data-slot="vertical-tabs"]')!.dispatchEvent(new (f.doc.defaultView as any).CustomEvent("x"))
     const host = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
     assert.equal(host.querySelectorAll('[data-sa-actions="tab"]').length, 1)
     assert.equal(host.querySelector('[data-slot="tab-title"]')?.textContent, "Host title")
-    const labels = [...host.querySelectorAll("[data-sa-actions] button")].map((b) => b.getAttribute("aria-label"))
-    assert.deepEqual(labels, ["Snooze… Session", "Archive Session", "Delete… Session"])
+    assert.deepEqual([...host.querySelectorAll("[data-sa-actions] button")].map((b) => b.getAttribute("aria-label")), ["Archive Session"])
+    assert.equal(f.doc.querySelector('[data-slot="session.header"], [data-sa-actions="header"]'), null)
     click(host.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     f.stop()
@@ -313,11 +332,54 @@ test("tab row actions attach once, are siblings of host title, snooze/archive/de
   } finally { await f.close() }
 })
 
-test("snooze action opens preset picker for that tab's session", async () => {
+test("the plugin registers no session header slot", async () => {
+  const f = fixture()
+  try { f.setServers(["server"]); f.start(); await f.flush(); assert.equal(f.slots.some((slot) => slot.at === "session.header"), false) } finally { await f.close() }
+})
+
+test("native tab menu gains Snooze… and Archive once, before the native Delete…, keyboard reachable, removed on cleanup", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
-    click(f.doc.querySelector('[data-sa-actions] button[data-icon="notifications"]')); await f.flush()
+    const menu = openNativeMenu(f); await f.flush()
+    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Snooze…", "Archive", "Delete session…"])
+    assert.equal(menu.querySelectorAll("[data-sa-menu][role=menuitem]").length, 2)
+    const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    assert.equal(items[2].dataset.component, "menu-v2-item", "uses the app's item markup")
+    // Kobalte would wrap from Close tab to Delete…; we step onto our items instead.
+    items[1].focus(); key(items[1], "ArrowDown")
+    assert.equal(f.doc.activeElement, items[2])
+    key(items[2], "ArrowDown"); key(items[3], "ArrowDown")
+    assert.equal(f.doc.activeElement, items[4], "then onto the native Delete…")
+    key(items[4], "ArrowUp"); assert.equal(f.doc.activeElement, items[3])
+    assert.ok(items[3].hasAttribute("data-highlighted") && !items[4].hasAttribute("data-highlighted"))
+    // Text change inside the portal never duplicates items.
+    menu.append(f.doc.createElement("i")); await f.flush()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length, 2)
+    key(items[3], "Enter"); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
+    f.stop()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length, 0)
+  } finally { await f.close() }
+})
+
+test("native menu items are added only for session tabs", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const other = f.doc.createElement("button"); f.doc.body.append(other)
+    const menu = openNativeMenu(f, other); await f.flush()
+    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Delete session…"])
+  } finally { await f.close() }
+})
+
+test("Snooze… from the tab menu opens the preset picker for that tab's session", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const menu = openNativeMenu(f); await f.flush()
+    click(menu.querySelectorAll('[data-sa-menu][role=menuitem]')[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    click(f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].id, "s")
   } finally { await f.close() }
@@ -328,14 +390,14 @@ test("delete confirms permanently; cancel does nothing; confirm calls session.re
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     f.confirm(false)
-    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
+    await f.commands.get("delete")!.run(); await f.flush()
     assert.equal(f.calls.confirms.length, 1)
     assert.match(f.calls.confirms[0].description, /permanently/)
     assert.equal(f.calls.confirms[0].danger, true)
     assert.deepEqual(f.calls.removed, [])
     assert.deepEqual(f.calls.closed, [])
     f.confirm(true)
-    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
+    await f.commands.get("delete")!.run(); await f.flush()
     assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
     assert.deepEqual(f.calls.closed, ["tab"])
   } finally { await f.close() }
@@ -346,25 +408,39 @@ test("delete failure shows an error and keeps the tab", async () => {
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     f.removeError(true)
-    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
+    await f.commands.get("delete")!.run(); await f.flush()
     assert.deepEqual(f.calls.closed, [])
     assert.equal(f.calls.toasts.at(-1).variant, "error")
     assert.match(f.calls.toasts.at(-1).description, /server refused/)
   } finally { await f.close() }
 })
 
-test("archived rows can be deleted from the Archived group; header slot renders the same actions", async () => {
+test("archived rows: one hover action (Restore); right-click offers Restore and Delete…", async () => {
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
-    const row = f.doc.querySelector('[data-sa-row] button[data-icon="outline-trash"]')
-    assert.ok(row)
-    click(row); await f.flush()
+    const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
+    assert.deepEqual([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")), ["Restore Session"])
+    row.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    const items = [...f.doc.querySelectorAll<HTMLElement>("[data-sa-popup] [role=menuitem]")]
+    assert.deepEqual(items.map((i) => i.textContent), ["Restore", "Delete…"])
+    click(items[1]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
-    const header = f.slots.find((slot) => slot.at === "session.header")
-    const el = header.render({ session: { id: "s", server: { id: "server", data: { session: { get: () => ({ title: "T" }) } } }, pending: false } })
-    click(el.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
-    assert.equal(f.calls.updates.length, 1)
+  } finally { await f.close() }
+})
+
+test("snoozed rows: Wake hover; right-click offers Wake, Archive, Delete…; the group header shows the clock", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "Session", at: 1, until: Date.now() + 3_600_000, updated: 1, busy: 0 }])
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.ok(f.doc.querySelector('[data-sa-icon="clock"] svg circle'))
+    const row = f.doc.querySelectorAll<HTMLElement>("[data-sa-row]")[0]
+    assert.deepEqual([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")), ["Wake Session"])
+    row.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    const items = [...f.doc.querySelectorAll<HTMLElement>("[data-sa-popup] [role=menuitem]")]
+    assert.deepEqual(items.map((i) => i.textContent), ["Wake", "Archive", "Delete…"])
+    click(items[1]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
   } finally { await f.close() }
 })
 
@@ -374,5 +450,52 @@ test("cold SDK state: tab actions tolerate undefined titles and lists", async ()
     f.metadata("missing"); f.permissions(undefined); f.forms(undefined); f.family(undefined)
     f.setServers(["server"]); f.start(); await f.flush()
     assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+  } finally { await f.close() }
+})
+
+test("clicking an Archived row opens it without unarchiving; refresh and events leave user-opened archived tabs alone", async () => {
+  const f = fixture()
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    assert.deepEqual(f.calls.closed, [], "refresh must not close a tab the user opened")
+    const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
+    const link = row.querySelector<HTMLElement>("a")!
+    assert.equal(link.tabIndex, 0, "Enter on the row link opens it")
+    click(link); await f.flush()
+    assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+    assert.deepEqual(f.calls.updates, [], "opening is not a restore")
+    f.emit("session.archived"); f.emit("session.renamed"); await f.flush()
+    assert.deepEqual(f.calls.closed, [])
+    assert.equal(f.doc.querySelectorAll("[data-sa-row]").length, 1, "still listed as archived")
+  } finally { await f.close() }
+})
+
+test("archiving closes the tab at that moment; Restore is the only unarchive and opens the session", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    await f.commands.get("archive")!.run(); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
+    assert.deepEqual(f.calls.closed, ["tab"])
+    click(f.doc.querySelector('[data-sa-row] button[data-icon="outline-undo"]')); await f.flush()
+    assert.deepEqual(f.calls.updates.at(-1), { sessionID: "s", archived: false })
+    assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+  } finally { await f.close() }
+})
+
+test("regression: deleting an archived row from its context menu confirms, calls remove, and a server failure shows an error toast and keeps the row", async () => {
+  const f = fixture()
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    const rightClick = () => (f.doc.querySelector("[data-sa-row]") as HTMLElement).dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    f.removeError(true); rightClick()
+    click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.equal(f.calls.confirms.length, 1)
+    assert.equal(f.calls.toasts.at(-1).variant, "error")
+    assert.match(f.calls.toasts.at(-1).description, /server refused/)
+    assert.equal(f.doc.querySelectorAll("[data-sa-row]").length, 1)
+    f.removeError(false); rightClick()
+    click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.removed, [{ sessionID: "s" }, { sessionID: "s" }])
   } finally { await f.close() }
 })
