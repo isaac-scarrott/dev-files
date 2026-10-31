@@ -143,7 +143,7 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
             inert={!(windowOpen() && state().shown)}
           >
             <div data-component="menu-v2-content">
-              <SubagentsList ctx={ctx} session={session} onClose={() => props.dock.setVisible(false)} />
+              <SubagentsList ctx={ctx} session={session} />
             </div>
           </div>
         </Portal>

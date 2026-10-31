@@ -38,7 +38,7 @@ export default {
         "width": "the window is a fixed 320px card beside the chat; the menu sizes to its items",
         "height": "list length differs from the menu's three items",
         "overflow": "the window scrolls its list past its max height",
-        "icon": "the window holds row icons and its close button; the tab menu's items carry none",
+        "icon": "the window holds row icons; the tab menu's items carry none",
       },
       style: { states: ["rest"] },
     },

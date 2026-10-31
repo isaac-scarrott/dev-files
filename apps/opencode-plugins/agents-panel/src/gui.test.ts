@@ -507,17 +507,14 @@ test("dock: with the sidebar open the button shows and hides the window, remembe
   assert.equal(inset(f), "")
 })
 
-test("dock: the window's own close button hides it", async () => {
+test("dock: the window has no close button; only the header button hides it", async () => {
   const f = fixture()
   f.start()
   f.header()
   await sidebar(f, "open")
   f.toggle().click()
   await f.flush()
-  ;(dockEl(f).querySelector("[data-slot=agents-heading-close] button") as HTMLButtonElement).click()
-  await f.flush()
-  assert.equal(f.dockStore.visible, false)
-  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 

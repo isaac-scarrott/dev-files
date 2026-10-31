@@ -38,7 +38,7 @@ export function createSubagents(session: () => MountedSession) {
   })
 }
 
-export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession; onClose?: () => void }) {
+export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }) {
   const rows = createSubagents(props.session)
   const now = createClock(() => rows().length > 0)
 
@@ -70,11 +70,6 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession; 
         <span>Subagents</span>
         <span aria-hidden="true">·</span>
         <span data-agents-count>{rows().length} running</span>
-        <Show when={props.onClose}>
-          <span data-slot="agents-heading-close">
-            <props.ctx.ui.IconButton icon="outline-xmark" size="small" variant="ghost-muted" label="Hide subagents" onClick={() => props.onClose?.()} />
-          </span>
-        </Show>
       </div>
       <div data-agents-list>
         <For each={rows()}>
@@ -155,7 +150,6 @@ export const styles = `
     display: flex; gap: 4px; padding: 4px 6px 2px; font-size: 12px; font-weight: 440; line-height: 16px;
     letter-spacing: -.04px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums;
   }
-  [data-slot=agents-heading-close] { margin-inline-start: auto; margin-block: -4px -2px; }
   [data-agents-empty] { padding: 8px 6px; font-size: 13px; color: var(--v2-text-text-muted); }
   [data-agents-row] { cursor: default; }
   [data-agents-row]:is(:hover, :focus-visible) { background: var(--menu-v2-hover); }
