@@ -115,6 +115,17 @@ export function formatHint(preset: Preset, now: number, o: Format = {}): string 
 }
 const ymd = (t: number): [number, number, number] => { const f = fieldsOf(t); return [f.y, f.mo, f.d] }
 
+// "in 12m", "in 2h 15m", "in 3d 4h": time left, rounded up to the minute, two units at most.
+export function formatRemaining(t: number, now: number): string {
+  const minutes = Math.max(1, Math.ceil((t - now) / 60_000))
+  const days = Math.floor(minutes / 1440)
+  const hours = Math.floor((minutes % 1440) / 60)
+  const mins = minutes % 60
+  if (days) return hours ? `in ${days}d ${hours}h` : `in ${days}d`
+  if (hours) return mins ? `in ${hours}h ${mins}m` : `in ${hours}h`
+  return `in ${mins}m`
+}
+
 // "Tue, 4 Nov, 14:05" in the user's locale, with the year only when it differs.
 export function formatWake(t: number, now: number, o: Format = {}): string {
   const year = new Date(t).getFullYear() !== new Date(now).getFullYear()

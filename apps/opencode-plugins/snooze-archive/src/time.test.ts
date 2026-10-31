@@ -137,3 +137,16 @@ test("time of day parses typed forms and formats for 12/24 hour", () => {
   for (const t of ["", "25:00", "9:60", "13pm", "0am", "ab"]) assert.equal(p(t), undefined, t)
   assert.equal(formatTimeOfDay(14, 5, false), "14:05"); assert.equal(formatTimeOfDay(0, 5, true), "12:05 AM"); assert.equal(formatTimeOfDay(12, 0, true), "12:00 PM")
 })
+
+import { formatRemaining } from "./time"
+test("formatRemaining: minutes, hours, days, rounded up, two units", () => {
+  const now = 1_000_000_000_000
+  const at = (ms: number) => formatRemaining(now + ms, now)
+  assert.equal(at(1), "in 1m")
+  assert.equal(at(12 * 60_000), "in 12m")
+  assert.equal(at(60 * 60_000), "in 1h")
+  assert.equal(at(135 * 60_000), "in 2h 15m")
+  assert.equal(at(24 * 60 * 60_000), "in 1d")
+  assert.equal(at((3 * 24 * 60 + 4 * 60) * 60_000), "in 3d 4h")
+  assert.equal(at(-5), "in 1m")
+})
