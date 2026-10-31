@@ -1,6 +1,11 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "build",
+  "plugins": [
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/sidepanel",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/sidebar-repos",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/message-jump"
+  ],
   "mcp": {
     "paper": {
       "type": "remote",
