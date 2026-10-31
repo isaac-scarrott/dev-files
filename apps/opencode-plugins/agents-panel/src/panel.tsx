@@ -183,4 +183,8 @@ export const styles = `
     position: static; display: flex; flex-direction: column; min-width: 0; width: 100%; max-height: min(270px, 50vh);
     overflow-y: auto; box-sizing: border-box; padding: 0;
   }
+  /* Settings > Background activity: with the mode on, the host's value is "Hidden" underneath. Show the mode's name
+     instead and move the check from the host's Hidden option to ours. */
+  [data-agents-on] [data-slot="select-v2-value-text"]:not([data-agents-value]) { display: none }
+  [role="listbox"][data-agents-on] [data-key="off"] [data-slot="menu-v2-item-indicator"] { visibility: hidden }
 `

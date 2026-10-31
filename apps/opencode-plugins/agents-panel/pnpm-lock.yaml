@@ -11,6 +11,9 @@ importers:
       '@opencode/plugin':
         specifier: 2.2.5
         version: 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.10)(vite-plugin-solid@2.11.15(solid-js@1.9.10)(vite@7.3.7(@types/node@22.20.5)(tsx@4.23.15)))(vite@7.3.7(@types/node@22.20.5)(tsx@4.23.15))
+      effect:
+        specifier: 4.0.6
+        version: 4.0.6
       solid-js:
         specifier: 1.9.10
         version: 1.9.10
