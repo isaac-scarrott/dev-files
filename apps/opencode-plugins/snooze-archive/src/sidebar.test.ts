@@ -2,24 +2,27 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
 import { createSidebar, css } from "./sidebar"
+import { fakeHost } from "./testui"
+
+const avatar = { letter: "R", variant: "gray" }
 
 test("bottom groups default collapsed; keyed counts, native buttons and arrow keys", async () => {
   const window = new Window()
   const doc = window.document as unknown as Document
   doc.body.innerHTML = `<aside><header>Host controls</header><div id="host"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><span data-slot="tab-title">Rename me</span></div></div></div><footer>Native footer</footer></aside>`
-  const sidebar = createSidebar(doc, () => 1, () => {})
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let woke = 0
-  const row = { key: "a\ns", title: "Session", detail: "Later", action: "Wake", run: () => { woke++ } }
+  const row = { key: "a\ns", title: "Session", detail: "Later", action: "Wake", avatar, run: () => { woke++ } }
   sidebar.update({ rows: [row], count: 1 }, { rows: [], count: 100 })
-  const buttons = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle]")
+  const buttons = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")
   assert.equal(buttons.length, 2)
   assert.equal(buttons[0].getAttribute("aria-expanded"), "false")
-  assert.equal(buttons[1].textContent, "Archived100›")
+  assert.equal(buttons[1].textContent, "Archived100")
   buttons[0].click()
   assert.equal(buttons[0].getAttribute("aria-expanded"), "true")
-  buttons[0].dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft" }) as unknown as Event)
+  buttons[0].dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }) as unknown as Event)
   assert.equal(buttons[0].getAttribute("aria-expanded"), "false")
-  buttons[0].dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight" }) as unknown as Event)
+  buttons[0].dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }) as unknown as Event)
   assert.equal(buttons[0].getAttribute("aria-expanded"), "true")
   const action = doc.querySelector<HTMLButtonElement>("[data-sa-row] button")!
   action.click()
@@ -28,7 +31,7 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   assert.equal(doc.querySelector("[data-sa-row] button"), action)
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
   assert.equal(doc.querySelector('[data-slot="tab-title"]')?.textContent, "Rename me")
-  assert.equal(buttons[1].textContent, "Archived—›")
+  assert.equal(buttons[1].textContent, "Archived—")
   assert.match(css, /max-height: min\(24vh, 220px\)/)
   sidebar.dispose()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
@@ -43,7 +46,7 @@ test("attachment survives cold startup, sidebar replacement and cleanup/reload",
   const doc = window.document as unknown as Document
   const frames = new Map<number, () => void>()
   const schedule = (fn: () => void) => { frames.set(1, fn); return 1 }
-  const start = () => createSidebar(doc, schedule, (id) => { frames.delete(id) })
+  const start = () => createSidebar(doc, fakeHost(doc), schedule, (id) => { frames.delete(id) })
   let sidebar = start()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
   doc.body.innerHTML = `<div><div data-slot="vertical-tabs"></div></div>`
@@ -80,8 +83,8 @@ test("attachment survives cold startup, sidebar replacement and cleanup/reload",
 test("group toggle sets aria-expanded, data-open and inert together; collapsed content is inert", () => {
   const doc = new Window().document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
-  const sidebar = createSidebar(doc, () => 1, () => {})
-  const toggle = doc.querySelector<HTMLButtonElement>("[data-sa-toggle]")!
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  const toggle = doc.querySelector<HTMLButtonElement>("[data-sa-toggle] button")!
   const panel = doc.querySelector<HTMLElement>("[data-sa-panel]")!
   assert.equal(panel.hasAttribute("data-open"), false)
   assert.equal(panel.hasAttribute("inert"), true)
@@ -102,12 +105,12 @@ test("rows animate only when open after first content; leaving rows are interrup
   const timers = new Map<number, () => void>()
   let n = 0
   const frames: (() => void)[] = []
-  const sidebar = createSidebar(doc, (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
-  const row = (key: string) => ({ key, title: key, detail: "d", action: "Wake", run() {} })
+  const sidebar = createSidebar(doc, fakeHost(doc), (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
+  const row = (key: string) => ({ key, title: key, detail: "d", action: "Wake", avatar, run() {} })
   const empty = { rows: [] }
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
   assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
-  doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle]")[0].click()
+  doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[0].click()
   sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
   assert.ok(doc.querySelector('[data-sa-row="b"][data-entering]'))
   assert.equal(doc.querySelector('[data-sa-row="a"]')?.hasAttribute("data-entering"), false)
@@ -126,4 +129,28 @@ test("rows animate only when open after first content; leaving rows are interrup
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
   sidebar.dispose()
   assert.equal(timers.size, 0)
+})
+
+test("rows reuse the session tab markup so the app styles them, without acting as live tabs", () => {
+  const doc = new Window().document as unknown as Document
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  let deleted = 0
+  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, secondary: { label: "Delete…", run: () => { deleted++ } } }
+  sidebar.update({ rows: [], count: 0 }, { rows: [archived], count: 1 })
+  const row = doc.querySelector<HTMLElement>("[data-sa-row]")!
+  assert.ok(row.hasAttribute("data-titlebar-tab"))
+  assert.equal(row.dataset.slot, "titlebar-tab-item")
+  assert.equal(row.dataset.orientation, "vertical")
+  assert.equal(row.hasAttribute("data-tab-key"), false, "sidebar-repos and tab logic key on data-tab-key")
+  assert.equal(row.querySelector('[data-slot="tab-title"]')?.textContent, "Fix bug")
+  assert.equal(row.querySelector('[data-slot="tab-project"]')?.textContent, "Local · /repo")
+  assert.equal(row.querySelector('[data-component="project-avatar-v2"] [data-slot="project-avatar-surface"]')?.getAttribute("data-variant"), "blue")
+  assert.equal(row.querySelector('[data-slot="project-avatar-surface"]')?.textContent, "R")
+  assert.deepEqual([...row.querySelectorAll('[data-slot="tab-close"] button')].map((b) => b.getAttribute("aria-label")), ["Restore Fix bug", "Delete… Fix bug"])
+  row.querySelector<HTMLElement>('button[data-icon="outline-trash"]')!.click()
+  assert.equal(deleted, 1)
+  sidebar.update({ rows: [], count: 0 }, { rows: [{ ...archived, secondary: undefined }], count: 1 })
+  assert.equal(doc.querySelectorAll('[data-slot="tab-close"] button').length, 1)
+  sidebar.dispose()
 })

@@ -4,6 +4,7 @@ import { createRoot, createSignal } from "solid-js"
 import { Window } from "happy-dom"
 import plugin from "./gui"
 import type { Snooze } from "./snooze"
+import { fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
@@ -11,7 +12,7 @@ function fixture(initial: Snooze[] = []) {
   const window = new Window()
   const doc = window.document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><span data-slot="tab-title">Host title</span></div></div></aside>`
-  const globals = { window, document: doc, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
+  const globals = { window, document: doc, Node: window.Node, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
   const [servers, setServers] = createSignal<string[]>([])
@@ -57,6 +58,7 @@ function fixture(initial: Snooze[] = []) {
   const session = { id: "s", server, pending: false }
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
   const ctx = {
+    ui: fakeUi(doc),
     signal: new AbortController().signal,
     stores: { snoozes: { get value() { return state() }, update: (fn: (draft: { entries: Snooze[] }) => void) => {
       const draft = structuredClone(state()); fn(draft); setState(draft)
@@ -297,9 +299,9 @@ test("tab row actions attach once, are siblings of host title, snooze/archive/de
     const host = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
     assert.equal(host.querySelectorAll('[data-sa-actions="tab"]').length, 1)
     assert.equal(host.querySelector('[data-slot="tab-title"]')?.textContent, "Host title")
-    const labels = [...host.querySelectorAll("[data-sa-action]")].map((b) => b.getAttribute("aria-label"))
+    const labels = [...host.querySelectorAll("[data-sa-actions] button")].map((b) => b.getAttribute("aria-label"))
     assert.deepEqual(labels, ["Snooze… Session", "Archive Session", "Delete… Session"])
-    click(host.querySelector('[data-sa-action="archive"]')); await f.flush()
+    click(host.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     f.stop()
     assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0)
@@ -315,7 +317,7 @@ test("snooze action opens preset picker for that tab's session", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
-    click(f.doc.querySelector('[data-sa-action="snooze"]')); await f.flush()
+    click(f.doc.querySelector('[data-sa-actions] button[data-icon="notifications"]')); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].id, "s")
   } finally { await f.close() }
@@ -326,14 +328,14 @@ test("delete confirms permanently; cancel does nothing; confirm calls session.re
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     f.confirm(false)
-    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
     assert.equal(f.calls.confirms.length, 1)
     assert.match(f.calls.confirms[0].description, /permanently/)
     assert.equal(f.calls.confirms[0].danger, true)
     assert.deepEqual(f.calls.removed, [])
     assert.deepEqual(f.calls.closed, [])
     f.confirm(true)
-    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
     assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
     assert.deepEqual(f.calls.closed, ["tab"])
   } finally { await f.close() }
@@ -344,7 +346,7 @@ test("delete failure shows an error and keeps the tab", async () => {
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     f.removeError(true)
-    click(f.doc.querySelector('[data-sa-action="delete"]')); await f.flush()
+    click(f.doc.querySelector('[data-sa-actions] button[data-icon="outline-trash"]')); await f.flush()
     assert.deepEqual(f.calls.closed, [])
     assert.equal(f.calls.toasts.at(-1).variant, "error")
     assert.match(f.calls.toasts.at(-1).description, /server refused/)
@@ -355,13 +357,13 @@ test("archived rows can be deleted from the Archived group; header slot renders 
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
-    const row = f.doc.querySelector('[data-sa-row] [data-sa-danger]')
+    const row = f.doc.querySelector('[data-sa-row] button[data-icon="outline-trash"]')
     assert.ok(row)
     click(row); await f.flush()
     assert.deepEqual(f.calls.removed, [{ sessionID: "s" }])
     const header = f.slots.find((slot) => slot.at === "session.header")
     const el = header.render({ session: { id: "s", server: { id: "server", data: { session: { get: () => ({ title: "T" }) } } }, pending: false } })
-    click(el.querySelector('[data-sa-action="archive"]')); await f.flush()
+    click(el.querySelector('[data-sa-actions] button[data-icon="archive"]')); await f.flush()
     assert.equal(f.calls.updates.length, 1)
   } finally { await f.close() }
 })

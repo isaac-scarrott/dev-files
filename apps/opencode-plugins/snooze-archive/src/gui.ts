@@ -1,9 +1,11 @@
 import { Command, Plugin, Slot, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import { createEffect, createSignal, untrack } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import { actionsCss, createActions, type ActionName, type Target } from "./actions"
 import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { createSidebar, css } from "./sidebar"
+import { avatarFor } from "./avatar"
+import { createHost } from "./host"
 import { createTabActions } from "./tabrows"
 import { customTime, presets, sessionKey, wakeReason, type Snooze } from "./snooze"
 
@@ -17,7 +19,8 @@ export default Plugin.define({
   ...definition,
   setup(ctx) {
     ctx.add(Style, css + actionsCss)
-    const sidebar = createSidebar(document, requestAnimationFrame, cancelAnimationFrame)
+    const host = createHost(ctx.ui)
+    const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
     const changed = () => setRevision((n) => n + 1)
     const archives = new Map<string, { rows: ArchivedSession[]; error?: string; loading: boolean; complete: boolean }>()
@@ -191,13 +194,20 @@ export default Plugin.define({
       else if (action === "archive") void archiveAction(server, target.id, true)
       else void deleteAction(server, target.id)
     }
+    // Cold stores may lack the session or its project; the letter then falls back to the fallback name.
+    const avatarOf = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") =>
+      avatarFor(info?.projectID ? ctx.servers.get(server)?.data.project?.get(info.projectID) : undefined, info?.location?.directory ?? fallback)
     const currentSession = () => { const s = ctx.sessions.current(); return s && !s.pending ? s : undefined }
     ctx.add(Slot, {
       at: "session.header", order: 100,
-      render: (input) => createActions(document, "header",
-        () => { const s = input.session; return s && !s.pending ? { server: s.server.id, id: s.id } : undefined },
-        () => input.session?.server.data.session.get(input.session.id)?.title ?? "",
-        { run: runAction }, () => !!input.session?.pending),
+      render: (input) => {
+        const actions = createActions(document, host, "header",
+          () => { const s = input.session; return s && !s.pending ? { server: s.server.id, id: s.id } : undefined },
+          () => input.session?.server.data.session.get(input.session.id)?.title ?? "",
+          { run: runAction }, () => !!input.session?.pending)
+        onCleanup(actions.dispose)
+        return actions.el
+      },
     })
     ctx.add(Command, (): Command => ({ id: "delete", title: "Delete session…", section: "session", enabled: !!currentSession(), run: () => {
       const session = currentSession()
@@ -262,7 +272,7 @@ export default Plugin.define({
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
-        action: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
+        avatar: avatarOf(id, info), action: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
         secondary: { label: "Delete…", run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
       })))
       const errors = ids.flatMap((id) => {
@@ -273,10 +283,10 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
       })) }, { rows, count: complete ? rows.length : undefined, status: errors.length ? errors.join("; ") : complete ? undefined : "Loading complete archived history…" })
     })
-    const tabActions = createTabActions(document, requestAnimationFrame, cancelAnimationFrame, (key) => {
+    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, (key) => {
       const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
       if (!session) return
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
