@@ -47,6 +47,9 @@ export default Plugin.define({
         font-size: 13px;
         line-height: 16px;
       }
+      [data-titlebar-tab-list][data-orientation='vertical'] {
+        gap: 4px;
+      }
       /* Home lives on its keybind; the sidebar row is redundant. */
       [data-action='vertical-tabs-home'] {
         display: none !important;

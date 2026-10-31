@@ -241,7 +241,7 @@ export const css = `
 [data-sa-panel] { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 150ms cubic-bezier(0.23,1,0.32,1), visibility 0s linear 200ms; }
 [data-sa-panel][data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 180ms cubic-bezier(0.23,1,0.32,1), visibility 0s; }
 [data-sa-clip] { min-height: 0; overflow: hidden; }
-[data-sa-contents] { max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
+[data-sa-contents] { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
 [data-sa-row] { transition: opacity 160ms cubic-bezier(0.23,1,0.32,1), transform 160ms cubic-bezier(0.23,1,0.32,1); }
 [data-sa-row][data-entering], [data-sa-row][data-leaving] { opacity: 0; transform: translateY(-4px); }
