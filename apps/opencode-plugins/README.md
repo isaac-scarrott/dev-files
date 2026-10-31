@@ -7,6 +7,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | --- | --- | --- |
 | `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 19 tests, build; live UI not verified |
 | `message-jump` | Animated jump to the nearest mounted user message above the viewport | Typecheck, 13 tests, build; live UI not verified |
+| `snooze-archive` | Collapsible Snoozed/Archived sidebar groups; device-local timed snooze, native archive/restore. Palette: Snooze session…, Archive session, Refresh archived sessions | Typecheck, 32 tests, build; live UI not verified |
 | `sidepanel` | Original pinned counter-panel experiment | Build only; no typecheck/test scripts |
 
 Message jump binds through each session's header slot, follows its active state,
