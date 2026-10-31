@@ -1,3 +1,4 @@
+import { openPublishedGroups } from "./groups"
 import { buildDocument, csp, parseFrameMessage, sandbox, themeKey, zoomSteps, type Theme } from "./frame"
 
 export const wrapperSelector = '[data-component="tool-part-wrapper"][data-timeline-part-id]'
@@ -61,6 +62,7 @@ export function createAttacher(options: AttachOptions) {
   const heights = new Map<string, number>()
   const zooms = new Map<string, number>()
   const askedUnknown = new Set<string>()
+  const openedGroups = new Set<string>()
   let overlay: { root: HTMLElement; view: View; callID: string; keydown: (event: KeyboardEvent) => void; disposeControls: () => void } | undefined
   let theme = options.theme()
   let themeId = themeKey(theme)
@@ -233,11 +235,12 @@ export function createAttacher(options: AttachOptions) {
     if (disposed) return
     const known = options.known()
     const seen = new Set<Element>()
-    const fresh: string[] = []
+    const fresh = new Set<string>()
+    for (const callID of openPublishedGroups(doc, known, openedGroups).unknown) if (!askedUnknown.has(callID)) fresh.add(callID)
     for (const wrapper of doc.querySelectorAll(wrapperSelector)) {
       const callID = wrapper.getAttribute("data-timeline-part-id")!
       if (!known.has(callID)) {
-        if (!askedUnknown.has(callID)) fresh.push(callID)
+        if (!askedUnknown.has(callID)) fresh.add(callID)
         continue
       }
       seen.add(wrapper)
@@ -251,9 +254,9 @@ export function createAttacher(options: AttachOptions) {
       const owned = [...entries.values()].some((entry) => entry.host === host)
       if (!owned) host.remove()
     }
-    if (fresh.length) {
+    if (fresh.size) {
       for (const callID of fresh) askedUnknown.add(callID)
-      options.unknown?.(fresh)
+      options.unknown?.([...fresh])
     }
   }
 
