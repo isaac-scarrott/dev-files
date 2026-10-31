@@ -7,7 +7,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | --- | --- | --- |
 | `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 19 tests, build; live UI not verified |
 | `message-jump` | Header button + `message-jump.previous` command: glides to the previous user prompt, pages in unloaded history | Typecheck, 24 tests, build; verified live in the isolated app (reduced motion and palette unit-tested only) |
-| `snooze-archive` | Collapsible Snoozed/Archived sidebar groups; device-local timed snooze, native archive/restore. Palette: Snooze session…, Archive session, Refresh archived sessions | Typecheck, 63 tests, build; verified live in the isolated app (menus, presets); calendar keyboard and DST UI not |
+| `snooze-archive` | Collapsible Snoozed/Archived sidebar groups; device-local timed snooze, native archive/restore. Palette: Snooze session…, Archive session, Refresh archived sessions | Typecheck, 70 tests, build; verified live in the isolated app (menus, presets); calendar keyboard and DST UI not |
 | `plugin-list` | Extensions → Plugins: lists server-only plugins and adds Desktop/Server/TUI/RPC chips to every row | Typecheck, 3 tests, build; live UI not verified |
 | `claude-proxy` | Server plugin: routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | Loads; env pass-through not verified |
 | `blindfold` | Vendored vimtor/opencode-blindfold 0.5.0 (MIT, pinned in vendor.manifest): agents use secrets without seeing them; shell approval on | Typecheck, build, smoke; 21/24 tests (3 fail on local bun 1.2.4); audit in PROVENANCE.md; live UI not verified |
