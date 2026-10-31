@@ -1,3 +1,5 @@
+import type { Row } from "./target"
+
 /** What a tick needs to know about its prompt and the reply that followed it. */
 export type Prompt = {
   readonly id: string
@@ -21,14 +23,14 @@ export type Message = {
   readonly error?: unknown
 }
 
-/** A rendered tick: the prompts it stands for, as a range of indexes into the prompt list. */
-export type Tick = { readonly start: number; readonly end: number }
-
-/** Tick pitch in px: the rail compresses towards MIN before it starts bucketing prompts. */
-export const MIN_PITCH = 4
-export const MAX_PITCH = 10
-/** The rail never grows past this share of the timeline's visible height. */
-export const RAIL_SHARE = 0.6
+/** Distance between ticks when the rail is not capped by the window, as t3-code's minimap. */
+export const ITEM_SPACING = 8
+/** Fewer prompts than this and the rail has nothing to say. */
+export const MIN_ITEMS = 2
+/** The rail never grows past the window height minus this (t3-code's `calc(100vh - 18rem)`), whatever else is on screen. */
+export const MAX_HEIGHT_CSS = "calc(100vh - 18rem)"
+/** Index distances beyond this from the pointer are drawn at rest. */
+export const FISHEYE_REACH = 2
 export const TITLE_LIMIT = 200
 export const SNIPPET_LIMIT = 240
 
@@ -103,29 +105,56 @@ export function prompts(messages: readonly Message[], revertMessageID?: string):
   return out
 }
 
-/**
- * How the rail lays `count` prompts into `height` px: the pitch between ticks, and the ticks themselves, bucketed
- * once even the tightest pitch would overflow the rail's share of the height.
- */
-export function layout(count: number, height: number): { pitch: number; ticks: Tick[] } {
-  const room = Math.max(0, height * RAIL_SHARE)
-  const capacity = Math.max(1, Math.floor(room / MIN_PITCH))
-
-  if (count <= capacity) {
-    const pitch = count > 0 ? Math.min(MAX_PITCH, Math.max(MIN_PITCH, Math.floor(room / count))) : MIN_PITCH
-
-    return { pitch, ticks: Array.from({ length: count }, (_, index) => ({ start: index, end: index })) }
-  }
-  const ticks: Tick[] = []
-
-  for (let bucket = 0; bucket < capacity; bucket += 1) {
-    ticks.push({ start: Math.floor((bucket * count) / capacity), end: Math.floor(((bucket + 1) * count) / capacity) - 1 })
-  }
-
-  return { pitch: MIN_PITCH, ticks }
+/** The rail strip's height: one `ITEM_SPACING` per gap, capped by the window, never negative. Ticks overlap beyond the cap. */
+export function railHeightStyle(count: number): string {
+  return `max(0px, min(${Math.max(1, (count - 1) * ITEM_SPACING)}px, ${MAX_HEIGHT_CSS}))`
 }
 
-/** The tick that stands for prompt `index`, or -1. */
-export function tickOf(ticks: readonly Tick[], index: number): number {
-  return ticks.findIndex((tick) => index >= tick.start && index <= tick.end)
+/** Where prompt `index` sits along the strip, 0 to 100. */
+export function topPercent(index: number, count: number): number {
+  return count > 1 ? (index / (count - 1)) * 100 : 0
+}
+
+/**
+ * The prompt a pointer is over: its position along the strip, mapped linearly to the nearest index. Every index is
+ * reachable at any count, since the pointer picks an index, not a tick. null when there is nothing to pick.
+ */
+export function indexFromPointer(input: { count: number; top: number; height: number; y: number }): number | null {
+  if (input.count < 1) return null
+
+  if (input.count === 1 || input.height <= 0) return 0
+  const progress = Math.min(1, Math.max(0, (input.y - input.top) / input.height))
+
+  return Math.round(progress * (input.count - 1))
+}
+
+/** The ticks whose look depends on an active index: the active one and the neighbours the fisheye reaches. */
+export function fisheyeBand(active: number | undefined, count: number): readonly [number, number] | undefined {
+  if (active === undefined || active < 0 || active >= count) return undefined
+
+  return [Math.max(0, active - FISHEYE_REACH), Math.min(count - 1, active + FISHEYE_REACH)]
+}
+
+/**
+ * The prompts whose turns are on screen, as an inclusive index range. A row counts when it intersects `box`; its owner
+ * is the prompt of its turn. Rows the host keeps mounted off screen (overscan, the last turn's final row) are ignored.
+ */
+export function visibleRange(
+  indexOf: ReadonlyMap<string, number>,
+  rows: readonly Row[],
+  box: { readonly top: number; readonly bottom: number },
+): readonly [number, number] | undefined {
+  let first = Number.POSITIVE_INFINITY
+  let last = -1
+
+  for (const row of rows) {
+    if (row.bottom <= box.top || row.top >= box.bottom) continue
+    const index = indexOf.get(row.owner)
+
+    if (index === undefined) continue
+    first = Math.min(first, index)
+    last = Math.max(last, index)
+  }
+
+  return last === -1 ? undefined : [first, last]
 }

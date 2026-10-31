@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { createRoot, createSignal } from "solid-js"
+import { createEffect, createRoot, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import plugin from "./gui"
 import type { Message } from "./rail"
@@ -105,7 +105,7 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
             list: () => messages(),
             more: () => pages() > 0,
             loadMore: async (_id: string, load?: { signal?: AbortSignal; beforePublish?: () => void }) => {
-              loads.push({ aborted: load?.signal?.aborted ?? false, busy: doc.querySelector("[data-timeline-rail-ticks]")?.getAttribute("aria-busy") })
+              loads.push({ aborted: load?.signal?.aborted ?? false, busy: doc.querySelector("[data-timeline-rail-strip]")?.getAttribute("aria-busy") })
               await new Promise((resolve) => setTimeout(resolve, 10))
               if (load?.signal?.aborted) return
               load?.beforePublish?.()
@@ -117,8 +117,21 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     },
   }
   const registry: { slots: any[]; styles: string[] } = { slots: [], styles: [] }
+  // The host's IconButton and Tooltip, reduced to what the rail asks of them.
+  const ui = {
+    Tooltip: (props: { children: unknown }) => props.children,
+    IconButton: (props: { label: string; disabled?: boolean; onClick?: (event: MouseEvent) => void }) => {
+      const button = doc.createElement("button")
+      button.setAttribute("aria-label", props.label)
+      button.setAttribute("data-icon-button", "")
+      createEffect(() => void (button.disabled = !!props.disabled))
+      button.addEventListener("click", (event) => props.onClick?.(event as MouseEvent))
+      return button
+    },
+  }
   const ctx = {
     id: "timeline-rail",
+    ui,
     add: (_kind: unknown, item: unknown) => {
       if (typeof item === "string") registry.styles.push(item)
       else registry.slots.push(item)
@@ -157,7 +170,19 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     prompt,
     reply,
     rail: () => view.querySelector("[data-timeline-rail]") as HTMLElement | null,
-    ticks: () => [...view.querySelectorAll("[data-timeline-rail-tick]")] as HTMLButtonElement[],
+    ticks: () => [...view.querySelectorAll("[data-timeline-rail-tick]")] as HTMLElement[],
+    // The indexes of the nodes that carry an attribute (the faint ticks are one gradient, with no node per prompt).
+    marked: (attribute: string) =>
+      [...view.querySelectorAll(`[data-timeline-rail-tick][${attribute}]`)].map((node) => Number(node.getAttribute("data-index"))).sort((a, b) => a - b),
+    // The strip's box is the rail's body: 200px from y=100, as the layout would give it.
+    strip: () => {
+      const strip = view.querySelector("[data-timeline-rail-strip]") as HTMLButtonElement
+      strip.getBoundingClientRect = () => rect(100, 0, 28, 200)
+      return strip
+    },
+    // y fraction along the strip, 0 to 1.
+    at: (fraction: number) => 100 + fraction * 200,
+    turn: (which: "Previous turn" | "Next turn") => view.querySelector(`[aria-label="${which}"]`) as HTMLButtonElement,
     card: () => view.querySelector("[data-timeline-rail-card]") as HTMLElement | null,
     close: () => {
       globalThis.window.matchMedia = media
@@ -204,7 +229,16 @@ const threeTurns = (f: ReturnType<typeof fixture>) => {
   ])
 }
 
-test("an empty rail under two prompts; with more, one labelled tick per prompt and the current one follows the scroll", async () => {
+const Pointer = () => globalThis.window.PointerEvent
+const move = (target: Element, y: number, init: PointerEventInit = {}) =>
+  target.dispatchEvent(new (Pointer())("pointermove", { clientY: y, pointerType: "mouse", bubbles: true, ...init }))
+const enter = (target: Element, y: number) =>
+  target.dispatchEvent(new (Pointer())("pointerenter", { clientY: y, pointerType: "mouse" }))
+const key = (target: Element, name: string) =>
+  target.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
+const inView = (f: ReturnType<typeof fixture>) => f.marked("data-view")
+
+test("an empty rail under two prompts; with more, one tick per prompt, the strip is one labelled target and current follows the scroll", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
@@ -223,43 +257,53 @@ test("an empty rail under two prompts; with more, one labelled tick per prompt a
     assert.equal(rail.style.left, "6px")
     assert.equal(rail.style.top, `${INSET}px`)
     assert.equal(rail.style.height, `${VIEWPORT - INSET}px`)
-    assert.deepEqual(
-      f.ticks().map((tick) => tick.getAttribute("aria-label")),
-      ["first question", "second question", "third"],
-    )
-    assert.deepEqual(
-      f.ticks().map((tick) => tick.hasAttribute("data-current")),
-      [true, false, false],
-    )
-    assert.deepEqual(
-      f.ticks().map((tick) => tick.tabIndex),
-      [0, -1, -1],
-    )
+    assert.equal((rail.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height"), "max(0px, min(16px, calc(100vh - 18rem)))")
+    assert.equal(rail.querySelectorAll("button[data-timeline-rail-strip]").length, 1, "one hit target, not one button per tick")
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: first question")
+    assert.deepEqual(f.marked("data-current"), [0])
 
     f.state.scrollTop = 1200
     f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
     await f.flush()
-    assert.deepEqual(
-      f.ticks().map((tick) => tick.hasAttribute("data-current")),
-      [false, true, false],
-    )
-    assert.deepEqual(
-      f.ticks().map((tick) => tick.tabIndex),
-      [-1, 0, -1],
-    )
+    assert.deepEqual(f.marked("data-current"), [1])
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: second question")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("clicking a tick glides its prompt under the header; the current tick re-aligns", async () => {
+test("every prompt whose turn is on screen is in view, not just the current one", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
     await f.flush()
-    f.ticks()[1]!.click()
+    // At the top only the first turn's rows reach the viewport (m1: 48 to 1108; m2's prompt row starts at 1108).
+    assert.deepEqual(inView(f), [0])
+    f.state.scrollTop = 800
+    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
+    await f.flush()
+    assert.deepEqual(inView(f), [0, 1], "the viewport (800 to 1400) holds the end of turn 1 and the start of turn 2")
+    f.state.scrollTop = 2000
+    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
+    await f.flush()
+    assert.deepEqual(inView(f), [1, 2])
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a click jumps to the prompt under the pointer and the current one re-aligns", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    const click = (fraction: number) =>
+      f.strip().dispatchEvent(new globalThis.window.MouseEvent("click", { clientY: f.at(fraction), detail: 1, bubbles: true }))
+    click(0.5)
     await f.flush()
     await new Promise((resolve) => setTimeout(resolve, 320))
     await f.flush()
@@ -269,7 +313,7 @@ test("clicking a tick glides its prompt under the header; the current tick re-al
     assert.ok(f.scrolls.every((scroll) => scroll.behavior === "auto"))
     assert.deepEqual(tops, [...tops].sort((a, b) => a - b))
     assert.equal(tops.at(-1), 1108 - INSET)
-    f.ticks()[1]!.click()
+    click(0.5)
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
   } finally {
@@ -278,15 +322,16 @@ test("clicking a tick glides its prompt under the header; the current tick re-al
   }
 })
 
-test("hovering a tick opens the card after the host's delay with the prompt and the reply; Escape closes it", async () => {
+test("scrubbing maps the pointer to an index and the card follows; Escape closes it; touch never opens it", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
     await f.flush()
-    f.ticks()[0]!.dispatchEvent(new globalThis.window.PointerEvent("pointerenter", { pointerType: "mouse" }))
+    const strip = f.strip()
+    enter(strip, f.at(0))
     await f.flush()
-    assert.equal(f.card(), null)
+    assert.equal(f.card(), null, "after the host's open delay, not before")
     await new Promise((resolve) => setTimeout(resolve, 450))
     await f.flush()
     const card = f.card()
@@ -294,22 +339,23 @@ test("hovering a tick opens the card after the host's delay with the prompt and 
     assert.equal(card.hasAttribute("data-entered"), true, "flipped open a frame after it mounted")
     assert.equal(card.querySelector("[data-timeline-rail-card-title]")!.textContent, "first question")
     assert.equal(card.querySelector("[data-timeline-rail-card-snippet]")!.textContent, "first answer")
+    assert.equal(card.querySelector("[data-timeline-rail-card-meta]")!.textContent, "1 of 3")
 
-    f.ticks()[2]!.dispatchEvent(new globalThis.window.PointerEvent("pointerenter", { pointerType: "mouse" }))
+    move(strip, f.at(1))
     await f.flush()
-    assert.equal(f.card(), card, "the open card stays mounted and moves to the next tick")
+    assert.equal(f.card(), card, "the open card stays mounted and moves to the next prompt")
     assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "third")
     assert.equal(f.card()!.querySelector("[data-timeline-rail-card-snippet]"), null)
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: third")
 
-    f.rail()!.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    key(strip, "Escape")
     await f.flush()
     assert.ok(f.card() && !f.card()!.hasAttribute("data-entered"), "exit transition runs while it stays mounted")
     await new Promise((resolve) => setTimeout(resolve, 120))
     await f.flush()
     assert.equal(f.card(), null)
 
-    // A touch never opens the card.
-    f.ticks()[0]!.dispatchEvent(new globalThis.window.PointerEvent("pointerenter", { pointerType: "touch" }))
+    strip.dispatchEvent(new (Pointer())("pointerenter", { clientY: f.at(0), pointerType: "touch" }))
     await new Promise((resolve) => setTimeout(resolve, 450))
     await f.flush()
     assert.equal(f.card(), null)
@@ -319,43 +365,161 @@ test("hovering a tick opens the card after the host's delay with the prompt and 
   }
 })
 
-test("arrow keys move focus between ticks", async () => {
+test("the fisheye is by index distance from the pointer's prompt and clears on leave", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    threeTurns(f)
+    const messages: Message[] = []
+    for (let index = 0; index < 40; index += 1) messages.push(f.prompt(`m${String(index).padStart(2, "0")}`, `q${index}`))
+    f.setMessages(messages)
+    f.mount([{ owner: "m00", y: 48, height: 60, prompt: true }])
     await f.flush()
-    f.ticks()[0]!.focus()
-    f.rail()!.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
-    assert.equal(globalThis.document.activeElement, f.ticks()[1])
-    f.rail()!.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "End", bubbles: true }))
-    assert.equal(globalThis.document.activeElement, f.ticks()[2])
-    f.rail()!.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "Home", bubbles: true }))
-    assert.equal(globalThis.document.activeElement, f.ticks()[0])
+    const d = () => new Map(f.marked("data-d").map((index) => [index, f.view.querySelector(`[data-index="${index}"]`)!.getAttribute("data-d")]))
+    move(f.strip(), f.at(20 / 39))
+    await f.flush()
+    assert.deepEqual([...d()], [[18, "2"], [19, "1"], [20, "0"], [21, "1"], [22, "2"]])
+    f.rail()!.dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
+    await f.flush()
+    assert.equal(d().size, 0)
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("hundreds of prompts compress to the tightest pitch and bucket within 60% of the height", async () => {
+test("a drag that starts off the strip passes through; one that starts on it scrubs", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    const strip = f.strip()
+    move(strip, f.at(0.5), { buttons: 1 })
+    await f.flush()
+    assert.equal(strip.hasAttribute("data-pass"), true, "a button-down arrival does not scrub")
+    globalThis.window.dispatchEvent(new (Pointer())("pointerup", { buttons: 0 }))
+    await f.flush()
+    assert.equal(strip.hasAttribute("data-pass"), false)
+
+    strip.dispatchEvent(new (Pointer())("pointerdown", { bubbles: true, buttons: 1, pointerType: "mouse" }))
+    move(strip, f.at(1), { buttons: 1 })
+    await f.flush()
+    assert.equal(strip.hasAttribute("data-pass"), false)
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: third")
+    globalThis.window.dispatchEvent(new (Pointer())("pointerup", { buttons: 0 }))
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("the wheel on the rail scrolls the timeline", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    const by: ScrollToOptions[] = []
+    f.scroller.scrollBy = ((options: ScrollToOptions) => void by.push(options)) as HTMLElement["scrollBy"]
+    const event = new globalThis.window.WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true })
+    f.strip().dispatchEvent(event)
+    assert.equal(event.defaultPrevented, true)
+    assert.equal(by[0]?.top, 120)
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("keyboard: focus lands on the current prompt; arrows, Home, End move it and open the card; Enter jumps", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    f.state.scrollTop = 1200
+    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
+    await f.flush()
+    const strip = f.strip()
+    strip.focus()
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: second question", "focus starts from the current prompt")
+    key(strip, "ArrowDown")
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: third")
+    key(strip, "ArrowDown")
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: third", "clamped at the end")
+    key(strip, "Home")
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: first question")
+    key(strip, "ArrowUp")
+    key(strip, "End")
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: third")
+    assert.equal(f.card()?.querySelector("[data-timeline-rail-card-title]")?.textContent, "third", "the card follows the keyboard instantly")
+    key(strip, "Home")
+    key(strip, "Enter")
+    await f.flush()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await f.flush()
+    assert.ok(f.scrolls.length > 0 && f.state.scrollTop < 1200, "Enter glided to the first prompt")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("previous / next turn buttons step from the current prompt and disable at the ends", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    assert.equal(f.turn("Previous turn").disabled, true, "nothing before the first prompt")
+    assert.equal(f.turn("Next turn").disabled, false)
+    f.turn("Next turn").click()
+    await f.flush()
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    await f.flush()
+    assert.equal(f.state.scrollTop, 1108 - INSET)
+    assert.equal(f.turn("Previous turn").disabled, false)
+    f.state.scrollTop = 2168 - INSET
+    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
+    await f.flush()
+    assert.equal(f.turn("Next turn").disabled, true, "nothing after the last prompt")
+    f.turn("Previous turn").click()
+    await f.flush()
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    await f.flush()
+    assert.equal(f.state.scrollTop, 1108 - INSET)
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("hundreds of prompts keep one tick each, none bucketed, every index reachable, rail height capped by the window", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     const messages: Message[] = []
     const rows: { owner: string; y: number; height: number; prompt?: boolean }[] = []
-    for (let index = 0; index < 200; index += 1) {
+    for (let index = 0; index < 600; index += 1) {
       messages.push(f.prompt(`m${String(index).padStart(3, "0")}`, `question ${index}`))
       rows.push({ owner: `m${String(index).padStart(3, "0")}`, y: 48 + index * 100, height: 100, prompt: true })
     }
     f.setMessages(messages)
     f.mount(rows)
     await f.flush()
-    const ticks = f.ticks()
-    assert.equal(ticks.length, Math.floor(((VIEWPORT - INSET) * 0.6) / 4))
-    assert.equal(f.rail()!.style.getPropertyValue("--timeline-rail-pitch"), "4px")
-    assert.equal(ticks[0]!.getAttribute("aria-label"), "question 0 (and 1 more)")
-    assert.equal(ticks[0]!.hasAttribute("data-current"), true)
+    assert.equal(f.rail()!.querySelectorAll("*").length < 40, true, "no node per prompt: the DOM stays small at 600 prompts")
+    assert.equal((f.rail()!.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height"), "max(0px, min(4792px, calc(100vh - 18rem)))")
+    assert.deepEqual(f.marked("data-current"), [0])
+    move(f.strip(), f.at(0.5))
+    await f.flush()
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: question 300")
+    move(f.strip(), f.at(1))
+    await f.flush()
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: question 599")
   } finally {
     dispose()
     f.close()
@@ -401,7 +565,7 @@ test("pages the whole history in behind the user, marks the rail busy meanwhile,
     for (let round = 0; round < 80 && f.loads.length < 12; round += 1) await f.flush()
     await f.flush()
     assert.equal(f.loads.length, 12, "one request per page, no restarts")
-    assert.equal(f.rail()!.querySelector("[data-timeline-rail-ticks]")!.getAttribute("aria-busy"), null)
+    assert.equal(f.rail()!.querySelector("[data-timeline-rail-strip]")!.getAttribute("aria-busy"), null)
   } finally {
     dispose()
     f.close()

@@ -1,9 +1,11 @@
-import { Plugin, Slot, Style, type SlotMap } from "@opencode/plugin/gui"
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js"
+import { Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js"
 import { Portal } from "solid-js/web"
 import { loadHistory, type HistoryHost } from "./history"
-import { currentIndex, inset, jumpTo, type Host } from "./jump"
-import { layout, prompts, tickOf, type Message, type Tick } from "./rail"
+import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
+import { indexFromPointer, MIN_ITEMS, prompts, railHeightStyle, topPercent, visibleRange, type Message } from "./rail"
+import { createStrip } from "./strip"
+import { currentPrompt } from "./target"
 import { tweenScroll } from "./tween"
 
 /** The rail's column, ticks included; it hugs the left edge of the view. */
@@ -18,9 +20,8 @@ const DESKTOP = "(min-width: 768px)"
 const OPEN_DELAY = 400
 const SKIP_DELAY = 300
 const CLOSE_MOTION = 90
-/** Dock-like lift under a fine pointer: peak extra width of the nearest tick, and the falloff in px. */
-const LIFT = 1.4
-const REACH = 30
+/** Previous / next turn by this many prompts with PageUp / PageDown. */
+const PAGE = 5
 
 type Geometry = { readonly top: number; readonly height: number; readonly left: number; readonly show: boolean }
 
@@ -64,11 +65,14 @@ export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
   }
 }
 
-function Rail(props: { input: SlotMap["session.header"] }) {
+type HostUi = Pick<Ui, "IconButton" | "Tooltip">
+
+function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const [scroller, setScroller] = createSignal<HTMLElement>()
   const [view, setView] = createSignal<HTMLElement>()
   const [geometry, setGeometry] = createSignal<Geometry>()
   const [current, setCurrent] = createSignal(-1)
+  const [range, setRange] = createSignal<readonly [number, number]>()
   const [loading, setLoading] = createSignal(false)
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
@@ -79,8 +83,8 @@ function Rail(props: { input: SlotMap["session.header"] }) {
   const ids = createMemo(() => list().map((prompt) => prompt.id))
   // A memo: the cursor changes with every page, and the history effect must rerun only when "more" itself flips.
   const more = createMemo(() => data().message.more(session().id))
-  const plan = createMemo(() => layout(list().length, geometry()?.height ?? 0))
-  const activeTick = createMemo(() => tickOf(plan().ticks, current()))
+  const indexOf = createMemo(() => new Map(ids().map((id, index) => [id, index] as const)))
+  const count = () => list().length
 
   // The slot's element joins the timeline after it is created; the scroller is its nearest scrollable ancestor.
   let element: HTMLElement | undefined
@@ -183,9 +187,14 @@ function Rail(props: { input: SlotMap["session.header"] }) {
 
     if (!props.input.active || !root || !parent) return
     // Reads only; Solid applies the writes after.
-    const index = currentIndex({ scroller: root, ids })
+    const rows = readRows(root)
+    const edge = root.getBoundingClientRect()
+    const fold = edge.top + inset(root)
+    const index = currentPrompt(ids(), rows, fold)
+    const shown = visibleRange(indexOf(), rows, { top: fold, bottom: edge.bottom })
     const box = measure(root, parent)
     setCurrent(index)
+    setRange((previous) => (previous && shown && previous[0] === shown[0] && previous[1] === shown[1] ? previous : shown))
     setGeometry((previous) =>
       previous && previous.top === box.top && previous.height === box.height && previous.left === box.left && previous.show === box.show
         ? previous
@@ -241,16 +250,18 @@ function Rail(props: { input: SlotMap["session.header"] }) {
   onCleanup(() => inflight?.abort())
 
   // The card follows the host's tooltip: a delay before the first open, instant while one just closed, instant on
-  // keyboard focus. Once open it stays mounted and glides between ticks instead of popping again.
+  // keyboard focus. Once open it stays mounted and glides between prompts instead of popping again.
   const [hover, setHover] = createSignal<number>()
+  // The index under the pointer or keyboard now: it centres the fisheye. The card keeps `hover` while it closes.
+  const [pointed, setPointed] = createSignal<number>()
   const [phase, setPhase] = createSignal<"closed" | "open" | "closing">("closed")
   const [entered, setEntered] = createSignal(false)
-  const [focused, setFocused] = createSignal<number>()
   let timer: ReturnType<typeof setTimeout> | undefined
   let closedAt = Number.NEGATIVE_INFINITY
 
   const arm = (index: number, now = false) => {
     setHover(index)
+    setPointed(index)
 
     if (phase() === "open") return
     clearTimeout(timer)
@@ -266,6 +277,7 @@ function Rail(props: { input: SlotMap["session.header"] }) {
   const close = () => {
     clearTimeout(timer)
     timer = undefined
+    setPointed(undefined)
 
     if (phase() !== "open") {
       setPhase("closed")
@@ -298,90 +310,98 @@ function Rail(props: { input: SlotMap["session.header"] }) {
     onCleanup(() => cancelAnimationFrame(id))
   })
 
-  const cardTick = createMemo(() => {
+  const cardIndex = createMemo(() => {
     const index = hover()
 
-    return index === undefined || phase() === "closed" ? undefined : plan().ticks[index]
+    return index === undefined || phase() === "closed" || index >= count() ? undefined : index
   })
   const cardPrompt = () => {
-    const tick = cardTick()
+    const index = cardIndex()
 
-    return tick ? list()[tick.start] : undefined
+    return index === undefined ? undefined : list()[index]
   }
   const cardMeta = () => {
-    const tick = cardTick()
+    const index = cardIndex()
 
-    if (!tick || more() || paging()) return undefined
-
-    return tick.end > tick.start ? `${tick.start + 1}–${tick.end + 1} of ${list().length}` : `${tick.start + 1} of ${list().length}`
+    return index === undefined || more() || paging() ? undefined : `${index + 1} of ${count()}`
   }
-
-  const label = (tick: Tick) => {
-    const prompt = list()[tick.start]
-
-    if (!prompt) return ""
-
-    return tick.end > tick.start ? `${prompt.title} (and ${tick.end - tick.start} more)` : prompt.title
-  }
-
-  const tabbable = () => focused() ?? Math.max(0, activeTick())
+  const label = () => list()[pointed() ?? Math.max(0, current())]?.title ?? "User message"
 
   let container: HTMLDivElement | undefined
-  let ticksElement: HTMLDivElement | undefined
+  let strip: HTMLButtonElement | undefined
   let cardElement: HTMLDivElement | undefined
   const [cardTop, setCardTop] = createSignal(0)
   const [cardOrigin, setCardOrigin] = createSignal(0)
   const [armed, setArmed] = createSignal(false)
+  const [stripHost, setStripHost] = createSignal<HTMLElement>()
 
-  const buttons = () => (container ? [...container.querySelectorAll<HTMLButtonElement>("[data-timeline-rail-tick]")] : [])
+  // Ticks are one imperative strip of nodes; every update below repaints a band of them, never all.
+  const ticks = createMemo(() => {
+    const host = stripHost()
+
+    return host ? createStrip(host) : undefined
+  })
+
+  createEffect(() => ticks()?.count(count()))
+  createEffect(() => ticks()?.view(range()))
+  createEffect(() => ticks()?.current(current()))
+  createEffect(() => ticks()?.active(reducedMotion() ? undefined : pointed()))
 
   // Placed once the card has its size, before paint: Solid runs this after the DOM updates of the same tick.
   createEffect(() => {
-    const tick = cardTick()
+    const index = cardIndex()
     const prompt = cardPrompt()
-    const index = hover()
 
-    if (!tick || !prompt || index === undefined || !container || !cardElement) return
-    const button = buttons()[index]
-
-    if (!button) return
+    if (index === undefined || !prompt || !container || !strip || !cardElement) return
     const box = container.getBoundingClientRect()
-    const own = button.getBoundingClientRect()
-    const centre = own.top + own.height / 2 - box.top
+    const own = strip.getBoundingClientRect()
+    const centre = own.top + (own.height * topPercent(index, count())) / 100 - box.top
     const height = cardElement.offsetHeight
     const top = Math.round(Math.max(0, Math.min(centre - height / 2, box.height - height)))
     setCardTop(top)
     setCardOrigin(Math.round(centre - top))
   })
 
-  // Dock-like lift: ticks near a fine pointer widen. Ticks sit at a fixed pitch, so the maths needs one rect read.
-  let lifting: number | undefined
-  let pointerY = 0
-
-  const lift = () => {
-    lifting = undefined
-    if (!ticksElement) return
-    const top = ticksElement.getBoundingClientRect().top
-    const pitch = plan().pitch
-
-    buttons().forEach((button, index) => {
-      const distance = pointerY - (top + (index + 0.5) * pitch)
-      const k = 1 + LIFT * Math.exp(-(distance * distance) / (2 * REACH * REACH))
-
-      if (k < 1.01) button.style.removeProperty("--k")
-      else button.style.setProperty("--k", k.toFixed(3))
-    })
+  const select = (index: number | undefined) => {
+    if (index !== undefined && index >= 0 && index < count()) run(index)
   }
 
-  const unlift = () => {
-    if (lifting !== undefined) cancelAnimationFrame(lifting)
-    lifting = undefined
-    for (const button of buttons()) button.style.removeProperty("--k")
+  const fromPointer = (event: PointerEvent | MouseEvent) => {
+    if (!strip) return null
+    const box = strip.getBoundingClientRect()
+
+    return indexFromPointer({ count: count(), top: box.top, height: box.height, y: event.clientY })
   }
 
-  onCleanup(() => {
-    if (lifting !== undefined) cancelAnimationFrame(lifting)
-  })
+  // A press that starts on the strip scrubs; a drag that arrives from elsewhere (selecting text, a scrollbar) passes
+  // through, so the strip never swallows it. Released outside the window skips pointerup, so a button-free move counts.
+  let pressedOnStrip = false
+  const [passThrough, setPassThrough] = createSignal(false)
+
+  const afterRelease = (done: () => void) => {
+    const check = (event: PointerEvent) => {
+      if (event.buttons !== 0) return
+      stop()
+      done()
+    }
+    const stop = () => {
+      window.removeEventListener("pointerup", check)
+      window.removeEventListener("pointermove", check)
+    }
+    window.addEventListener("pointerup", check)
+    window.addEventListener("pointermove", check)
+  }
+
+  // The wheel on the rail scrolls the timeline, as it would beside the rail.
+  const wheel = (event: WheelEvent) => {
+    const root = scroller()
+
+    if (!root) return
+    event.preventDefault()
+    lastInput = performance.now()
+    unpin(root)
+    root.scrollBy({ top: event.deltaY, left: event.deltaX })
+  }
 
   const keys = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -389,39 +409,64 @@ function Rail(props: { input: SlotMap["session.header"] }) {
 
       return
     }
-    const all = buttons()
-
-    if (all.length === 0) return
-    const at = all.findIndex((button) => button === document.activeElement)
+    const last = count() - 1
+    const at = pointed() ?? Math.max(0, current())
     const next =
       event.key === "ArrowDown"
-        ? Math.min(all.length - 1, at + 1)
+        ? Math.min(last, at + 1)
         : event.key === "ArrowUp"
           ? Math.max(0, at - 1)
           : event.key === "PageDown"
-            ? Math.min(all.length - 1, at + 5)
+            ? Math.min(last, at + PAGE)
             : event.key === "PageUp"
-              ? Math.max(0, at - 5)
+              ? Math.max(0, at - PAGE)
               : event.key === "Home"
                 ? 0
                 : event.key === "End"
-                  ? all.length - 1
+                  ? last
                   : -1
 
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      select(pointed())
+
+      return
+    }
     if (next === -1) return
     event.preventDefault()
-    all[next]?.focus()
+    arm(next, true)
   }
 
   const style = () => {
     const box = geometry()
 
-    return {
-      top: `${box?.top ?? 0}px`,
-      height: `${box?.height ?? 0}px`,
-      left: `${box?.left ?? 0}px`,
-      "--timeline-rail-pitch": `${plan().pitch}px`,
-    }
+    return { top: `${box?.top ?? 0}px`, height: `${box?.height ?? 0}px`, left: `${box?.left ?? 0}px` }
+  }
+
+  const step = (delta: number) => {
+    const index = current() + delta
+
+    if (current() >= 0) select(index)
+  }
+
+  const turn = (direction: "previous" | "next") => {
+    const previous = direction === "previous"
+    const label = previous ? "Previous turn" : "Next turn"
+
+    return (
+      <props.ui.Tooltip value={label} placement={previous ? "top" : "bottom"}>
+        <span data-timeline-rail-turn={direction}>
+          <props.ui.IconButton
+            icon="chevron-down"
+            label={label}
+            size="small"
+            variant="ghost-muted"
+            disabled={previous ? current() <= 0 : current() < 0 || current() >= count() - 1}
+            onClick={() => step(previous ? -1 : 1)}
+          />
+        </span>
+      </props.ui.Tooltip>
+    )
   }
 
   return (
@@ -432,87 +477,85 @@ function Rail(props: { input: SlotMap["session.header"] }) {
             <div
               ref={(el) => {
                 container = el
+                el.addEventListener("wheel", wheel, { passive: false })
                 // No transitions on first paint: they switch on two frames after the rail exists.
                 requestAnimationFrame(() => requestAnimationFrame(() => setArmed(true)))
               }}
               data-timeline-rail
-              data-empty={list().length < 2 ? "" : undefined}
+              data-empty={count() < MIN_ITEMS ? "" : undefined}
               data-armed={armed() ? "" : undefined}
               style={style()}
-              onPointerLeave={() => {
-                unlift()
-                close()
-              }}
-              onKeyDown={keys}
-              onFocusOut={(event) => {
-                if (!(event.relatedTarget instanceof Node) || !container?.contains(event.relatedTarget)) {
-                  setFocused(undefined)
-                  close()
-                }
-              }}
+              onPointerLeave={() => close()}
             >
-              <div
-                ref={ticksElement}
-                data-timeline-rail-ticks
-                role="toolbar"
-                aria-orientation="vertical"
-                aria-label="Your prompts"
-                aria-busy={loading() || paging() ? "true" : undefined}
-                onPointerMove={(event) => {
-                  if (event.pointerType === "touch") return
-
-                  if (reducedMotion()) {
-                    unlift()
-
-                    return
-                  }
-                  pointerY = event.clientY
-                  if (lifting === undefined) lifting = requestAnimationFrame(lift)
-                }}
-              >
+              <div data-timeline-rail-body style={{ "--timeline-rail-height": railHeightStyle(count()) }}>
                 <span data-timeline-rail-history data-active={paging() ? "" : undefined} aria-hidden="true" />
-                <For each={plan().ticks}>
-                  {(tick, index) => (
-                    <button
-                      type="button"
-                      data-timeline-rail-tick
-                      data-current={activeTick() === index() ? "" : undefined}
-                      aria-current={activeTick() === index() ? "true" : undefined}
-                      aria-label={label(tick)}
-                      tabIndex={tabbable() === index() ? 0 : -1}
-                      onPointerEnter={(event) => {
-                        if (event.pointerType !== "touch") arm(index())
-                      }}
-                      onFocus={(event) => {
-                        setFocused(index())
+                {turn("previous")}
+                <button
+                  ref={strip}
+                  type="button"
+                  data-timeline-rail-strip
+                  data-pass={passThrough() ? "" : undefined}
+                  aria-label={`Jump to message: ${label()}`}
+                  aria-busy={loading() || paging() ? "true" : undefined}
+                  onPointerDown={() => {
+                    if (pressedOnStrip) return
+                    pressedOnStrip = true
+                    afterRelease(() => (pressedOnStrip = false))
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onPointerEnter={(event) => {
+                    if (event.pointerType === "touch") return
+                    const index = fromPointer(event)
+                    if (index !== null) arm(index)
+                  }}
+                  onPointerMove={(event) => {
+                    if (event.pointerType === "touch") return
+                    if (event.buttons !== 0 && !pressedOnStrip) {
+                      if (!passThrough()) {
+                        setPassThrough(true)
+                        afterRelease(() => setPassThrough(false))
+                      }
 
-                        if (event.currentTarget.matches(":focus-visible")) arm(index(), true)
-                      }}
-                      onClick={() => run(tick.start)}
-                    />
-                  )}
-                </For>
-              </div>
-              <Show when={cardTick()}>
-                <div
-                  data-timeline-rail-card
-                  data-entered={entered() ? "" : undefined}
-                  style={{ "--card-y": `${cardTop()}px`, "--card-origin": `${cardOrigin()}px` }}
+                      return
+                    }
+                    const index = fromPointer(event)
+                    if (index !== null && index !== pointed()) arm(index)
+                  }}
+                  onClick={(event) => {
+                    if (event.detail === 0) return
+                    select(fromPointer(event) ?? undefined)
+                    event.currentTarget.blur()
+                  }}
+                  onFocus={(event) => {
+                    if (pointed() === undefined) arm(Math.max(0, current()), event.currentTarget.matches(":focus-visible"))
+                  }}
+                  onBlur={() => close()}
+                  onKeyDown={keys}
                 >
-                  <div ref={cardElement} data-timeline-rail-card-body role="tooltip">
-                    <Show when={cardMeta()}>
-                      <div data-timeline-rail-card-meta>{cardMeta()}</div>
-                    </Show>
-                    <div data-timeline-rail-card-title dir="auto">
-                      {cardPrompt()?.title}
-                    </div>
-                    <Show when={cardPrompt()?.snippet || cardPrompt()?.working}>
-                      <div data-timeline-rail-card-snippet dir="auto" data-working={cardPrompt()?.working ? "" : undefined}>
-                        {cardPrompt()?.snippet ?? "Working…"}
+                  <span ref={setStripHost} data-timeline-rail-ticks aria-hidden="true" />
+                </button>
+                {turn("next")}
+              </div>
+              <Show when={cardIndex() !== undefined}>
+                  <div
+                    data-timeline-rail-card
+                    data-entered={entered() ? "" : undefined}
+                    style={{ "--card-y": `${cardTop()}px`, "--card-origin": `${cardOrigin()}px` }}
+                  >
+                    <div ref={cardElement} data-timeline-rail-card-body role="tooltip">
+                      <Show when={cardMeta()}>
+                        <div data-timeline-rail-card-meta>{cardMeta()}</div>
+                      </Show>
+                      <div data-timeline-rail-card-title dir="auto">
+                        {cardPrompt()?.title}
                       </div>
-                    </Show>
+                      <Show when={cardPrompt()?.snippet || cardPrompt()?.working}>
+                        <div data-timeline-rail-card-snippet dir="auto" data-working={cardPrompt()?.working ? "" : undefined}>
+                          {cardPrompt()?.snippet ?? "Working…"}
+                        </div>
+                      </Show>
+                    </div>
                   </div>
-                </div>
               </Show>
             </div>
           </Portal>
@@ -541,15 +584,31 @@ const CSS = `
 [data-timeline-rail][data-empty] { opacity: 0; visibility: hidden; }
 [data-timeline-rail][data-armed] { transition: opacity 200ms var(--timeline-rail-ease), visibility 0s; }
 [data-timeline-rail][data-armed][data-empty] { transition: opacity 160ms var(--timeline-rail-ease), visibility 0s 160ms; }
-[data-timeline-rail-ticks] {
+[data-timeline-rail-body] {
   position: relative;
-  display: flex;
-  flex-direction: column;
   width: 100%;
-  padding: 0;
-  box-sizing: border-box;
-  pointer-events: auto;
+  height: var(--timeline-rail-height);
+  flex: none;
+  pointer-events: none;
 }
+[data-timeline-rail-strip] {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  outline: none;
+  pointer-events: auto;
+  user-select: none;
+}
+[data-timeline-rail-strip][data-pass] { pointer-events: none; }
+[data-timeline-rail-strip]:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 2px; border-radius: 2px; }
+[data-timeline-rail-ticks] { position: absolute; inset: 0; display: block; pointer-events: none; }
 [data-timeline-rail-history] {
   position: absolute;
   top: -9px;
@@ -562,47 +621,73 @@ const CSS = `
 }
 [data-timeline-rail][data-armed] [data-timeline-rail-history] { transition: opacity 200ms var(--timeline-rail-ease); }
 [data-timeline-rail-history][data-active] { opacity: 1; animation: timelineRailHistory 1.4s ease-in-out infinite; }
-[data-timeline-rail-tick] {
-  appearance: none;
-  position: relative;
-  display: block;
-  height: var(--timeline-rail-pitch, 10px);
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  outline: none;
+/* Faint ticks are one gradient (a 2px tick every height / (count - 1), 8px wide); only prompts with something to show
+   get a node, drawn at a third of its 24px width at rest. The fisheye is t3-code's: scale-x by index distance from the
+   active prompt. Only transform and opacity ever change. */
+[data-timeline-rail-base] {
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 8px;
+  height: calc(var(--timeline-rail-height) + 2px);
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--v2-text-text-faint) 0 2px,
+    transparent 2px calc(var(--timeline-rail-height) / var(--max, 1))
+  );
+  opacity: 0.45;
+  pointer-events: none;
 }
+[data-timeline-rail][data-armed] [data-timeline-rail-base] { transition: opacity 150ms var(--timeline-rail-ease); }
+[data-timeline-rail-tick] {
+  position: absolute;
+  left: 0;
+  top: calc(var(--i) / var(--max) * 100%);
+  width: 24px;
+  height: 2px;
+  margin-top: -1px;
+  transform-origin: 0 50%;
+  transform: scale(0.3333, 1);
+  pointer-events: none;
+}
+[data-timeline-rail-tick][data-d="0"] { transform: scale(1, 1.8); }
+[data-timeline-rail-tick][data-d="1"] { transform: scale(0.667, 1.4); }
+[data-timeline-rail-tick][data-d="2"] { transform: scale(0.417, 1.15); }
 [data-timeline-rail-tick]::before,
 [data-timeline-rail-tick]::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 50%;
-  height: 2px;
-  width: 8px;
-  margin-top: -1px;
+  inset: 0;
   border-radius: 1px;
-  transform-origin: 0 50%;
-  transform: scale(var(--k, 1), calc(1 + (var(--k, 1) - 1) * 0.45));
+  opacity: 0;
 }
-[data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); opacity: 0.45; }
-[data-timeline-rail-tick]::after { background: var(--v2-text-text-base); opacity: 0; }
-[data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
-[data-timeline-rail][data-armed] [data-timeline-rail-tick]::after {
-  transition: transform 110ms var(--timeline-rail-ease), opacity 120ms var(--timeline-rail-ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  [data-timeline-rail-tick]:hover::after { opacity: 0.6; }
-  [data-timeline-rail-ticks]:hover [data-timeline-rail-tick]::before { opacity: 0.8; }
-}
+[data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); }
+[data-timeline-rail-tick]::after { background: var(--v2-text-text-base); }
+[data-timeline-rail-tick][data-d]::before { opacity: 0.8; }
+[data-timeline-rail-tick][data-d="0"]::after { opacity: 0.6; }
+[data-timeline-rail-tick][data-view]::after,
 [data-timeline-rail-tick][data-current]::after { opacity: 1; }
-[data-timeline-rail-tick]:focus-visible::before {
-  outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: 2px;
+[data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: transform 150ms var(--timeline-rail-ease); }
+[data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
+[data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 150ms var(--timeline-rail-ease); }
+@media (hover: hover) and (pointer: fine) {
+  [data-timeline-rail-strip]:hover [data-timeline-rail-base] { opacity: 0.8; }
 }
+[data-timeline-rail-turn] {
+  position: absolute;
+  left: -2px;
+  z-index: 1;
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: auto;
+}
+[data-timeline-rail-turn="previous"] { bottom: calc(100% + 2px); }
+[data-timeline-rail-turn="previous"] svg { transform: rotate(180deg); }
+[data-timeline-rail-turn="next"] { top: calc(100% + 2px); }
+[data-timeline-rail][data-armed] [data-timeline-rail-turn] { transition: opacity 150ms var(--timeline-rail-ease); }
+[data-timeline-rail-body]:hover [data-timeline-rail-turn],
+[data-timeline-rail-turn]:hover,
+[data-timeline-rail-turn]:focus-within { opacity: 1; }
 [data-timeline-rail-card] {
   position: absolute;
   top: 0;
@@ -644,11 +729,9 @@ const CSS = `
   line-height: 16px;
   font-weight: 530;
   letter-spacing: -0.04px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 [data-timeline-rail-card-snippet] {
   margin-top: 4px;
@@ -667,6 +750,7 @@ const CSS = `
 @keyframes timelineRailHistory { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) {
   [data-timeline-rail-history][data-active] { animation: none; opacity: 0.6; }
+  [data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: none; }
   [data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
   [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 120ms linear; }
   [data-timeline-rail-card][data-entered] { transition: none; }
@@ -677,6 +761,6 @@ const CSS = `
 export default Plugin.define({
   setup(ctx) {
     ctx.add(Style, CSS)
-    ctx.add(Slot, { at: "session.header", render: (input) => <Rail input={input} /> })
+    ctx.add(Slot, { at: "session.header", render: (input) => <Rail input={input} ui={ctx.ui} /> })
   },
 })
