@@ -73,6 +73,7 @@ Final numbers, native-ui spec against OpenCode 2.2.5 in the harness: full run 26
 | visual-replies | card and buttons | `tool-part-wrapper` card, `IconButton` | none yet |
 | no-project | command only | `Command` registry (no UI) | not applicable |
 | sidepanel | `ctx.ui.Button` | host `Button` | not applicable (host component as is) |
+| model-picker | results pane (rows, headers, containers) | the host's own list in the same dialog | `apps/opencode-plugins/model-picker/parity.spec.mjs` (717 PASS, 0 FAIL, 2 N/A) |
 | native-ui | every component | see [native-ui.md](native-ui.md) | `apps/opencode-plugins/native-ui/parity.spec.mjs` |
 
 A "none yet" row means the plugin shipped before parity existed and its next UI change starts by writing its spec.
