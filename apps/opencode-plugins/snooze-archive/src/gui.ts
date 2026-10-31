@@ -35,6 +35,7 @@ export default Plugin.define({
     const wake = (entry: Snooze, focus = false, archived = false) => {
       if (disposed) return
       if (!entries().some((current) => current.server === entry.server && current.id === entry.id && current.at === entry.at)) return
+      archived = archived || ctx.servers.get(entry.server)?.data.session.get(entry.id)?.time?.archived !== undefined
       if (!archived && !ctx.servers.get(entry.server)?.connected) {
         if (focus) error(new Error("Reconnect this session's server to wake it."))
         return
@@ -82,29 +83,40 @@ export default Plugin.define({
       } catch (cause) { error(cause) }
       finally { actionKeys.delete(key) }
     }
-    const observe = (server: ServerRef, info: ArchivedSession) => {
-      const ids = [info.id, ...server.data.session.family(info.id)]
+    const observe = (server: ServerRef, id: string, info: ArchivedSession | undefined) => {
+      const family = server.data.session.family(id)
+      const requests = [id, ...(family ?? [])].map((sessionID) => ({
+        permissions: server.data.session.permission.list(sessionID),
+        forms: server.data.session.form.list(sessionID),
+      }))
       return {
-        attention: ids.some((id) => server.data.session.permission.list(id).length > 0 || (server.data.session.form.list(id)?.length ?? 0) > 0),
-        updated: info.time.updated, busy: info.time.busy ?? 0, idle: info.time.idle ?? 0,
-        archived: info.time.archived !== undefined,
+        hydrated: Array.isArray(family) && requests.every((request) => Array.isArray(request.permissions) && Array.isArray(request.forms)) && Number.isFinite(info?.time?.updated),
+        attention: requests.some((request) => (request.permissions?.length ?? 0) > 0 || (request.forms?.length ?? 0) > 0),
+        updated: info?.time?.updated ?? 0, busy: info?.time?.busy ?? 0, idle: info?.time?.idle ?? 0,
+        archived: info?.time?.archived !== undefined,
       }
     }
-    const reconcile = async (entry: Snooze, startup = false) => {
+    const reconcile = async (entry: Snooze) => {
       const server = ctx.servers.get(entry.server)
       if (!server?.connected) return
       try {
+        const knownReason = wakeReason(entry, observe(server, entry.id, server.data.session.get(entry.id)), Date.now())
+        if (knownReason) { wake(entry, false, knownReason === "archived"); return }
         await server.data.session.sync(entry.id, { children: true })
-        const info = server.data.session.get(entry.id)
-        if (!info || disposed) return
-        await Promise.all([entry.id, ...server.data.session.family(entry.id)].flatMap((id) => [
+        if (disposed) return
+        const initial = observe(server, entry.id, server.data.session.get(entry.id))
+        const initialReason = wakeReason(entry, initial, Date.now())
+        if (initialReason) { wake(entry, false, initialReason === "archived"); return }
+        await Promise.all([entry.id, ...(server.data.session.family(entry.id) ?? [])].flatMap((id) => [
           server.data.session.permission.sync(id), server.data.session.form.sync(id),
         ]))
+        if (disposed) return
         const current = entries().find((s) => s.server === entry.server && s.id === entry.id && s.at === entry.at)
-        if (!current || disposed) return
-        const reason = wakeReason(current, observe(server, info), Date.now())
+        if (!current) return
+        const state = observe(server, entry.id, server.data.session.get(entry.id))
+        const reason = wakeReason(current, state, Date.now())
         if (reason) wake(current, false, reason === "archived")
-        else if (startup) {
+        else if (state.hydrated && !hiddenSnoozes.has(sessionKey(entry.server, entry.id))) {
           closeTabs(entry.server, entry.id)
           hiddenSnoozes.add(sessionKey(entry.server, entry.id))
         }
@@ -130,15 +142,18 @@ export default Plugin.define({
         if (!Number.isFinite(until) || until <= Date.now()) throw new Error("Choose a future time; nonexistent DST times are not accepted.")
         const server = session.server
         await server.data.session.sync(session.id, { children: true })
-        await Promise.all([session.id, ...server.data.session.family(session.id)].flatMap((id) => [
+        if (disposed) return
+        await Promise.all([session.id, ...(server.data.session.family(session.id) ?? [])].flatMap((id) => [
           server.data.session.permission.sync(id), server.data.session.form.sync(id),
         ]))
+        if (disposed) return
         const info = await server.client.session.get({ sessionID: session.id }, { signal: ctx.signal })
         if (disposed) return
-        const state = observe(server, info)
-        if (info.parentID) throw new Error("Snooze the parent session rather than a subagent.")
+        const state = observe(server, session.id, info)
         if (state.attention) throw new Error("This session is waiting for your approval or input. Respond before snoozing.")
         if (state.archived) throw new Error("Restore this archived session before snoozing.")
+        if (!info?.time || !state.hydrated) throw new Error("Session details or pending requests are still loading. Retry snooze once loading finishes.")
+        if (info.parentID) throw new Error("Snooze the parent session rather than a subagent.")
         const entry: Snooze = { server: server.id, id: session.id, title: info.title ?? "Session", at: Date.now(), until, updated: info.time.updated, busy: info.time.busy ?? 0 }
         ctx.stores.snoozes.update((draft) => {
           draft.entries = [...draft.entries.filter((s) => s.server !== entry.server || s.id !== entry.id), entry]
@@ -194,7 +209,7 @@ export default Plugin.define({
           data.on("form.created", (e) => wakeEvent(e.data.form.sessionID, e.created)),
         ]
         subscriptions.set(id, { data, off })
-        untrack(() => { void refresh(server); entries().filter((e) => e.server === id).forEach((e) => void reconcile(e, true)) })
+        untrack(() => { void refresh(server); entries().filter((e) => e.server === id).forEach((e) => void reconcile(e)) })
       }
       changed()
     })
