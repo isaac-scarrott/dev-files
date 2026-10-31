@@ -1,6 +1,6 @@
 ---
 name: opencode-gui-plugins
-description: Build or debug OpenCode Desktop GUI plugins. Use for desktop UI changes (sidebar, chat timeline, composer, panels), plugin loading/build failures, GUI plugin registration, or porting another app's feature into OpenCode as a plugin.
+description: Build or debug OpenCode Desktop GUI plugins and prove their UI matches the host (native parity). Use for any desktop UI change (sidebar rows, context menus, popovers, header buttons, chat timeline, composer, panels), a plugin element that must look and behave like the app's own, plugin loading/build failures, GUI plugin registration, or porting another app's feature into OpenCode as a plugin.
 ---
 
 A GUI plugin is a normal OpenCode plugin package whose `./gui-experimental` export is a CommonJS bundle the desktop app loads into every window. It registers into public registries (`Command`, `Slot`, `ComposerPill`, `Panel`, `SettingsPage`, `TitlebarItem`, `Style`, `MenuItem`, `LinkHandler`, `Server`), reads the app's reactive state through `ctx`, and — only when no registry fits — injects DOM. Nothing in the app bundle is patched; the installed `.app` stays untouched.
@@ -14,20 +14,29 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 ## Branches
 
 - Choosing where a piece of UI belongs, or the host API's shape → [reference/host-api.md](reference/host-api.md)
+- A row, button, menu, popover or avatar that must look like the app's own → [reference/native-ui.md](reference/native-ui.md)
+- Proving a UI change matches its native sibling, writing or reading a parity spec or report → [reference/native-parity.md](reference/native-parity.md)
 - Touching the app's real DOM or CSS (sidebar tabs, timeline, status marks) → [reference/dom-map.md](reference/dom-map.md)
 - An icon the catalog lacks, or which catalog icon to use → [reference/icons.md](reference/icons.md)
 - Any transition, fade or accordion → [reference/animation.md](reference/animation.md)
-- Verifying a plugin in the real UI (screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
+- Running a plugin in the real UI (harness, screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
 - A first build in a new checkout, an install/build failure, or a plugin that does not appear → [reference/build.md](reference/build.md)
 
 ## Workflow
 
-1. Confirm the installed app version and the feature's observable behavior. Read https://opencode.ai/v2/docs/build/plugins/gui and the installed SDK declarations for the relevant surface.
-2. Choose a public registry or host API. If it lacks the requested surface, isolate the DOM workaround and verify selectors against the installed app before editing.
-3. Use `~/git/dev-files/apps/opencode-plugins/sidebar-repos` as the tested scaffold; read its manifest, Vite and workspace config rather than guessing the build contract. Preserve package identity when moving a plugin.
-4. Separate pure logic from setup, test it, and run every declared package check. Register the built package through the global config.
-5. Test in the real UI with `scripts/desktop-harness.sh` (isolated second app driven over CDP; not `opencode serve`, which never loads GUI plugins) when you can; see the browser-testing reference.
-6. Check the actual UI, including cleanup/reload and session switching. Report tests separately from live verification; a working bundle does not prove virtualized navigation works.
+1. Confirm the installed app version and the feature's observable behaviour. Read https://opencode.ai/v2/docs/build/plugins/gui and the installed SDK declarations for the relevant surface.
+2. **Align** before building. The request is aligned when it pins all four: where the UI lives (a native surface to extend, or a new one), which native sibling it must be indistinguishable from, scope and defaults, and entry points. When any is open, or a plugin can reach the goal by more than one route, load the `grilling` skill and settle each with the user through the question tool, one decision at a time with a recommended answer, until every one is written in the plugin's `DESIGN.md` under `## Decisions`. A worker without the question tool returns the open questions to its orchestrator before building the less obvious route.
+3. Choose a public registry or host API. If it lacks the requested surface, isolate the DOM workaround and verify selectors against the installed app before editing.
+4. Scaffold from `~/git/dev-files/apps/opencode-plugins/sidebar-repos`: read its manifest, Vite and workspace config rather than guessing the build contract, and preserve package identity when moving a plugin. Build each UI element from [native-ui](reference/native-ui.md) or from the host source of the sibling named in step 2.
+5. Separate pure logic from setup, test it, and run every declared package check. Register the built package through the global config.
+6. Load the plugin in the harness (`scripts/desktop-harness.sh`: an isolated second app driven over CDP; `opencode serve` never loads GUI plugins) and exercise it there: open the element, hot reload, switch sessions, run the cleanup. The hand-off shows a screenshot of the real window for each, listed apart from the package checks.
+7. **Parity** closes the task: run `scripts/parity.mjs` against the native sibling and iterate until the report is all PASS (next section). The hand-off carries the report and its side-by-side screenshot.
+
+## Parity
+
+A UI change is done when `scripts/parity.mjs` reports PASS for style, motion and behaviour against the named native sibling, and `report.md` plus `side-by-side.png` are in the hand-off. An N/A carries a written reason in the spec (`allow` for a difference by design, `na` for a sibling the harness cannot show). A FAIL means the change is not done, whatever it looks like.
+
+Name the sibling before building (the element table in [reference/native-parity.md](reference/native-parity.md)) and build from [native-ui](reference/native-ui.md), whose components already pass. The spec format, the run command and how to read the three layers are in [reference/native-parity.md](reference/native-parity.md).
 
 ## Scaffold
 
@@ -92,7 +101,7 @@ export default Plugin.define({
 
 ## Rules that keep a plugin working
 
-- **Use the app's primitives; build no UI of your own.** Order of preference: (1) a registry item the host renders (`Command`, `ComposerPill`, `Panel`, `SettingsPage`, `MenuItem`, `TitlebarItem`); (2) the host components in `ctx.ui` (`Icon`, `Button`, `IconButton`, `Tooltip`, `Menu`, `Loader`, `Dialog`, `Switch`, `TextInput`, `Keybind`, `Markdown`, `Code`), mounted with Solid `render` inside the setup owner; (3) for a list that must look like a host list (a session row, a subagent row), copy the host component's real markup, `data-slot`s and classes from the installed source so the app's own CSS styles it; (4) hand-written HTML/CSS only for what the first three cannot express, with `--v2-*` tokens and a one-line reason in the code. Icons come from the app catalog (`IconName`); if none fits, draw one in the catalog's style ([reference/icons.md](reference/icons.md)). Before building a row, button or menu, search the extracted app source for the component that already renders it.
+- **Native UI comes from the host, in this order.** (1) A registry item the host renders (`Command`, `ComposerPill`, `Panel`, `SettingsPage`, `MenuItem`, `TitlebarItem`); (2) a `ctx.ui` component (`Icon`, `Button`, `IconButton`, `Tooltip`, `Menu`, `Loader`, `Dialog`, `Switch`, `TextInput`, `Keybind`, `Markdown`, `Code`), mounted with Solid `render` inside the setup owner; (3) a [native-ui](reference/native-ui.md) component, the host's own markup and classes copied from the installed source so its CSS applies; (4) when none exists, copy the host component's real markup from the extracted source into native-ui with a parity spec; (5) hand-written HTML/CSS only for what none of these express, with `--v2-*` tokens and a one-line reason in the code. Icons come from the app catalog (`IconName`), or are drawn in its style ([reference/icons.md](reference/icons.md)).
 - **Reach for a registry before the DOM.** A registry item re-renders from app state and survives app updates; an injected node survives neither. The registry table in `reference/host-api.md` lists every one with its slots.
 - **Read state through `ctx`, never by scraping.** `ctx.tabs.list()`, `ctx.sessions.list()`, `ctx.sessions.current()`, and each session's `server.data.*` stores are reactive inside `createEffect`. Scraping the DOM for state produces stale UI the moment the app re-renders.
 - **Scope styles.** `ctx.add(Style, css)` registers global CSS while the contribution is active; the host withdraws it on cleanup. Key rules on an attribute you inject (`[data-sidebar-repo]`) and use the app's `--v2-*` tokens so light and dark both work. Use app-wide selectors only when changing that app-wide behavior is the feature.
@@ -100,4 +109,4 @@ export default Plugin.define({
 - **Never rewrite app-owned text.** Inject a sibling node instead: the app rebuilds titles from its own store, and a rewritten `textContent` is lost or duplicated depending on render order (and renaming a session must keep working).
 - **A `MutationObserver` filters.** Observe the smallest attribute set that matters (`attributeFilter: ["data-tab-key", "data-orientation", "data-status"]`) and coalesce work into one `requestAnimationFrame`; an unfiltered observer over `documentElement` re-enters on its own writes.
 - **Animation earns a purpose first.** Gate by frequency, then follow [reference/animation.md](reference/animation.md): ease-out curve, 150-250ms, `transform`/`opacity`, interruptible transitions, reduced-motion branch, accordions via `grid-template-rows`. Override the app's own motion with `!important` only where it is a `mask-image` fade.
-- **Assume the app is hostile to long-lived references.** Elements unmount on session switch; re-resolve your container from the DOM rather than caching an element across renders.
+- **Assume the app is hostile to long-lived references.** Elements unmount on session switch; re-resolve your container from the DOM rather than caching an element across renders. A popover or menu of your own portals into `<body>`: a plugin mount point can sit under `contain: strict`, which clips a fixed box out of hit-testing.
