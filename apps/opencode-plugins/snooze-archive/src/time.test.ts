@@ -142,11 +142,11 @@ import { formatRemaining } from "./time"
 test("formatRemaining: minutes, hours, days, rounded up, two units", () => {
   const now = 1_000_000_000_000
   const at = (ms: number) => formatRemaining(now + ms, now)
-  assert.equal(at(1), "in 1m")
-  assert.equal(at(12 * 60_000), "in 12m")
-  assert.equal(at(60 * 60_000), "in 1h")
-  assert.equal(at(135 * 60_000), "in 2h 15m")
-  assert.equal(at(24 * 60 * 60_000), "in 1d")
-  assert.equal(at((3 * 24 * 60 + 4 * 60) * 60_000), "in 3d 4h")
-  assert.equal(at(-5), "in 1m")
+  assert.equal(at(1), "1m")
+  assert.equal(at(12 * 60_000), "12m")
+  assert.equal(at(60 * 60_000), "1h")
+  assert.equal(at(135 * 60_000), "2h 15m")
+  assert.equal(at(24 * 60 * 60_000), "1d")
+  assert.equal(at((3 * 24 * 60 + 4 * 60) * 60_000), "3d 4h")
+  assert.equal(at(-5), "1m")
 })
