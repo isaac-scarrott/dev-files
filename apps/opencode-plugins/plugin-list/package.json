@@ -1,0 +1,27 @@
+{
+  "name": "plugin-list",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --conditions=browser --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.2.5",
+    "solid-js": "1.9.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "effect": "4.0.6",
+    "happy-dom": "^21.0.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vite-plugin-solid": "^2.11.15"
+  }
+}
