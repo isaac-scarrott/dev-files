@@ -1,18 +1,11 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { awayFromBottom, nearestAbove, snippet, userRows } from "./jump"
+import { nearestAbove, snippet, userRows } from "./jump"
 
 function stub(top: number, bottom: number) {
   return { top, bottom, left: 0, right: 0, width: 100, height: bottom - top, x: 0, y: 0, toJSON() {} } as DOMRect
 }
-
-test("the pill stays away while the timeline is at its end", () => {
-  assert.equal(awayFromBottom({ scrollTop: 1000, scrollHeight: 2000, clientHeight: 1000 }), false)
-  assert.equal(awayFromBottom({ scrollTop: 900, scrollHeight: 2000, clientHeight: 1000 }), true)
-  // Slack around the app's own settle point keeps the pill from flickering as it snaps.
-  assert.equal(awayFromBottom({ scrollTop: 992, scrollHeight: 2000, clientHeight: 1000 }), false)
-})
 
 test("the nearest message is the last one that has left the top of the reading area", () => {
   const rows = [
@@ -26,6 +19,7 @@ test("the nearest message is the last one that has left the top of the reading a
   assert.equal(nearestAbove(rows, -150)?.element, 1)
   assert.equal(nearestAbove(rows, -650)?.element, 1)
   assert.equal(nearestAbove(rows, -1000), undefined)
+  assert.equal(nearestAbove([...rows].reverse(), 0)?.element, 2)
 })
 
 test("the label collapses whitespace and ellipsises long prompts", () => {

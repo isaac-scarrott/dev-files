@@ -5,9 +5,18 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 
 | Package | Purpose | Verification |
 | --- | --- | --- |
-| `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 13 tests, build |
-| `message-jump` | Animated jump to the nearest mounted user message above the viewport | Typecheck, 4 tests, build; live UI not verified |
+| `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 15 tests, build |
+| `message-jump` | Animated jump to the nearest mounted user message above the viewport | Typecheck, 13 tests, build; live UI not verified |
 | `sidepanel` | Original pinned counter-panel experiment | Build only; no typecheck/test scripts |
+
+Message jump binds through each session's header slot, follows its active state,
+and observes only that timeline's content and ancestor sizes. Cached inactive
+timelines cannot leave a pill over another session. The pill fits the timeline,
+supports keyboard focus and reduced motion, and picks targets by visual position.
+It remains a prototype: unmounted history needs a verified host navigation
+integration; the 2.2.5 GUI SDK exposes no public timeline reveal method. Live checks
+still needed: scroll/jump under virtualization, session switching, sidebar/pane
+resizing, light/dark, reduced motion, plugin reload and sidebar spacing.
 
 Run in each package with scripts:
 

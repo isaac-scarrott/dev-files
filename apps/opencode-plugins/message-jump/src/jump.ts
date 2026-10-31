@@ -1,16 +1,6 @@
-export const SCROLL_SLOT = "[data-slot='session-timeline-scroll']"
+export const SCROLL_SLOT = "[data-slot='session-timeline-scroll'] > .scroll-view__viewport[data-scrollable]"
 export const USER_ROW = "[data-timeline-row='UserMessage']"
 export const USER_TEXT = "[data-slot='user-message-text']"
-
-// The app's own "at the bottom" check uses a few pixels of slack; match it so the pill does not
-// flicker while the timeline settles.
-export const AWAY_FROM_BOTTOM = 16
-
-export type ScrollMetrics = {
-  scrollTop: number
-  scrollHeight: number
-  clientHeight: number
-}
 
 export type Row = {
   element: HTMLElement
@@ -18,16 +8,14 @@ export type Row = {
   bottom: number
 }
 
-export function awayFromBottom(metrics: ScrollMetrics, threshold = AWAY_FROM_BOTTOM) {
-  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight > threshold
-}
-
 // The user message whose end has left the top of the reading area: the one a jump would bring back.
-// Rows mount above and below it, so take the last one that still sits above `edge`.
+// Virtualized DOM order need not be visual order.
 export function nearestAbove(rows: readonly Row[], edge: number) {
   let found: Row | undefined
 
-  for (const row of rows) if (row.bottom <= edge) found = row
+  for (const row of rows) {
+    if (row.bottom <= edge && (!found || row.bottom > found.bottom)) found = row
+  }
 
   return found
 }

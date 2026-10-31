@@ -34,7 +34,8 @@ Source evidence: `app/src/shell/layout/project-avatar-state.ts`, `useSessionTabA
 
 | Selector | Meaning |
 | --- | --- |
-| `[data-slot='session-timeline-scroll']` | Actual timeline scroll container |
+| `[data-slot='session-timeline-scroll']` | Outer ScrollView wrapper |
+| `[data-slot='session-timeline-scroll'] > .scroll-view__viewport[data-scrollable]` | Actual scrolling viewport; owns scroll metrics, scroll events and keyboard focus |
 | `[data-timeline-key]` | Keyed wrapper created by the virtualizer |
 | `[data-timeline-row='UserMessage']` | User message row |
 | `[data-component='user-message']` | User message body component |
@@ -46,7 +47,7 @@ Cached timelines can remain mounted while hidden. A connected element is not nec
 
 A fixed jump pill uses viewport coordinates from `getBoundingClientRect()`. Keep `translateX(-50%)` in every transform state when centering by `left`; otherwise entrance and pressed states jump sideways. Fit the pill to the timeline width, not only the whole window. Avoid observing its own label writes as timeline mutations.
 
-Source evidence: `app/src/session/timeline/virtualizer.tsx`, `session-ui/src/timeline/session-timeline-row.tsx`, `session-ui/src/message/message-content.tsx`.
+Source evidence: `app/src/session/timeline/virtualizer.tsx`, `ui/src/components/scroll-view.tsx`, `session-ui/src/timeline/session-timeline-row.tsx`, `session-ui/src/message/message-content.tsx`.
 
 ## Theme tokens observed in 2.2.5
 
