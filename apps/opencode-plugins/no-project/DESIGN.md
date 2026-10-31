@@ -1,7 +1,7 @@
 # no-project
 
 "No project" is a row in the new-session project picker, and a palette command ("New session without a project",
-`/no-project`). Both open a draft in a shared empty folder.
+`/no-project`). Both open a draft in a fresh empty folder, one per session.
 
 ## How 2.2.5 models a session's location
 
@@ -17,16 +17,44 @@
 - t3code (`client-runtime/src/state/projectGrouping.ts`): a thread without a project is really a project with `isScratch`,
   and all scratch projects group under one label, "No project". Same shape as the decision below.
 
-## Decision: (b) one shared scratch folder, named "No project"
+## Decision: (b) one scratch folder per session, each named "No project"
 
-- `<server home>/Documents/No project` (next to Default Project), or an absolute `options.directory` from the `opencode.json`
-  plugin entry. Home is `client.location.get().directory`, so a remote server gets its own folder.
-- One shared folder, not one per thread: a folder per thread would be a new project per thread in the project list.
-- Named `No project` because the host's project row and sidebar-repos both label a session by the basename of
-  `project.canonical`, so these sessions read "No project" with no coupling between plugins (verified live).
-- The folder is created by `experimental.file.write` of a `README.md` using an absolute path from the default location;
-  a write through a location that does not exist yet fails (`LocationNotFoundError`). An existing README is never overwritten.
-- The draft opens in a focused new tab through `ctx.layout.draft` with an empty prompt; nothing is sent.
+- Each open creates `<server home>/.local/share/opencode/no-project/<uuid>/No project` (`<uuid>` = `crypto.randomUUID()`).
+  Home is `client.location.get().directory`, so a remote server gets its own folders. The server half resolves the same
+  directory as `XDG_DATA_HOME` (absolute) or `~/.local/share`, plus `opencode/no-project`; with a custom `XDG_DATA_HOME`
+  the GUI's guess misses it, so those folders are created but never swept.
+- Why per session: sessions no longer share files, AGENTS.md-less history or leftovers. Why the leaf is always
+  `No project`: the host's project row and sidebar-repos label a session by the basename of `project.canonical`, so every
+  folder still reads "No project" with no coupling between plugins. Cost: every folder becomes its own project and
+  shows under "Other projects" in the picker (accepted).
+- An absolute `options.directory` in the `opencode.json` plugin entry means one single shared folder instead (no uuid,
+  no cleanup: the sweep only looks under the base dir). The picker row hides while the host lists a project at that
+  pinned path; with per-session folders it never hides, since a listed folder is a past session's.
+- The folder is created by `experimental.file.write` of `README.md` by absolute path from the default location. The
+  write creates missing parents (checked live: three levels). A location that does not exist yet cannot be written
+  through (`LocationNotFoundError`). The draft opens in a focused new tab through `ctx.layout.draft` with an empty
+  prompt; nothing is sent, and the session is created on first send, so an abandoned draft leaves an empty folder.
+- The old shared `~/Documents/No project` from earlier versions is left untouched and never deleted.
+
+## Cleanup (server entry, `src/server.ts` + `src/sweep.ts`)
+
+The HTTP API has no delete and GUI plugins cannot touch the disk, so the package also has a server plugin
+(`exports["."]` -> `dist/server.js`, like orchestrator-tools; the same plugin path loads both entries). It sweeps
+`<data dir>/no-project/*` at server start and every 6 hours, and on `session.deleted`. A folder is deleted when:
+
+1. no session was ever created in it (or its session was deleted) and the folder is older than 24h;
+2. every session in it is archived and the newest archive is more than 7 days old (exactly 7d is kept);
+3. its session was deleted: removed at once from the event, when no other session still lists that directory
+   (the event's `location.directory`, else a directory learned from earlier listings; else rule 1 applies).
+
+Never deleted: a folder with any live session, however many files it holds.
+
+Safety: sessions are matched by `location.directory == <base>/<uuid>/No project` (relative path must be exactly
+`<uuid>/No project[/...]`; `..` escapes do not match), listing live and archived sessions across all pages. Any listing
+failure, repeated cursor or runaway paging rejects the sweep and deletes nothing. Only real directories named as a UUID
+directly under the base, with a real `No project` directory child, are removed (no symlink followed, realpath must stay
+under the real base). Concurrent sweeps share one run. A server with no home and no absolute `XDG_DATA_HOME` logs a
+warning and skips cleanup. Deletions are logged (`no-project: deleted scratch folder <uuid>`).
 
 ## Entry points
 
@@ -45,9 +73,8 @@
   holding the catalog `folder` icon (`ctx.ui.Icon`, class `command-palette-row-icon`) and a `command-palette-row-text`
   with title "No project" and a faint "Scratch folder" description. The host's CSS, not ours, styles it; computed
   styles match the project and "Add project" rows (height 28, padding, radius, 13px/530 title, active fill).
-- Search: matches title, description and the keywords scratch/none/without/empty/projectless. Hidden while the host
-  already lists a project at the scratch path (the folder is a project after its first session, and then shows
-  natively when searching "no project").
+- Search: matches title, description and the keywords scratch/none/without/empty/projectless. Hidden only while the host
+  lists a project at a pinned `options.directory`.
 - Highlight: the host's typeahead keeps its active row in private state, so a foreign row cannot join it. The row takes
   part by hand: capture-phase arrows step into and out of it (leaving it hands the highlight back with a synthetic
   `mousemove` carrying movement, which the host reads as the pointer entering a row), pointer moves over it highlight it,
@@ -58,7 +85,7 @@
   `ctx.layout.draft` always opens a new tab), so the picker's draft is replaced: the new draft takes its prompt text
   (composer editor `innerText`; attachments are not carried), is moved to its tab position, and the old tab is closed,
   which keeps it under recently closed tabs.
-- Footer after choosing: chip "No project", path `<home>/Documents/No project`. Sidebar and Home label sessions
+- Footer after choosing: chip "No project", path `<home>/.local/share/opencode/no-project/<uuid>/No project`. Sidebar and Home label sessions
   "No project" (basename of the project's canonical directory).
 - Observation: a `MutationObserver` on the body (childList) finds the dialog; a second on the dialog re-syncs the row after
   every host re-render. The host's `<For>` may clear the group, so every sync is idempotent.

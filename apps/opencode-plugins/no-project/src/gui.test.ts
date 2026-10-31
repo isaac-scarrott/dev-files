@@ -49,6 +49,17 @@ function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+const SCRATCH = /^\/Users\/me\/\.local\/share\/opencode\/no-project\/[0-9a-f-]{36}\/No project$/
+
+test("every open uses a fresh folder", async () => {
+  const { commands, drafts } = fixture()
+  await commands[0].run()
+  await commands[0].run()
+  await settle()
+  const [a, b] = drafts.map((d) => (d as { directory: string }).directory)
+  assert.notEqual(a, b)
+})
+
 test("registers one palette and slash command", () => {
   const { commands } = fixture()
   assert.deepEqual(commands.map((item) => [item.id, item.slash?.name]), [["new", "no-project"]])
@@ -58,15 +69,17 @@ test("creates the folder then opens an empty draft in it on the routed session's
   const { commands, calls, drafts } = fixture({ current: true })
   await commands[0].run()
   await settle()
-  assert.deepEqual(calls, ["read /Users/me/Documents/No project/README.md", "write /Users/me/Documents/No project/README.md"])
-  assert.deepEqual(drafts, [{ server: "other", directory: "/Users/me/Documents/No project", prompt: "" }])
+  const directory = (drafts[0] as { directory: string }).directory
+  assert.match(directory, SCRATCH)
+  assert.deepEqual(calls, [`read ${directory}/README.md`, `write ${directory}/README.md`])
+  assert.deepEqual(drafts, [{ server: "other", directory, prompt: "" }])
 })
 
 test("an existing folder is not written again; the builtin server is the fallback", async () => {
   const { commands, calls, drafts } = fixture({ exists: true })
   await commands[0].run()
   await settle()
-  assert.deepEqual(calls, ["read /Users/me/Documents/No project/README.md"])
+  assert.deepEqual(calls, [`read ${(drafts[0] as { directory: string }).directory}/README.md`])
   assert.equal((drafts[0] as { server: string }).server, "sidecar")
 })
 
@@ -104,6 +117,6 @@ test("choosing the picker row reopens the draft in the scratch folder with its p
   await new Promise((resolve) => window.requestAnimationFrame(() => setTimeout(resolve, 0)))
   document.querySelector<HTMLElement>("[data-no-project-row]")!.click()
   await new Promise((resolve) => setTimeout(resolve, 30))
-  assert.equal((drafts[0] as { directory: string }).directory, "/Users/me/Documents/No project")
+  assert.match((drafts[0] as { directory: string }).directory, SCRATCH)
   assert.deepEqual(tabCalls, ["move new 0", "close origin"])
 })

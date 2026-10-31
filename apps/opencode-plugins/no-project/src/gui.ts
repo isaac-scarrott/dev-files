@@ -2,7 +2,7 @@ import { Command, Plugin } from "@opencode/plugin/gui"
 import { onCleanup } from "solid-js"
 import { render } from "solid-js/web"
 import { attachPicker } from "./picker"
-import { NAME, readme, scratchDirectory } from "./scratch"
+import { NAME, pinnedDirectory, readme, scratchDirectory } from "./scratch"
 
 const EDITOR = '[data-component="composer-editor"]'
 
@@ -34,7 +34,6 @@ export default Plugin.define({
     const serverRef = () => ctx.sessions.current()?.server ?? ctx.servers.list().map((id) => ctx.servers.get(id)).find((item) => item?.builtin)
     const folder = async (server: NonNullable<ReturnType<typeof serverRef>>) =>
       scratchDirectory((await server.client.location.get(undefined, { signal: ctx.signal })).directory, ctx.options.directory)
-    let scratch: string | undefined
 
     const open = async (replace = false) => {
       const origin = replace ? ctx.tabs.list().find((item) => item.active && !item.session) : undefined
@@ -46,7 +45,7 @@ export default Plugin.define({
       const path = `${directory}/README.md`
 
       // The server accepts a missing directory but its tools then fail. A write by absolute path from the default
-      // location creates the folder; a location that does not exist yet cannot be written through.
+      // location creates the folder and any missing parents; a location that does not exist yet cannot be written through.
       const exists = await client.file.read({ path }, { signal: ctx.signal }).then(() => true, () => false)
       if (!exists) await client.experimental.file.write({ path, payload: readme() }, { signal: ctx.signal })
 
@@ -61,14 +60,11 @@ export default Plugin.define({
       ctx.toast.show({ title: ctx.t("failed"), variant: "error" })
     }
 
-    const builtin = ctx.servers.list().map((id) => ctx.servers.get(id)).find((item) => item?.builtin)
-    if (builtin) void folder(builtin).then((directory) => { scratch = directory }, () => {})
-
     const icons: (() => void)[] = []
     const stop = attachPicker(document, {
       title: NAME,
       description: ctx.t("scratch"),
-      path: () => scratch,
+      path: () => pinnedDirectory(ctx.options.directory),
       keywords: ["scratch", "none", "without", "empty", "projectless"],
       icon: () => {
         const host = document.createElement("div")
