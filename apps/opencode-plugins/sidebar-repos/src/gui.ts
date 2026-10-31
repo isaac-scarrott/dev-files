@@ -46,7 +46,7 @@ export default Plugin.define({
         font-size: 13px;
         line-height: 16px;
       }
-      /* No fades: the scroll list fades top/bottom and the title fades at its edge; both are masks. */
+      /* The native list and link fades are masks that ignore the status mark; replaced by the title fade below. */
       [data-slot='vertical-tabs-scroll'] {
         -webkit-mask-image: none !important;
         mask-image: none !important;
@@ -54,6 +54,20 @@ export default Plugin.define({
       [data-titlebar-tab][data-orientation='vertical'] [data-slot='tab-link'] {
         -webkit-mask-image: none !important;
         mask-image: none !important;
+      }
+      /* Text yields to whatever sits at the row's trailing edge: a status mark, or the close button on hover. */
+      [data-titlebar-tab][data-orientation='vertical'] {
+        --sidebar-fade: 0px;
+      }
+      [data-titlebar-tab][data-orientation='vertical']:is([data-status='busy'], [data-status='attention'], [data-status='unread'], [data-sidebar-attention]) {
+        --sidebar-fade: 28px;
+      }
+      [data-titlebar-tab][data-orientation='vertical']:is(:hover, :focus-within) {
+        --sidebar-fade: 32px;
+      }
+      [data-titlebar-tab][data-orientation='vertical'] :is([data-slot='tab-title'], [data-sidebar-repo]) {
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
+        mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
       }
       /* Attention shows a Phosphor icon instead of the dot; unread keeps its blue dot, busy its ring. */
       [data-titlebar-tab][data-sidebar-attention] [data-slot='tab-status'] > [data-mark='attention'] {
