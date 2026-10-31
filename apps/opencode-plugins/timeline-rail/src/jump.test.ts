@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { currentTarget, jump, type Host } from "./jump"
+import { jumpTo, type Host } from "./jump"
 
 const INSET = 48
 const VIEWPORT = 600
@@ -118,8 +118,7 @@ test("a mounted prompt above the fold is glided to, below the header, after unpi
     ],
   })
   try {
-    assert.deepEqual(currentTarget(f.host), { kind: "message", id: "m2" })
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m2", new AbortController().signal), "done")
     assert.deepEqual(f.wheels, [-1])
     assert.deepEqual(f.scrolls, [{ top: 700 - INSET, behavior: "smooth" }])
   } finally {
@@ -137,7 +136,7 @@ test("a mounted prompt far above gets an instant jump to one screen away, then t
     ],
   })
   try {
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m1", new AbortController().signal), "done")
     assert.deepEqual(f.scrolls, [
       { top: 100 - INSET + VIEWPORT, behavior: "auto" },
       { top: 100 - INSET, behavior: "smooth" },
@@ -155,7 +154,7 @@ test("reduced motion lands instantly", async () => {
     rows: [{ owner: "m1", y: 500, height: 60, prompt: true }, { owner: "m1", y: 560, height: 2000 }],
   })
   try {
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m1", new AbortController().signal), "done")
     assert.deepEqual(f.scrolls, [{ top: 500 - INSET, behavior: "auto" }])
   } finally {
     await f.close()
@@ -200,8 +199,7 @@ test("an unmounted prompt above is probed for one viewport per frame, then glide
   })
   virtualize(f, layout, { overscan: 600 })
   try {
-    assert.deepEqual(currentTarget(f.host), { kind: "message", id: "m3" })
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m3", new AbortController().signal), "done")
     assert.deepEqual(f.wheels, [-1])
     assert.deepEqual(f.scrolls, [
       ...auto([8400, 7800, 7200, 6600, 6000, 5400, 4800, 4200, 3600]),
@@ -228,8 +226,7 @@ test("a prompt the virtualizer renders one frame late is probed for again from t
   const f = await fixture({ ids: ["m1", "m2", "m3", "m4"], scrollTop: 9000, total: 30108, rows: layout.slice(4) })
   virtualize(f, layout, { lag: 1 })
   try {
-    assert.deepEqual(currentTarget(f.host), { kind: "message", id: "m3" })
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m3", new AbortController().signal), "done")
     assert.deepEqual(f.scrolls, [
       ...auto([8400, 7800, 7200, 6600, 6000, 5400, 4800, 4200]),
       // m2's rows are in view: the prompt is below, so the retry goes down by half steps.
@@ -242,25 +239,24 @@ test("a prompt the virtualizer renders one frame late is probed for again from t
   }
 })
 
-test("older history loads first when the prompt above is on an unloaded page", async () => {
+test("the first loaded prompt, unmounted with older history, loads a page then probes for it", async () => {
   const f = await fixture({
     ids: ["m2", "m3"],
     more: true,
     scrollTop: 400,
-    rows: [{ owner: "m2", y: 448, height: 60, prompt: true }, { owner: "m2", y: 508, height: 900 }],
+    rows: [{ owner: "m3", y: 448, height: 60, prompt: true }, { owner: "m3", y: 508, height: 900 }],
     loadMore: (fx) => {
       fx.setIds(["m1", "m2", "m3"], false)
       fx.mount([
-        { owner: "m1", y: 100, height: 60, prompt: true },
-        { owner: "m1", y: 160, height: 288 },
-        { owner: "m2", y: 448, height: 60, prompt: true },
-        { owner: "m2", y: 508, height: 900 },
+        { owner: "m2", y: 100, height: 60, prompt: true },
+        { owner: "m2", y: 160, height: 288 },
+        { owner: "m3", y: 448, height: 60, prompt: true },
+        { owner: "m3", y: 508, height: 900 },
       ])
     },
   })
   try {
-    assert.deepEqual(currentTarget(f.host), { kind: "load" })
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
+    assert.equal(await jumpTo(f.host, "m2", new AbortController().signal), "done")
     assert.equal(f.calls.loads, 1)
     assert.deepEqual(f.calls.loading, [true, false])
     assert.deepEqual(f.scrolls, [{ top: 100 - INSET, behavior: "smooth" }])
@@ -269,15 +265,14 @@ test("older history loads first when the prompt above is on an unloaded page", a
   }
 })
 
-test("nothing above the first prompt: no target, no scroll", async () => {
+test("a prompt the host does not list: no scroll, no unpin", async () => {
   const f = await fixture({
     ids: ["m1", "m2"],
     scrollTop: 0,
     rows: [{ owner: "m1", y: 48, height: 60, prompt: true }, { owner: "m1", y: 108, height: 300 }],
   })
   try {
-    assert.equal(currentTarget(f.host), undefined)
-    assert.equal(await jump(f.host, new AbortController().signal), "none")
+    assert.equal(await jumpTo(f.host, "m9", new AbortController().signal), "none")
     assert.deepEqual(f.scrolls, [])
     assert.deepEqual(f.wheels, [])
   } finally {
@@ -291,11 +286,11 @@ test("an aborted jump stops after the load and scrolls nothing", async () => {
     ids: ["m2"],
     more: true,
     scrollTop: 0,
-    rows: [{ owner: "m2", y: 48, height: 60, prompt: true }],
+    rows: [{ owner: "m2", y: 48, height: 900 }],
     loadMore: () => controller.abort(),
   })
   try {
-    assert.equal(await jump(f.host, controller.signal), "aborted")
+    assert.equal(await jumpTo(f.host, "m2", controller.signal), "aborted")
     assert.deepEqual(f.scrolls, [])
   } finally {
     await f.close()

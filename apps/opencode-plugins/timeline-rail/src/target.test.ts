@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { candidates, glidePlan, pickTarget, probeDirection, revealPlan, type Row } from "./target"
+import { currentPrompt, glidePlan, probeDirection, revealPlan, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -11,51 +11,34 @@ const row = (owner: string, top: number, height: number, prompt = false): Row =>
   bottom: top + height,
 })
 
-test("candidates keep user messages in order and drop prompts at or after a pending revert", () => {
-  const messages = [
-    { id: "m1", type: "user" },
-    { id: "m1a", type: "assistant" },
-    { id: "m2", type: "user" },
-    { id: "m3", type: "user" },
-  ]
-  assert.deepEqual(candidates(messages), ["m1", "m2", "m3"])
-  assert.deepEqual(candidates(messages, "m3"), ["m1", "m2"])
-})
-
-test("inside a turn whose prompt scrolled off above, the target is that prompt", () => {
+test("the current prompt owns the first row that extends below the fold", () => {
   const rows = [row("m2", -300, 60, true), row("m2", -240, 900), row("m3", 660, 60, true)]
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: false }), { kind: "message", id: "m2" })
+  assert.equal(currentPrompt(ids, rows, 48), 1)
 })
 
-test("a prompt sitting on the fold targets the prompt before it, within tolerance", () => {
+test("a prompt sitting on the fold is current, within tolerance; the turn before it ends there", () => {
   const rows = [row("m2", -200, 60, true), row("m2", -140, 180), row("m3", 44, 60, true), row("m3", 104, 500)]
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: false }), { kind: "message", id: "m2" })
+  assert.equal(currentPrompt(ids, rows, 48), 2)
 })
 
-test("a prompt partly under the header is already above: it is the target", () => {
-  const rows = [row("m3", 20, 60, true), row("m3", 80, 500)]
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: false }), { kind: "message", id: "m3" })
-})
-
-test("inside a turn whose prompt row is unmounted, the owning prompt is the target", () => {
+test("inside a turn whose prompt row is unmounted, the owning prompt is current", () => {
   const rows = [row("m3", -100, 400), row("m3", 300, 400), row("m4", 700, 60, true)]
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: false }), { kind: "message", id: "m3" })
+  assert.equal(currentPrompt(ids, rows, 48), 2)
 })
 
-test("the first prompt on the fold has nothing above unless older history exists", () => {
-  const rows = [row("m1", 50, 60, true), row("m1", 110, 300)]
-  assert.equal(pickTarget({ ids, rows, fold: 48, more: false }), undefined)
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: true }), { kind: "load" })
+test("a row the host does not list resolves to the listed prompt before it", () => {
+  assert.equal(currentPrompt(ids, [row("m2x", 60, 300)], 48), 1)
+  assert.equal(currentPrompt(ids, [row("m0", 60, 300)], 48), 0)
+  assert.equal(currentPrompt(ids, [row("m9", 60, 300)], 48), 3)
 })
 
-test("a row the host does not list falls back to the listed prompt before it", () => {
-  const rows = [row("m2x", 60, 300)]
-  assert.deepEqual(pickTarget({ ids, rows, fold: 48, more: false }), { kind: "message", id: "m2" })
+test("every row above the fold: the last row's turn is current", () => {
+  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m1", -400, 300)], 48), 0)
 })
 
-test("no prompts or no rows give no target", () => {
-  assert.equal(pickTarget({ ids: [], rows: [row("m1", 0, 10)], fold: 0, more: true }), undefined)
-  assert.equal(pickTarget({ ids, rows: [], fold: 0, more: true }), undefined)
+test("no prompts or no rows give no current prompt", () => {
+  assert.equal(currentPrompt([], [row("m1", 0, 10)], 0), -1)
+  assert.equal(currentPrompt(ids, [], 0), -1)
 })
 
 test("probe direction: rows in view of the target's turn or later mean it is above, earlier turns mean below", () => {

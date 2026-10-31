@@ -6,7 +6,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | Package | Purpose | Verification |
 | --- | --- | --- |
 | `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 19 tests, build; live UI not verified |
-| `message-jump` | Header button + `message-jump.previous` command: glides to the previous user prompt, pages in unloaded history | Typecheck, 24 tests, build; verified live in the isolated app (reduced motion and palette unit-tested only) |
+| `timeline-rail` | Tick rail in the chat's left gutter, one tick per user prompt (t3-code style): hover/focus card with the prompt and reply start, click glides the prompt under the header, pages in unloaded history | Typecheck, 33 tests, build; verified live in the isolated app (card parity, tracking, keyboard, 200-prompt bucketing, narrow/one-prompt hide, hot reload); reduced motion, touch and subagent sessions unit-tested only |
 | `snooze-archive` | Collapsible Snoozed/Archived sidebar groups; device-local timed snooze, native archive/restore; Snooze… + Archive beside every session Delete… menu (tab, header, Home row). Palette: Snooze session…, Archive session, Refresh archived sessions | Typecheck, 73 tests, build; verified live in the isolated app (tab, header and Home-row menus, presets, archive); calendar keyboard and DST UI not |
 | `plugin-list` | Extensions → Plugins: lists server-only plugins and adds Desktop/Server/TUI/RPC chips to every row | Typecheck, 3 tests, build; live UI not verified |
 | `claude-proxy` | Server plugin: routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | Loads; env pass-through not verified |
@@ -19,14 +19,12 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | `session-drag` | Drag a sidebar session row (live tab or snooze-archive Snoozed/Archived row) sideways into the session panel to attach a "Session" chip the model reads as `@session:<id> ("title")`; the chip opens the session. Palette: Reference session… | Typecheck, 17 tests, build; verified live in the isolated app (drag, drop, Esc, sidebar drop no-op, native reorder intact, archived rows, palette, ghost style numbers vs host chip classes); reduced motion CSS-only |
 | `sidepanel` | Original pinned counter-panel experiment | Build only; no typecheck/test scripts |
 
-Message jump binds through each session's header slot, follows its active state,
-and observes only that timeline's content and ancestor sizes. Cached inactive
-timelines cannot leave a pill over another session. The pill fits the timeline,
-supports keyboard focus and reduced motion, and picks targets by visual position.
-It remains a prototype: unmounted history needs a verified host navigation
-integration; the 2.2.5 GUI SDK exposes no public timeline reveal method. Live checks
-still needed: scroll/jump under virtualization, session switching, sidebar/pane
-resizing, light/dark, reduced motion, plugin reload and sidebar spacing.
+Timeline rail binds through each session's header slot, follows its active state,
+and observes only that timeline's content and ancestor sizes, so cached inactive
+timelines cannot leave a rail over another session. It hides under two prompts,
+when the gutter is narrower than 44px (side panel open at modest widths) and below
+768px. Unmounted prompts are reached by probing the virtualizer one viewport per
+frame; see its `DESIGN.md`.
 
 Run in each package with scripts:
 
