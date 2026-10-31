@@ -3,7 +3,7 @@ import test from "node:test"
 import { Window } from "happy-dom"
 import { hideRecent } from "./recent"
 
-const dialog = (search: boolean, headers: string[]) => `<div role="dialog">${search ? '<input placeholder="Search models">' : ""}${headers.map((h) => `<div data-section="${h}"><div class="flex h-8 w-full"><div>${h}</div></div><div>item</div></div>`).join("")}</div>`
+const dialog = (search: boolean, headers: string[]) => `<div class="model-dialog" role="dialog">${search ? '<input placeholder="Search models">' : ""}<div data-slot="search-list-results">${headers.map((h) => `<div data-slot="search-list-section" role="group" data-section="${h}"><div data-slot="search-list-header"><span data-slot="model-dialog-header-label" class="flex"><span class="truncate">${h}</span></span></div><div>item</div></div>`).join("")}</div></div>`
 const page = (html: string) => { const w = new Window(); w.document.body.innerHTML = html; return w.document as unknown as Document }
 
 test("hides only the Recent section of the model picker", () => {
