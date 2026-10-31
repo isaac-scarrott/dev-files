@@ -6,6 +6,7 @@ import { iconCss } from "./icons"
 import { menuCss } from "./menu"
 import { createSessionMenus } from "./sessionmenu"
 import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
+import { tabRowActionCss } from "../../native-ui/src"
 import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
 import { createHost } from "./host"
@@ -31,7 +32,7 @@ const definition = Plugin.define({ stores: {
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css + actionsCss + iconCss + menuCss + customCss + wokeCss)
+    ctx.add(Style, tabRowActionCss + css + actionsCss + iconCss + menuCss + customCss + wokeCss)
     const host = createHost(ctx.ui)
     const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
@@ -322,7 +323,7 @@ export default Plugin.define({
       const ids = ctx.servers.list()
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
-        key: sessionKey(id, info.id), title: info.title ?? "Session", badge: repoLabel(id, info), detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
+        key: sessionKey(id, info.id), title: info.title ?? "Session", project: repoLabel(id, info), detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         avatar: avatarOf(id, info), action: "Restore",
         // Reading an archived session does not unarchive it; only Restore does.
         open: () => openInCurrentTab(document, id, info.id),
@@ -342,7 +343,7 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), badge: `${repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title)} · ${formatRemaining(entry.until, Date.now())}`, detail: `Wakes ${formatWake(entry.until, Date.now())} (${zoneLabel(entry.until)}) · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), project: repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), until: formatRemaining(entry.until, Date.now()), detail: `Wakes ${formatWake(entry.until, Date.now())} (${zoneLabel(entry.until)}) · device-local`, action: "Wake", run: () => wake(entry, true),
         menu: [
           { label: "Wake", run: () => wake(entry, true) },
           { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },

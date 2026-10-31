@@ -1,11 +1,11 @@
-import { createActions, type Handlers, type Target } from "./actions"
+import { createActions, labels, type Handlers, type Target } from "./actions"
 import type { Host } from "./host"
 
 export interface TabInfo { target: Target; title: string; disabled: boolean; archived: boolean }
 
-// Mounts Archive into each vertical session tab's own close slot, in place of the X; title, rename and status marks are untouched.
+// Mounts Archive into each vertical session tab as a native-ui row action, in place of the X; title, rename and status marks are untouched.
 export function createTabActions(doc: Document, shell: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, info: (key: string) => TabInfo | undefined, handlers: Handlers) {
-  const hosts = new Map<HTMLElement, ReturnType<typeof createActions>>()
+  const hosts = new Map<HTMLElement, ReturnType<typeof createActions> & { label: string }>()
   const drop = (actions: ReturnType<typeof createActions>) => { actions.dispose() }
   const sync = () => {
     const live = new Set<HTMLElement>()
@@ -16,13 +16,15 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
       if (!tab) { if (actions) { drop(actions); host.removeAttribute("data-sa-tab-host"); hosts.delete(host) } continue }
       live.add(host)
       host.toggleAttribute("data-sa-archived-tab", tab.archived)
-      const slot = host.querySelector<HTMLElement>('[data-slot="tab-close"]') ?? host
-      if (!actions || actions.slot !== slot) {
-        if (actions) drop(actions)
-        actions = createActions(shell, slot, () => info(key!)?.target, () => info(key!)?.title ?? "", handlers, () => info(key!)?.disabled ?? true)
+      const row = host.querySelector<HTMLElement>("[data-titlebar-tab]") ?? host
+      const label = `${labels.archive} ${tab.title}`.trim()
+      // A session that cannot be archived yet (pending) shows no button; a rename or a rebuilt row re-attaches it.
+      if (actions && (tab.disabled || actions.tab !== row || actions.label !== label)) { drop(actions); hosts.delete(host); actions = undefined }
+      if (!actions && !tab.disabled) {
+        actions = { ...createActions(shell, row, () => info(key!)?.target, label, handlers), label }
         hosts.set(host, actions)
       }
-      host.setAttribute("data-sa-tab-host", "")
+      host.toggleAttribute("data-sa-tab-host", !!actions)
     }
     for (const [host, actions] of hosts) if (!live.has(host)) { drop(actions); host.removeAttribute("data-sa-tab-host"); hosts.delete(host) }
   }
