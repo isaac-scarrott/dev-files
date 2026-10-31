@@ -1,0 +1,31 @@
+{
+  "name": "opencode-orchestrator-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts",
+    "smoke": "node -e \"import('./dist/server.js').then((m) => { if (!m.default?.id || typeof m.default.setup !== 'function') throw new Error('missing plugin export') })\""
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@opencode/plugin": "2.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "effect": "4.0.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}
