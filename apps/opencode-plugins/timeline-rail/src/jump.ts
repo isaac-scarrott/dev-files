@@ -1,4 +1,4 @@
-import { glidePlan, pickTarget, probeDirection, revealPlan, type Row, type Target } from "./target"
+import { currentPrompt, glidePlan, probeDirection, revealPlan, type Row } from "./target"
 
 /** What a jump needs from the timeline it runs in. */
 export type Host = {
@@ -50,15 +50,11 @@ export function anchorOf(scroller: HTMLElement, id: string) {
   )
 }
 
-export function currentTarget(host: Host): Target {
+/** The index of the prompt whose turn contains the viewport top, under the sticky header. */
+export function currentIndex(host: Pick<Host, "scroller" | "ids">): number {
   const box = host.scroller.getBoundingClientRect()
 
-  return pickTarget({
-    ids: host.ids(),
-    rows: readRows(host.scroller),
-    fold: box.top + inset(host.scroller),
-    more: host.more(),
-  })
+  return currentPrompt(host.ids(), readRows(host.scroller), box.top + inset(host.scroller))
 }
 
 /**
@@ -216,19 +212,9 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
   return true
 }
 
-/** Takes the timeline to the nearest prompt above the fold. */
-export async function jump(host: Host, signal: AbortSignal): Promise<Outcome> {
-  let target = currentTarget(host)
-
-  for (let pages = 0; target?.kind === "load" && pages < PAGE_LIMIT; pages += 1) {
-    await load(host, signal)
-
-    if (signal.aborted) return "aborted"
-    target = currentTarget(host)
-  }
-
-  if (!target || target.kind !== "message") return "none"
-  const { id } = target
+/** Takes the timeline to the prompt `id`, landing it right under the sticky header. */
+export async function jumpTo(host: Host, id: string, signal: AbortSignal): Promise<Outcome> {
+  if (!host.ids().includes(id)) return "none"
   unpin(host.scroller)
 
   if (!anchorOf(host.scroller, id)) {

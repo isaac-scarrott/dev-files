@@ -1,53 +1,25 @@
 /** A mounted timeline row: its owning prompt, whether it is that prompt's own row, and its viewport box. */
 export type Row = { readonly owner: string; readonly prompt: boolean; readonly top: number; readonly bottom: number }
 
-export type Target = { readonly kind: "message"; readonly id: string } | { readonly kind: "load" } | undefined
-
 /** Rows this close to the fold count as sitting on it. */
 export const TOLERANCE = 8
 
-/** The prompts the host's timeline shows, in order: `visibleUserMessages` of `app/src/session/session-domain.ts`. */
-export function candidates(messages: readonly { id: string; type: string }[], revertMessageID?: string): string[] {
-  const ids = messages.filter((message) => message.type === "user").map((message) => message.id)
-
-  return revertMessageID ? ids.filter((id) => id < revertMessageID) : ids
-}
-
 /**
- * The nearest candidate prompt above the fold. Rows are in document order. The first row that extends below the fold
- * owns the current turn; when that row is the prompt itself and starts on or below the fold, the target is the prompt
- * before it, otherwise the current prompt is above (scrolled off or unmounted) and is the target.
+ * The index in `ids` of the prompt whose turn contains the fold. Rows are in document order; the first row that
+ * extends below the fold owns the current turn. A row whose owner the host does not list resolves to the last listed
+ * prompt before it. -1 when nothing is mounted or listed.
  */
-export function pickTarget(input: {
-  readonly ids: readonly string[]
-  readonly rows: readonly Row[]
-  readonly fold: number
-  readonly more: boolean
-}): Target {
-  const { ids, rows, fold, more } = input
+export function currentPrompt(ids: readonly string[], rows: readonly Row[], fold: number): number {
+  if (ids.length === 0) return -1
+  const current = rows.find((row) => row.bottom > fold + TOLERANCE) ?? rows.at(-1)
 
-  if (ids.length === 0) return undefined
-
-  const before = (index: number): Target =>
-    index > 0 ? { kind: "message", id: ids[index - 1]! } : more ? { kind: "load" } : undefined
-
-  const first = rows.find((row) => row.bottom > fold + TOLERANCE)
-  const current = first ?? rows.at(-1)
-
-  if (!current) return undefined
-
+  if (!current) return -1
   const index = ids.indexOf(current.owner)
 
-  // A row whose owner the host does not list: the last listed prompt before it is the one above.
-  if (index === -1) {
-    const next = ids.findIndex((id) => id > current.owner)
+  if (index !== -1) return index
+  const next = ids.findIndex((id) => id > current.owner)
 
-    return before(next === -1 ? ids.length : next)
-  }
-
-  if (first && first.prompt && first.top >= fold - TOLERANCE) return before(index)
-
-  return { kind: "message", id: current.owner }
+  return next === -1 ? ids.length - 1 : Math.max(0, next - 1)
 }
 
 export type RevealPlan = { readonly kind: "probe" } | { readonly kind: "load" } | { readonly kind: "top" }
