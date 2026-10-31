@@ -67,7 +67,6 @@ function fixture() {
 
   const [messages, setMessages] = createSignal<Message[]>([])
   const [active, setActive] = createSignal(true)
-  const commands: string[] = []
   const session = {
     id: "s",
     server: {
@@ -88,7 +87,6 @@ function fixture() {
       list.push(item)
       return () => {}
     },
-    commands: { run: (id: string) => (commands.push(id), true) },
     keybinds: { keybind: () => [] },
     ui: {
       Tooltip: (props: { children: unknown }) => props.children,
@@ -122,7 +120,6 @@ function fixture() {
     scroller,
     state,
     scrolls,
-    commands,
     mount,
     setMessages,
     setActive,
@@ -207,7 +204,6 @@ test("scrolling past a prompt enables the button; a click glides to it and the c
     f.button()!.click()
     await f.flush()
     assert.deepEqual(f.scrolls, [{ top: 0, behavior: "smooth" }])
-    assert.deepEqual(f.commands, [])
   } finally {
     dispose()
     f.close()

@@ -50,55 +50,42 @@ export function pickTarget(input: {
   return { kind: "message", id: current.owner }
 }
 
-/** The host's `cursor()` (`app/src/session/timeline/interaction.ts`): the prompt owning the line 100px below the top. */
-export function hostCursor(rows: readonly Row[], box: { readonly top: number; readonly bottom: number }) {
-  const line = box.top + 100
-  const shown = rows.filter((row) => row.bottom > box.top && row.top < box.bottom)
-  const hit = shown.find((row) => row.top <= line && row.bottom >= line)
-
-  if (hit) return hit.owner
-
-  const near = [...shown].sort((a, b) => {
-    const aDistance = Math.abs(a.top - line)
-    const bDistance = Math.abs(b.top - line)
-
-    if (aDistance !== bDistance) return aDistance - bDistance
-
-    return a.top - b.top
-  })[0]
-
-  if (near) return near.owner
-
-  return rows.filter((row) => row.top <= line).at(-1)?.owner ?? rows[0]?.owner
-}
-
-export type RevealPlan =
-  | { readonly kind: "commands"; readonly commands: readonly ("message.previous" | "message.next")[] }
-  | { readonly kind: "load" }
-  | { readonly kind: "top" }
+export type RevealPlan = { readonly kind: "probe" } | { readonly kind: "load" } | { readonly kind: "top" }
 
 /**
- * The host commands that put `target` under the header. `message.previous` steps the host's `navigateMessage(-1)`
- * from its cursor, then from the prompt it last navigated to, so `cursor - target` calls land on the target. A cursor
- * already on the target's turn steps back once and forward once.
+ * How to bring an unmounted prompt's row into the DOM: page the scroller towards it, unless it is the first prompt,
+ * which either sits at the top or on an unloaded page.
  */
-export function revealPlan(input: {
-  readonly ids: readonly string[]
-  readonly cursor: string | undefined
-  readonly target: string
-  readonly more: boolean
-}): RevealPlan {
-  const { ids, cursor, target, more } = input
-  const to = ids.indexOf(target)
-  const at = cursor ? ids.indexOf(cursor) : -1
-  const base = at === -1 ? ids.length : at
-  const steps = base - to
+export function revealPlan(input: { readonly ids: readonly string[]; readonly target: string; readonly more: boolean }): RevealPlan {
+  const to = input.ids.indexOf(input.target)
 
-  if (steps >= 1) return { kind: "commands", commands: Array.from({ length: steps }, () => "message.previous") }
+  if (to >= 1) return { kind: "probe" }
 
-  if (to >= 1) return { kind: "commands", commands: ["message.previous", "message.next"] }
+  return input.more ? { kind: "load" } : { kind: "top" }
+}
 
-  return more ? { kind: "load" } : { kind: "top" }
+/**
+ * Which way the prompt lies from the rows in view. Every row carries its turn's prompt id, so rows of the target's
+ * turn without its prompt row mean the prompt is above them, and rows of earlier turns mean it is below. Only rows
+ * intersecting the viewport count: the virtualizer keeps the last turn's final row mounted far below whatever is
+ * shown, and it would otherwise read as "a later turn is below" at every position. Rows straddling the target
+ * give 0: the prompt is in view and its row is about to mount.
+ */
+export function probeDirection(
+  rows: readonly Row[],
+  target: string,
+  box: { readonly top: number; readonly bottom: number },
+): -1 | 0 | 1 {
+  const shown = rows.filter((row) => row.bottom > box.top && row.top < box.bottom)
+  const list = shown.length ? shown : rows
+  const first = list[0]
+  const last = list.at(-1)
+
+  if (!first || first.owner >= target) return -1
+
+  if (last && last.owner < target) return 1
+
+  return 0
 }
 
 /**

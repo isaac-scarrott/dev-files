@@ -55,7 +55,6 @@ function JumpButton(props: {
       ids,
       more,
       loadMore: (signal) => data().message.loadMore(session().id, { signal }),
-      run: (command) => props.ctx.commands.run(command),
       reducedMotion,
       frame,
       loading: setLoading,

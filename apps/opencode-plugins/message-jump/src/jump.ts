@@ -1,4 +1,4 @@
-import { glidePlan, hostCursor, pickTarget, revealPlan, type Row, type Target } from "./target"
+import { glidePlan, pickTarget, probeDirection, revealPlan, type Row, type Target } from "./target"
 
 /** What a jump needs from the timeline it runs in. */
 export type Host = {
@@ -9,8 +9,6 @@ export type Host = {
   /** Older history exists on the server. */
   more(): boolean
   loadMore(signal: AbortSignal): Promise<void>
-  /** Runs one of the app's commands; false when unavailable. */
-  run(command: string): boolean
   reducedMotion(): boolean
   /** Resolves on the next animation frame. */
   frame(): Promise<void>
@@ -23,7 +21,8 @@ export type Outcome = "done" | "none" | "aborted"
 const SETTLE_FRAMES = 3
 const SETTLE_LIMIT = 40
 const GLIDE_LIMIT = 120
-const PROBE_LIMIT = 60
+const PROBE_LIMIT = 200
+const PROBE_ATTEMPTS = 3
 const PAGE_LIMIT = 5
 
 /** Mounted rows in document order, as the host's cursor reads them. */
@@ -87,51 +86,63 @@ function offsetOf(scroller: HTMLElement, anchor: HTMLElement) {
   return Math.max(0, a.top - b.top + scroller.scrollTop - inset(scroller))
 }
 
-/** Waits until the anchor is mounted and the scroll offset has held still for a few frames. */
+/**
+ * Waits until the anchor is mounted and the scroll offset has held still for a few frames. Gives up early when the
+ * anchor stays unmounted: the virtualizer's late render for the last probe stop can take the row out again.
+ */
 async function settle(host: Host, id: string, signal: AbortSignal) {
   let last = Number.NaN
   let still = 0
+  let missing = 0
 
   for (let frame = 0; frame < SETTLE_LIMIT && !signal.aborted; frame += 1) {
     await host.frame()
     const top = host.scroller.scrollTop
-    still = anchorOf(host.scroller, id) && top === last ? still + 1 : 0
+    const mounted = anchorOf(host.scroller, id)
+    still = mounted && top === last ? still + 1 : 0
+    missing = mounted ? 0 : missing + 1
     last = top
 
-    if (still >= SETTLE_FRAMES) return
+    if (still >= SETTLE_FRAMES || missing > SETTLE_FRAMES) return
   }
 }
 
-/** Last resort when the host's commands are unavailable: page the scroller towards the prompt until its row mounts. */
-async function probe(host: Host, id: string, signal: AbortSignal) {
+/**
+ * Pages the scroller towards the prompt, one viewport per frame, until the virtualizer mounts its row. The rows in
+ * view after each frame say which way to go; an overshoot halves the step, so the row lands in view within a few
+ * frames. Consecutive stops overlap, so a prompt row cannot fall between them once the virtualizer has rendered.
+ */
+async function probe(host: Host, id: string, signal: AbortSignal, search: { step: number; direction: -1 | 0 | 1 }) {
   const { scroller } = host
+  let waited = 0
 
   for (let frame = 0; frame < PROBE_LIMIT && !signal.aborted; frame += 1) {
     if (anchorOf(scroller, id)) return
-    const rows = readRows(scroller)
-    const first = rows[0]
-    const last = rows.at(-1)
-    const step = scroller.clientHeight * 3
+    const next = probeDirection(readRows(scroller), id, scroller.getBoundingClientRect())
 
-    // Rows of the target's own turn without its prompt row mean the prompt is above them.
-    if (!first || first.owner >= id) {
-      if (scroller.scrollTop <= 0) return
-      scroller.scrollTo({ top: Math.max(0, scroller.scrollTop - step), behavior: "auto" })
-    } else if (last && last.owner < id) {
-      scroller.scrollTo({ top: scroller.scrollTop + step, behavior: "auto" })
-    } else return
+    if (next === 0) {
+      // The prompt is in view but its row has not rendered yet: a few frames, then give up.
+      if ((waited += 1) > SETTLE_FRAMES) return
+      await host.frame()
+      continue
+    }
+    waited = 0
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+
+    if ((next === -1 && scroller.scrollTop <= 0) || (next === 1 && scroller.scrollTop >= max)) return
+
+    if (search.direction !== 0 && next !== search.direction) {
+      search.step = Math.max(scroller.clientHeight / 4, search.step / 2)
+    }
+    search.direction = next
+    scroller.scrollTo({ top: Math.min(max, Math.max(0, scroller.scrollTop + next * search.step)), behavior: "auto" })
     await host.frame()
   }
 }
 
 async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0): Promise<void> {
   const { scroller } = host
-  const plan = revealPlan({
-    ids: host.ids(),
-    cursor: hostCursor(readRows(scroller), scroller.getBoundingClientRect()),
-    target: id,
-    more: host.more(),
-  })
+  const plan = revealPlan({ ids: host.ids(), target: id, more: host.more() })
 
   if (plan.kind === "load") {
     if (pages >= PAGE_LIMIT) return
@@ -148,11 +159,15 @@ async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0)
     return settle(host, id, signal)
   }
 
-  for (const command of plan.commands) {
-    if (!host.run(command)) return probe(host, id, signal)
-  }
+  // The step and direction carry across attempts, so a retry after an overshoot keeps the halved step.
+  const search = { step: scroller.clientHeight, direction: 0 as -1 | 0 | 1 }
 
-  return settle(host, id, signal)
+  for (let attempt = 0; attempt < PROBE_ATTEMPTS && !signal.aborted; attempt += 1) {
+    await probe(host, id, signal, search)
+    await settle(host, id, signal)
+
+    if (anchorOf(scroller, id)) return
+  }
 }
 
 /** Glides the final screen to the anchor, then corrects any drift the virtualizer's late measurements left. */
@@ -195,7 +210,8 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
   if (!landed) return true
   const to = Math.min(offsetOf(scroller, landed), Math.max(0, scroller.scrollHeight - scroller.clientHeight))
 
-  if (Math.abs(to - scroller.scrollTop) > 2) scroller.scrollTo({ top: to, behavior: "auto" })
+  // Mounting the turn above shifts the anchor after the glide lands; a second short glide settles it without a jolt.
+  if (Math.abs(to - scroller.scrollTop) > 2) scroller.scrollTo({ top: to, behavior: plan.behavior })
 
   return true
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { candidates, glidePlan, hostCursor, pickTarget, revealPlan, type Row } from "./target"
+import { candidates, glidePlan, pickTarget, probeDirection, revealPlan, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -58,35 +58,31 @@ test("no prompts or no rows give no target", () => {
   assert.equal(pickTarget({ ids, rows: [], fold: 0, more: true }), undefined)
 })
 
-test("host cursor picks the row on the 100px line, else the nearest shown row", () => {
+test("probe direction: rows in view of the target's turn or later mean it is above, earlier turns mean below", () => {
   const box = { top: 0, bottom: 800 }
-  assert.equal(hostCursor([row("m1", -50, 100), row("m2", 50, 100), row("m3", 150, 100)], box), "m2")
-  assert.equal(hostCursor([row("m2", 300, 100), row("m3", 500, 100)], box), "m2")
-  assert.equal(hostCursor([row("m1", -500, 100), row("m2", -300, 100)], box), "m2")
-  assert.equal(hostCursor([], box), undefined)
+  assert.equal(probeDirection([row("m3", -500, 1200)], "m3", box), -1)
+  assert.equal(probeDirection([row("m4", 0, 60, true), row("m4", 60, 900)], "m3", box), -1)
+  assert.equal(probeDirection([row("m2", -200, 900), row("m2", 700, 300)], "m3", box), 1)
+  assert.equal(probeDirection([row("m2", -200, 300), row("m4", 100, 300)], "m3", box), 0)
+  assert.equal(probeDirection([], "m3", box), -1)
 })
 
-test("reveal plan steps the host back once per prompt between its cursor and the target", () => {
-  assert.deepEqual(revealPlan({ ids, cursor: "m4", target: "m2", more: false }), {
-    kind: "commands",
-    commands: ["message.previous", "message.previous"],
-  })
-  assert.deepEqual(revealPlan({ ids, cursor: undefined, target: "m4", more: false }), {
-    kind: "commands",
-    commands: ["message.previous"],
-  })
+test("probe direction ignores rows out of view, like the last turn's row the virtualizer keeps mounted", () => {
+  const box = { top: 0, bottom: 800 }
+  assert.equal(probeDirection([row("m2", -200, 900), row("m6", 20000, 300)], "m3", box), 1)
+  assert.equal(probeDirection([row("m3", -200, 900), row("m6", 20000, 300)], "m3", box), -1)
+  // Nothing in view yet: the mounted rows decide.
+  assert.equal(probeDirection([row("m2", -2000, 900), row("m2", 3000, 300)], "m3", box), 1)
 })
 
-test("reveal plan steps back and forward when the cursor already owns the target's turn", () => {
-  assert.deepEqual(revealPlan({ ids, cursor: "m2", target: "m2", more: false }), {
-    kind: "commands",
-    commands: ["message.previous", "message.next"],
-  })
+test("reveal plan probes for any prompt but the first", () => {
+  assert.deepEqual(revealPlan({ ids, target: "m2", more: false }), { kind: "probe" })
+  assert.deepEqual(revealPlan({ ids, target: "m4", more: true }), { kind: "probe" })
 })
 
 test("reveal plan for the first prompt loads older history or scrolls to the top", () => {
-  assert.deepEqual(revealPlan({ ids, cursor: "m1", target: "m1", more: true }), { kind: "load" })
-  assert.deepEqual(revealPlan({ ids, cursor: "m1", target: "m1", more: false }), { kind: "top" })
+  assert.deepEqual(revealPlan({ ids, target: "m1", more: true }), { kind: "load" })
+  assert.deepEqual(revealPlan({ ids, target: "m1", more: false }), { kind: "top" })
 })
 
 test("glide plan glides short distances, jumps to one screen away for long ones, and clamps", () => {

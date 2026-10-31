@@ -19,7 +19,6 @@ async function fixture(input: {
   total?: number
   scrollTop?: number
   reduced?: boolean
-  run?: (command: string, f: Fixture) => boolean
   loadMore?: (f: Fixture) => void
 }) {
   const window = new Window()
@@ -64,7 +63,7 @@ async function fixture(input: {
   }
   mount(input.rows)
 
-  const calls = { commands: [] as string[], loads: 0, loading: [] as boolean[], frames: 0 }
+  const calls = { loads: 0, loading: [] as boolean[], frames: 0 }
   let ids = input.ids
   let more = input.more ?? false
   const f = {
@@ -96,10 +95,6 @@ async function fixture(input: {
       calls.loads += 1
       input.loadMore?.(f)
     },
-    run: (command) => {
-      calls.commands.push(command)
-      return input.run ? input.run(command, f) : false
-    },
     reducedMotion: () => input.reduced ?? false,
     frame: async () => {
       calls.frames += 1
@@ -127,7 +122,6 @@ test("a mounted prompt above the fold is glided to, below the header, after unpi
     assert.equal(await jump(f.host, new AbortController().signal), "done")
     assert.deepEqual(f.wheels, [-1])
     assert.deepEqual(f.scrolls, [{ top: 700 - INSET, behavior: "smooth" }])
-    assert.deepEqual(f.calls.commands, [])
   } finally {
     await f.close()
   }
@@ -168,61 +162,80 @@ test("reduced motion lands instantly", async () => {
   }
 })
 
-test("an unmounted prompt is revealed through the host's message commands, then glided to", async () => {
-  // Reading deep inside m3's turn; m3's prompt and m2 are unmounted far above. The host cursor is on m3.
+/**
+ * A virtualizer stand-in: after every frame, mounts the rows of `layout` that intersect the viewport (plus
+ * `overscan`), as of `lag` frames ago. The last turn's final row stays mounted, as in the real timeline.
+ */
+function virtualize(f: Fixture, layout: Spec[], options: { overscan?: number; lag?: number } = {}) {
+  const { overscan = 0, lag = 0 } = options
+  const tail = layout.at(-1)!
+  const original = f.host.frame
+  const history: number[] = []
+  f.host.frame = async () => {
+    await original()
+    history.push(f.state.scrollTop)
+    const at = history[Math.max(0, history.length - 1 - lag)]!
+    const top = at - overscan
+    const bottom = at + VIEWPORT + overscan
+    const rows = layout.filter((spec) => spec.y < bottom && spec.y + spec.height > top)
+    f.mount(rows.includes(tail) ? rows : [...rows, tail])
+  }
+}
+
+const auto = (tops: number[]) => tops.map((top) => ({ top, behavior: "auto" as const }))
+
+test("an unmounted prompt above is probed for one viewport per frame, then glided to", async () => {
+  // Reading deep inside m3's turn; m3's prompt is unmounted far above.
+  const layout: Spec[] = [
+    { owner: "m2", y: 2000, height: 60, prompt: true },
+    { owner: "m2", y: 2060, height: 940 },
+    { owner: "m3", y: 3000, height: 60, prompt: true },
+    { owner: "m3", y: 3060, height: 8000 },
+    { owner: "m3", y: 11060, height: 200 },
+  ]
   const f = await fixture({
-    ids: ["m1", "m2", "m3", "m4"],
+    ids: ["m1", "m2", "m3"],
     scrollTop: 9000,
-    rows: [
-      { owner: "m3", y: 8500, height: 1200 },
-      { owner: "m4", y: 9700, height: 60, prompt: true },
-    ],
-    run: (command, fx) => {
-      // The host lands the revealed prompt under the header after the last command.
-      if (fx.calls.commands.length === 2) {
-        fx.mount([
-          { owner: "m2", y: 3000, height: 60, prompt: true },
-          { owner: "m2", y: 3060, height: 500 },
-          { owner: "m3", y: 3560, height: 60, prompt: true },
-          { owner: "m3", y: 3620, height: 6000 },
-        ])
-        fx.state.scrollTop = 3560 - INSET
-      }
-      return true
-    },
+    rows: [{ owner: "m3", y: 3060, height: 8000 }, { owner: "m3", y: 11060, height: 200 }],
   })
+  virtualize(f, layout, { overscan: 600 })
   try {
     assert.deepEqual(currentTarget(f.host), { kind: "message", id: "m3" })
     assert.equal(await jump(f.host, new AbortController().signal), "done")
     assert.deepEqual(f.wheels, [-1])
-    assert.deepEqual(f.calls.commands, ["message.previous", "message.next"])
-    // Already in place after the host settled: the glide is a no-op scroll to the same offset.
-    assert.deepEqual(f.scrolls, [{ top: 3560 - INSET, behavior: "smooth" }])
-    assert.equal(f.state.scrollTop, 3560 - INSET)
+    assert.deepEqual(f.scrolls, [
+      ...auto([8400, 7800, 7200, 6600, 6000, 5400, 4800, 4200, 3600]),
+      { top: 3000 - INSET, behavior: "smooth" },
+    ])
+    assert.equal(f.state.scrollTop, 3000 - INSET)
   } finally {
     await f.close()
   }
 })
 
-test("a prompt on the fold steps the host back once per prompt between its cursor and the target", async () => {
-  // m4's prompt is on the fold; the target is m3, unmounted. The host's cursor line (100px) is in m4's turn.
-  const f = await fixture({
-    ids: ["m1", "m2", "m3", "m4"],
-    scrollTop: 9000,
-    rows: [
-      { owner: "m4", y: 9048, height: 60, prompt: true },
-      { owner: "m4", y: 9108, height: 1000 },
-    ],
-    run: (_command, fx) => {
-      fx.mount([{ owner: "m3", y: 5000, height: 60, prompt: true }, { owner: "m3", y: 5060, height: 4000 }])
-      fx.state.scrollTop = 5000 - INSET
-      return true
-    },
-  })
+test("a prompt the virtualizer renders one frame late is probed for again from the other side", async () => {
+  // m4's prompt is on the fold; the target is m3. Rows arrive a frame after each stop, so the probe sees m3's
+  // prompt one stop late, and the next render takes it out again; the retry turns around with a smaller step.
+  const layout: Spec[] = [
+    { owner: "m2", y: 1000, height: 60, prompt: true },
+    { owner: "m2", y: 1060, height: 3940 },
+    { owner: "m3", y: 5000, height: 60, prompt: true },
+    { owner: "m3", y: 5060, height: 3988 },
+    { owner: "m4", y: 9048, height: 60, prompt: true },
+    { owner: "m4", y: 9108, height: 1000 },
+    { owner: "m4", y: 10108, height: 20000 },
+  ]
+  const f = await fixture({ ids: ["m1", "m2", "m3", "m4"], scrollTop: 9000, total: 30108, rows: layout.slice(4) })
+  virtualize(f, layout, { lag: 1 })
   try {
     assert.deepEqual(currentTarget(f.host), { kind: "message", id: "m3" })
     assert.equal(await jump(f.host, new AbortController().signal), "done")
-    assert.deepEqual(f.calls.commands, ["message.previous"])
+    assert.deepEqual(f.scrolls, [
+      ...auto([8400, 7800, 7200, 6600, 6000, 5400, 4800, 4200]),
+      // m2's rows are in view: the prompt is below, so the retry goes down by half steps.
+      ...auto([4500, 4800]),
+      { top: 5000 - INSET, behavior: "smooth" },
+    ])
     assert.equal(f.state.scrollTop, 5000 - INSET)
   } finally {
     await f.close()
@@ -251,31 +264,6 @@ test("older history loads first when the prompt above is on an unloaded page", a
     assert.equal(f.calls.loads, 1)
     assert.deepEqual(f.calls.loading, [true, false])
     assert.deepEqual(f.scrolls, [{ top: 100 - INSET, behavior: "smooth" }])
-  } finally {
-    await f.close()
-  }
-})
-
-test("without host commands, the scroller pages up until the prompt's row mounts", async () => {
-  const f = await fixture({
-    ids: ["m1", "m2", "m3"],
-    scrollTop: 9000,
-    rows: [{ owner: "m3", y: 8800, height: 2000 }],
-    run: () => false,
-  })
-  const original = f.host.frame
-  f.host.frame = async () => {
-    await original()
-    if (f.state.scrollTop < 4000) {
-      f.mount([{ owner: "m3", y: 3000, height: 60, prompt: true }, { owner: "m3", y: 3060, height: 8000 }])
-    }
-  }
-  try {
-    assert.equal(await jump(f.host, new AbortController().signal), "done")
-    // The first unavailable command ends the host route.
-    assert.deepEqual(f.calls.commands, ["message.previous"])
-    assert.ok(f.scrolls.length >= 3)
-    assert.equal(f.state.scrollTop, 3000 - INSET)
   } finally {
     await f.close()
   }

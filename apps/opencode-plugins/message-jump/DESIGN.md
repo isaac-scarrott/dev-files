@@ -44,22 +44,21 @@ screen", `virtualizer.tsx:602`) because gliding across the whole history streams
 
 **Unmounted anchor** (far): no plugin API scrolls the virtualizer to an index, and desktop routes through a
 `MemoryRouter` (`src/renderer/window/router.tsx`), so writing `location.hash` never reaches the host's hash scroll.
-The only reachable host navigation is `ctx.commands.run("message.previous" | "message.next")`, which steps
-`navigateMessage(±1)` (`interaction.ts:198`) from its cursor and reveals through `virtualizer.scrollToIndex`. The
-plugin replicates `cursor()` (`interaction.ts:81`: the row containing the line 100px below the viewport top) to know
-where the host starts, then runs `message.previous` `cursor − target` times synchronously; after the first step the
-host continues from its own `state.messageID`, so each call moves exactly one prompt. When the cursor already sits on
-the target's turn (its prompt unmounted above), it runs `message.previous` then `message.next`. The intermediate
-positions never paint: every call is synchronous.
+The plugin probes: it pages the scroller towards the prompt one viewport per frame with `behavior: "auto"` until
+the virtualizer mounts the prompt's row. The direction comes from the rows in view: every row carries its turn's
+prompt id, so rows of the target's turn (or later) without the prompt row mean it is above, and rows of earlier
+turns mean it is below. Only rows intersecting the viewport count, because the virtualizer keeps the last turn's
+final row mounted at every scroll position (seen live: `data-message-id` of the last turn at +23000px), and it
+would otherwise read as "a later turn is below" everywhere. A flip in direction halves the step (floor: a quarter
+viewport), so an overshoot corrects within a frame or two. One-viewport steps overlap, so a rendered prompt row
+cannot fall between two stops; TanStack's two items of overscan (`virtualizer.tsx:191`) are not enough for larger
+steps, as a two-viewport probe skipped prompts live.
 
-The host then settles the position over a few frames (`seek` retries, TanStack's `scrollToIndex` timeout, the hash
-effect's `applyHash`). The plugin waits until the anchor is mounted and the scroll offset has held still for three
-frames, then glides the final screen as above. If the host snaps once more during the glide, the end position is
-still the prompt; only the glide is cut short.
-
-If the commands are unavailable (`run` returns false, e.g. the session screen's commands are disabled), the fallback
-probes: scroll up by three viewports per frame until the anchor mounts, then glide. It paints intermediate rows and
-is the last resort only.
+The virtualizer can render a stop one frame late, so the row found at one stop may unmount on the next render. The
+plugin waits until the anchor is mounted and the scroll offset has held still for three frames (the virtualizer
+measures the new rows and shifts the content); if the anchor goes missing instead, it probes again from where it
+is, at most three attempts. Then it glides the final screen as above. The probe frames paint, which reads as a
+fast scroll rather than a cut; the glide at the end gives the landing its easing.
 
 **Unloaded page**: `message.loadMore(id, { signal })`, then recompute. One page per click; the button stays `busy`
 meanwhile. The `AbortController` is aborted when the slot unmounts or the plugin reloads.
@@ -99,14 +98,23 @@ the wheel handler acts on a zero-distance wheel.
 - **`location.hash = "#message-<id>"`**: desktop uses a memory router; the hash never changes the host's `useLocation`.
 - **`ctx.commands.run("message.previous")` alone**: wrong semantics (skips the current prompt), instant only, and
   cannot be aimed at a chosen prompt.
+- **Aiming the host's `message.previous` / `message.next` by replicating its cursor** (the first far path): the
+  plugin ran `cursor − target` commands synchronously so the host's `navigateMessage` would reveal the prompt.
+  Live, two back-to-back host navigations collide in `use-session-hash-scroll.ts`: each `scrollToMessage` calls
+  `cancel()` on the previous one's queued `seek` retries and the second `revealMessage` lands with the first's
+  `scrollToIndex` still in flight. Inside a turn whose prompt is unmounted (`previous` then `next`) this landed the
+  prompt *before* the target 64px under the header, every time. Dropped for the probe, which needs nothing from the
+  host's navigation state.
 - **Scrolling the virtualizer by estimated offsets**: row indices of unmounted prompts are not knowable from outside
-  the projection, so only a probe search is possible; kept as a fallback, not the path.
+  the projection, so the probe searches by direction instead of computing an offset.
 - **`ctx.tabs.open` / `layout.pendingMessage`**: the SDK's `Tabs.open` has no message option in 2.2.5.
 
 ## Verification
 
-Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`) cover target selection, the host
-cursor replica, the reveal plan (which commands in which order), the glide plan and the slot's hydration. Live
-verification against the desktop app is recorded in the final report; GUI plugins do not load on the web build
-(`runtime/plugin/root.tsx`: the plugin bridge is desktop-only), so a browser against `opencode-cli serve` only
-exercises the host's scrolling, not this plugin.
+Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`) cover target selection, the probe
+direction and its turnaround, the reveal plan, the glide plan and the slot's hydration. Live verification runs
+against a second, isolated desktop app driven over CDP (`.claude/skills/opencode-gui-plugins/reference/browser-testing.md`,
+`scripts/desktop-harness.sh`); GUI plugins do not load on the web build (`runtime/plugin/root.tsx`: the plugin
+bridge is desktop-only), so a browser against `opencode-cli serve` only exercises the host's scrolling, not this
+plugin. Prompt rows only unmount when a turn has many parts (the virtualizer's items are parts, not turns), so the
+far path needs a seeded session with multi-part answers.
