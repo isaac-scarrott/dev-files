@@ -120,7 +120,7 @@ revealing, `cubic-bezier(0.77, 0, 0.175, 1)` for on-screen movement, only `trans
 | what | how often | motion |
 | --- | --- | --- |
 | Tick hover / current | tens per day | opacity of a second line (`::after`, 0 → 0.6 hover, 1 current) 120ms ease-out; no colour or `background` transition |
-| Dock lift | tens per day | fine pointers only: ticks within ~16px of the pointer widen up to +40% (and thicken a little); `transform` 110ms ease-out per tick, so it retargets as the pointer moves; cleared on leave |
+| Dock lift | tens per day | fine pointers only: ticks within ~30px of the pointer widen up to +140% (and thicken a little); `transform` 110ms ease-out per tick, so it retargets as the pointer moves; cleared on leave |
 | Card enter | occasional | the card mounts in its closed look and flips `data-entered` a frame later: opacity and `scale(.96 → 1)` 140ms ease-out, `transform-origin` at the hovered tick (`--card-origin`) so it grows out of the tick |
 | Card between ticks | continuous while open | stays mounted: `translateY` glides 140ms to the next tick, content swaps; no re-pop, no delay (the host tooltip's skip delay) |
 | Card exit | occasional | 90ms ease-out to opacity 0 / `scale(.96)`, then unmounts; reopening during it reverses from the current value (transitions, not keyframes, so both directions are interruptible) |

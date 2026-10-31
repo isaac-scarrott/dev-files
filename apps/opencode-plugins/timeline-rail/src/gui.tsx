@@ -19,8 +19,8 @@ const OPEN_DELAY = 400
 const SKIP_DELAY = 300
 const CLOSE_MOTION = 90
 /** Dock-like lift under a fine pointer: peak extra width of the nearest tick, and the falloff in px. */
-const LIFT = 0.4
-const REACH = 16
+const LIFT = 1.4
+const REACH = 30
 
 type Geometry = { readonly top: number; readonly height: number; readonly left: number; readonly show: boolean }
 
@@ -586,7 +586,7 @@ const CSS = `
   margin-top: -1px;
   border-radius: 1px;
   transform-origin: 0 50%;
-  transform: scale(var(--k, 1), calc(1 + (var(--k, 1) - 1) * 1.2));
+  transform: scale(var(--k, 1), calc(1 + (var(--k, 1) - 1) * 0.45));
 }
 [data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); opacity: 0.45; }
 [data-timeline-rail-tick]::after { background: var(--v2-text-text-base); opacity: 0; }
