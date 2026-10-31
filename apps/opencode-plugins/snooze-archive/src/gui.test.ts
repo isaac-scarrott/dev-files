@@ -299,11 +299,12 @@ async function runSnooze(f: { commands: Map<string, { run(): Promise<void> | voi
   await pending
 }
 
-const NATIVE_MENU = `<div role="menu" data-component="menu-v2-content" data-appearance="compact" aria-labelledby="trigger"><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Rename</span></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Close tab</span></div><div data-slot="menu-v2-separator"></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item" data-variant="critical"><span data-slot="menu-v2-item-content">Delete…</span></div></div>`
+const NATIVE_MENU = `<div role="menu" data-component="menu-v2-content" data-appearance="compact"><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Rename</span></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Close tab</span></div><div data-slot="menu-v2-separator"></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item" data-variant="critical"><span data-slot="menu-v2-item-content">Delete session…</span></div></div>`
 const key = (el: Element, name: string) => el.dispatchEvent(new (el.ownerDocument.defaultView as any).KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
 const labelsOf = (menu: Element) => [...menu.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent)
-function openNativeMenu(f: { doc: Document }, id = "trigger") {
-  f.doc.querySelector("[data-tab-key] [data-slot='tab-title']")!.id = id
+// The live menu has no aria-labelledby; the contextmenu event on the tab is the only link.
+function openNativeMenu(f: { doc: Document }, target: Element = f.doc.querySelector("[data-tab-key] [data-slot='tab-title']")!) {
+  target.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
   const portal = f.doc.createElement("div")
   portal.innerHTML = NATIVE_MENU
   f.doc.body.append(portal)
@@ -341,7 +342,7 @@ test("native tab menu gains Snooze… and Archive once, before the native Delete
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     const menu = openNativeMenu(f); await f.flush()
-    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Snooze…", "Archive", "Delete…"])
+    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Snooze…", "Archive", "Delete session…"])
     assert.equal(menu.querySelectorAll("[data-sa-menu][role=menuitem]").length, 2)
     const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
     assert.equal(items[2].dataset.component, "menu-v2-item", "uses the app's item markup")
@@ -366,9 +367,9 @@ test("native menu items are added only for session tabs", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
-    const other = f.doc.createElement("button"); other.id = "other"; f.doc.body.append(other)
-    const menu = openNativeMenu(f, "elsewhere"); menu.setAttribute("aria-labelledby", "other"); await f.flush()
-    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Delete…"])
+    const other = f.doc.createElement("button"); f.doc.body.append(other)
+    const menu = openNativeMenu(f, other); await f.flush()
+    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Delete session…"])
   } finally { await f.close() }
 })
 
@@ -479,5 +480,22 @@ test("archiving closes the tab at that moment; Restore is the only unarchive and
     click(f.doc.querySelector('[data-sa-row] button[data-icon="outline-undo"]')); await f.flush()
     assert.deepEqual(f.calls.updates.at(-1), { sessionID: "s", archived: false })
     assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+  } finally { await f.close() }
+})
+
+test("regression: deleting an archived row from its context menu confirms, calls remove, and a server failure shows an error toast and keeps the row", async () => {
+  const f = fixture()
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    const rightClick = () => (f.doc.querySelector("[data-sa-row]") as HTMLElement).dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    f.removeError(true); rightClick()
+    click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.equal(f.calls.confirms.length, 1)
+    assert.equal(f.calls.toasts.at(-1).variant, "error")
+    assert.match(f.calls.toasts.at(-1).description, /server refused/)
+    assert.equal(f.doc.querySelectorAll("[data-sa-row]").length, 1)
+    f.removeError(false); rightClick()
+    click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.removed, [{ sessionID: "s" }, { sessionID: "s" }])
   } finally { await f.close() }
 })

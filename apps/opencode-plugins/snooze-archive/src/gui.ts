@@ -13,7 +13,7 @@ import { createTabActions } from "./tabrows"
 import { sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
-import { checkWake, formatHint, presets, uses12Hour } from "./time"
+import { checkWake, formatHint, formatWake, presets, uses12Hour } from "./time"
 
 const SnoozeSchema = Schema.Struct({
   server: Schema.String, id: Schema.String, title: Schema.String,
@@ -169,7 +169,7 @@ export default Plugin.define({
         })
         closeTabs(entry.server, entry.id)
         hiddenSnoozes.add(sessionKey(entry.server, entry.id))
-        ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${new Date(until).toLocaleString()} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
+        ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${formatWake(until, Date.now())} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
       } catch (cause) { error(cause) }
     }
     const deleteAction = async (server: ServerRef, id: string) => {
@@ -285,7 +285,7 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${formatWake(entry.until, Date.now())} · device-local`, action: "Wake", run: () => wake(entry, true),
         menu: [
           { label: "Wake", run: () => wake(entry, true) },
           { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },

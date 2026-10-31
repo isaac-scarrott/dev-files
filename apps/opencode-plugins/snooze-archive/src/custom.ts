@@ -101,7 +101,7 @@ export function build(host: Host, options: { now?: () => number; locale?: string
     const slot = make("span", {}, chips)
     mount(slot, () => createComponent(host.ui.Button, {
       get variant() { return text().trim() === label ? "neutral" : "ghost-muted" },
-      size: "small", onClick: () => { setText(label); update() }, children: label,
+      size: "small", onClick: () => { setText(label); update(); durationField.querySelector("input")?.focus() }, children: label,
     }))
   }
   const durationField = make("div", {}, durationPanel)
@@ -137,9 +137,12 @@ export function build(host: Host, options: { now?: () => number; locale?: string
   const status = make("p", { role: "status", "data-sa-outcome": "" }, root)
 
   const confirmButtonDisabled = createSignal(true)
+  let finished = false
   const confirm = () => {
     const out = outcome()
-    if (out.until !== undefined) options.done(out.until)
+    if (finished || out.until === undefined) return
+    finished = true
+    options.done(out.until)
   }
   const footer = make("div", { "data-sa-footer": "" })
   const cancelSlot = make("span", {}, footer), okSlot = make("span", {}, footer)

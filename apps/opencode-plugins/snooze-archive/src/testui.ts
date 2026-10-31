@@ -22,7 +22,8 @@ export function fakeUi(doc: Document): Ui {
     IconButton: (props) => node("button", props as never),
     Button: (props) => {
       const el = node("button", props as never)
-      el.append(...([] as unknown[]).concat((props as { children: unknown }).children).filter((c): c is Node => c instanceof (doc.defaultView as any).Node))
+      el.append(...([] as unknown[]).concat((props as { children: unknown }).children).filter((c) => c != null).map((c) => c instanceof (doc.defaultView as any).Node ? (c as Node) : doc.createTextNode(String(c))))
+      if (props.variant) el.dataset.variant = String(props.variant)
       return el
     },
     Tooltip: (props) => props.children,
