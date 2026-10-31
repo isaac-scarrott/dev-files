@@ -71,7 +71,9 @@ function fixture() {
   let dispose = () => {}
   let cleanup: ReturnType<NonNullable<typeof plugin.setup>>
   const styles: string[] = []
-  const ctx = { sessions: { list: sessions }, tabs: { list: tabs }, add: (_: unknown, css: string) => styles.push(css) } as unknown as Context
+  const iconNames: string[] = []
+  const ui = { Icon: (props: { name: string }) => { iconNames.push(props.name); return document.createElement("svg") } }
+  const ctx = { sessions: { list: sessions }, tabs: { list: tabs }, ui, add: (_: unknown, css: string) => styles.push(css) } as unknown as Context
   const start = () => createRoot((stop) => { dispose = stop; cleanup = plugin.setup!(ctx) })
   const stop = () => { dispose(); if (typeof cleanup === "function") void cleanup() }
   const deliver = () => window.happyDOM.whenAsyncComplete()
@@ -83,7 +85,7 @@ function fixture() {
     await deliver()
   }
   return {
-    document, session, calls, styles, frames, resizeTargets, observers,
+    document, session, calls, iconNames, styles, frames, resizeTargets, observers,
     setHydrated, setRequests, setBranch, setTabs, setSessions, start, stop, paint, deliver,
     async close() {
       stop()
@@ -178,6 +180,7 @@ test("cleanup cancels pending frames, removes contributions and reload leaves on
     assert.equal(f.resizeTargets.size, 1)
     assert.equal(f.document.querySelectorAll("[data-sidebar-repo]").length, 1)
     assert.equal(f.document.querySelectorAll("[data-sidebar-status-icon]").length, 2)
+    assert.ok(f.iconNames.includes("warning") && f.iconNames.includes("help"))
     assert.equal(f.frames.size, 0)
   } finally { await f.close() }
 })

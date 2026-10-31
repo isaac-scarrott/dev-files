@@ -21,10 +21,11 @@ export default Plugin.define({
       region: "side",
       list: () => [tab],
       render: () => (
+        // Layout wrapper only: no host component lays out a heading, text and a button.
         <div style={{ padding: "12px", display: "flex", "flex-direction": "column", gap: "8px" }}>
           <h3 style={{ margin: 0 }}>{ctx.t("title")}</h3>
           <p style={{ margin: 0 }}>{ctx.t("hello")}</p>
-          <button onClick={() => setCount((n) => n + 1)}>clicked {count()}</button>
+          <ctx.ui.Button onClick={() => setCount((n) => n + 1)}>clicked {count()}</ctx.ui.Button>
         </div>
       ),
     })

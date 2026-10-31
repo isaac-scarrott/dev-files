@@ -120,9 +120,14 @@ test("leaves horizontal tabs alone, including after orientation changes", () => 
   assert.equal(document.querySelector("[data-slot='tab-title']")?.textContent, "Original title")
 })
 
-test("attention tabs get phosphor icons in the status slot without touching the host dots", () => {
+test("attention tabs get icon slots in the status slot without touching the host dots", () => {
   const document = fixture()
-  badges(document, new Map([["server\nsession", "holibob"]]), undefined, new Map([["server\nsession", "permission"]]))
+  const mounted: string[] = []
+  badges(document, new Map([["server\nsession", "holibob"]]), undefined, new Map([["server\nsession", "permission"]]), (host, kind) => {
+    mounted.push(kind)
+    host.innerHTML = "<svg></svg>"
+  })
+  assert.deepEqual(mounted, ["permission", "question"])
   const icons = [...document.querySelectorAll("[data-sidebar-status-icon]")]
   assert.equal(icons.length, 2)
   assert.deepEqual(icons.map((icon) => icon.getAttribute("data-sidebar-status-icon")), ["permission", "question"])

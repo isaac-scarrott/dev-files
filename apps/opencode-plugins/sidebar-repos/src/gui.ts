@@ -1,5 +1,6 @@
 import { Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect } from "solid-js"
+import { render } from "solid-js/web"
 import { attentionKind, badges, basename, label, truncateMiddle, type AttentionKind } from "./badges"
 
 export default Plugin.define({
@@ -69,7 +70,7 @@ export default Plugin.define({
         -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
         mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade)), transparent) !important;
       }
-      /* Attention shows a Phosphor icon instead of the dot; unread keeps its blue dot, busy its ring. */
+      /* Attention shows a catalog icon instead of the dot; unread keeps its blue dot, busy its ring. */
       [data-titlebar-tab][data-sidebar-attention] [data-slot='tab-status'] > [data-mark='attention'] {
         display: none !important;
       }
@@ -111,6 +112,13 @@ export default Plugin.define({
 
     const observed = new Set<HTMLElement>()
 
+    // Status icons are the app's own catalog icons, mounted into the injected slots.
+    const iconNames = { permission: "warning", question: "help" } as const
+    const icons = new Map<HTMLElement, () => void>()
+    const mountIcon = (host: HTMLElement, kind: AttentionKind) => {
+      icons.set(host, render(() => ctx.ui.Icon({ name: iconNames[kind], size: "small" }), host))
+    }
+
     let names = new Map<string, string>()
     let attention = new Map<string, AttentionKind>()
     let frame: number | undefined
@@ -118,7 +126,12 @@ export default Plugin.define({
       if (frame !== undefined) return
       frame = requestAnimationFrame(() => {
         frame = undefined
-        badges(document, names, display, attention)
+        badges(document, names, display, attention, mountIcon)
+        for (const [host, dispose] of icons) {
+          if (host.isConnected) continue
+          dispose()
+          icons.delete(host)
+        }
         for (const element of observed) {
           if (element.isConnected && element.matches("[data-titlebar-tab][data-orientation='vertical']")) continue
           resizeObserver.unobserve(element)
@@ -194,6 +207,8 @@ export default Plugin.define({
       observer.disconnect()
       resizeObserver.disconnect()
       observed.clear()
+      icons.forEach((dispose) => dispose())
+      icons.clear()
       if (frame !== undefined) cancelAnimationFrame(frame)
       document.querySelectorAll("[data-sidebar-repo]").forEach((badge) => badge.remove())
       document.querySelectorAll("[data-sidebar-status-icon]").forEach((icon) => icon.remove())
