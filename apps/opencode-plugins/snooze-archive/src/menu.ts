@@ -1,13 +1,17 @@
 // The app's context menu is Kobalte's, rendered with `menu-v2-*` markup. The plugin API cannot open a menu at a
 // point, so these helpers write the same markup: into the native tab menu (extendNative) and into a popup of
 // our own for rows the app has no menu for (openMenu).
-export interface MenuEntry { label: string; hint?: string; danger?: boolean; disabled?: boolean; run(): void }
+export interface MenuEntry { label: string; hint?: string; danger?: boolean; disabled?: boolean; submenu?: () => MenuLine[]; run(): void }
 export type MenuLine = MenuEntry | "separator"
 
 const ITEM = '[role="menuitem"]:not([aria-disabled="true"])'
+const SUB = "data-sa-sub"
+// Same glyph as the app's submenu trigger (menu-v2-item-chevron).
+const CHEVRON = '<svg data-slot="menu-v2-item-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4L10 8L6 12V4Z" fill="currentColor"/></svg>'
 const OWN = "data-sa-menu"
 
-function itemNode(doc: Document, entry: MenuEntry, appearance: string, choose: (entry: MenuEntry) => void) {
+interface Sub { open(focus: boolean): void; close(): void }
+function itemNode(doc: Document, entry: MenuEntry, appearance: string, choose: (entry: MenuEntry) => void, sub?: Sub) {
   const el = doc.createElement("div")
   el.setAttribute("role", "menuitem")
   el.tabIndex = -1
@@ -26,12 +30,25 @@ function itemNode(doc: Document, entry: MenuEntry, appearance: string, choose: (
     hint.textContent = entry.hint
     el.append(hint)
   }
-  el.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (!entry.disabled) choose(entry) }
-  el.onpointerenter = () => { if (!entry.disabled) focusItem(el) }
+  if (sub) {
+    el.setAttribute("aria-haspopup", "true")
+    el.setAttribute("aria-expanded", "false")
+    el.insertAdjacentHTML("beforeend", CHEVRON)
+  }
+  el.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (entry.disabled) return; if (sub) sub.open(false); else choose(entry) }
+  let hover: ReturnType<typeof setTimeout> | undefined
+  el.onpointerenter = () => {
+    if (entry.disabled) return
+    focusItem(el)
+    if (sub) hover = setTimeout(() => sub.open(false), 100)
+  }
+  el.onpointerleave = () => clearTimeout(hover)
   el.onkeydown = (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return
+    const open = sub && (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ")
+    if (!open && event.key !== "Enter" && event.key !== " ") return
     event.preventDefault(); event.stopPropagation()
-    if (!entry.disabled) choose(entry)
+    if (entry.disabled) return
+    if (sub) sub.open(true); else choose(entry)
   }
   return el
 }
@@ -62,8 +79,50 @@ export function nextItem(items: HTMLElement[], from: HTMLElement | undefined, ke
   return items[(at <= 0 ? items.length : at) - 1]
 }
 
-const build = (doc: Document, lines: MenuLine[], appearance: string, choose: (entry: MenuEntry) => void) =>
-  lines.map((line) => line === "separator" ? separatorNode(doc, appearance) : itemNode(doc, line, appearance, choose))
+// A submenu opens beside its trigger, inside the parent menu's element so the app's outside-click and focus-out
+// checks treat it as part of that menu. Left/Escape close only the submenu.
+function subOf(doc: Document, parent: HTMLElement, trigger: () => HTMLElement, entry: MenuEntry, appearance: string, choose: (entry: MenuEntry) => void): Sub {
+  let el: HTMLElement | undefined
+  const close = () => { el?.remove(); el = undefined; trigger().setAttribute("aria-expanded", "false") }
+  const open = (focus: boolean) => {
+    if (el?.isConnected) { if (focus) first()?.focus(); return }
+    const t = trigger()
+    el = doc.createElement("div")
+    el.setAttribute("role", "menu")
+    el.setAttribute("aria-label", entry.label)
+    el.tabIndex = -1
+    el.dataset.component = "menu-v2-content"
+    el.dataset.appearance = appearance
+    el.setAttribute(OWN, ""); el.setAttribute(SUB, "")
+    el.style.cssText = `position:absolute;top:${t.offsetTop - 2}px;left:calc(100% + 2px);z-index:1;min-width:160px`
+    el.append(...build(doc, entry.submenu!(), appearance, choose))
+    el.onkeydown = (event) => {
+      if (event.key === "ArrowLeft" || event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); focusItem(t); setTimeout(() => { if (t.isConnected) focusItem(t) }, 0); return }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
+      event.preventDefault(); event.stopPropagation()
+      const items = [...el!.querySelectorAll<HTMLElement>(ITEM)]
+      const target = nextItem(items, (event.target as HTMLElement).closest?.<HTMLElement>('[role="menuitem"]') ?? undefined, event.key)
+      if (target) focusItem(target)
+    }
+    parent.append(el)
+    t.setAttribute("aria-expanded", "true")
+    // No room on the right: open to the left, as the app's submenus flip.
+    const win = doc.defaultView!
+    if (el.getBoundingClientRect().right > win.innerWidth - 8) { el.style.left = "auto"; el.style.right = "calc(100% + 2px)" }
+    if (focus) first()?.focus()
+  }
+  const first = () => el?.querySelector<HTMLElement>(ITEM) ?? undefined
+  return { open, close }
+}
+
+const build = (doc: Document, lines: MenuLine[], appearance: string, choose: (entry: MenuEntry) => void, parent?: HTMLElement): HTMLElement[] =>
+  lines.map((line) => {
+    if (line === "separator") return separatorNode(doc, appearance)
+    let node: HTMLElement
+    const sub = line.submenu && parent ? subOf(doc, parent, () => node, line, appearance, choose) : undefined
+    node = itemNode(doc, line, appearance, choose, sub)
+    return node
+  })
 
 // Adds our lines to a native menu without replacing it. Items sit before the native destructive group, which the
 // app separates with its own separator. Kobalte keeps a collection of its own items, so arrow keys that would step
@@ -73,13 +132,14 @@ export function extendNative(content: HTMLElement, lines: MenuLine[]): () => voi
   const doc = content.ownerDocument
   const appearance = content.dataset.appearance ?? "compact"
   const close = () => content.dispatchEvent(new (doc.defaultView as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
-  const nodes = build(doc, lines, appearance, (entry) => { close(); setTimeout(entry.run, 0) })
+  const nodes = build(doc, lines, appearance, (entry) => { close(); setTimeout(entry.run, 0) }, content)
   const anchor = content.querySelector('[data-slot="menu-v2-separator"]')
   if (anchor) anchor.before(...nodes)
   else content.append(separatorNode(doc, appearance), ...nodes)
   const onKey = (event: KeyboardEvent) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
-    const items = [...content.querySelectorAll<HTMLElement>(ITEM)]
+    if ((event.target as HTMLElement).closest?.(`[${SUB}]`)) return
+    const items = [...content.querySelectorAll<HTMLElement>(ITEM)].filter((el) => !el.closest(`[${SUB}]`))
     const current = (event.target as HTMLElement).closest?.<HTMLElement>('[role="menuitem"]') ?? undefined
     const target = nextItem(items, current, event.key)
     const own = (el: HTMLElement | undefined) => !!el?.hasAttribute(OWN)
@@ -88,7 +148,15 @@ export function extendNative(content: HTMLElement, lines: MenuLine[]): () => voi
     focusItem(target)
   }
   content.addEventListener("keydown", onKey, true)
+  const closeSubs = () => content.querySelectorAll<HTMLElement>(`[${SUB}]`).forEach((sub) => { sub.remove(); content.querySelector('[aria-expanded="true"][aria-haspopup]')?.setAttribute("aria-expanded", "false") })
+  // Moving to any item outside the submenu and its trigger closes it.
+  const onOver = (event: Event) => {
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>('[role="menuitem"]')
+    if (item && !item.closest(`[${SUB}]`) && !item.hasAttribute("aria-haspopup")) closeSubs()
+  }
+  content.addEventListener("pointerover", onOver)
   return () => {
+    content.removeEventListener("pointerover", onOver)
     content.removeEventListener("keydown", onKey, true)
     content.querySelectorAll(`[${OWN}]`).forEach((el) => el.remove())
   }
@@ -96,7 +164,7 @@ export function extendNative(content: HTMLElement, lines: MenuLine[]): () => voi
 
 export interface Point { x: number; y: number }
 
-export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: { label: string; onClose?: (chosen: boolean) => void; focus?: "first" | "none" }) {
+export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: { label: string; onClose?: (chosen: boolean) => void; focus?: "first" | "none"; restore?: () => HTMLElement | null | undefined }) {
   const win = doc.defaultView!
   const previous = doc.activeElement as HTMLElement | null
   const wrap = doc.createElement("div")
@@ -115,7 +183,9 @@ export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: {
     win.removeEventListener("blur", blur)
     win.removeEventListener("resize", blur)
     wrap.remove()
-    if (previous?.isConnected) previous.focus({ preventScroll: true })
+    // The palette that opened us is gone by now, so fall back to the element the menu belongs to.
+    const back = previous?.isConnected && previous !== doc.body ? previous : options.restore?.()
+    back?.focus({ preventScroll: true })
     options.onClose?.(chosen)
   }
   const blur = () => close()
