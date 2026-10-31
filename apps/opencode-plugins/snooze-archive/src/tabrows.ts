@@ -1,7 +1,7 @@
 import { createActions, type Handlers, type Target } from "./actions"
 import type { Host } from "./host"
 
-export interface TabInfo { target: Target; title: string; disabled: boolean }
+export interface TabInfo { target: Target; title: string; disabled: boolean; archived: boolean }
 
 // Mounts Archive into each vertical session tab's own close slot, in place of the X; title, rename and status marks are untouched.
 export function createTabActions(doc: Document, shell: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, info: (key: string) => TabInfo | undefined, handlers: Handlers) {
@@ -15,6 +15,7 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
       let actions = hosts.get(host)
       if (!tab) { if (actions) { drop(actions); host.removeAttribute("data-sa-tab-host"); hosts.delete(host) } continue }
       live.add(host)
+      host.toggleAttribute("data-sa-archived-tab", tab.archived)
       const slot = host.querySelector<HTMLElement>('[data-slot="tab-close"]') ?? host
       if (!actions || actions.slot !== slot) {
         if (actions) drop(actions)

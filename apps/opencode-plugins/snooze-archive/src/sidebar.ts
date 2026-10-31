@@ -3,7 +3,7 @@ import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
 
-export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; open?(): void; menu?: MenuLine[] }
+export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
@@ -175,6 +175,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
           }
         }
         row.set(item)
+        row.el.dataset.active = String(!!item.active)
         if (row.title.textContent !== item.title) row.title.textContent = item.title
         if (row.detail.textContent !== item.detail) row.detail.textContent = item.detail
         const link = row.el.firstElementChild as HTMLElement

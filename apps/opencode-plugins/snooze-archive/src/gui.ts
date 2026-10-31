@@ -10,6 +10,7 @@ import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
 import { createHost } from "./host"
 import { createTabActions } from "./tabrows"
+import { openInCurrentTab } from "./route"
 import { sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
@@ -306,7 +307,8 @@ export default Plugin.define({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         avatar: avatarOf(id, info), action: "Restore",
         // Reading an archived session does not unarchive it; only Restore does.
-        open: () => ctx.tabs.open({ server: id, id: info.id }, { focus: true }),
+        open: () => openInCurrentTab(document, id, info.id),
+        active: ctx.sessions.current()?.server.id === id && ctx.sessions.current()?.id === info.id,
         run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
         menu: [
           { label: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) } },
@@ -334,7 +336,7 @@ export default Plugin.define({
     const tabInfo = (key: string) => {
       const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
       if (!session) return
-      return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
+      return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending, archived: session.server.data.session.get(session.id)?.time?.archived !== undefined }
     }
     const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
     const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels, (target) => {
@@ -344,7 +346,14 @@ export default Plugin.define({
     })
     const wokeMarks = createWokeMarks(document, requestAnimationFrame, cancelAnimationFrame, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
     createEffect(() => {
-      for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
+      const viewing = ctx.sessions.current()
+      for (const tab of ctx.tabs.list()) {
+        const info = tab.session?.server.data.session.get(tab.session.id)
+        info?.title
+        // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
+        // while viewed and close it (it stays in Recently closed) once the user moves on.
+        if (info?.time?.archived !== undefined && !(viewing && viewing.server.id === tab.session!.server.id && viewing.id === tab.session!.id)) ctx.tabs.close(tab.key)
+      }
       tabActions.sync()
     })
     createEffect(() => {

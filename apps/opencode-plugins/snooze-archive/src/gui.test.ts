@@ -513,8 +513,11 @@ test("clicking an Archived row opens it without unarchiving; refresh and events 
     const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
     const link = row.querySelector<HTMLElement>("a")!
     assert.equal(link.tabIndex, 0, "Enter on the row link opens it")
+    const routed: string[] = []
+    f.doc.body.addEventListener("click", (event) => { const a = (event.target as HTMLElement).closest?.("a[link]"); if (a) { routed.push(a.getAttribute("href")!); event.preventDefault() } })
     click(link); await f.flush()
-    assert.deepEqual(f.calls.opened.at(-1), [{ server: "server", id: "s" }, { focus: true }])
+    assert.deepEqual(routed, ["/server/c2VydmVy/session/s"], "navigates the current tab through the session route")
+    assert.deepEqual(f.calls.opened, [], "no sidebar tab is created for an archived session")
     assert.deepEqual(f.calls.updates, [], "opening is not a restore")
     f.emit("session.archived"); f.emit("session.renamed"); await f.flush()
     assert.deepEqual(f.calls.closed, [])
