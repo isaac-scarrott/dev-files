@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { createEffect, createRoot, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
@@ -19,6 +20,9 @@ function fixture() {
     ResizeObserver: class { observe() {} unobserve() {} disconnect() {} },
     requestAnimationFrame: (fn: () => void) => { fn(); return 1 }, cancelAnimationFrame: () => {},
     HTMLHeadElement: (globalThis as any).window.HTMLHeadElement,
+    MutationObserver: (globalThis as any).window.MutationObserver,
+    PointerEvent: (globalThis as any).window.PointerEvent,
+    MouseEvent: (globalThis as any).window.MouseEvent,
     IntersectionObserver: class { observe() {} unobserve() {} disconnect() {} },
     setInterval: ((fn: () => void) => { intervals.set(next, fn); return next++ }) as unknown as typeof setInterval,
     clearInterval: ((id: number) => { intervals.delete(id) }) as unknown as typeof clearInterval,
@@ -62,6 +66,7 @@ function fixture() {
   const added: { kind: string; item: any }[] = []
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
+  const [mode, setMode] = createStore({ enabled: true })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
@@ -71,6 +76,7 @@ function fixture() {
       list: () => tabList(),
       close: (key: string) => { calls.closed.push(key) },
     },
+    stores: { mode: { get value() { return mode }, update: (fn: (draft: { enabled: boolean }) => void) => setMode(produce(fn)) } },
     storage: { memory: () => [memory, (fn: (draft: { done: boolean }) => void) => setMemory(produce(fn))] },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
@@ -99,7 +105,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session,
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -342,4 +348,114 @@ test("elapsed format matches the host's", () => {
   assert.equal(formatElapsed(336_000), "5m 36s")
   assert.equal(formatElapsed(3_720_000), "1h 02m")
   assert.equal(formatElapsed(-5), "0s")
+})
+
+const HOST_LIST = (selected: string) => `
+  <div data-action="settings-background-activity" id="sel" data-component="select-v2-root">
+    <div data-component="select-v2" id="sel-trigger"><div data-slot="select-v2-value"><span id="sel-value" data-slot="select-v2-value-text">Hidden</span></div></div>
+  </div>
+  <ul role="listbox" id="sel-listbox">${["off:Hidden", "left:Left", "center:Center", "right:Right"].map((entry) => {
+    const [key, name] = entry.split(":")
+    const on = key === selected ? " data-selected" : ""
+    return `<li role="option" tabindex="-1" aria-selected="${key === selected}" data-key="${key}" id="o-${key}" data-component="menu-v2-item"${on}><span data-slot="menu-v2-item-content"${on}>${name}</span><div data-slot="menu-v2-item-indicator"${on}></div></li>`
+  }).join("")}</ul>`
+
+const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0)) }
+const option = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-option]") as HTMLElement | null
+const valueText = (f: ReturnType<typeof fixture>) => [...f.doc.querySelectorAll("#sel [data-slot=select-v2-value-text]")] as HTMLElement[]
+
+test("setting: the header toggle exists only while the mode is on", () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  assert.ok(f.toggle())
+  f.setEnabled(false)
+  assert.equal(f.toggle(), null)
+  f.setEnabled(true)
+  assert.ok(f.toggle())
+  f.stop()
+})
+
+test("setting: the first-run mode is off", () => {
+  const source = readFileSync(new URL("./gui.tsx", import.meta.url), "utf8")
+  assert.match(source, /Store\.global\(Schema\.Struct\(\{ enabled: Schema\.Boolean \}\), \{ enabled: false \}\)/)
+})
+
+test("setting: a fifth option clones the host's markup and sits after the host options", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.start()
+  f.doc.body.innerHTML = HOST_LIST("center")
+  await settle()
+  const ours = option(f)!
+  assert.ok(ours)
+  assert.equal(ours.parentElement!.lastElementChild, ours)
+  assert.equal(ours.getAttribute("data-component"), "menu-v2-item")
+  assert.equal(ours.getAttribute("role"), "option")
+  assert.equal(ours.hasAttribute("data-key"), false)
+  assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Subagents panel")
+  assert.equal(ours.getAttribute("aria-selected"), "false")
+  assert.equal(f.doc.getElementById("o-center")!.hasAttribute("data-selected"), true)
+  f.stop()
+})
+
+test("setting: picking it turns the mode on and commits the host's Hidden", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.start()
+  f.doc.body.innerHTML = HOST_LIST("center")
+  await settle()
+  const committed: string[] = []
+  for (const key of ["off", "left"]) f.doc.getElementById(`o-${key}`)!.addEventListener("pointerup", () => {
+    committed.push(key)
+    // What Kobalte does on selection.
+    f.doc.getElementById("o-center")!.removeAttribute("data-selected")
+    f.doc.getElementById(`o-${key}`)!.setAttribute("data-selected", "")
+  })
+  option(f)!.dispatchEvent(new (globalThis as any).window.PointerEvent("pointerup", { bubbles: true, cancelable: true }))
+  await settle()
+  assert.equal(f.mode.enabled, true)
+  assert.deepEqual(committed, ["off"])
+  assert.equal(option(f)!.getAttribute("aria-selected"), "true")
+  assert.equal(option(f)!.hasAttribute("data-selected"), true)
+  assert.equal(f.doc.getElementById("sel")!.hasAttribute("data-agents-on"), true)
+  assert.deepEqual(valueText(f).map((el) => el.textContent), ["Hidden", "Subagents panel"])
+  assert.equal(valueText(f)[1].hasAttribute("data-agents-value"), true)
+  f.stop()
+})
+
+test("setting: picking a host option leaves the mode, and Hidden counts as one", async () => {
+  for (const key of ["center", "off"]) {
+    const f = fixture()
+    f.start()
+    f.doc.body.innerHTML = HOST_LIST("off")
+    await settle()
+    assert.equal(f.mode.enabled, true)
+    f.doc.getElementById(`o-${key}`)!.dispatchEvent(new (globalThis as any).window.PointerEvent("pointerup", { bubbles: true, cancelable: true }))
+    await settle()
+    assert.equal(f.mode.enabled, false)
+    assert.equal(f.doc.getElementById("sel")!.hasAttribute("data-agents-on"), false)
+    assert.deepEqual(valueText(f).map((el) => el.textContent), ["Hidden"])
+    f.stop()
+  }
+})
+
+test("setting: a host value changed elsewhere ends the mode", async () => {
+  const f = fixture()
+  f.start()
+  f.doc.body.innerHTML = HOST_LIST("right")
+  await settle()
+  assert.equal(f.mode.enabled, false)
+  f.stop()
+})
+
+test("setting: cleanup removes every injected node and attribute", async () => {
+  const f = fixture()
+  f.start()
+  f.doc.body.innerHTML = HOST_LIST("off")
+  await settle()
+  assert.ok(option(f))
+  f.stop()
+  assert.equal(option(f), null)
+  assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
 })
