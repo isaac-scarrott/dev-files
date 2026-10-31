@@ -168,12 +168,6 @@ export const styles = `
     [data-slot=spinner-dots] rect { animation: none !important; opacity: var(--still); }
   }
   [data-agents-toggle] { position: relative; display: inline-flex; }
-  [data-agents-badge] {
-    position: absolute; top: -2px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
-    box-shadow: 0 0 0 1.5px var(--v2-background-bg-base); border-radius: 7px; background: var(--v2-icon-icon-accent);
-    color: var(--v2-background-bg-base); font-size: 10px; line-height: 14px; font-weight: 530; text-align: center;
-    font-variant-numeric: tabular-nums; pointer-events: none;
-  }
   /* The host lays the header actions out as a flex row, and slot content renders before the host's own items. The
      context button moves ahead of the toggle so the toggle sits directly after it. */
   .session-header-actions > :has(> button[data-component="button-v2"]) { order: -1 }

@@ -1,7 +1,6 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { runningSubagents } from "./agents"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast">
@@ -17,9 +16,6 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
   const { ctx } = props
   const session = () => props.input.session
   const [open, setOpen] = createSignal(false)
-
-  const count = () => (props.input.active ? runningSubagents(session(), () => 0).length : 0)
-  const label = () => (count() > 0 ? `Subagents · ${count()}` : "Subagents")
 
   let wrap!: HTMLSpanElement
   let pop: HTMLDivElement | undefined
@@ -86,18 +82,15 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
 
   return (
     <>
-      <ctx.ui.Tooltip value={label()}>
+      <ctx.ui.Tooltip value="Subagents">
         <span ref={wrap} data-agents-toggle>
           <ctx.ui.IconButton
             icon="bullet-list"
             size="large"
-            label={label()}
+            label="Subagents"
             pressed={open()}
             onClick={() => setOpen((value) => !value)}
           />
-          <Show when={count() > 0}>
-            <span data-agents-badge>{count()}</span>
-          </Show>
         </span>
       </ctx.ui.Tooltip>
       <Show when={open()}>
