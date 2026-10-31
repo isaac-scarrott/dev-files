@@ -150,6 +150,12 @@ export const styles = `
     display: flex; gap: 4px; padding: 4px 6px 2px; font-size: 12px; font-weight: 440; line-height: 16px;
     letter-spacing: -.04px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums;
   }
+  [data-agents-toggle] { position: relative; display: inline-flex; }
+  [data-agents-badge] {
+    position: absolute; top: -2px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; box-shadow: 0 0 0 1.5px var(--v2-background-bg-base); box-sizing: border-box;
+    border-radius: 7px; background: var(--v2-icon-icon-accent); color: var(--v2-background-bg-base);
+    font-size: 10px; line-height: 14px; font-weight: 530; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none;
+  }
   [data-agents-empty] { padding: 8px 6px; font-size: 13px; color: var(--v2-text-text-muted); }
   [data-agents-row] { cursor: default; }
   [data-agents-row]:is(:hover, :focus-visible) { background: var(--menu-v2-hover); }

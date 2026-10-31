@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { createRoot, createSignal } from "solid-js"
+import { createEffect, createRoot, createSignal } from "solid-js"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
 
@@ -47,7 +47,14 @@ function fixture() {
   const mounted = () => (current() === "parent" ? session : current() === "other" ? sessionB : undefined)
   const ui = {
     Icon: (props: { name: string }) => { const el = doc.createElement("b"); el.setAttribute("data-icon", props.name); return el },
-    IconButton: (props: { label: string }) => { const el = doc.createElement("button"); el.setAttribute("aria-label", props.label); return el },
+    IconButton: (props: { label: string; pressed?: boolean; onClick?: () => void }) => {
+      const el = doc.createElement("button")
+      el.setAttribute("aria-label", props.label)
+      createEffect(() => { el.setAttribute("aria-label", props.label); el.setAttribute("aria-pressed", String(!!props.pressed)) })
+      el.onclick = () => props.onClick?.()
+      return el
+    },
+    Tooltip: (props: { children: Node }) => props.children,
   }
   const added: { kind: string; item: any }[] = []
   const ctx = {
@@ -67,6 +74,15 @@ function fixture() {
     })
   }
   const registered = (kind: string) => added.filter((entry) => entry.kind === kind).map((entry) => entry.item)
+  const header = (active = true) => {
+    let node!: Node
+    createRoot((stop) => {
+      const previousDispose = dispose
+      dispose = () => { stop(); previousDispose() }
+      node = registered("slot")[0].render({ active, get session() { return mounted() } })
+    })
+    return node as HTMLElement
+  }
   const resolve = (kind: string) => { const item = registered(kind)[0]; return typeof item === "function" ? item() : item }
   // The panel renders once into the side region, as the host does, and follows the routed session itself.
   const mount = () => {
@@ -82,7 +98,7 @@ function fixture() {
   const rows = () => [...doc.querySelectorAll("[data-agents-row]")] as HTMLElement[]
   const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
   return {
-    doc, calls, intervals, panel, rows, start, mount, stop, flush, registered, resolve,
+    doc, calls, intervals, panel, rows, header, start, mount, stop, flush, registered, resolve,
     setInfos, setFamily, setRunning, setBackground, setState, setCurrent,
     failInterrupt: () => { failInterrupt = true },
   }
@@ -100,7 +116,7 @@ test("cold state: panel mounts empty, nothing ticks", () => {
   f.stop()
 })
 
-test("registers a side panel, a toggle command, a launcher and a titlebar item, nothing floating", () => {
+test("registers a side panel, a toggle command, a launcher and a header toggle, nothing floating", () => {
   const f = fixture()
   f.start()
   assert.equal(f.registered("panel")[0].region, "side")
@@ -108,28 +124,33 @@ test("registers a side panel, a toggle command, a launcher and a titlebar item, 
   assert.equal(f.registered("panel")[0].list({ open: ["agents"] })[0].id, "agents")
   assert.equal(f.registered("command")[0].id, "toggle")
   assert.equal(f.resolve("menu-item").menu, "session.panel")
-  assert.equal(f.registered("slot").length, 0)
+  assert.equal(f.registered("slot")[0].at, "session.header")
+  assert.equal(f.registered("titlebar-item").length, 0)
   assert.equal(f.doc.querySelector("[data-agents-host]"), null)
   f.stop()
 })
 
-test("titlebar toggle: count in the label, pressed only while visible, runs layout.toggle", async () => {
+test("header toggle: host IconButton, count badge, pressed only while visible, runs layout.toggle", async () => {
   const f = fixture()
   f.start()
-  assert.equal(f.resolve("titlebar-item").label, "Agents")
-  assert.equal(f.resolve("titlebar-item").pressed, false)
+  const view = f.header()
+  f.doc.body.append(view)
+  const button = () => view.querySelector("button")!
+  assert.equal(button().getAttribute("aria-label"), "Agents")
+  assert.equal(button().getAttribute("aria-pressed"), "false")
+  assert.equal(view.querySelector("[data-agents-badge]"), null)
   f.setInfos([child("c1"), child("c2")]); f.setFamily(["c1", "c2"]); f.setRunning(["c1", "c2"])
-  assert.equal(f.resolve("titlebar-item").label, "Agents · 2")
+  await f.flush()
+  assert.equal(button().getAttribute("aria-label"), "Agents · 2")
+  assert.equal(view.querySelector("[data-agents-badge]")!.textContent, "2")
   f.setState("visible")
-  assert.equal(f.resolve("titlebar-item").pressed, true)
+  assert.equal(button().getAttribute("aria-pressed"), "true")
   f.setState("active")
-  assert.equal(f.resolve("titlebar-item").pressed, false)
+  assert.equal(button().getAttribute("aria-pressed"), "false")
   assert.equal(f.resolve("menu-item").opened, true)
-  f.resolve("titlebar-item").run()
+  button().click()
   f.registered("command")[0].run()
   assert.deepEqual(f.calls.toggled.map((args: any) => args[0]), ["agents-panel:agents", "agents-panel:agents"])
-  f.setCurrent(undefined)
-  assert.equal(f.resolve("titlebar-item"), undefined)
   f.stop()
 })
 

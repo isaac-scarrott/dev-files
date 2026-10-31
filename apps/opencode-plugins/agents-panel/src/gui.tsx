@@ -1,4 +1,5 @@
-import { Command, MenuItem, Panel, Plugin, Style, TitlebarItem } from "@opencode/plugin/gui"
+import { Command, MenuItem, Panel, Plugin, Slot, Style } from "@opencode/plugin/gui"
+import { Show } from "solid-js"
 import { runningAgents } from "./agents"
 import { AgentsPanel, styles } from "./panel"
 
@@ -36,17 +37,30 @@ export default Plugin.define({
       }
     })
 
-    ctx.add(TitlebarItem, (): TitlebarItem | undefined => {
-      const session = ctx.sessions.current()
-      if (!session) return
-      const running = runningAgents(session, () => 0).length
-      return {
-        id: TAB,
-        label: running > 0 ? `Agents · ${running}` : "Agents",
-        icon: "bullet-list",
-        pressed: ctx.layout.state(key, session) === "visible",
-        run: toggle,
-      }
+    // The host's own toggles are icon-button-v2 in the session header, which a TitlebarItem (an accent pill) cannot
+    // match, so the toggle is the host IconButton in the header slot, pressed while the panel shows.
+    ctx.add(Slot, {
+      at: "session.header",
+      render: (input) => {
+        const count = () => (input.active ? runningAgents(input.session, () => 0).length : 0)
+        const label = () => (count() > 0 ? `Agents · ${count()}` : "Agents")
+        return (
+          <ctx.ui.Tooltip value={label()}>
+            <span data-agents-toggle>
+              <ctx.ui.IconButton
+                icon="bullet-list"
+                size="large"
+                label={label()}
+                pressed={ctx.layout.state(key, input.session) === "visible"}
+                onClick={() => ctx.layout.toggle(key, input.session)}
+              />
+              <Show when={count() > 0}>
+                <span data-agents-badge>{count()}</span>
+              </Show>
+            </span>
+          </ctx.ui.Tooltip>
+        )
+      },
     })
   },
 })
