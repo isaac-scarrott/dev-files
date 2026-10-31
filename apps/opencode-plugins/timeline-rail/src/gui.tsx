@@ -57,7 +57,10 @@ export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
 
   return {
     top: area.top - box.top + header,
-    height: Math.max(0, area.height - header),
+    // To the view's bottom, not the visible area's: the composer, and a question or permission form above it, resize the
+    // visible area, and the rail must not change height (and re-lay its ticks) when they come and go. It lives in the
+    // gutter, beside the composer, so reaching the bottom overlaps nothing.
+    height: Math.max(0, box.bottom - area.top - header),
     left: Math.min(EDGE_INSET, Math.max(0, Math.round((gutter - RAIL_WIDTH) / 2))),
     show: gutter >= MIN_GUTTER,
   }
@@ -503,7 +506,6 @@ function Rail(props: { input: SlotMap["session.header"] }) {
                     <button
                       type="button"
                       data-timeline-rail-tick
-                      data-length={list()[tick.start]?.length}
                       data-current={activeTick() === index() ? "" : undefined}
                       aria-current={activeTick() === index() ? "true" : undefined}
                       aria-label={label(tick)}
@@ -624,22 +626,21 @@ const CSS = `
   left: 0;
   top: 50%;
   height: 2px;
-  width: 6px;
+  width: 8px;
   margin-top: -1px;
   border-radius: 1px;
   transform-origin: 0 50%;
   transform: scale(var(--k, 1), calc(1 + (var(--k, 1) - 1) * 1.2));
 }
-[data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); }
+[data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); opacity: 0.45; }
 [data-timeline-rail-tick]::after { background: var(--v2-text-text-base); opacity: 0; }
-[data-timeline-rail-tick][data-length="medium"]::before, [data-timeline-rail-tick][data-length="medium"]::after { width: 10px; }
-[data-timeline-rail-tick][data-length="long"]::before, [data-timeline-rail-tick][data-length="long"]::after { width: 14px; }
 [data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
 [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after {
   transition: transform 110ms var(--timeline-rail-ease), opacity 120ms var(--timeline-rail-ease);
 }
 @media (hover: hover) and (pointer: fine) {
   [data-timeline-rail-tick]:hover::after { opacity: 0.6; }
+  [data-timeline-rail-ticks]:hover [data-timeline-rail-tick]::before { opacity: 0.8; }
 }
 [data-timeline-rail-tick][data-current]::after { opacity: 1; }
 [data-timeline-rail-tick]:focus-visible::before {

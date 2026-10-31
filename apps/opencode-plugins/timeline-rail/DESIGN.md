@@ -57,7 +57,7 @@ While the slot is active and `more(id)` is true, `loadHistory` requests one page
   streaming (`time.completed` unset, no error) shows "Working…"; a finished tool-only turn shows the prompt alone.
 - **Layout**: ticks are laid at a pitch of 10px down to 4px so they fit 60% of the rail's height; beyond that, prompts
   are bucketed into evenly sized ticks (`(and N more)` in the label; the card shows the bucket's first prompt).
-  Tick length (6/10/14px) follows title length (<40 / <160 / longer).
+  Every tick has the same 8px length and rests at 0.45 opacity (0.8 while the pointer is over the rail); only hover and the current tick draw the full-strength line.
 - The rail hides under two prompts, when the gutter is under 44px (the column's own padding), below the host's 768px
   desktop breakpoint, and for inactive (cached) timelines.
 

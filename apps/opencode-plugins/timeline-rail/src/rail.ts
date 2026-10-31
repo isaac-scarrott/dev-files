@@ -7,7 +7,6 @@ export type Prompt = {
   readonly snippet?: string
   /** The reply is still streaming and has no text yet. */
   readonly working: boolean
-  readonly length: "short" | "medium" | "long"
 }
 
 export type Message = {
@@ -69,12 +68,6 @@ export function stripMarkdown(text: string): string {
   )
 }
 
-export function tickLength(text: string): Prompt["length"] {
-  if (text.length < 40) return "short"
-
-  return text.length < 160 ? "medium" : "long"
-}
-
 /**
  * The prompts the rail shows, in order, with the start of each reply. Candidates follow the host's
  * `visibleUserMessages`: user messages, and only those before a pending revert.
@@ -104,7 +97,7 @@ export function prompts(messages: readonly Message[], revertMessageID?: string):
       if (reply.time?.completed === undefined && !reply.error) working = true
     }
     const title = promptLabel(message)
-    out.push({ id: message.id, title, snippet, working: !snippet && working, length: tickLength(title) })
+    out.push({ id: message.id, title, snippet, working: !snippet && working })
   }
 
   return out

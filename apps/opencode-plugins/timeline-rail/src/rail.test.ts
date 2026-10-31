@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { layout, MIN_PITCH, promptLabel, prompts, stripMarkdown, tickLength, tickOf, type Message } from "./rail"
+import { layout, MIN_PITCH, promptLabel, prompts, stripMarkdown, tickOf, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -89,12 +89,6 @@ test("markdown falls away: fences, lists, quotes, links, images, tables, emphasi
     "const a = 1 item one item two quoted See the docs and alt bold gone a b 1 2 héllo 👋 مرحبا",
   )
   assert.equal(stripMarkdown("snake_case_name stays"), "snake_case_name stays")
-})
-
-test("tick length follows prompt length", () => {
-  assert.equal(tickLength("short"), "short")
-  assert.equal(tickLength("x".repeat(100)), "medium")
-  assert.equal(tickLength("x".repeat(200)), "long")
 })
 
 test("layout: one tick per prompt at a pitch that fits 60% of the height, compressing before bucketing", () => {
