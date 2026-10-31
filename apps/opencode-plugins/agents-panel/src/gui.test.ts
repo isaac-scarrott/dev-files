@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createEffect, createRoot, createSignal } from "solid-js"
-import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
@@ -60,14 +59,10 @@ function fixture() {
     Tooltip: (props: { children: Node }) => props.children,
   }
   const added: { kind: string; item: any }[] = []
-  const [side, setSide] = createSignal(false)
-  const [memory, setMemory] = createStore<{ keys: Record<string, boolean> }>({ keys: {} })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
     sessions: { current: mounted },
-    layout: { side: { opened: side } },
-    storage: { memory: () => [memory, (fn: (draft: { keys: Record<string, boolean> }) => void) => setMemory(produce(fn))] },
     tabs: { open: (...args: unknown[]) => calls.opened.push(args) },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
@@ -80,16 +75,15 @@ function fixture() {
     })
   }
   const registered = (kind: string) => added.filter((entry) => entry.kind === kind).map((entry) => entry.item)
-  // The header slot renders into the timeline row, as the host does.
   const header = (active = true) => {
-    doc.body.innerHTML = `<div data-pane-row id="row"><div id="header"></div></div>`
+    doc.body.innerHTML = `<div id="header"></div>`
     createRoot((stop) => {
       const previousDispose = dispose
       dispose = () => { stop(); previousDispose() }
       const view = registered("slot")[0].render({ get active() { return active }, get session() { return mounted() } })
       insert(doc.getElementById("header")!, view)
     })
-    return doc.getElementById("row")!
+    return doc.getElementById("header")!
   }
   const stop = () => { dispose(); for (const [key, d] of previous) d ? Object.defineProperty(globalThis, key, d) : delete (globalThis as any)[key] }
   const rows = () => [...doc.querySelectorAll("[data-agents-row]")] as HTMLElement[]
@@ -97,7 +91,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setSide,
+    setInfos, setFamily, setRunning, setBackground, setCurrent,
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -112,81 +106,58 @@ const running = (f: ReturnType<typeof fixture>, ids: string[], infos: Info[] = i
 test("closed by default: only the header toggle is mounted", () => {
   const f = fixture()
   f.start()
-  const row = f.header()
+  f.header()
   assert.equal(f.toggle().getAttribute("aria-label"), "Subagents")
   assert.equal(f.toggle().getAttribute("aria-pressed"), "false")
-  assert.equal(row.querySelector("[data-agents-dock]"), null)
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.registered("slot").length, 1)
   assert.equal(f.registered("panel").length + f.registered("titlebar-item").length + f.registered("menu-item").length, 0)
   assert.equal(f.intervals.size, 0)
   f.stop()
 })
 
-test("side panel closed: the toggle docks a column in the timeline row and removes it again", async () => {
+test("the toggle opens one floating popover with the host's menu surface and wears the host's expanded attributes", async () => {
   const f = fixture()
   f.start()
-  const row = f.header()
+  f.header()
   running(f, ["c1"])
   await open(f)
-  assert.ok(row.hasAttribute("data-agents-docked"))
-  assert.equal(row.querySelectorAll("[data-agents-dock]").length, 1)
-  assert.match(row.querySelector("[data-agents-heading]")!.textContent!, /Subagents\s*·\s*1 running/)
+  assert.equal(f.doc.querySelectorAll("[data-agents-popover]").length, 1)
+  assert.ok(f.doc.querySelector("[data-agents-popover] > [data-component=menu-v2-content] [data-agents-row]"))
+  assert.match(f.doc.querySelector("[data-agents-heading]")!.textContent!, /Subagents\s*·\s*1 running/)
   assert.equal(f.toggle().getAttribute("aria-pressed"), "true")
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "true")
+  assert.equal(f.toggle().hasAttribute("data-expanded"), true)
+  assert.equal(f.doc.querySelector("[data-agents-dock]"), null)
+  await open(f)
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  await open(f)
-  assert.equal(row.querySelector("[data-agents-dock]"), null)
-  assert.equal(row.hasAttribute("data-agents-docked"), false)
+  assert.equal(f.toggle().hasAttribute("data-expanded"), false)
   f.stop()
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
 })
 
-test("cleanup removes the dock and the row attribute", async () => {
+test("Escape and an outside click close the popover; Escape returns focus to the button", async () => {
   const f = fixture()
   f.start()
-  const row = f.header()
+  f.header()
   await open(f)
-  assert.ok(row.querySelector("[data-agents-dock]"))
-  f.stop()
-  assert.equal(row.querySelector("[data-agents-dock]"), null)
-  assert.equal(row.hasAttribute("data-agents-docked"), false)
-})
-
-test("side panel open: the dock hides and the same button opens a popover; Escape and outside click close it", async () => {
-  const f = fixture()
-  f.start()
-  const row = f.header()
-  running(f, ["c1"])
-  await open(f)
-  f.setSide(true)
-  await f.flush()
-  assert.equal(row.querySelector("[data-agents-dock]"), null)
-  assert.equal(f.toggle().getAttribute("aria-pressed"), "false")
-  await open(f)
-  const pop = f.doc.querySelector("[data-agents-popover]")!
-  assert.ok(pop)
-  assert.ok(pop.querySelector("[data-component=menu-v2-content] [data-agents-row]"))
-  assert.equal(f.toggle().getAttribute("aria-pressed"), "true")
   f.doc.dispatchEvent(new (f.doc.defaultView as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
   await f.flush()
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.doc.activeElement, f.toggle())
   await open(f)
   f.doc.body.dispatchEvent(new (f.doc.defaultView as any).Event("pointerdown", { bubbles: true }))
   await f.flush()
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  // The dock returns, still opted in for this session, once the side panel closes.
-  f.setSide(false)
-  await f.flush()
-  assert.equal(row.querySelectorAll("[data-agents-dock]").length, 1)
   f.stop()
 })
 
-test("closing the side panel closes an open popover", async () => {
+test("routing to another session closes the popover", async () => {
   const f = fixture()
   f.start()
   f.header()
-  f.setSide(true)
   await open(f)
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  f.setSide(false)
+  f.setCurrent("other")
   await f.flush()
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   f.stop()
@@ -195,7 +166,7 @@ test("closing the side panel closes an open popover", async () => {
 test("scope: only this session's descendants and shells; not siblings, other trees or other sessions", async () => {
   const f = fixture()
   f.start()
-  const row = f.header()
+  f.header()
   const other = { ...child("o1"), parentID: "other", title: "Other tree" }
   const sibling = { ...child("s1"), parentID: "root", title: "Sibling" }
   const grand = { ...child("g1"), parentID: "c1", title: "Grandchild" }
@@ -208,13 +179,10 @@ test("scope: only this session's descendants and shells; not siblings, other tre
   assert.ok(text().some((t) => /Grandchild/.test(t!)))
   assert.ok(text().some((t) => /sleep 300/.test(t!)))
   assert.ok(!text().some((t) => /Other tree|Sibling/.test(t!)))
-  // The other parent sees only its own child.
   f.setCurrent("other")
   await f.flush()
-  assert.equal(f.rows().length, 0)
   await open(f)
   assert.deepEqual(text().map((t) => /Other tree/.test(t!)), [true])
-  assert.ok(row)
   f.stop()
 })
 
