@@ -132,19 +132,34 @@ export default Plugin.define({
         }
       } catch (cause) { error(cause) }
     }
-    // Preset menu in the app's menu markup. Times are resolved when it opens, so they are never stale.
-    const chooseTime = () => new Promise<number | undefined>((resolve) => {
+    // Presets in the app's menu markup. Times are resolved when this is called, so they are never stale.
+    // `custom` opens the Custom dialog; `choose` receives the deadline.
+    const presetLines = (choose: (until: number) => void, custom: () => void): MenuLine[] => {
       const now = new Date()
-      const options = { hour12: uses12Hour() ? true : false }
-      const lines: MenuLine[] = [
-        ...presets(now).map((p): MenuLine => ({ label: p.label, hint: formatHint(p, +now, options), run: () => resolve(p.until) })),
+      const options = { hour12: uses12Hour() }
+      return [
+        ...presets(now).map((p): MenuLine => ({ label: p.label, hint: formatHint(p, +now, options), run: () => choose(p.until) })),
         "separator",
-        { label: "Custom…", run: () => { void openCustom((render) => ctx.dialogs.open(render), host).then(resolve) } },
+        { label: "Custom…", run: custom },
       ]
-      openMenu(document, { x: Math.round(window.innerWidth / 2 - 130), y: Math.round(window.innerHeight * 0.22) }, lines, { label: "Snooze until", onClose: (chosen) => { if (!chosen) resolve(undefined) } })
+    }
+    const customTimeDialog = () => openCustom((render) => ctx.dialogs.open(render), host)
+    // Where a menu opened without a pointer (palette, keyboard) appears: under the session's own tab row, else the tab list.
+    const tabElement = (session: { id: string; server: ServerRef }) => {
+      const key = ctx.tabs.list().find((tab) => tab.session?.id === session.id && tab.session.server.id === session.server.id)?.key
+      return key ? [...document.querySelectorAll<HTMLElement>("[data-tab-key]")].find((e) => e.dataset.tabKey === key) : undefined
+    }
+    const anchor = (session: { id: string; server: ServerRef }) => {
+      const el = tabElement(session) ?? document.querySelector<HTMLElement>('[data-slot="vertical-tabs"]') ?? undefined
+      const rect = el?.getBoundingClientRect()
+      return rect ? { x: Math.round(rect.left + 8), y: Math.round(rect.bottom + 2) } : { x: 16, y: 48 }
+    }
+    const chooseTime = (session: { id: string; server: ServerRef }) => new Promise<number | undefined>((resolve) => {
+      const lines = presetLines(resolve, () => { void customTimeDialog().then(resolve) })
+      openMenu(document, anchor(session), lines, { label: "Snooze until", restore: () => tabElement(session)?.querySelector<HTMLElement>("a"), onClose: (chosen) => { if (!chosen) resolve(undefined) } })
     })
-    const snooze = async (session: { id: string; server: ServerRef }) => {
-      const until = await chooseTime()
+    const snooze = async (session: { id: string; server: ServerRef }, picked?: number | "custom") => {
+      const until = picked === undefined ? await chooseTime(session) : picked === "custom" ? await customTimeDialog() : picked
       if (until === undefined || disposed) return
       try {
         const valid = checkWake(until, Date.now())
@@ -300,7 +315,11 @@ export default Plugin.define({
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
     }
     const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
-    const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels)
+    const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels, (target) => {
+      const server = ctx.servers.get(target.server)
+      if (!server) return []
+      return presetLines((until) => void snooze({ id: target.id, server }, until), () => void snooze({ id: target.id, server }, "custom"))
+    })
     createEffect(() => {
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
       tabActions.sync()

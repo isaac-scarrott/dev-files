@@ -6,7 +6,7 @@ export interface MenuTab { target: Target; disabled: boolean }
 // The app's tab context menu (Rename, Close tab, Delete session…) is a portal on <body> with no link back to its tab
 // (live 2.2.5: no aria-labelledby), so the tab is the target of the contextmenu event that opened it. Each time one opens
 // for a session tab, our lines are added. Delete is already native, so only Snooze… and Archive go in.
-export function createTabMenu(doc: Document, info: (key: string) => MenuTab | undefined, handlers: Handlers, labels: Record<ActionName, string>) {
+export function createTabMenu(doc: Document, info: (key: string) => MenuTab | undefined, handlers: Handlers, labels: Record<ActionName, string>, snoozeLines: (target: Target) => MenuLine[]) {
   const undo = new Map<HTMLElement, () => void>()
   let opener: { key?: string; at: number } | undefined
   const remember = (event: Event) => { opener = { key: (event.target as Element | null)?.closest?.<HTMLElement>("[data-tab-key]")?.dataset.tabKey, at: Date.now() } }
@@ -16,8 +16,11 @@ export function createTabMenu(doc: Document, info: (key: string) => MenuTab | un
     const key = opener && Date.now() - opener.at < 2000 ? opener.key : undefined
     const tab = key ? info(key) : undefined
     if (!tab) return
-    const line = (action: "snooze" | "archive"): MenuLine => ({ label: labels[action], disabled: tab.disabled, run: () => handlers.run(action, tab.target) })
-    undo.set(content, extendNative(content, [line("snooze"), line("archive")]))
+    // Snooze is a submenu of the presets (times resolved when it opens); Archive is a plain item.
+    undo.set(content, extendNative(content, [
+      { label: "Snooze", disabled: tab.disabled, submenu: () => snoozeLines(tab.target), run() {} },
+      { label: labels.archive, disabled: tab.disabled, run: () => handlers.run("archive", tab.target) },
+    ]))
   }
   const scan = (root: ParentNode) => root.querySelectorAll<HTMLElement>('[role="menu"][data-component="menu-v2-content"]').forEach(inspect)
   const observer = new doc.defaultView!.MutationObserver((records) => {

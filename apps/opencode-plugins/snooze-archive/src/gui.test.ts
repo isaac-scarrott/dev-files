@@ -337,15 +337,17 @@ test("the plugin registers no session header slot", async () => {
   try { f.setServers(["server"]); f.start(); await f.flush(); assert.equal(f.slots.some((slot) => slot.at === "session.header"), false) } finally { await f.close() }
 })
 
-test("native tab menu gains Snooze… and Archive once, before the native Delete…, keyboard reachable, removed on cleanup", async () => {
+test("native tab menu gains a Snooze submenu and Archive once, before the native Delete…, keyboard reachable, removed on cleanup", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     const menu = openNativeMenu(f); await f.flush()
-    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Snooze…", "Archive", "Delete session…"])
+    assert.deepEqual(labelsOf(menu), ["Rename", "Close tab", "Snooze", "Archive", "Delete session…"])
     assert.equal(menu.querySelectorAll("[data-sa-menu][role=menuitem]").length, 2)
     const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
     assert.equal(items[2].dataset.component, "menu-v2-item", "uses the app's item markup")
+    assert.ok(items[2].querySelector('[data-slot="menu-v2-item-chevron"]'), "submenu trigger shows the host chevron")
+    assert.equal(items[2].getAttribute("aria-haspopup"), "true")
     // Kobalte would wrap from Close tab to Delete…; we step onto our items instead.
     items[1].focus(); key(items[1], "ArrowDown")
     assert.equal(f.doc.activeElement, items[2])
@@ -363,6 +365,52 @@ test("native tab menu gains Snooze… and Archive once, before the native Delete
   } finally { await f.close() }
 })
 
+test("Snooze submenu: opens beside its trigger on ArrowRight with live times, Left/Esc close only it, hover over another item closes it, nothing leaks", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const menu = openNativeMenu(f); await f.flush()
+    const trigger = [...menu.querySelectorAll<HTMLElement>("[data-sa-menu]")][0]
+    const sub = () => menu.querySelector<HTMLElement>("[data-sa-sub]")
+    trigger.focus(); key(trigger, "ArrowRight")
+    assert.ok(sub(), "inside the native menu element, so the app's outside-click checks keep it open")
+    assert.equal(trigger.getAttribute("aria-expanded"), "true")
+    assert.equal(sub()!.dataset.component, "menu-v2-content")
+    const labels = [...sub()!.querySelectorAll('[role="menuitem"]')].map((i) => i.querySelector('[data-slot="menu-v2-item-content"]')!.textContent)
+    assert.deepEqual(labels.slice(0, 2), ["In 1 hour", "In 3 hours"]); assert.equal(labels.at(-1), "Custom…")
+    assert.ok([...sub()!.querySelectorAll('[data-slot="menu-v2-item-shortcut"]')].every((h) => /\d/.test(h.textContent!)), "resolved time hints")
+    assert.equal(f.doc.activeElement, sub()!.querySelector('[role="menuitem"]'))
+    key(f.doc.activeElement!, "ArrowDown"); assert.equal(f.doc.activeElement!.textContent!.startsWith("In 3 hours"), true)
+    key(f.doc.activeElement!, "ArrowLeft")
+    assert.equal(sub(), null); assert.equal(f.doc.activeElement, trigger); assert.equal(trigger.getAttribute("aria-expanded"), "false")
+    key(trigger, "Enter"); assert.ok(sub()); key(f.doc.activeElement!, "Escape"); assert.equal(sub(), null)
+    key(trigger, "ArrowRight")
+    ;(menu.querySelectorAll<HTMLElement>('[role="menuitem"]')[0] as HTMLElement).dispatchEvent(new (f.doc.defaultView as any).Event("pointerover", { bubbles: true }))
+    assert.equal(sub(), null, "moving onto a native item closes it")
+    key(trigger, "ArrowRight"); click(sub()!.querySelectorAll('[role="menuitem"]')[1]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.equal(f.state().entries.length, 1, "choosing a preset snoozes without a second menu")
+    assert.equal(f.doc.querySelector("[data-sa-popup]"), null)
+    assert.ok(Math.abs(f.state().entries[0].until - (Date.now() + 3 * 3_600_000)) < 5_000)
+    f.stop()
+    assert.equal(menu.querySelectorAll("[data-sa-menu], [data-sa-sub]").length, 0)
+  } finally { await f.close() }
+})
+
+test("palette Snooze opens the presets under the session's own tab row, not a fixed screen position", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const tab = f.doc.querySelector<HTMLElement>("[data-tab-key]")!
+    tab.getBoundingClientRect = () => ({ left: 20, bottom: 230, top: 200, right: 260, width: 240, height: 30, x: 20, y: 200, toJSON() {} }) as DOMRect
+    const pending = f.commands.get("snooze")!.run()
+    for (let i = 0; i < 40 && !f.doc.querySelector("[data-sa-popup]"); i++) await Promise.resolve()
+    const popup = f.doc.querySelector<HTMLElement>("[data-sa-popup]")!
+    assert.equal(popup.style.left, "28px"); assert.equal(popup.style.top, "232px")
+    key(popup.querySelector("[role=menu]")!, "Escape"); await pending
+    assert.equal(f.state().entries.length, 0)
+  } finally { await f.close() }
+})
+
 test("native menu items are added only for session tabs", async () => {
   const f = fixture()
   try {
@@ -373,13 +421,13 @@ test("native menu items are added only for session tabs", async () => {
   } finally { await f.close() }
 })
 
-test("Snooze… from the tab menu opens the preset picker for that tab's session", async () => {
+test("choosing a preset from the tab menu's Snooze submenu snoozes that tab's session", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     const menu = openNativeMenu(f); await f.flush()
-    click(menu.querySelectorAll('[data-sa-menu][role=menuitem]')[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
-    click(f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    click(menu.querySelectorAll('[data-sa-menu][role=menuitem]')[0]); await f.flush()
+    click(menu.querySelectorAll('[data-sa-sub] [role=menuitem]')[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].id, "s")
   } finally { await f.close() }
