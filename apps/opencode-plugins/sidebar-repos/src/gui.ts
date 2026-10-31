@@ -47,6 +47,10 @@ export default Plugin.define({
         font-size: 13px;
         line-height: 16px;
       }
+      /* Home lives on its keybind; the sidebar row is redundant. */
+      [data-action='vertical-tabs-home'] {
+        display: none !important;
+      }
       /* The native list and link fades are masks that ignore the status mark; replaced by the title fade below. */
       [data-slot='vertical-tabs-scroll'] {
         -webkit-mask-image: none !important;
