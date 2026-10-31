@@ -9,13 +9,18 @@ Two roles never blur. **Facts** are yours: find them with sub-agents, queries, p
 
 ## Steps
 
-1. **Open the runbook first.** Create it before any research (a Claude Doc when docs tools exist, otherwise a markdown file at a path the user picks), seeded from `RUNBOOK.md`. Done when the user has its link and the top says it is the source of truth.
+1. **Open the runbook first.** Create it before any research (a Claude Doc when docs tools exist, otherwise a markdown file at a path the user picks), seeded from `RUNBOOK.md`: every section as a pending block, plus the Contracts and Decision log tabs, so a missing piece shows as a visible placeholder. Done when the user has its link and the top says it is the source of truth.
 
 2. **Investigate in parallel.** Fan out background agents over everything the decisions will rest on: existing code and data models, prior attempts and why they failed, live data volumes and coverage, designs, external practice and data sources. Brief each with the context and a word budget, ask for file:line evidence with evidence and inference marked apart. Done when every area the first decisions touch has a report, recorded under Research with durable file paths (never `/tmp`).
+
+   Also map the **neighbouring work**: other projects, branches and PRs that touch the same surfaces, so each decision names what it leaves to them and what it assumes from them.
 
 3. **Grill in rounds.** Run the `grilling` skill's rounds over the design tree, with these additions:
    - **The user reads the questions and little else**, so a round is one chat message in which every question stands alone: its own context, its options with what each costs, and the recommendation worded so "yes" accepts it. Open the message with a **Settled so far** block of at most three lines, then the numbered questions, then one line saying what the next round covers. Status updates, research summaries and progress narration go in the runbook or in a separate message that carries no question. Explain any unfamiliar term in plain words inside the question that uses it. Evidence supporting a question is one clause inside it, with the runbook section as the pointer.
    - When the user asks where a question is, repeat it in full in the reply. Pointing at the runbook leaves them hunting.
+   - **Design every layer a decision touches**, API and data included, not only the visible one. Before putting a design to the user, run the repo's house-rule skills over it (schema, table, API, naming ADRs) and offer at least three options, one of which extends what already exists. Collision-check every new name and URL against existing ones.
+   - Keep an **open-question ledger**: restate every unanswered question at the start of each round so none is lost.
+   - Steps only the user can do (accounts, dashboards, credentials) go through the `wizard` skill or a numbered walkthrough that says what to expect at each step and what to report back.
    - Settle contested facts by **experiment**, not argument: a prototype on real data, a measured accuracy test, a sample classified by hand. Report measured and inferred separately.
    - When the user asks whether a design is the best one, dispatch an **unbiased** agent: a neutral brief that states the need and constraints and withholds your proposal.
    - Recommend the best tool for the job, not whatever the stack already uses.
@@ -29,9 +34,19 @@ Two roles never blur. **Facts** are yours: find them with sub-agents, queries, p
 
 5. **Plan the next milestone in the weeds.** Grill that milestone item by item (samples, prompts, thresholds, who does what, where code lives, what the user will look at, pass bars) as questions numbered by milestone (M1.1, M1.2…). Plan later milestones only once the previous one's results are in. Done when every item in the milestone has a plan the user approved.
 
-6. **Dispatch by number.** "Dispatch 3c" sends a background agent to that item with a brief drawn from the runbook. Set its status to In progress; record the report, plan or PR link in its Outcome; move it to Merging on PR and Done on merge or finished study. Close a milestone only when its check passes, writing up the result and what changed from the plan.
+6. **Dispatch by number.** "Dispatch 3c" sends a background agent to that item with a brief drawn from the runbook. Name the house-rule skills it must load, and check its report says it did; a skill mentioned in passing gets skipped, so review the result against the repo's conventions before calling it done. Set its status to In progress; record the report, plan or PR link in its Outcome; move it to Merging on PR and Done on merge or finished study. Close a milestone only when its check passes, writing up the result and what changed from the plan.
 
 7. **Keep it resumable.** At every pause update the runbook's Where we are: date, current milestone, what is waiting on whom, the next action, what is parked. Done when a fresh session reading only the runbook could continue.
+
+   **Write through.** Anything done outside the runbook is recorded in it in the same turn: PR links, labels applied, merges, approvals given, manual steps still owed (migrations, queries the user must run). Chat never holds a fact the runbook lacks.
+
+   **Audit before every pause and before asking for shared understanding.** Read the runbook back and compare it to `RUNBOOK.md`; fix gaps before replying:
+   - every section present and current (Where we are, How we work, Scope with decision numbers, Milestones, Work items, Decisions, Contracts tab, Decision log tab, Open questions, Parked issues, Later phases, diagram, Research);
+   - every milestone has all its work items, with dependencies and decision numbers;
+   - every decision and amendment is in, each naming what it changes;
+   - Research has durable paths, never `/tmp` or agent output files;
+   - no leftover, duplicate or superseded blocks.
+   Say in the reply what the audit fixed.
 
 ## Resuming
 

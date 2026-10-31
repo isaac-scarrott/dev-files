@@ -10,6 +10,7 @@ Sections in reading order. Keep each one current; the runbook is edited first an
 6. **Milestones**: table of milestone, what you'll see, how we check it, items.
 7. **Work items**: table of number (1a, 1b, 2a… grouped by workstream), item, depends on, decisions, status, outcome. Status is a dropdown: Todo, In progress, Merging, Done.
 8. **Decisions**: table of D-number, decision, trade-off we own. Amendments name the decision they change.
+8b. **Contracts**: every interface the project creates or assumes (API operations with example request and response, data shapes, URLs), on its own tab, one row per interface, each marked assumed or confirmed.
 9. **Open questions**: numbered by milestone (M1.1…), each written to stand alone (its own context, options with costs, recommendation), the same text as the chat round that asked it. "None" when the frontier is empty.
 10. **Parked issues**: known-wrong things found along the way that don't block this project, each with its evidence.
 11. **Later phases**: what was deliberately left out and why.

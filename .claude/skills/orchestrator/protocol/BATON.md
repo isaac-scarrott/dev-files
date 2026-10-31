@@ -19,6 +19,7 @@ A holder that needs a change in someone else's area asks for it. The merger want
 ## Owner decisions
 
 - The owner approves merges in the merger's session. An approval that reaches the merger second-hand gets a one-line confirmation from the owner in the merger's session before it labels or queues anything. Only a session that heard the owner can self-approve, and that is how the permission classifier sees it too.
+- The owner has delegated **`Risk: Low`** PRs to the merger (ledger `## Decisions`, 2026-10-22): the merger approves those itself after its review and reports them landed. Medium and High still need the owner's word in the merger's session. "Approve-on-green" is an owner standing that covers every reviewed-clean PR up to Medium until withdrawn.
 - Whoever hears an owner decision **broadcasts** it to every session working on that PR, straight away, with the PR, head SHA, verdict and the owner's words (template in MESSAGES.md). It also goes into the ledger. Otherwise a decision made in one session reaches the other after it has already acted.
 - A code change to a queued PR starts with the merger dequeuing it. Only then does the baton go back.
 
