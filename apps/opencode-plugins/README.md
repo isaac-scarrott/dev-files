@@ -5,7 +5,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 
 | Package | Purpose | Verification |
 | --- | --- | --- |
-| `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 15 tests, build |
+| `sidebar-repos` | Two-line repo · branch and session title; attention icons; removes sidebar fades | Typecheck, 19 tests, build; live UI not verified |
 | `message-jump` | Animated jump to the nearest mounted user message above the viewport | Typecheck, 13 tests, build; live UI not verified |
 | `sidepanel` | Original pinned counter-panel experiment | Build only; no typecheck/test scripts |
 

@@ -27,6 +27,8 @@ The Vite `gui()` preset externalizes the host's shared modules and inlines dynam
 
 Happy DOM and TypeScript's browser declarations have different element types. At the fixture boundary, cast `new Window().document as unknown as Document`; production functions continue accepting standard `Document`/`HTMLElement`. Tests should cover idempotency, missing nodes, status transitions and preserving app-owned title text.
 
+Setup-level Solid tests need the browser export condition (`tsx --conditions=browser --test`), otherwise effects use the server implementation and hydration tests do not exercise reactive updates. In 2.2.5 the runtime permission list can be `undefined` before sync despite its non-optional declaration. Test that cold state and keep native attention visible until a replacement kind is known.
+
 ## Missing GUI
 
 - Read https://opencode.ai/v2/docs/build/plugins/gui for the current contract; use installed `@opencode/plugin/dist/gui/*.d.ts` for release-specific signatures.
