@@ -5,20 +5,16 @@ export type AgentRow = {
   type: "subagent" | "shell"
   /** The child session of a subagent; opens it and interrupts it. */
   sessionID?: string
-  /** Capitalised agent name, empty for a shell. */
-  agent: string
   label: string
   started: number
 }
 
 // Lists are undefined before their first sync despite their declarations, so every read tolerates a cold store.
 type Sessions = {
-  list?: () => readonly { id: string; parentID?: string; agent?: string; title?: string; time?: { created?: number; busy?: number } }[] | undefined
+  list?: () => readonly { id: string; parentID?: string; title?: string; time?: { created?: number; busy?: number } }[] | undefined
   family?: (id: string) => readonly string[] | undefined
   status?: (id: string) => string | undefined
 }
-
-const capitalise = (name: string) => (name ? `${name[0].toUpperCase()}${name.slice(1)}` : name)
 
 // A child session is titled "<description> (@agent subagent)" until the call names it.
 const description = (title: string) => title.replace(/\s*\(@[^)\s]+ subagent\)\s*$/, "")
@@ -52,7 +48,6 @@ export function runningAgents(session: MountedSession, shellStarted: (id: string
         key: id,
         type: "subagent",
         sessionID: id,
-        agent: capitalise(info.agent ?? ""),
         label: description(info.title ?? id),
         started: info.time?.busy ?? info.time?.created ?? shellStarted(id),
       },
@@ -61,7 +56,7 @@ export function runningAgents(session: MountedSession, shellStarted: (id: string
 
   const shells = (session.background ?? []).flatMap((task): AgentRow[] =>
     task.type === "shell"
-      ? [{ key: task.id, type: "shell", agent: "", label: task.label, started: shellStarted(task.id) }]
+      ? [{ key: task.id, type: "shell", label: task.label, started: shellStarted(task.id) }]
       : [],
   )
 
