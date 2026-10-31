@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { badges, basename, label, truncateMiddle } from "./badges"
+import { attentionKind, badges, basename, label, truncateMiddle } from "./badges"
 
 function fixture(options: { status?: boolean } = {}) {
   const window = new Window()
@@ -35,6 +35,20 @@ test("the separator never matches a branch slash", () => {
   assert.equal(label("holibob", "feature/small-sidebar"), "holibob · feature/small-sidebar")
   assert.equal(label("holibob"), "holibob")
   assert.equal(label("holibob", ""), "holibob")
+})
+
+test("first-load attention tolerates request lists that have not synced yet", () => {
+  assert.equal(attentionKind(undefined, undefined), undefined)
+  assert.equal(attentionKind(undefined, [{}]), "question")
+  assert.equal(attentionKind([{}], undefined), "permission")
+  assert.equal(attentionKind([], undefined), undefined)
+})
+
+test("attention follows hydrated requests, prioritizing permissions", () => {
+  assert.equal(attentionKind([], []), undefined)
+  assert.equal(attentionKind([], [{}]), "question")
+  assert.equal(attentionKind([{}], [{}]), "permission")
+  assert.equal(attentionKind([{}], []), "permission")
 })
 
 test("middle ellipsis changes nothing when the label fits", () => {

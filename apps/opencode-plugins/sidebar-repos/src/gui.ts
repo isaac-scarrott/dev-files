@@ -1,6 +1,6 @@
 import { Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect } from "solid-js"
-import { badges, basename, label, truncateMiddle, type AttentionKind } from "./badges"
+import { attentionKind, badges, basename, label, truncateMiddle, type AttentionKind } from "./badges"
 
 export default Plugin.define({
   setup(ctx) {
@@ -146,11 +146,7 @@ export default Plugin.define({
         const session = tab.session
         if (!session) return []
         const data = session.server.data
-        const kind: AttentionKind | undefined = data.session.permission.list(session.id).length > 0
-          ? "permission"
-          : (data.session.form.list(session.id)?.length ?? 0) > 0
-          ? "question"
-          : undefined
+        const kind = attentionKind(data.session.permission.list(session.id), data.session.form.list(session.id))
         return kind ? [[tab.key, kind] as const] : []
       }))
       refresh()
