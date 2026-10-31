@@ -356,6 +356,24 @@ export default Plugin.define({
       if (!session) return
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending, archived: session.server.data.session.get(session.id)?.time?.archived !== undefined }
     }
+    const archivedClosing = new Map<string, number>()
+    const isViewed = (tab: { key: string; active?: boolean; session?: { server: { id: string }; id: string } }) => {
+      const viewing = ctx.sessions.current()
+      return !!tab.active || !!(viewing && tab.session && viewing.server.id === tab.session.server.id && viewing.id === tab.session.id)
+    }
+    const sweepArchivedTabs = () => {
+      for (const tab of untrack(() => ctx.tabs.list())) {
+        const archived = tab.session?.server.data.session.get(tab.session.id)?.time?.archived !== undefined
+        if (archived && !isViewed(tab) && !archivedClosing.has(tab.key)) {
+          archivedClosing.set(tab.key, window.setTimeout(() => {
+            archivedClosing.delete(tab.key)
+            const current = ctx.tabs.list().find((item) => item.key === tab.key)
+            if (current && current.session?.server.data.session.get(current.session.id)?.time?.archived !== undefined && !isViewed(current)) ctx.tabs.close(tab.key)
+          }, 1500))
+        }
+      }
+    }
+    const scheduleArchivedTabSweep = () => { untrack(sweepArchivedTabs) }
     const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
     const menuSession = (server: ServerRef, id: string, pending = false) => {
       const info = server.data.session.get(id)
@@ -383,14 +401,11 @@ export default Plugin.define({
     })
     const wokeMarks = createWokeMarks(document, requestAnimationFrame, cancelAnimationFrame, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
     createEffect(() => {
-      const viewing = ctx.sessions.current()
-      for (const tab of ctx.tabs.list()) {
-        const info = tab.session?.server.data.session.get(tab.session.id)
-        info?.title
-        // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
-        // while viewed and close it (it stays in Recently closed) once the user moves on.
-        if (info?.time?.archived !== undefined && !(viewing && viewing.server.id === tab.session!.server.id && viewing.id === tab.session!.id)) ctx.tabs.close(tab.key)
-      }
+      for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
+      // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
+      // while viewed and close it (it stays in Recently closed) once the user has moved on. Closing is deferred and
+      // re-checked so a tab that is mid-navigation, or about to be viewed again, is never closed under the user.
+      scheduleArchivedTabSweep()
       tabActions.sync()
     })
     createEffect(() => {
