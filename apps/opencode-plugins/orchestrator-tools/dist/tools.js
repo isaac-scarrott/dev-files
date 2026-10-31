@@ -27,15 +27,19 @@ export function registerTools(editor, orchestrator, options) {
         signal: context.signal,
         progress: context.progress,
     });
+    // Results are JSON objects; a declared output schema is what lets Code Mode hand them back as values.
+    const output = { type: "object", additionalProperties: true };
     const add = (name, description, input, run) => {
         editor.add({
             name,
             description,
             input,
+            output,
             options: { namespace: NAMESPACE, codemode: true },
             async execute(raw, context) {
-                const output = await run(raw, caller(context));
-                return { output, content: JSON.stringify(output) };
+                // Output must be plain JSON: a round trip drops undefined fields.
+                const content = JSON.stringify(await run(raw, caller(context)));
+                return { output: JSON.parse(content), content };
             },
         });
     };

@@ -7,7 +7,10 @@ server; nothing is copied from it.
 ## Tools
 
 Namespace `orchestrate`. Effective tool ids are `orchestrate_<name>`; in Code Mode they are
-`tools.orchestrate.<name>(input)`. All tools are exposed to Code Mode (`codemode: true`).
+`tools.orchestrate.<name>(input)`. All tools are exposed to Code Mode (`codemode: true`). With Code Mode on, which is
+the 2.2.5 default, the model sees them only through the `execute` tool and its catalog, so the model request's tool
+list has no `orchestrate_*` entry. Each tool declares a loose object output schema and returns plain JSON, which is
+what lets `execute` hand the result back as a value. A tool error reaches the model as its message text.
 
 | Tool | Input | Output |
 | --- | --- | --- |
@@ -33,6 +36,12 @@ sessions are still recorded as created by the caller so the caller can read, wai
 A child session receives exactly one user message: the `prompt`, followed by the caller's `context` text when given.
 The plugin never reads the caller's messages and never forwards them. The child starts with the agent's normal
 system prompt and the plugin's own instruction text, like any session.
+
+## Instruction hook
+
+A `context` session hook appends a short system text that says when to use each tool. It runs when the request's
+tool map has an `orchestrate_*` id or the Code Mode `execute` tool, and stays out of requests for agents that have
+neither.
 
 ## Permissions
 

@@ -249,6 +249,11 @@ test("send_message is idempotent per clientRequestId and refuses the caller itse
   await assert.rejects(o.sendMessage(caller("ses_p"), { sessionID: "ses_p", text: "go" }), /other sessions/)
 })
 
+test("waiting on the caller itself is refused", async () => {
+  const f = fake([running("ses_p"), running("ses_c", { parentID: "ses_p" as any })])
+  await assert.rejects(make(f).waitForSessions(caller("ses_p"), { sessionIDs: ["ses_c", "ses_p"] }), /running the call/)
+})
+
 test("interrupt targets a reachable session and never the caller", async () => {
   const f = fake([idle("ses_p"), running("ses_c", { parentID: "ses_p" as any })])
   const o = make(f)

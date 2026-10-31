@@ -124,6 +124,8 @@ export class Orchestrator {
             throw fail("sessionIDs must contain at least one session");
         if (ids.length > this.options.maxWaitSessions)
             throw fail(`Wait on at most ${this.options.maxWaitSessions} sessions at a time`);
+        if (ids.includes(caller.sessionID))
+            throw fail("wait_for_sessions targets other sessions; this one is running the call and would never finish");
         for (const id of ids)
             await this.target(caller, id);
         return this.wait(caller, ids, input.mode ?? "all", input.timeoutMs);

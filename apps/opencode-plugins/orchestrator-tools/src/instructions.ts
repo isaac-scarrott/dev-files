@@ -1,4 +1,5 @@
 export const TOOL_PREFIX = "orchestrate_"
+export const CODE_MODE_TOOL = "execute"
 
 export const INSTRUCTIONS = `Orchestration tools (orchestrate_*) run work in other OpenCode sessions.
 - Use orchestrate_delegate_task for a self-contained task whose result you need now: it creates a child session, sends only your prompt, waits, and returns the child's final reply.
