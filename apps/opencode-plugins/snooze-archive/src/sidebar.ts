@@ -1,7 +1,6 @@
 import { createComponent, createSignal } from "solid-js"
 import type { Avatar } from "./avatar"
 import type { Host } from "./host"
-import { clockIcon } from "./icons"
 import { openMenu, type MenuLine } from "./menu"
 
 export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; open?(): void; menu?: MenuLine[] }
@@ -33,14 +32,13 @@ function avatarNode(doc: Document, avatar: Avatar) {
   return root
 }
 
-function group(doc: Document, host: Host, name: string, icon: boolean, schedule: (fn: () => void) => number, timers: Timers) {
+function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
   const section = doc.createElement("section")
   const header = doc.createElement("div")
   header.dataset.saToggle = ""
   const label = doc.createElement("span")
   label.textContent = name
   label.className = "sa-label"
-  if (icon) label.prepend(clockIcon(doc))
   const count = doc.createElement("span")
   count.dataset.saCount = ""
   const panel = doc.createElement("div")
@@ -199,8 +197,8 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   const root = doc.createElement("div")
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
-  const snoozed = group(doc, host, "Snoozed", true, schedule, timers)
-  const archived = group(doc, host, "Archived", false, schedule, timers)
+  const snoozed = group(doc, host, "Snoozed", schedule, timers)
+  const archived = group(doc, host, "Archived", schedule, timers)
   root.append(snoozed.section, archived.section)
   let parent: HTMLElement | undefined
   const attach = () => {

@@ -429,11 +429,11 @@ test("archived rows: one hover action (Restore); right-click offers Restore and 
   } finally { await f.close() }
 })
 
-test("snoozed rows: Wake hover; right-click offers Wake, Archive, Delete…; the group header shows the clock", async () => {
+test("snoozed rows: Wake hover; right-click offers Wake, Archive, Delete…", async () => {
   const f = fixture([{ server: "server", id: "s", title: "Session", at: 1, until: Date.now() + 3_600_000, updated: 1, busy: 0 }])
   try {
     f.setServers(["server"]); f.start(); await f.flush()
-    assert.ok(f.doc.querySelector('[data-sa-icon="clock"] svg circle'))
+    assert.equal(f.doc.querySelector('[data-sa-icon]'), null)
     const row = f.doc.querySelectorAll<HTMLElement>("[data-sa-row]")[0]
     assert.deepEqual([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")), ["Wake Session"])
     row.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
