@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createEffect, createRoot, createSignal } from "solid-js"
+import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
@@ -29,7 +30,7 @@ function fixture() {
   const [family, setFamily] = createSignal<string[] | undefined>(undefined)
   const [running, setRunning] = createSignal<string[]>([])
   const [background, setBackground] = createSignal<{ id: string; type: "shell" | "subagent"; label: string }[] | undefined>(undefined)
-  const calls = { interrupt: [] as unknown[], shell: [] as unknown[], opened: [] as unknown[], toasts: [] as any[], toggled: [] as unknown[] }
+  const calls = { interrupt: [] as unknown[], shell: [] as unknown[], opened: [] as unknown[], closed: [] as string[], navigated: [] as string[], toasts: [] as any[], toggled: [] as unknown[] }
   let failInterrupt = false
 
   const server = {
@@ -59,11 +60,18 @@ function fixture() {
     Tooltip: (props: { children: Node }) => props.children,
   }
   const added: { kind: string; item: any }[] = []
+  const [tabList, setTabList] = createSignal<any[]>([])
+  const [memory, setMemory] = createStore({ done: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
     sessions: { current: mounted },
-    tabs: { open: (...args: unknown[]) => calls.opened.push(args) },
+    layout: { ready: () => true },
+    tabs: {
+      list: () => tabList(),
+      close: (key: string) => { calls.closed.push(key) },
+    },
+    storage: { memory: () => [memory, (fn: (draft: { done: boolean }) => void) => setMemory(produce(fn))] },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
 
@@ -91,7 +99,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent,
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session,
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -260,14 +268,72 @@ test("stop interrupts the child session, kills a shell, and reports failure", as
   f.stop()
 })
 
-test("row click opens the child session tab", async () => {
+test("row click navigates the current tab to the child session route, opening no tab", async () => {
   const f = fixture()
   f.start()
   f.header()
   running(f, ["c1"])
   await open(f)
+  const clicked: { href: string; link: boolean }[] = []
+  f.doc.addEventListener("click", (event) => {
+    const anchor = (event.target as Element).closest("a")
+    if (anchor) { clicked.push({ href: anchor.getAttribute("href")!, link: anchor.hasAttribute("link") }); event.preventDefault() }
+  })
   f.rows()[0].click()
-  assert.deepEqual(f.calls.opened, [[{ server: "server", id: "c1" }, { focus: true }]])
+  assert.deepEqual(clicked, [{ href: "/server/c2VydmVy/session/c1", link: true }])
+  assert.equal(f.calls.opened.length, 0)
+  assert.equal(f.doc.querySelector("a"), null)
+  f.stop()
+})
+
+const tab = (key: string, id: string, extra: Record<string, unknown> = {}) => ({ key, active: false, session: { key: `server\n${id}`, id, server: fixtureServer() }, ...extra })
+let fixtureServer: () => unknown = () => ({})
+
+test("close subagent tabs: closes child-session tabs, never the active or routed tab, and says how many", async () => {
+  const f = fixture()
+  fixtureServer = () => f.server
+  f.setMemory({ done: true })
+  f.start()
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }, { ...child("c2") }, { ...child("c3") }, { id: "top", time: { created: 1 } }])
+  f.setTabList([tab("t-parent", "parent"), tab("t-c1", "c1"), tab("t-c2", "c2", { active: true }), tab("t-top", "top")])
+  f.registered("command")[0].run()
+  assert.deepEqual(f.calls.closed, ["t-c1"])
+  assert.match(f.calls.toasts[0].title, /Closed 1 subagent tab\b/)
+  assert.match(f.calls.toasts[0].description, /Recently closed/)
+  // The routed session's tab (parent here) is never closed even if it were a child.
+  f.setInfos([{ id: "parent", parentID: "x", time: { created: 1 } }])
+  f.setTabList([tab("t-parent", "parent")])
+  f.calls.closed.length = 0
+  f.registered("command")[0].run()
+  assert.deepEqual(f.calls.closed, [])
+  f.stop()
+})
+
+test("automatic cleanup runs once per load, after every tab's session is known", async () => {
+  const f = fixture()
+  fixtureServer = () => f.server
+  f.start()
+  f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c1", "c1")])
+  await f.flush()
+  assert.deepEqual(f.calls.closed, [])
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
+  await f.flush()
+  assert.deepEqual(f.calls.closed, ["t-c1"])
+  f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c9", "c1")])
+  await f.flush()
+  assert.deepEqual(f.calls.closed, ["t-c1"])
+  assert.equal(f.calls.toasts.length, 1)
+  f.stop()
+})
+
+test("automatic cleanup waits until a tab is on screen, so the viewed tab is never judged blind", async () => {
+  const f = fixture()
+  fixtureServer = () => f.server
+  f.start()
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
+  f.setTabList([tab("t-parent", "parent"), tab("t-c1", "c1")])
+  await f.flush()
+  assert.deepEqual(f.calls.closed, [])
   f.stop()
 })
 
