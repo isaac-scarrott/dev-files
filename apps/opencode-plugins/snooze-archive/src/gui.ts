@@ -4,7 +4,7 @@ import { createEffect, createSignal, untrack } from "solid-js"
 import { actionsCss, labels, type ActionName, type Target } from "./actions"
 import { iconCss } from "./icons"
 import { menuCss } from "./menu"
-import { createTabMenu } from "./tabmenu"
+import { createSessionMenus } from "./sessionmenu"
 import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
@@ -339,7 +339,26 @@ export default Plugin.define({
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending, archived: session.server.data.session.get(session.id)?.time?.archived !== undefined }
     }
     const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
-    const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels, (target) => {
+    const menuSession = (server: ServerRef, id: string, pending = false) => {
+      const info = server.data.session.get(id)
+      return { target: { server: server.id, id }, disabled: pending, archived: info?.time?.archived !== undefined, subagent: !!info?.parentID }
+    }
+    const sessionMenus = createSessionMenus(document, {
+      tab(key) {
+        const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
+        return session ? menuSession(session.server, session.id, !!session.pending) : undefined
+      },
+      // Home rows carry only the session id: the server is the connected one that knows it, else the only connected one.
+      row(id) {
+        const servers = ctx.servers.list().flatMap((s) => { const server = ctx.servers.get(s); return server?.connected ? [server] : [] })
+        const server = servers.find((s) => s.data.session.get(id)) ?? (servers.length === 1 ? servers[0] : undefined)
+        return server ? menuSession(server, id) : undefined
+      },
+      current() {
+        const session = ctx.sessions.current()
+        return session ? menuSession(session.server, session.id, !!session.pending) : undefined
+      },
+    }, { run: runAction }, labels, (target) => {
       const server = ctx.servers.get(target.server)
       if (!server) return []
       return presetLines((until) => void snooze({ id: target.id, server }, until), () => void snooze({ id: target.id, server }, "custom"))
@@ -384,7 +403,7 @@ export default Plugin.define({
       sidebar.dispose()
       tabActions.dispose()
       wokeMarks.dispose()
-      tabMenu.dispose()
+      sessionMenus.dispose()
     }
   },
 })

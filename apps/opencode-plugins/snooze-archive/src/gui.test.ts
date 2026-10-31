@@ -34,7 +34,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   let removeError = false
   const slots: any[] = []
   let archived = false
-  const info = () => { calls.metadataReads++; return metadata === "missing" ? undefined : ({ id: "s", title: "Session", time: metadata === "no-time" ? undefined : { updated: 1, ...(archived ? { archived: 1 } : {}) }, location: { directory: "/repo" } }) }
+  let parentID: string | undefined
+  const info = () => { calls.metadataReads++; return metadata === "missing" ? undefined : ({ id: "s", title: "Session", parentID, time: metadata === "no-time" ? undefined : { updated: 1, ...(archived ? { archived: 1 } : {}) }, location: { directory: "/repo" } }) }
   const server = {
     id: "server", name: "Local", compatible: true, get connected() { return connected() },
     client: { session: {
@@ -88,6 +89,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     metadata: (value: typeof metadata) => { metadata = value },
     sync: (value: () => Promise<void>) => { sync = value },
     archived: (value: boolean) => { archived = value },
+    parent: (value: string | undefined) => { parentID = value },
+    pending: (value: boolean) => { session.pending = value },
     slots, confirm: (value: boolean) => { confirmResult = value }, removeError: (value: boolean) => { removeError = value },
     fail: (value: boolean) => { archiveError = value },
     select: (value: string) => { select = value },
@@ -661,4 +664,63 @@ test("a pending approval or question outranks the clock: only a CSS precedence, 
   const { wokeCss } = await import("./woke")
   assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-sa-woke-mark\] \{ display: grid; \}/)
   assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
+})
+
+const HOST_MENU = (cls: string, labels: string[]) => `<div role="menu" data-component="menu-v2-content" data-appearance="compact" class="${cls}">${labels.map((l, i) => (l === "-" ? '<div data-slot="menu-v2-separator"></div>' : `<div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">${l}</span></div>`)).join("")}</div>`
+const mount = (f: { doc: Document }, html: string) => { const portal = f.doc.createElement("div"); portal.innerHTML = html; f.doc.body.append(portal); return portal.firstElementChild as HTMLElement }
+const HEADER = ["Rename", "Export…", "-", "Delete…"]
+
+test("session header menu: Snooze and Archive sit directly above the separator and Delete…, resolve the routed session, archive works", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual([...menu.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Export…", "Snooze", "Archive", "-", "Delete…"])
+    menu.append(f.doc.createElement("i")); await f.flush()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length, 2, "idempotent")
+    click(menu.querySelectorAll("[data-sa-menu]")[1]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
+  } finally { await f.close() }
+})
+
+test("session menus: draft header disabled, subagent has no Snooze, archived and unrelated menus untouched, re-render restores items", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.pending(true); f.start(); await f.flush()
+    const draft = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.ok([...draft.querySelectorAll("[data-sa-menu]")].every((i) => i.getAttribute("aria-disabled") === "true"))
+    f.pending(false); f.parent("p")
+    const sub = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual(labelsOf(sub), ["Rename", "Export…", "Archive", "Delete…"])
+    f.parent(undefined); f.archived(true)
+    const arch = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.equal(arch.querySelectorAll("[data-sa-menu]").length, 0)
+    f.archived(false)
+    const other = mount(f, HOST_MENU("", ["Copy", "Paste"])); await f.flush()
+    assert.equal(other.querySelectorAll("[data-sa-menu]").length, 0)
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    menu.querySelectorAll("[data-sa-menu]").forEach((n) => n.remove()); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length, 2, "put back after a host re-render")
+    f.stop()
+    assert.equal(f.doc.querySelectorAll("[data-sa-menu]").length, 0)
+  } finally { await f.close() }
+})
+
+test("Home row menu: the row's session gets the pair, from a contextmenu or the keyboard", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const row = f.doc.createElement("div"); row.dataset.component = "home-session-row-container"; row.dataset.sessionId = "other"
+    row.innerHTML = "<button>x</button>"; f.doc.body.append(row)
+    const win = f.doc.defaultView as any
+    row.querySelector("button")!.dispatchEvent(new win.MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+    const menu = mount(f, HOST_MENU("", HEADER)); await f.flush()
+    assert.deepEqual(labelsOf(menu), ["Rename", "Export…", "Snooze", "Archive", "Delete…"])
+    click(menu.querySelectorAll("[data-sa-menu]")[1]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "other", archived: true }])
+    f.archived(false)
+    row.querySelector("button")!.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }))
+    const again = mount(f, HOST_MENU("", HEADER)); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    assert.equal(again.querySelectorAll("[data-sa-menu]").length, 2)
+  } finally { await f.close() }
 })

@@ -9,6 +9,8 @@ const SUB = "data-sa-sub"
 // Same glyph as the app's submenu trigger (menu-v2-item-chevron).
 const CHEVRON = '<svg data-slot="menu-v2-item-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4L10 8L6 12V4Z" fill="currentColor"/></svg>'
 const OWN = "data-sa-menu"
+// The host's separator is a bare `data-slot` div; ours also carries a role.
+export const isSeparator = (el: Element | null) => !!el && (el.getAttribute("role") === "separator" || el.getAttribute("data-slot") === "menu-v2-separator")
 
 interface Sub { open(focus: boolean): void; close(): void }
 function itemNode(doc: Document, entry: MenuEntry, appearance: string, choose: (entry: MenuEntry) => void, sub?: Sub) {
@@ -94,7 +96,7 @@ function subOf(doc: Document, parent: HTMLElement, trigger: () => HTMLElement, e
     el.dataset.component = "menu-v2-content"
     el.dataset.appearance = appearance
     el.setAttribute(OWN, ""); el.setAttribute(SUB, "")
-    el.style.cssText = `position:absolute;top:${t.offsetTop - 2}px;left:calc(100% + 2px);z-index:1;min-width:160px`
+    el.style.cssText = `position:absolute;top:${t.offsetTop - 2}px;left:calc(100% + 2px);z-index:1;min-width:160px;width:max-content`
     el.append(...build(doc, entry.submenu!(), appearance, choose))
     el.onkeydown = (event) => {
       if (event.key === "ArrowLeft" || event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); focusItem(t); setTimeout(() => { if (t.isConnected) focusItem(t) }, 0); return }
@@ -124,8 +126,8 @@ const build = (doc: Document, lines: MenuLine[], appearance: string, choose: (en
     return node
   })
 
-// Adds our lines to a native menu without replacing it. Items sit before the native destructive group, which the
-// app separates with its own separator. Kobalte keeps a collection of its own items, so arrow keys that would step
+// Adds our lines to a native menu without replacing it. Items sit directly above the native Delete…, ahead of the
+// separator the app puts before it. Kobalte keeps a collection of its own items, so arrow keys that would step
 // onto or off our items are handled here; every other key still reaches the app's handler.
 export function extendNative(content: HTMLElement, lines: MenuLine[]): () => void {
   if (content.querySelector(`[${OWN}]`)) return () => {}
@@ -133,9 +135,12 @@ export function extendNative(content: HTMLElement, lines: MenuLine[]): () => voi
   const appearance = content.dataset.appearance ?? "compact"
   const close = () => content.dispatchEvent(new (doc.defaultView as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
   const nodes = build(doc, lines, appearance, (entry) => { close(); setTimeout(entry.run, 0) }, content)
-  const anchor = content.querySelector('[data-slot="menu-v2-separator"]')
-  if (anchor) anchor.before(...nodes)
-  else content.append(separatorNode(doc, appearance), ...nodes)
+  // Directly above the native Delete…: before the separator that precedes it, else before Delete… itself.
+  const native = [...content.querySelectorAll<HTMLElement>(`[role="menuitem"]:not([${OWN}])`)].filter((el) => el.parentElement === content)
+  const last = native.at(-1)
+  const before = isSeparator(last?.previousElementSibling ?? null) ? last!.previousElementSibling : last
+  if (before) before.before(...nodes)
+  else content.append(...nodes)
   const onKey = (event: KeyboardEvent) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return
     if ((event.target as HTMLElement).closest?.(`[${SUB}]`)) return
