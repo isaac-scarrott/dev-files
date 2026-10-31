@@ -1,7 +1,7 @@
 import { Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect } from "solid-js"
 import { render } from "solid-js/web"
-import { attentionKind, badges, basename, label, truncateMiddle, type AttentionKind } from "./badges"
+import { attentionKind, badges, basename, truncateMiddle, type AttentionKind } from "./badges"
 
 export default Plugin.define({
   setup(ctx) {
@@ -162,11 +162,6 @@ export default Plugin.define({
     createEffect(() => {
       for (const session of ctx.sessions.list()) {
         const data = session.server.data
-        if (session.location) {
-          void data.location.vcs.sync(session.location).catch((error: unknown) => {
-            console.warn("sidebar-repos: could not load workspace branch", error)
-          })
-        }
         // A pending permission or question form reads as attention; errors surface as unread, not a mark.
         void data.session.permission.sync(session.id).catch(() => undefined)
         void data.session.form.sync(session.id).catch(() => undefined)
@@ -180,10 +175,7 @@ export default Plugin.define({
         const info = session.server.data.session.get(session.id)
         const project = info ? session.server.data.project.get(info.projectID) : undefined
         const name = basename(project?.canonical ?? session.location?.directory ?? "")
-        const branch = session.location
-          ? session.server.data.location.vcs.info(session.location)?.branch.current
-          : undefined
-        return name ? [[tab.key, label(name, branch)] as const] : []
+        return name ? [[tab.key, name] as const] : []
       }))
       attention = new Map(ctx.tabs.list().flatMap((tab) => {
         const session = tab.session

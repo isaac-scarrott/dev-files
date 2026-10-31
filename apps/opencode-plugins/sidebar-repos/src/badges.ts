@@ -2,11 +2,6 @@ export function basename(path: string) {
   return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? ""
 }
 
-// Branch names contain "/" too, so the separator cannot look like one.
-export function label(name: string, branch?: string) {
-  return branch ? `${name} · ${branch}` : name
-}
-
 // An end-only CSS ellipsis would cut the branch tail; dropping the middle keeps the repo head and
 // the branch tail. Binary-search the longest kept length whose head/tail split fits `max` pixels.
 export function truncateMiddle(

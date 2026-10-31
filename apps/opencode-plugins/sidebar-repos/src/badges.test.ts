@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { attentionKind, badges, basename, label, truncateMiddle } from "./badges"
+import { attentionKind, badges, basename, truncateMiddle } from "./badges"
 
 function fixture(options: { status?: boolean } = {}) {
   const window = new Window()
@@ -31,12 +31,6 @@ test("repository basenames handle Windows paths and trailing slashes", () => {
   assert.equal(basename(""), "")
 })
 
-test("the separator never matches a branch slash", () => {
-  assert.equal(label("holibob", "feature/small-sidebar"), "holibob · feature/small-sidebar")
-  assert.equal(label("holibob"), "holibob")
-  assert.equal(label("holibob", ""), "holibob")
-})
-
 test("first-load attention tolerates request lists that have not synced yet", () => {
   assert.equal(attentionKind(undefined, undefined), undefined)
   assert.equal(attentionKind(undefined, [{}]), "question")
@@ -64,14 +58,14 @@ test("middle ellipsis degenerates to only the ellipsis marker in narrow rows", (
   assert.equal(truncateMiddle("abcdefghij", 0, (value) => value.length), "…")
 })
 
-test("branch changes refresh the top line and tooltip without changing the session title", () => {
+test("label changes refresh the top line and tooltip without changing the session title", () => {
   const document = fixture()
-  badges(document, new Map([["server\nsession", label("holibob", "main")]]))
+  badges(document, new Map([["server\nsession", "holibob"]]))
   const badge = document.querySelector<HTMLElement>("[data-sidebar-repo]")
-  assert.equal(badge?.textContent, "holibob · main")
-  badges(document, new Map([["server\nsession", label("holibob", "feature/small-sidebar")]]))
-  assert.equal(badge?.textContent, "holibob · feature/small-sidebar")
-  assert.equal(badge?.title, "holibob · feature/small-sidebar")
+  assert.equal(badge?.textContent, "holibob")
+  badges(document, new Map([["server\nsession", "holibob-renamed"]]))
+  assert.equal(badge?.textContent, "holibob-renamed")
+  assert.equal(badge?.title, "holibob-renamed")
   assert.equal(document.querySelector("[data-slot='tab-title']")?.textContent, "Original title")
 })
 
