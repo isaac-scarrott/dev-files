@@ -67,6 +67,7 @@ function fixture() {
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
   const [mode, setMode] = createStore({ enabled: true })
+  const [dockStore, setDockStore] = createStore({ visible: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
@@ -76,7 +77,10 @@ function fixture() {
       list: () => tabList(),
       close: (key: string) => { calls.closed.push(key) },
     },
-    stores: { mode: { get value() { return mode }, update: (fn: (draft: { enabled: boolean }) => void) => setMode(produce(fn)) } },
+    stores: {
+      mode: { get value() { return mode }, update: (fn: (draft: { enabled: boolean }) => void) => setMode(produce(fn)) },
+      dock: { get value() { return dockStore }, update: (fn: (draft: { visible: boolean }) => void) => setDockStore(produce(fn)) },
+    },
     storage: { memory: () => [memory, (fn: (draft: { done: boolean }) => void) => setMemory(produce(fn))] },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
@@ -105,7 +109,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -458,4 +462,108 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   f.stop()
   assert.equal(option(f), null)
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
+})
+
+// The left sidebar is the host's aside; the header resets the body, so it is added after.
+const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
+  let aside = f.doc.querySelector("aside")
+  if (!aside) {
+    aside = f.doc.createElement("aside")
+    aside.setAttribute("data-slot", "vertical-tabs-sidebar")
+    f.doc.body.append(aside)
+  }
+  aside.setAttribute("data-state", state)
+  return f.flush()
+}
+const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
+const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-inset")
+
+test("dock: with the sidebar open the button shows and hides the window, remembered in the store, and no popover opens", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "open")
+  assert.equal(dockEl(f), null)
+  assert.equal(inset(f), "0px")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(f.dockStore.visible, true)
+  assert.equal(dockEl(f).dataset.state, "open")
+  assert.equal(dockEl(f).hasAttribute("inert"), false)
+  assert.equal(inset(f), "328px")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.toggle().getAttribute("aria-controls"), "agents-dock")
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "true")
+  assert.equal(f.toggle().hasAttribute("aria-haspopup"), false)
+  assert.match(dockEl(f).textContent!, /Subagents\s*·\s*0 running/)
+  f.toggle().click()
+  await f.flush()
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(dockEl(f).hasAttribute("inert"), true)
+  assert.equal(inset(f), "0px")
+  f.stop()
+  assert.equal(inset(f), "")
+})
+
+test("dock: the window's own close button hides it", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "open")
+  f.toggle().click()
+  await f.flush()
+  ;(dockEl(f).querySelector("[data-slot=agents-heading-close] button") as HTMLButtonElement).click()
+  await f.flush()
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(dockEl(f).dataset.state, "closed")
+  f.stop()
+})
+
+test("dock: closing the sidebar hides the window and frees the chat, opening it restores the remembered choice, and the closed button opens the popover", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "open")
+  f.toggle().click()
+  await f.flush()
+  await sidebar(f, "closed")
+  assert.equal(f.dockStore.visible, true)
+  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(inset(f), "0px")
+  assert.equal(f.toggle().hasAttribute("aria-controls"), false)
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  assert.equal(f.dockStore.visible, true)
+  await sidebar(f, "open")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(dockEl(f).dataset.state, "open")
+  assert.equal(inset(f), "328px")
+  f.stop()
+})
+
+test("dock: no sidebar in the document (top tabs) behaves as closed: popover only", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  assert.equal(dockEl(f), null)
+  assert.equal(inset(f), "0px")
+  f.stop()
+})
+
+test("dock: rows in the window keep the popover's behaviour (stop, open child)", async () => {
+  const f = fixture()
+  f.start()
+  running(f, ["c1"])
+  f.header()
+  await sidebar(f, "open")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(f.rows().length, 1)
+  assert.equal(dockEl(f).contains(f.rows()[0]), true)
+  f.stop()
 })

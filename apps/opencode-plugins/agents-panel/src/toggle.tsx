@@ -1,28 +1,56 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
+import { dockState } from "./dock"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast">
 type Input = { readonly session: MountedSession; readonly active: boolean }
+export type Dock = {
+  readonly sidebarOpen: () => boolean
+  readonly visible: () => boolean
+  readonly setVisible: (value: boolean) => void
+}
+
+const DOCK_ID = "agents-dock"
+// The window's exit transition (transform 250ms) plus a frame.
+const DOCK_EXIT_MS = 270
 
 const GAP = 8
 
 /**
- * The header toggle for a session's subagents: one floating popover under the button, whatever the side panel does.
- * The popover is transient (it closes on outside click, Esc, or leaving the session), so nothing is stored.
+ * The header toggle for a session's subagents. With the left sidebar open it shows or hides the persistent floating
+ * window (the dock, whose choice is stored); otherwise it opens a transient popover under the button that closes on
+ * outside click, Esc, or leaving the session.
  */
-export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
+export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   const { ctx } = props
   const session = () => props.input.session
   const [open, setOpen] = createSignal(false)
+  const state = () => dockState({ enabled: true, sidebarOpen: props.dock.sidebarOpen(), visible: props.dock.visible() })
+
+  // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It opens a frame
+  // after mounting so the entrance transitions, except when it is already shown at load.
+  const [mounted, setMounted] = createSignal(state().shown)
+  const [windowOpen, setWindowOpen] = createSignal(state().shown)
+  createEffect(() => {
+    if (state().shown) {
+      setMounted(true)
+      const frame = requestAnimationFrame(() => setWindowOpen(true))
+      onCleanup(() => cancelAnimationFrame(frame))
+      return
+    }
+    setWindowOpen(false)
+    const timer = setTimeout(() => setMounted(false), DOCK_EXIT_MS)
+    onCleanup(() => clearTimeout(timer))
+  })
 
   let wrap!: HTMLSpanElement
   let pop: HTMLDivElement | undefined
   const button = () => wrap.querySelector("button") ?? undefined
 
   createEffect(() => {
-    if (!props.input.active) setOpen(false)
+    if (!props.input.active || state().docked) setOpen(false)
   })
   // Another session's list must not stay open under this button.
   createEffect(() => {
@@ -35,11 +63,14 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
   createEffect(() => {
     const trigger = button()
     if (!trigger) return
-    const expanded = open()
-    trigger.setAttribute("aria-haspopup", "dialog")
+    const docked = state().docked
+    const expanded = docked ? state().shown : open()
+    if (docked) trigger.setAttribute("aria-controls", DOCK_ID)
+    else trigger.setAttribute("aria-haspopup", "dialog")
     trigger.setAttribute("aria-expanded", String(expanded))
     trigger.toggleAttribute("data-expanded", expanded)
     onCleanup(() => {
+      trigger.removeAttribute("aria-controls")
       trigger.removeAttribute("aria-haspopup")
       trigger.removeAttribute("aria-expanded")
       trigger.removeAttribute("data-expanded")
@@ -83,16 +114,32 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input }) {
   return (
     <>
       <ctx.ui.Tooltip value="Subagents">
-        <span ref={wrap} data-agents-toggle>
+        <span ref={wrap} data-agents-toggle onMouseDown={(event) => event.preventDefault()}>
           <ctx.ui.IconButton
             icon="bullet-list"
             size="large"
             label="Subagents"
-            pressed={open()}
-            onClick={() => setOpen((value) => !value)}
+            pressed={state().docked ? state().shown : open()}
+            onClick={() => (state().docked ? props.dock.setVisible(!props.dock.visible()) : setOpen((value) => !value))}
           />
         </span>
       </ctx.ui.Tooltip>
+      <Show when={props.input.active && mounted()}>
+        <Portal>
+          <div
+            id={DOCK_ID}
+            data-agents-dock
+            data-state={windowOpen() && state().shown ? "open" : "closed"}
+            role="region"
+            aria-label="Subagents"
+            inert={!(windowOpen() && state().shown)}
+          >
+            <div data-component="menu-v2-content">
+              <SubagentsList ctx={ctx} session={session} onClose={() => props.dock.setVisible(false)} />
+            </div>
+          </div>
+        </Portal>
+      </Show>
       <Show when={open()}>
         <Portal>
           <div ref={pop} data-agents-popover tabIndex={-1} data-prevent-autofocus aria-label="Subagents">

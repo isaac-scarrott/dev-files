@@ -26,3 +26,14 @@ The choice lives in the host's own select: Settings → Timeline → Background 
 - The popup is not rendered while closed, so the reconcile above runs only when it is open. A host value changed while the settings page is closed leaves the mode on with a visible native row until the dropdown is next opened.
 - Opening the dropdown while the mode is on highlights Hidden first (the host's selected item), with the check on ours.
 - The native row above the composer was verified by the select's state (Hidden) only; no model can run a subagent in the harness.
+
+## Dock
+
+With the left sidebar open, the header button shows and hides a persistent floating window; with it closed (or in top-tabs layout, where there is no sidebar), the button opens the popover as before.
+
+- **Sidebar state**: the host has no API for it (`layout.side` is the right region). `aside[data-slot=vertical-tabs-sidebar][data-state=open]` is read through one `MutationObserver` filtered to `data-state` (`src/dock.ts`).
+- **Window**: fixed card, 320px, end side, below the header row (the host's Toggle review button sits at the card's end corner and must stay reachable), on the host's `menu-v2-content` surface. Mounted only while shown or leaving; it opens a frame after mounting so the entrance transitions.
+- **Chat centring**: while shown, `--agents-dock-inset` (window width + 8px gap) is set on `<html>` and the chat row (found as `:has(> [data-slot=session-chat-panel])`) reserves it as `padding-inline-end`, transitioned 250ms on the host's curve. The host moves its own sidebar and review panel by layout too; the timeline column keeps its width, so no reflow and no scroll jump (measured).
+- **Choice**: `dock.visible`, a global plugin store, default hidden. It survives the sidebar closing and reopening; closing the sidebar hides the window without clearing it.
+- **Motion**: window 250ms transform + 150ms opacity, chat 250ms; reduced motion drops movement (opacity stays, the chat re-centres instantly).
+- **Not built**: dragging and resizing. The window does not shrink the chat below the host's own flex limits on a very narrow window.
