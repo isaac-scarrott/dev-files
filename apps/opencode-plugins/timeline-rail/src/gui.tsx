@@ -21,8 +21,6 @@ const CLOSE_MOTION = 90
 /** Dock-like lift under a fine pointer: peak extra width of the nearest tick, and the falloff in px. */
 const LIFT = 0.4
 const REACH = 16
-/** The current-position marker beside the ticks. */
-const MARKER_HEIGHT = 8
 
 type Geometry = { readonly top: number; readonly height: number; readonly left: number; readonly show: boolean }
 
@@ -385,25 +383,6 @@ function Rail(props: { input: SlotMap["session.header"] }) {
     if (lifting !== undefined) cancelAnimationFrame(lifting)
   })
 
-  // The current-position marker slides between ticks when the user scrolls; when ticks reflow (a page of history
-  // landed, the pane resized) it jumps instead, because the tick it marks moved under it.
-  const [reflow, setReflow] = createSignal(false)
-  let reflowFrame: number | undefined
-
-  createEffect(
-    on(
-      () => `${plan().ticks.length}:${plan().pitch}:${geometry()?.height}`,
-      () => {
-        setReflow(true)
-        if (reflowFrame !== undefined) cancelAnimationFrame(reflowFrame)
-        reflowFrame = requestAnimationFrame(() => (reflowFrame = requestAnimationFrame(() => setReflow(false))))
-      },
-    ),
-  )
-  onCleanup(() => {
-    if (reflowFrame !== undefined) cancelAnimationFrame(reflowFrame)
-  })
-
   const keys = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       close()
@@ -444,8 +423,6 @@ function Rail(props: { input: SlotMap["session.header"] }) {
       "--timeline-rail-pitch": `${plan().pitch}px`,
     }
   }
-
-  const markerY = () => Math.max(0, activeTick()) * plan().pitch + plan().pitch / 2 - MARKER_HEIGHT / 2
 
   return (
     <span ref={(el) => (element = el)} style={{ display: "contents" }}>
@@ -494,13 +471,6 @@ function Rail(props: { input: SlotMap["session.header"] }) {
                 }}
               >
                 <span data-timeline-rail-history data-active={paging() ? "" : undefined} aria-hidden="true" />
-                <span
-                  data-timeline-rail-marker
-                  data-reflow={reflow() ? "" : undefined}
-                  data-hidden={activeTick() < 0 ? "" : undefined}
-                  aria-hidden="true"
-                  style={{ transform: `translateY(${markerY()}px)`, height: `${MARKER_HEIGHT}px` }}
-                />
                 <For each={plan().ticks}>
                   {(tick, index) => (
                     <button
@@ -553,7 +523,7 @@ function Rail(props: { input: SlotMap["session.header"] }) {
 }
 
 // Tokens and numbers copied from the host: the card is `menu-v2-content`'s surface (layer-01, floating elevation, 6px
-// radius). Motion follows reference/animation.md: ease-out for entrances, the on-screen curve for the marker, only
+// radius). Motion follows reference/animation.md: ease-out for entrances, the on-screen curve for movement, only
 // `transform` and `opacity`, nothing runs until `data-armed` (two frames after the rail exists, so nothing animates
 // on first paint), and reduced motion keeps opacity and drops movement.
 const CSS = `
@@ -576,14 +546,14 @@ const CSS = `
   display: flex;
   flex-direction: column;
   width: 100%;
-  padding: 0 0 0 8px;
+  padding: 0;
   box-sizing: border-box;
   pointer-events: auto;
 }
 [data-timeline-rail-history] {
   position: absolute;
   top: -9px;
-  left: 8px;
+  left: 0;
   width: 8px;
   height: 2px;
   border-radius: 1px;
@@ -592,20 +562,6 @@ const CSS = `
 }
 [data-timeline-rail][data-armed] [data-timeline-rail-history] { transition: opacity 200ms var(--timeline-rail-ease); }
 [data-timeline-rail-history][data-active] { opacity: 1; animation: timelineRailHistory 1.4s ease-in-out infinite; }
-[data-timeline-rail-marker] {
-  position: absolute;
-  top: 0;
-  left: 3px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--v2-text-text-base);
-  pointer-events: none;
-  will-change: transform;
-}
-[data-timeline-rail-marker][data-hidden] { opacity: 0; }
-[data-timeline-rail][data-armed] [data-timeline-rail-marker]:not([data-reflow]) {
-  transition: transform 180ms var(--timeline-rail-move), opacity 120ms var(--timeline-rail-ease);
-}
 [data-timeline-rail-tick] {
   appearance: none;
   position: relative;
@@ -711,7 +667,6 @@ const CSS = `
 @keyframes timelineRailHistory { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) {
   [data-timeline-rail-history][data-active] { animation: none; opacity: 0.6; }
-  [data-timeline-rail][data-armed] [data-timeline-rail-marker]:not([data-reflow]) { transition: opacity 120ms linear; }
   [data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
   [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 120ms linear; }
   [data-timeline-rail-card][data-entered] { transition: none; }
