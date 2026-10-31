@@ -18,7 +18,7 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
       live.add(host)
       if (!actions || actions.el.parentElement !== host) {
         if (actions) drop(actions)
-        actions = createActions(doc, shell, "tab", () => info(key!)?.target, () => info(key!)?.title ?? "", handlers, () => info(key!)?.disabled ?? true)
+        actions = createActions(doc, shell, () => info(key!)?.target, () => info(key!)?.title ?? "", handlers, () => info(key!)?.disabled ?? true)
         hosts.set(host, actions)
         host.append(actions.el)
       }

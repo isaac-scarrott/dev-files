@@ -1,8 +1,10 @@
-import { createComponent, createMemo, createSignal, type JSX } from "solid-js"
+import { createComponent, createSignal } from "solid-js"
 import type { Avatar } from "./avatar"
 import type { Host } from "./host"
+import { clockIcon } from "./icons"
+import { openMenu, type MenuLine } from "./menu"
 
-export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; secondary?: { label: string; run(): void } }
+export interface GroupRow { key: string; title: string; detail: string; action: string; avatar: Avatar; run(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
@@ -31,12 +33,14 @@ function avatarNode(doc: Document, avatar: Avatar) {
   return root
 }
 
-function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
+function group(doc: Document, host: Host, name: string, icon: boolean, schedule: (fn: () => void) => number, timers: Timers) {
   const section = doc.createElement("section")
   const header = doc.createElement("div")
   header.dataset.saToggle = ""
   const label = doc.createElement("span")
   label.textContent = name
+  label.className = "sa-label"
+  if (icon) label.prepend(clockIcon(doc))
   const count = doc.createElement("span")
   count.dataset.saCount = ""
   const panel = doc.createElement("div")
@@ -112,32 +116,26 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
     close.dataset.slot = "tab-close"
     el.append(link, close)
     const [current, set] = createSignal(item)
-    const secondary = createMemo(() => current().secondary?.label)
     link.onclick = (event) => { event.preventDefault(); current().run() }
+    // Right-click, or the keyboard menu key from a focused button (which reports 0,0): the row's other actions.
+    el.oncontextmenu = (event) => {
+      if (!current().menu?.length) return
+      event.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const keyboard = event.clientX === 0 && event.clientY === 0
+      openMenu(doc, keyboard ? { x: rect.left, y: rect.bottom } : { x: event.clientX, y: event.clientY }, current().menu ?? [], { label: `${current().title} actions` })
+    }
     const act = (run: () => void) => (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); run() }
-    const dispose = host.mount(close, () => [
-      createComponent(host.ui.Tooltip, {
-        get value() { return current().action },
-        get children() {
-          return createComponent(host.ui.IconButton, {
-            icon: "outline-undo", size: "small",
-            get label() { return `${current().action} ${current().title}` },
-            onClick: act(() => current().run()),
-          })
-        },
-      }),
-      // A function child is inserted reactively; the label memo keeps the button from remounting on every update.
-      (() => secondary() ? createComponent(host.ui.Tooltip, {
-        get value() { return secondary()! },
-        get children() {
-          return createComponent(host.ui.IconButton, {
-            icon: "outline-trash", size: "small",
-            get label() { return `${current().secondary?.label} ${current().title}` },
-            onClick: act(() => current().secondary?.run()),
-          })
-        },
-      }) : undefined) as unknown as JSX.Element,
-    ])
+    const dispose = host.mount(close, () => createComponent(host.ui.Tooltip, {
+      get value() { return current().action },
+      get children() {
+        return createComponent(host.ui.IconButton, {
+          icon: "outline-undo", size: "small",
+          get label() { return `${current().action} ${current().title}` },
+          onClick: act(() => current().run()),
+        })
+      },
+    }))
     return { el, set, title, detail, avatarSlot, dispose }
   }
   return {
@@ -201,8 +199,8 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   const root = doc.createElement("div")
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
-  const snoozed = group(doc, host, "Snoozed", schedule, timers)
-  const archived = group(doc, host, "Archived", schedule, timers)
+  const snoozed = group(doc, host, "Snoozed", true, schedule, timers)
+  const archived = group(doc, host, "Archived", false, schedule, timers)
   root.append(snoozed.section, archived.section)
   let parent: HTMLElement | undefined
   const attach = () => {
@@ -238,6 +236,7 @@ export const css = `
 [data-sa-host] > [data-slot="vertical-tabs"] > [data-slot="vertical-tabs-scroll"] { max-height: 100%; }
 [data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 0; app-region: no-drag; }
 .sa-toggle { width: 100%; justify-content: flex-start; }
+.sa-label { display: inline-flex; align-items: center; gap: 6px; }
 [data-sa-count] { margin-inline-start: auto; font-variant-numeric: tabular-nums; color: var(--v2-text-text-faint); }
 .sa-chevron { transition: transform 200ms cubic-bezier(0.23,1,0.32,1); }
 .sa-toggle[aria-expanded="true"] .sa-chevron { transform: rotate(90deg); }

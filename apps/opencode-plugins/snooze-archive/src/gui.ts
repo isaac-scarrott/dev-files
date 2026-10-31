@@ -1,7 +1,10 @@
-import { Command, Plugin, Slot, Store, Style, type ServerRef } from "@opencode/plugin/gui"
+import { Command, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
-import { actionsCss, createActions, type ActionName, type Target } from "./actions"
+import { createEffect, createSignal, untrack } from "solid-js"
+import { actionsCss, labels, type ActionName, type Target } from "./actions"
+import { iconCss } from "./icons"
+import { menuCss } from "./menu"
+import { createTabMenu } from "./tabmenu"
 import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
@@ -18,7 +21,7 @@ const definition = Plugin.define({ stores: { snoozes: Store.global(Schema.Struct
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css + actionsCss)
+    ctx.add(Style, css + actionsCss + iconCss + menuCss)
     const host = createHost(ctx.ui)
     const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
@@ -198,17 +201,6 @@ export default Plugin.define({
     const avatarOf = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") =>
       avatarFor(info?.projectID ? ctx.servers.get(server)?.data.project?.get(info.projectID) : undefined, info?.location?.directory ?? fallback)
     const currentSession = () => { const s = ctx.sessions.current(); return s && !s.pending ? s : undefined }
-    ctx.add(Slot, {
-      at: "session.header", order: 100,
-      render: (input) => {
-        const actions = createActions(document, host, "header",
-          () => { const s = input.session; return s && !s.pending ? { server: s.server.id, id: s.id } : undefined },
-          () => input.session?.server.data.session.get(input.session.id)?.title ?? "",
-          { run: runAction }, () => !!input.session?.pending)
-        onCleanup(actions.dispose)
-        return actions.el
-      },
-    })
     ctx.add(Command, (): Command => ({ id: "delete", title: "Delete session…", section: "session", enabled: !!currentSession(), run: () => {
       const session = currentSession()
       if (session) return deleteAction(session.server, session.id)
@@ -272,8 +264,13 @@ export default Plugin.define({
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
-        avatar: avatarOf(id, info), action: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
-        secondary: { label: "Delete…", run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
+        avatar: avatarOf(id, info), action: "Restore",
+        run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
+        menu: [
+          { label: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) } },
+          "separator" as const,
+          { label: labels.delete, danger: true, run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
+        ],
       })))
       const errors = ids.flatMap((id) => {
         const server = ctx.servers.get(id)
@@ -284,13 +281,21 @@ export default Plugin.define({
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
         avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${new Date(entry.until).toLocaleString()} · device-local`, action: "Wake", run: () => wake(entry, true),
+        menu: [
+          { label: "Wake", run: () => wake(entry, true) },
+          { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },
+          "separator" as const,
+          { label: labels.delete, danger: true, run: () => runAction("delete", { server: entry.server, id: entry.id }) },
+        ],
       })) }, { rows, count: complete ? rows.length : undefined, status: errors.length ? errors.join("; ") : complete ? undefined : "Loading complete archived history…" })
     })
-    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, (key) => {
+    const tabInfo = (key: string) => {
       const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
       if (!session) return
       return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending }
-    }, { run: runAction })
+    }
+    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
+    const tabMenu = createTabMenu(document, tabInfo, { run: runAction }, labels)
     createEffect(() => {
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
       tabActions.sync()
@@ -310,6 +315,7 @@ export default Plugin.define({
       subscriptions.clear()
       sidebar.dispose()
       tabActions.dispose()
+      tabMenu.dispose()
     }
   },
 })

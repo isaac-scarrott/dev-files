@@ -131,12 +131,12 @@ test("rows animate only when open after first content; leaving rows are interrup
   assert.equal(timers.size, 0)
 })
 
-test("rows reuse the session tab markup so the app styles them, without acting as live tabs", () => {
+test("rows reuse the session tab markup so the app styles them, without acting as live tabs", async () => {
   const doc = new Window().document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let deleted = 0
-  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, secondary: { label: "Delete…", run: () => { deleted++ } } }
+  const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
   sidebar.update({ rows: [], count: 0 }, { rows: [archived], count: 1 })
   const row = doc.querySelector<HTMLElement>("[data-sa-row]")!
   assert.ok(row.hasAttribute("data-titlebar-tab"))
@@ -147,10 +147,22 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   assert.equal(row.querySelector('[data-slot="tab-project"]')?.textContent, "Local · /repo")
   assert.equal(row.querySelector('[data-component="project-avatar-v2"] [data-slot="project-avatar-surface"]')?.getAttribute("data-variant"), "blue")
   assert.equal(row.querySelector('[data-slot="project-avatar-surface"]')?.textContent, "R")
-  assert.deepEqual([...row.querySelectorAll('[data-slot="tab-close"] button')].map((b) => b.getAttribute("aria-label")), ["Restore Fix bug", "Delete… Fix bug"])
-  row.querySelector<HTMLElement>('button[data-icon="outline-trash"]')!.click()
+  assert.deepEqual([...row.querySelectorAll('[data-slot="tab-close"] button')].map((b) => b.getAttribute("aria-label")), ["Restore Fix bug"], "hover shows one primary action")
+  const event = new (doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })
+  row.dispatchEvent(event)
+  assert.ok(event.defaultPrevented)
+  const items = [...doc.querySelectorAll<HTMLElement>('[data-sa-popup] [role="menuitem"]')]
+  assert.deepEqual(items.map((i) => i.textContent), ["Restore", "Delete…"])
+  assert.equal(items[1].dataset.variant, "critical")
+  assert.equal(doc.activeElement, items[0])
+  items[0].dispatchEvent(new (doc.defaultView as any).KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  assert.equal(doc.activeElement, items[1])
+  items[1].click()
+  await new Promise((r) => setTimeout(r, 5))
   assert.equal(deleted, 1)
-  sidebar.update({ rows: [], count: 0 }, { rows: [{ ...archived, secondary: undefined }], count: 1 })
-  assert.equal(doc.querySelectorAll('[data-slot="tab-close"] button').length, 1)
+  assert.equal(doc.querySelector("[data-sa-popup]"), null, "menu closes after choosing")
+  sidebar.update({ rows: [], count: 0 }, { rows: [{ ...archived, menu: undefined }], count: 1 })
+  row.dispatchEvent(new (doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+  assert.equal(doc.querySelector("[data-sa-popup]"), null)
   sidebar.dispose()
 })
