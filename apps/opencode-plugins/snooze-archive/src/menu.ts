@@ -96,7 +96,7 @@ export function extendNative(content: HTMLElement, lines: MenuLine[]): () => voi
 
 export interface Point { x: number; y: number }
 
-export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: { label: string; onClose?: () => void; focus?: "first" | "none" }) {
+export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: { label: string; onClose?: (chosen: boolean) => void; focus?: "first" | "none" }) {
   const win = doc.defaultView!
   const previous = doc.activeElement as HTMLElement | null
   const wrap = doc.createElement("div")
@@ -108,18 +108,19 @@ export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: {
   content.dataset.component = "menu-v2-content"
   content.dataset.appearance = "compact"
   let closed = false
-  const close = () => {
+  const close = (chosen = false) => {
     if (closed) return
     closed = true
     doc.removeEventListener("pointerdown", outside, true)
-    win.removeEventListener("blur", close)
-    win.removeEventListener("resize", close)
+    win.removeEventListener("blur", blur)
+    win.removeEventListener("resize", blur)
     wrap.remove()
     if (previous?.isConnected) previous.focus({ preventScroll: true })
-    options.onClose?.()
+    options.onClose?.(chosen)
   }
+  const blur = () => close()
   const outside = (event: Event) => { if (!wrap.contains(event.target as Node)) close() }
-  content.append(...build(doc, lines, "compact", (entry) => { close(); setTimeout(entry.run, 0) }))
+  content.append(...build(doc, lines, "compact", (entry) => { close(true); setTimeout(entry.run, 0) }))
   content.onkeydown = (event) => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return }
     if (event.key === "Tab") { event.preventDefault(); close(); return }
@@ -135,8 +136,8 @@ export function openMenu(doc: Document, at: Point, lines: MenuLine[], options: {
   wrap.style.left = `${Math.max(4, Math.min(at.x, win.innerWidth - width - 4))}px`
   wrap.style.top = `${Math.max(4, Math.min(at.y, win.innerHeight - height - 4))}px`
   doc.addEventListener("pointerdown", outside, true)
-  win.addEventListener("blur", close)
-  win.addEventListener("resize", close)
+  win.addEventListener("blur", blur)
+  win.addEventListener("resize", blur)
   if (options.focus !== "none") {
     const first = content.querySelector<HTMLElement>(ITEM)
     if (first) focusItem(first); else content.focus()

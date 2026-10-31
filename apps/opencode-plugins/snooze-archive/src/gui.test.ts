@@ -118,10 +118,10 @@ test("snooze persists server+session, closes only tab, offers undo, and rejects 
   const f = fixture()
   try {
     f.start(); f.setServers(["server"]); await f.flush()
-    f.permissions([{}]); await f.commands.get("snooze")!.run()
+    f.permissions([{}]); await runSnooze(f)
     assert.equal(f.state().entries.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /waiting/)
-    f.permissions([]); await f.commands.get("snooze")!.run(); await f.flush()
+    f.permissions([]); await runSnooze(f); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].server, "server")
     assert.deepEqual(f.calls.closed, ["tab"])
@@ -140,7 +140,7 @@ test("new events wake only matching snoozed server/session; archived events do n
     f.emit("session.execution.succeeded", "other"); assert.equal(f.state().entries.length, 1)
     f.emit("session.execution.succeeded"); assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
-    await f.commands.get("snooze")!.run()
+    await runSnooze(f)
     f.emit("session.archived"); await f.flush()
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
@@ -210,12 +210,12 @@ for (const unloaded of ["parent permissions", "parent forms", "child permissions
       if (unloaded === "metadata") f.metadata("missing")
       if (unloaded === "metadata time") f.metadata("no-time")
       if (unloaded === "family") f.family(undefined)
-      await f.commands.get("snooze")!.run(); await f.flush()
+      await runSnooze(f); await f.flush()
       assert.equal(f.state().entries.length, 0)
       assert.equal(f.calls.closed.length, 0)
       assert.match(f.calls.toasts.at(-1).description, /still loading.*Retry snooze/)
       f.permissions([]); f.forms([]); f.family(["child"]); f.child("child", { permissions: [], forms: [] }); f.metadata("ready")
-      await f.commands.get("snooze")!.run(); await f.flush()
+      await runSnooze(f); await f.flush()
       assert.equal(f.state().entries.length, 1)
       assert.deepEqual(f.calls.closed, ["tab"])
     } finally { await f.close() }
@@ -265,7 +265,7 @@ for (const action of ["snooze", "reconcile"] as const) {
     try {
       f.metadata("missing"); f.permissions(undefined); f.forms(undefined); f.sync(() => gate)
       f.start(); f.setServers(["server"]); await f.flush()
-      const pending = action === "snooze" ? f.commands.get("snooze")!.run() : undefined
+      const pending = action === "snooze" ? runSnooze(f) : undefined
       await f.flush(); f.stop()
       const reads = f.calls.metadataReads
       release(); await pending; await f.flush()
@@ -290,6 +290,14 @@ test("deadline wake never reopens a session already known to be natively archive
 })
 
 const click = (el: Element | null | undefined) => (el as HTMLElement).click()
+// Runs the palette command and chooses the first preset (In 1 hour) in the menu it opens.
+async function runSnooze(f: { commands: Map<string, { run(): Promise<void> | void }>; doc: Document }, index = 0) {
+  const pending = f.commands.get("snooze")!.run()
+  for (let i = 0; i < 40 && !f.doc.querySelector("[data-sa-popup]"); i++) await Promise.resolve()
+  click(f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")[index])
+  await new Promise((r) => setTimeout(r, 5))
+  await pending
+}
 
 const NATIVE_MENU = `<div role="menu" data-component="menu-v2-content" data-appearance="compact" aria-labelledby="trigger"><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Rename</span></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">Close tab</span></div><div data-slot="menu-v2-separator"></div><div role="menuitem" tabindex="-1" data-component="menu-v2-item" data-variant="critical"><span data-slot="menu-v2-item-content">Delete…</span></div></div>`
 const key = (el: Element, name: string) => el.dispatchEvent(new (el.ownerDocument.defaultView as any).KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
@@ -370,6 +378,7 @@ test("Snooze… from the tab menu opens the preset picker for that tab's session
     f.setServers(["server"]); f.start(); await f.flush()
     const menu = openNativeMenu(f); await f.flush()
     click(menu.querySelectorAll('[data-sa-menu][role=menuitem]')[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
+    click(f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")[0]); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].id, "s")
   } finally { await f.close() }

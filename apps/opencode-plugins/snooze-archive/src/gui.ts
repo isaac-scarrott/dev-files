@@ -10,7 +10,10 @@ import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
 import { createHost } from "./host"
 import { createTabActions } from "./tabrows"
-import { customTime, presets, sessionKey, wakeReason, type Snooze } from "./snooze"
+import { sessionKey, wakeReason, type Snooze } from "./snooze"
+import { openCustom, customCss } from "./custom"
+import { openMenu, type MenuLine } from "./menu"
+import { checkWake, formatHint, presets, uses12Hour } from "./time"
 
 const SnoozeSchema = Schema.Struct({
   server: Schema.String, id: Schema.String, title: Schema.String,
@@ -21,7 +24,7 @@ const definition = Plugin.define({ stores: { snoozes: Store.global(Schema.Struct
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css + actionsCss + iconCss + menuCss)
+    ctx.add(Style, css + actionsCss + iconCss + menuCss + customCss)
     const host = createHost(ctx.ui)
     const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
@@ -129,22 +132,23 @@ export default Plugin.define({
         }
       } catch (cause) { error(cause) }
     }
+    // Preset menu in the app's menu markup. Times are resolved when it opens, so they are never stale.
+    const chooseTime = () => new Promise<number | undefined>((resolve) => {
+      const now = new Date()
+      const options = { hour12: uses12Hour() ? true : false }
+      const lines: MenuLine[] = [
+        ...presets(now).map((p): MenuLine => ({ label: p.label, hint: formatHint(p, +now, options), run: () => resolve(p.until) })),
+        "separator",
+        { label: "Custom…", run: () => { void openCustom((render) => ctx.dialogs.open(render), host).then(resolve) } },
+      ]
+      openMenu(document, { x: Math.round(window.innerWidth / 2 - 130), y: Math.round(window.innerHeight * 0.22) }, lines, { label: "Snooze until", onClose: (chosen) => { if (!chosen) resolve(undefined) } })
+    })
     const snooze = async (session: { id: string; server: ServerRef }) => {
-      const choices = presets(new Date())
-      const choice = await ctx.dialogs.select({
-        title: "Snooze session · this device only",
-        options: [...choices.map((p) => ({ title: p.label, value: String(p.until), description: new Date(p.until).toLocaleString() })),
-          { title: "Custom duration or date…", value: "custom", description: "30m, 2h, 3d, or YYYY-MM-DDTHH:mm (local time)" }],
-      })
-      if (!choice || disposed) return
-      let until = Number(choice)
-      if (choice === "custom") {
-        const text = await ctx.dialogs.prompt({ title: "Snooze until", description: "30m, 2h, 3d, or YYYY-MM-DDTHH:mm (local time)" })
-        if (!text || disposed) return
-        until = customTime(text, new Date()) ?? NaN
-      }
+      const until = await chooseTime()
+      if (until === undefined || disposed) return
       try {
-        if (!Number.isFinite(until) || until <= Date.now()) throw new Error("Choose a future time; nonexistent DST times are not accepted.")
+        const valid = checkWake(until, Date.now())
+        if (!valid.ok) throw new Error(valid.reason)
         const server = session.server
         await server.data.session.sync(session.id, { children: true })
         if (disposed) return
@@ -301,17 +305,24 @@ export default Plugin.define({
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
       tabActions.sync()
     })
-    const timer = window.setInterval(() => {
+    const recheck = () => {
       for (const entry of entries()) {
         if (entry.until <= Date.now()) wake(entry)
         else void reconcile(entry)
       }
-    }, 30_000)
+    }
+    const timer = window.setInterval(recheck, 30_000)
+    // Sleep, resume and clock or time zone changes: the absolute deadline is re-read as soon as the window is back.
+    const visible = () => { if (document.visibilityState !== "hidden") recheck() }
+    document.addEventListener("visibilitychange", visible)
+    window.addEventListener("focus", recheck)
     // Hydrated snoozes keep working even when no session tabs are open.
     for (const entry of entries()) if (entry.until <= Date.now()) wake(entry)
     return () => {
       disposed = true
       clearInterval(timer)
+      document.removeEventListener("visibilitychange", visible)
+      window.removeEventListener("focus", recheck)
       subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
       subscriptions.clear()
       sidebar.dispose()

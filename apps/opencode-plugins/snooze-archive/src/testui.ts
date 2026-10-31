@@ -26,6 +26,14 @@ export function fakeUi(doc: Document): Ui {
       return el
     },
     Tooltip: (props) => props.children,
+    TextInput: (props) => {
+      const el = doc.createElement("input") as HTMLInputElement
+      createRenderEffect(() => { el.value = String(props.value); el.setAttribute("aria-label", String(props.label)); if (props.invalid) el.setAttribute("aria-invalid", "true"); else el.removeAttribute("aria-invalid") })
+      el.oninput = () => props.onInput(el.value)
+      el.onkeydown = (event) => { if (event.key === "Enter") props.onSubmit?.(el.value) }
+      return el
+    },
+    Dialog: (props) => { const el = doc.createElement("div"); el.setAttribute("role", "dialog"); el.append(props.children as Node, props.footer as Node); return el },
   }
   return ui as unknown as Ui
 }
