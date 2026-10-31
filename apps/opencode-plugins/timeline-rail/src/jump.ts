@@ -14,6 +14,8 @@ export type Host = {
   frame(): Promise<void>
   /** Called with true while older history loads, false when it is done. */
   loading?(value: boolean): void
+  /** Scrolls to `to` along the host's own ease-out; absent, the browser's smooth scroll is used. */
+  tween?(to: number, signal: AbortSignal): Promise<boolean>
 }
 
 export type Outcome = "done" | "none" | "aborted"
@@ -184,30 +186,40 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
     scroller.scrollTo({ top: plan.start, behavior: "auto" })
     await host.frame()
   }
-  scroller.scrollTo({ top: plan.to, behavior: plan.behavior })
+  // The host's curve when it supplies one; otherwise the browser's own smooth scroll, which has no ease-out to match.
+  const move = async (to: number) => {
+    if (plan.behavior === "auto") {
+      scroller.scrollTo({ top: to, behavior: "auto" })
 
-  if (plan.behavior === "auto") return true
+      return true
+    }
 
-  let last = Number.NaN
-  let still = 0
+    if (host.tween) return host.tween(to, signal)
+    scroller.scrollTo({ top: to, behavior: plan.behavior })
+    let last = Number.NaN
+    let still = 0
 
-  for (let frame = 0; frame < GLIDE_LIMIT && !signal.aborted; frame += 1) {
-    await host.frame()
-    const top = scroller.scrollTop
-    still = top === last ? still + 1 : 0
-    last = top
+    for (let frame = 0; frame < GLIDE_LIMIT && !signal.aborted; frame += 1) {
+      await host.frame()
+      const top = scroller.scrollTop
+      still = top === last ? still + 1 : 0
+      last = top
 
-    if (still >= SETTLE_FRAMES) break
+      if (still >= SETTLE_FRAMES) break
+    }
+
+    return true
   }
 
-  if (signal.aborted) return true
+  // false: the user scrolled mid-glide, and their scroll stands.
+  if (!(await move(plan.to)) || plan.behavior === "auto" || signal.aborted) return true
   const landed = anchorOf(scroller, id)
 
   if (!landed) return true
   const to = Math.min(offsetOf(scroller, landed), Math.max(0, scroller.scrollHeight - scroller.clientHeight))
 
   // Mounting the turn above shifts the anchor after the glide lands; a second short glide settles it without a jolt.
-  if (Math.abs(to - scroller.scrollTop) > 2) scroller.scrollTo({ top: to, behavior: plan.behavior })
+  if (Math.abs(to - scroller.scrollTop) > 2) await move(to)
 
   return true
 }

@@ -23,7 +23,7 @@ const rect = (top: number, left: number, width: number, height: number) => ({
   toJSON: () => ({}),
 })
 
-function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
+function fixture(options: { gutter?: number; desktop?: boolean; pages?: number } = {}) {
   // Solid delegates events to the document it loaded with, so the tests reuse it.
   const doc = globalThis.document
   doc.body.innerHTML = `<div data-view><div data-slot="session-timeline-scroll"><div data-scrollable><div data-session-title><div data-actions></div></div><div data-rows></div></div></div><div data-slot="session-timeline-visible"></div></div>`
@@ -92,6 +92,8 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
 
   const [messages, setMessages] = createSignal<Message[]>([])
   const [active, setActive] = createSignal(true)
+  const [pages, setPages] = createSignal(options.pages ?? 0)
+  const loads: { aborted: boolean; busy: string | null | undefined }[] = []
   const session = {
     id: "s",
     server: {
@@ -99,7 +101,17 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
       data: {
         session: {
           get: () => ({}),
-          message: { list: () => messages(), more: () => false, loadMore: async () => {} },
+          message: {
+            list: () => messages(),
+            more: () => pages() > 0,
+            loadMore: async (_id: string, load?: { signal?: AbortSignal; beforePublish?: () => void }) => {
+              loads.push({ aborted: load?.signal?.aborted ?? false, busy: doc.querySelector("[data-timeline-rail-ticks]")?.getAttribute("aria-busy") })
+              await new Promise((resolve) => setTimeout(resolve, 10))
+              if (load?.signal?.aborted) return
+              load?.beforePublish?.()
+              setPages(pages() - 1)
+            },
+          },
         },
       },
     },
@@ -140,6 +152,7 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
     setActive,
     active,
     session,
+    loads,
     flush,
     prompt,
     reply,
@@ -191,20 +204,22 @@ const threeTurns = (f: ReturnType<typeof fixture>) => {
   ])
 }
 
-test("no rail under two prompts; with more, one labelled tick per prompt and the current one follows the scroll", async () => {
+test("an empty rail under two prompts; with more, one labelled tick per prompt and the current one follows the scroll", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    assert.equal(f.rail(), null)
+    const empty = () => !f.rail() || f.rail()!.hasAttribute("data-empty")
+    assert.equal(empty(), true)
     f.setMessages([f.prompt("m1", "only")])
     f.mount([{ owner: "m1", y: 48, height: 60, prompt: true }])
     await f.flush()
-    assert.equal(f.rail(), null)
+    assert.equal(empty(), true)
 
     threeTurns(f)
     await f.flush()
     const rail = f.rail()
     assert.ok(rail)
+    assert.equal(rail.hasAttribute("data-empty"), false)
     assert.equal(rail.style.left, `${(256 - 28) / 2}px`)
     assert.equal(rail.style.top, `${INSET}px`)
     assert.equal(rail.style.height, `${VIEWPORT - INSET}px`)
@@ -246,10 +261,17 @@ test("clicking a tick glides its prompt under the header; the current tick re-al
     await f.flush()
     f.ticks()[1]!.click()
     await f.flush()
-    assert.deepEqual(f.scrolls, [{ top: 1108 - INSET, behavior: "smooth" }])
+    await new Promise((resolve) => setTimeout(resolve, 320))
+    await f.flush()
+    // The host's own ease-out, one write per frame: every write is instant, none goes backwards, the last lands.
+    const tops = f.scrolls.map((scroll) => scroll.top)
+    assert.ok(tops.length > 2, `eased over frames, got ${tops.length} writes`)
+    assert.ok(f.scrolls.every((scroll) => scroll.behavior === "auto"))
+    assert.deepEqual(tops, [...tops].sort((a, b) => a - b))
+    assert.equal(tops.at(-1), 1108 - INSET)
     f.ticks()[1]!.click()
     await f.flush()
-    assert.equal(f.scrolls.length, 2)
+    assert.equal(f.state.scrollTop, 1108 - INSET)
   } finally {
     dispose()
     f.close()
@@ -269,17 +291,19 @@ test("hovering a tick opens the card after the host's delay with the prompt and 
     await f.flush()
     const card = f.card()
     assert.ok(card)
+    assert.equal(card.hasAttribute("data-entered"), true, "flipped open a frame after it mounted")
     assert.equal(card.querySelector("[data-timeline-rail-card-title]")!.textContent, "first question")
     assert.equal(card.querySelector("[data-timeline-rail-card-snippet]")!.textContent, "first answer")
 
     f.ticks()[2]!.dispatchEvent(new globalThis.window.PointerEvent("pointerenter", { pointerType: "mouse" }))
     await f.flush()
+    assert.equal(f.card(), card, "the open card stays mounted and moves to the next tick")
     assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "third")
     assert.equal(f.card()!.querySelector("[data-timeline-rail-card-snippet]"), null)
 
     f.rail()!.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
     await f.flush()
-    assert.ok(f.card()?.hasAttribute("data-closed"), "exit animation runs")
+    assert.ok(f.card() && !f.card()!.hasAttribute("data-entered"), "exit transition runs while it stays mounted")
     await new Promise((resolve) => setTimeout(resolve, 120))
     await f.flush()
     assert.equal(f.card(), null)
@@ -361,6 +385,43 @@ test("a narrow gutter, a narrow window or an inactive (cached) timeline shows no
     f.setActive(true)
     await f.flush()
     assert.ok(f.rail())
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("pages the whole history in behind the user, marks the rail busy meanwhile, and stops when it is done", async () => {
+  const f = fixture({ pages: 12 })
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    assert.equal(f.loads.at(-1)?.busy, "true", "the rail says it is loading while a page is in flight")
+    for (let round = 0; round < 80 && f.loads.length < 12; round += 1) await f.flush()
+    await f.flush()
+    assert.equal(f.loads.length, 12, "one request per page, no restarts")
+    assert.equal(f.rail()!.querySelector("[data-timeline-rail-ticks]")!.getAttribute("aria-busy"), null)
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("leaving the session or going inactive aborts the history load", async () => {
+  const f = fixture({ pages: 50 })
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    const before = f.loads.length
+    f.setActive(false)
+    await f.flush()
+    await f.flush()
+    assert.ok(f.loads.length <= before + 1, "at most the page already in flight")
+    const after = f.loads.length
+    await f.flush()
+    assert.equal(f.loads.length, after, "nothing further while inactive")
   } finally {
     dispose()
     f.close()
