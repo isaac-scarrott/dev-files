@@ -4,7 +4,8 @@
 #        desktop-harness.sh stop                    kill only the processes this script started
 set -euo pipefail
 
-ROOT=${OC_HARNESS_ROOT:-/private/tmp/oc-harness}
+# One root per checkout, so two agents never stop each other's app. Override with OC_HARNESS_ROOT.
+ROOT=${OC_HARNESS_ROOT:-/private/tmp/oc-harness-$(printf %s "$PWD" | cksum | cut -d" " -f1)}
 CDP_PORT=${OC_HARNESS_CDP_PORT:-9333}
 SVC_PORT=${OC_HARNESS_SERVICE_PORT:-49555}   # the user's service owns 49374; two services on one port fail to start
 APP=/Applications/OpenCode.app/Contents/MacOS/OpenCode
