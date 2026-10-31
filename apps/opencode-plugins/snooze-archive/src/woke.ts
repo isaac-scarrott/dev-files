@@ -14,7 +14,7 @@ export const withoutWoke = (list: readonly Target[], server: string, id: string)
 // dot. A pending approval or question (`data-status="attention"`) still wins: it needs an answer, the clock only a look.
 // The mark is a sibling of the host's `tab-status` (which is aria-hidden) so it can carry a label; positioning, the
 // hover swap for the close button and the title fade are copied from the host's own rules. The orange is the host's
-// `--v2-orange-400`; the title fade comes from the sidebar-repos link mask, which lists `data-sa-woke`.
+// `--v2-orange-800`; the title fade comes from the sidebar-repos link mask, which lists `data-sa-woke`.
 const NS = "http://www.w3.org/2000/svg"
 
 function markNode(doc: Document) {
@@ -73,7 +73,7 @@ export function createWokeMarks(doc: Document, schedule: (fn: () => void) => num
 }
 
 export const wokeCss = `
-[data-titlebar-tab] [data-sa-woke-mark] { position: absolute; inset-block: 0; inset-inline-end: 0; display: none; place-items: center; width: 20px; height: 20px; margin-block: auto; pointer-events: none; color: var(--v2-orange-400); }
+[data-titlebar-tab] [data-sa-woke-mark] { position: absolute; inset-block: 0; inset-inline-end: 0; display: none; place-items: center; width: 20px; height: 20px; margin-block: auto; pointer-events: none; color: var(--v2-orange-800); }
 [data-titlebar-tab][data-sa-woke]:not([data-status="attention"], [data-active="true"]) [data-sa-woke-mark] { display: grid; }
 [data-titlebar-tab][data-sa-woke]:not([data-status="attention"], [data-active="true"]) [data-slot="tab-status"] { display: none; }
 [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-sa-woke-mark] { opacity: 0; }
