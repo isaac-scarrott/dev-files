@@ -19,7 +19,8 @@ start)
   mkdir -p "$ROOT/config/opencode" "$ROOT/project"
   [ -e "$HOME/Documents/Default Project" ] || touch "$ROOT/created-default-project"   # first-launch onboarding creates it
   git -C "$ROOT/project" init -q 2>/dev/null || true
-  node -e 'console.log(JSON.stringify({ plugins: process.argv.slice(1) }, null, 2))' "$@" > "$ROOT/config/opencode/opencode.json"
+  # OC_HARNESS_EXTRA_CONFIG: a JSON file merged into opencode.json (stub providers, models, prices).
+  node -e 'const x=process.env.OC_HARNESS_EXTRA_CONFIG;const extra=x?JSON.parse(require("fs").readFileSync(x,"utf8")):{};console.log(JSON.stringify({ ...extra, plugins: process.argv.slice(1) }, null, 2))' "$@" > "$ROOT/config/opencode/opencode.json"
   # TEST_ROOT points userData and every XDG dir at $ROOT, so the app's service.json, db and config are private.
   XDG_CONFIG_HOME="$ROOT/config" XDG_DATA_HOME="$ROOT/data" XDG_STATE_HOME="$ROOT/state" XDG_CACHE_HOME="$ROOT/cache" \
     "$CLI" service set port "$SVC_PORT" >/dev/null

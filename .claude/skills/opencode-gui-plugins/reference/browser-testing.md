@@ -29,7 +29,7 @@ $S/desktop-harness.sh start $P/sidebar-repos $P/snooze-archive    # ~6s, prints 
 $S/desktop-harness.sh stop
 ```
 
-`start` writes `opencode.json` with only the plugin dirs you pass, sets the isolated service to port 49555 (the user's service owns 49374; the same port makes the second app show "An error occurred while starting the local server"), launches `OpenCode --remote-debugging-port=9333` with the test root, and seeds sessions. Override with `OC_HARNESS_ROOT`, `OC_HARNESS_CDP_PORT`, `OC_HARNESS_SERVICE_PORT`. Plugin directories must already be built (`dist/gui-experimental.cjs`).
+`start` writes `opencode.json` with only the plugin dirs you pass, sets the isolated service to port 49555 (the user's service owns 49374; the same port makes the second app show "An error occurred while starting the local server"), launches `OpenCode --remote-debugging-port=9333` with the test root, and seeds sessions. Override with `OC_HARNESS_ROOT`, `OC_HARNESS_CDP_PORT`, `OC_HARNESS_SERVICE_PORT`. `OC_HARNESS_EXTRA_CONFIG=<file.json>` merges that file into `opencode.json`: use a `provider` block (`npm: "@ai-sdk/openai-compatible"`, `options.baseURL`/`apiKey`, `models` with `cost`) to seed providers and priced models for UI that lists them. Plugin directories must already be built (`dist/gui-experimental.cjs`).
 
 Drive it (once: `mkdir pw && cd pw && npm i playwright-core`, public registry):
 
