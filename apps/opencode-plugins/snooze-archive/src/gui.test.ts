@@ -8,7 +8,7 @@ import { fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
-function fixture(initial: Snooze[] = []) {
+function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = []) {
   const window = new Window()
   const doc = window.document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><span data-slot="tab-title">Host title</span></div></div></aside>`
@@ -17,6 +17,7 @@ function fixture(initial: Snooze[] = []) {
   Object.assign(globalThis, globals)
   const [servers, setServers] = createSignal<string[]>([])
   const [state, setState] = createSignal({ entries: initial })
+  const [wokeState, setWokeState] = createSignal({ entries: initialWoke })
   const [connected, setConnected] = createSignal(true)
   const listeners = new Map<string, Set<(e: any) => void>>()
   const commands = new Map<string, { run(): Promise<void> | void }>()
@@ -56,16 +57,19 @@ function fixture(initial: Snooze[] = []) {
     },
   }
   const session = { id: "s", server, pending: false }
+  const [current, setCurrent] = createSignal<typeof session | undefined>(session)
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
   const ctx = {
     ui: fakeUi(doc),
     signal: new AbortController().signal,
     stores: { snoozes: { get value() { return state() }, update: (fn: (draft: { entries: Snooze[] }) => void) => {
       const draft = structuredClone(state()); fn(draft); setState(draft)
+    } }, woke: { get value() { return wokeState() }, update: (fn: (draft: { entries: { server: string; id: string }[] }) => void) => {
+      const draft = structuredClone(wokeState()); fn(draft); setWokeState(draft)
     } } },
     add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value) },
     servers: { list: servers, get: (id: string) => servers().includes(id) ? server : undefined },
-    sessions: { current: () => session },
+    sessions: { current: () => current() },
     tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => calls.opened.push(args) },
     dialogs: { confirm: async (options: unknown) => { calls.confirms.push(options); return confirmResult }, select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
@@ -76,7 +80,7 @@ function fixture(initial: Snooze[] = []) {
   const stop = () => { dispose(); if (typeof cleanup === "function") cleanup() }
   const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
   return {
-    calls, commands, listeners, doc, state, start, stop, flush, setServers, setConnected,
+    calls, commands, listeners, doc, state, woke: wokeState, addWoke: () => setWokeState({ entries: [{ server: "server", id: "s" }] }), setCurrent: (value: boolean) => setCurrent(value ? session : undefined), start, stop, flush, setServers, setConnected,
     permissions: (value: unknown[] | undefined) => { permissions = value },
     forms: (value: unknown[] | undefined) => { forms = value },
     family: (value: string[] | undefined) => { family = value },
@@ -546,4 +550,112 @@ test("regression: deleting an archived row from its context menu confirms, calls
     click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.deepEqual(f.calls.removed, [{ sessionID: "s" }, { sessionID: "s" }])
   } finally { await f.close() }
+})
+
+// A native vertical tab: marks live in `tab-close > tab-status`, which the host marks aria-hidden.
+const nativeTab = `<div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div>`
+const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-sa-woke-mark]")
+const dueSnooze = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now() - 2_000, until: Date.now() - 1_000, busy: 0, updated: 1 })
+
+test("a woken session gets a labelled clock in its tab's status slot, persisted, and opening it clears the mark", async () => {
+  const f = fixture([dueSnooze()])
+  try {
+    f.doc.body.innerHTML = nativeTab
+    f.setCurrent(false)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.deepEqual(f.woke().entries, [{ server: "server", id: "s" }])
+    const mark = wakeMark(f)!
+    assert.equal(mark.getAttribute("role"), "img")
+    assert.equal(mark.getAttribute("aria-label"), "Woke from snooze")
+    assert.equal(mark.previousElementSibling?.getAttribute("data-slot"), "tab-status", "sibling of the host's status slot, which is aria-hidden")
+    assert.equal(mark.querySelector("svg")?.getAttribute("width"), "14")
+    assert.ok(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"))
+    f.setCurrent(true); await f.flush()
+    assert.deepEqual(f.woke().entries, [])
+    assert.equal(wakeMark(f), null)
+    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"), false)
+  } finally { await f.close() }
+})
+
+test("the woke mark survives reload, and a deadline that passed while the app was closed marks at the next load", async () => {
+  const f = fixture([], [{ server: "server", id: "s" }])
+  try {
+    f.doc.body.innerHTML = nativeTab
+    f.setCurrent(false)
+    f.start(); await f.flush()
+    assert.ok(wakeMark(f), "persisted mark renders on load")
+    f.stop(); assert.equal(wakeMark(f), null, "cleanup removes the node and attribute")
+    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"), false)
+    f.start(); await f.flush()
+    assert.equal(f.doc.querySelectorAll("[data-sa-woke-mark]").length, 1, "no duplicate after reload")
+  } finally { await f.close() }
+  const closed = fixture([dueSnooze()])
+  try {
+    closed.doc.body.innerHTML = nativeTab
+    closed.setCurrent(false)
+    closed.start(); closed.setServers(["server"]); await closed.flush()
+    assert.equal(closed.state().entries.length, 0)
+    assert.ok(wakeMark(closed))
+  } finally { await closed.close() }
+})
+
+test("no mark for sessions that were never snoozed, explicit wakes, opened-from-Home wakes, or archived wakes", async () => {
+  const f = fixture()
+  try {
+    f.doc.body.innerHTML = nativeTab
+    f.setCurrent(false)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(wakeMark(f), null)
+    assert.deepEqual(f.woke().entries, [])
+  } finally { await f.close() }
+  const now = Date.now()
+  const live = (): Snooze => ({ server: "server", id: "s", title: "Session", at: now, until: now + 60_000, busy: 0, updated: 1 })
+  const undo = fixture([live()])
+  try {
+    undo.setCurrent(false); undo.start(); undo.setServers(["server"]); await undo.flush()
+    undo.calls.toasts.length = 0
+    undo.reopen(); await undo.flush()
+    assert.equal(undo.state().entries.length, 0, "Home or Recently closed opens it and wakes it")
+    assert.deepEqual(undo.woke().entries, [], "already opened: no mark")
+  } finally { await undo.close() }
+  const archived = fixture([dueSnooze()])
+  try {
+    archived.setCurrent(false); archived.archived(true); archived.start(); archived.setServers(["server"]); await archived.flush()
+    assert.deepEqual(archived.woke().entries, [])
+  } finally { await archived.close() }
+  const current = fixture([dueSnooze()])
+  try {
+    current.start(); current.setServers(["server"]); await current.flush()
+    assert.deepEqual(current.woke().entries, [], "woke while it is the open session: nothing to point at")
+  } finally { await current.close() }
+})
+
+test("archiving, deleting or re-snoozing a woken session drops its mark", async () => {
+  const marked = [{ server: "server", id: "s" }]
+  const archive = fixture([], marked)
+  try {
+    archive.setCurrent(false); archive.start(); archive.setServers(["server"]); await archive.flush()
+    archive.emit("session.archived"); await archive.flush()
+    assert.deepEqual(archive.woke().entries, [])
+  } finally { await archive.close() }
+  const deleted = fixture([], marked)
+  try {
+    deleted.setCurrent(false); deleted.start(); deleted.setServers(["server"]); await deleted.flush()
+    deleted.emit("session.deleted"); await deleted.flush()
+    assert.deepEqual(deleted.woke().entries, [])
+  } finally { await deleted.close() }
+  const again = fixture()
+  try {
+    again.start(); again.setServers(["server"]); await again.flush()
+    again.addWoke(); assert.equal(again.woke().entries.length, 1)
+    await runSnooze(again); await again.flush()
+    assert.equal(again.state().entries.length, 1)
+    assert.deepEqual(again.woke().entries, [])
+  } finally { await again.close() }
+})
+
+test("a pending approval or question outranks the clock: only a CSS precedence, the mark stays in the DOM", async () => {
+  const { wokeCss } = await import("./woke")
+  assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-sa-woke-mark\] \{ display: grid; \}/)
+  assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
 })

@@ -13,18 +13,24 @@ import { createTabActions } from "./tabrows"
 import { sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
+import { createWokeMarks, isWoke, withWoke, withoutWoke, wokeCss } from "./woke"
 import { checkWake, formatHint, formatWake, presets, uses12Hour } from "./time"
 
 const SnoozeSchema = Schema.Struct({
   server: Schema.String, id: Schema.String, title: Schema.String,
   at: Schema.Number, until: Schema.Number, updated: Schema.Number, busy: Schema.Number,
 })
-const definition = Plugin.define({ stores: { snoozes: Store.global(Schema.Struct({ entries: Schema.Array(SnoozeSchema) }), { entries: [] }) } })
+// A store of its own: adding a field to `snoozes` would fail to decode, and so drop, the snoozes already saved.
+const WokeSchema = Schema.Struct({ entries: Schema.Array(Schema.Struct({ server: Schema.String, id: Schema.String })) })
+const definition = Plugin.define({ stores: {
+  snoozes: Store.global(Schema.Struct({ entries: Schema.Array(SnoozeSchema) }), { entries: [] }),
+  woke: Store.global(WokeSchema, { entries: [] }),
+} })
 
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css + actionsCss + iconCss + menuCss + customCss)
+    ctx.add(Style, css + actionsCss + iconCss + menuCss + customCss + wokeCss)
     const host = createHost(ctx.ui)
     const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
     const [revision, setRevision] = createSignal(0)
@@ -37,13 +43,19 @@ export default Plugin.define({
     const hiddenSnoozes = new Set<string>()
     let disposed = false
     const entries = () => ctx.stores.snoozes.value.entries
+    const wokeEntries = () => ctx.stores.woke.value.entries
+    const markWoke = (server: string, id: string) => ctx.stores.woke.update((draft) => { draft.entries = withWoke(draft.entries, server, id) })
+    const clearWoke = (server: string, id: string) => {
+      if (isWoke(untrack(wokeEntries), server, id)) ctx.stores.woke.update((draft) => { draft.entries = withoutWoke(draft.entries, server, id) })
+    }
     const error = (cause: unknown) => {
       if (!disposed) ctx.toast.show({ title: "Session action failed", description: String(cause), variant: "error" })
     }
     const remove = (server: string, id: string) => ctx.stores.snoozes.update((draft) => {
       draft.entries = draft.entries.filter((item) => item.server !== server || item.id !== id)
     })
-    const wake = (entry: Snooze, focus = false, archived = false) => {
+    // `opened`: the user already opened the session (Home, Recently closed), so there is nothing left to point at.
+    const wake = (entry: Snooze, focus = false, archived = false, opened = false) => {
       if (disposed) return
       if (!entries().some((current) => current.server === entry.server && current.id === entry.id && current.at === entry.at)) return
       archived = archived || ctx.servers.get(entry.server)?.data.session.get(entry.id)?.time?.archived !== undefined
@@ -53,7 +65,10 @@ export default Plugin.define({
       }
       hiddenSnoozes.delete(sessionKey(entry.server, entry.id))
       remove(entry.server, entry.id)
-      if (!archived) ctx.tabs.open({ server: entry.server, id: entry.id }, { focus })
+      if (archived) { clearWoke(entry.server, entry.id); return }
+      ctx.tabs.open({ server: entry.server, id: entry.id }, { focus })
+      const current = untrack(currentSession)
+      if (!focus && !opened && !(current?.id === entry.id && current.server.id === entry.server)) markWoke(entry.server, entry.id)
     }
     const refresh = async (server: ServerRef) => {
       if (disposed) return
@@ -87,7 +102,7 @@ export default Plugin.define({
       try {
         await setArchived(server, id, archived, ctx.signal)
         if (disposed) return
-        if (archived) { remove(server.id, id); closeTabs(server.id, id) }
+        if (archived) { remove(server.id, id); clearWoke(server.id, id); closeTabs(server.id, id) }
         else ctx.tabs.open({ server: server.id, id }, { focus: true })
         await refresh(server)
       } catch (cause) { error(cause) }
@@ -182,6 +197,7 @@ export default Plugin.define({
         ctx.stores.snoozes.update((draft) => {
           draft.entries = [...draft.entries.filter((s) => s.server !== entry.server || s.id !== entry.id), entry]
         })
+        clearWoke(entry.server, entry.id)
         closeTabs(entry.server, entry.id)
         hiddenSnoozes.add(sessionKey(entry.server, entry.id))
         ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${formatWake(until, Date.now())} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
@@ -202,6 +218,7 @@ export default Plugin.define({
         await removeSession(server, id, ctx.signal)
         if (disposed) return
         remove(server.id, id)
+        clearWoke(server.id, id)
         hiddenSnoozes.delete(key)
         closeTabs(server.id, id)
         await refresh(server)
@@ -239,9 +256,14 @@ export default Plugin.define({
       for (const entry of entries()) {
         if (hiddenSnoozes.has(sessionKey(entry.server, entry.id)) && tabs.some((tab) => tab.session?.id === entry.id && tab.session.server.id === entry.server)) {
           // Opening a sleeping session through Home or Recently closed is an explicit early wake.
-          wake(entry)
+          wake(entry, false, false, true)
         }
       }
+    })
+    // Opening the session by any route (tab click, palette, keyboard, Home) makes it the mounted one.
+    createEffect(() => {
+      const session = currentSession()
+      if (session) clearWoke(session.server.id, session.id)
     })
     createEffect(() => {
       const ids = new Set(ctx.servers.list())
@@ -260,9 +282,9 @@ export default Plugin.define({
           for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
         }
         const off = [
-          data.on("session.archived", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
+          data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void refresh(server) }),
           data.on("session.unarchived", () => void refresh(server)),
-          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); void refresh(server) }),
+          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void refresh(server) }),
           data.on("session.renamed", () => void refresh(server)),
           data.on("session.execution.started", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("session.execution.succeeded", (e) => wakeEvent(e.data.sessionID, e.created)),
@@ -320,9 +342,15 @@ export default Plugin.define({
       if (!server) return []
       return presetLines((until) => void snooze({ id: target.id, server }, until), () => void snooze({ id: target.id, server }, "custom"))
     })
+    const wokeMarks = createWokeMarks(document, requestAnimationFrame, cancelAnimationFrame, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
     createEffect(() => {
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
       tabActions.sync()
+    })
+    createEffect(() => {
+      wokeEntries()
+      ctx.tabs.list()
+      wokeMarks.sync()
     })
     const recheck = () => {
       for (const entry of entries()) {
@@ -346,6 +374,7 @@ export default Plugin.define({
       subscriptions.clear()
       sidebar.dispose()
       tabActions.dispose()
+      wokeMarks.dispose()
       tabMenu.dispose()
     }
   },
