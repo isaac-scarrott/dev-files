@@ -11,7 +11,7 @@ point at the renderer sources extracted from `app.asar`.
   locates its own scroller (`closest("[data-scrollable]")`) and the session view root (the parent of
   `[data-slot='session-timeline-scroll']`), into which the rail is portalled.
 - The rail is absolutely positioned over the visible timeline area (`[data-slot='session-timeline-visible']`, below
-  the sticky header's `offsetHeight`), centred in the gutter between the view's left edge and the chat column. The
+  the sticky header's `offsetHeight`), hugging the view's left edge (6px in), moving toward the chat column only when the gutter is narrower. The
   gutter is read from the first mounted `[data-timeline-row][data-message-id]` (which follows the host's panel
   motion), falling back to the `--container-session` token when no row is mounted.
 - The tick whose turn contains the fold is the current one and follows the scroll; the card and the click reuse the
@@ -140,7 +140,7 @@ revealing, `cubic-bezier(0.77, 0, 0.175, 1)` for on-screen movement, only `trans
   keeps the pointer inside while it moves from the rail to the card.
 - Keyboard: roving `tabindex` (the current tick is the tab stop), ArrowUp/Down, PageUp/PageDown (5 ticks), Home/End,
   Enter or Space activates, Escape closes the card. Touch pointers never open the card; a tap jumps.
-- The rail sits centred in the gutter and is at most 28px wide, so it never reaches the chat column; it hides under
+- The rail hugs the left edge and is at most 28px wide, so it never reaches the chat column; it hides under
   the breakpoints in "Model".
 - `prefers-reduced-motion: reduce`: jumps write once with `behavior: "auto"`, the lift is off, the marker and ticks
   fade (opacity 120ms linear) instead of moving, the card fades without scale or glide, the history mark is static.

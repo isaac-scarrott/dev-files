@@ -6,8 +6,10 @@ import { currentIndex, inset, jumpTo, type Host } from "./jump"
 import { layout, prompts, tickOf, type Message, type Tick } from "./rail"
 import { tweenScroll } from "./tween"
 
-/** The rail's column, ticks included; it sits centred in the gutter left of the timeline column. */
+/** The rail's column, ticks included; it hugs the left edge of the view. */
 const RAIL_WIDTH = 28
+/** The rail hugs the view's left edge, this far in, and only moves toward the column when the gutter is too narrow. */
+const EDGE_INSET = 6
 /** Below this gutter the rail would sit over the column's own padding, so it hides. */
 const MIN_GUTTER = 44
 /** The host hides the session header under this width (`createMediaQuery` in `session/model.ts`). */
@@ -56,7 +58,7 @@ export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
   return {
     top: area.top - box.top + header,
     height: Math.max(0, area.height - header),
-    left: Math.round((gutter - RAIL_WIDTH) / 2),
+    left: Math.min(EDGE_INSET, Math.max(0, Math.round((gutter - RAIL_WIDTH) / 2))),
     show: gutter >= MIN_GUTTER,
   }
 }

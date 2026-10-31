@@ -220,7 +220,7 @@ test("an empty rail under two prompts; with more, one labelled tick per prompt a
     const rail = f.rail()
     assert.ok(rail)
     assert.equal(rail.hasAttribute("data-empty"), false)
-    assert.equal(rail.style.left, `${(256 - 28) / 2}px`)
+    assert.equal(rail.style.left, "6px")
     assert.equal(rail.style.top, `${INSET}px`)
     assert.equal(rail.style.height, `${VIEWPORT - INSET}px`)
     assert.deepEqual(
