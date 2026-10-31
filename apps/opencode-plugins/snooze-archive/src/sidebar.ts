@@ -180,7 +180,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
         if (item.active) row.el.dataset.state = "pressed"; else delete row.el.dataset.state
         if (row.title.textContent !== item.title) row.title.textContent = item.title
         if (row.detail.textContent !== item.badge) row.detail.textContent = item.badge
-        row.detail.title = item.badge
+        row.detail.title = item.detail
         const link = row.el.firstElementChild as HTMLElement
         link.title = `${item.title}\n${item.detail}`
         const avatarKey = JSON.stringify(item.avatar)

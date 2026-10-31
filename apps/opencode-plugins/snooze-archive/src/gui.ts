@@ -15,7 +15,7 @@ import { sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
 import { createWokeMarks, isWoke, withWoke, withoutWoke, wokeCss } from "./woke"
-import { checkWake, formatHint, formatWake, presets, uses12Hour } from "./time"
+import { checkWake, formatHint, formatWake, presets, uses12Hour, zoneLabel } from "./time"
 
 const SnoozeSchema = Schema.Struct({
   server: Schema.String, id: Schema.String, title: Schema.String,
@@ -331,7 +331,7 @@ export default Plugin.define({
       const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
       sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
         key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), badge: repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), detail: `${formatWake(entry.until, Date.now())} · device-local`, action: "Wake", run: () => wake(entry, true),
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), badge: `Wakes ${formatWake(entry.until, Date.now())} · ${repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title)}`, detail: `Wakes ${formatWake(entry.until, Date.now())} (${zoneLabel(entry.until)}) · device-local`, action: "Wake", run: () => wake(entry, true),
         menu: [
           { label: "Wake", run: () => wake(entry, true) },
           { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },
