@@ -2,9 +2,11 @@ import { Plugin, Style, createKeyed } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { render } from "solid-js/web"
 import { attach } from "./lane"
+import { createLearned } from "./learn"
 import { afterExit } from "./leave"
 import { readConfig } from "./options"
 import { forecast, humanize, type Notice, type Selection } from "./predict"
+import { CacheTtl } from "./rpc"
 import { SETTLE } from "./spring"
 import { styles } from "./styles"
 
@@ -33,6 +35,13 @@ export default Plugin.define({
 
       return current?.id ? current.server.data.session.message.list(current.id) : []
     }
+
+    // The cache tier Claude Code's transcript shows, when the server half is loaded; the option is the fallback.
+    const learned = createLearned(
+      () => session()?.id,
+      messages,
+      (input, signal) => ctx.client.rpc(CacheTtl).learn(input, { signal }),
+    )
 
     // A session that has just mounted, or just finished loading its messages (Cmd+R, a switch), shows its tray at rest;
     // one that turns stale while you watch slides in.
@@ -65,7 +74,7 @@ export default Plugin.define({
     const next = createMemo(() => {
       tick()
 
-      return forecast({ messages: messages(), now: Date.now(), config, selection: selection() })
+      return forecast({ messages: messages(), now: Date.now(), config, selection: selection(), learned: learned() })
     })
 
     const notice = createMemo(() => next().notice, undefined, {

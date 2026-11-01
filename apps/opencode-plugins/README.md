@@ -12,7 +12,7 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 | --- | --- | --- |
 | [`agents-panel`](agents-panel) | Header button listing running subagents and shells: a floating window beside the chat when the sidebar is closed, a popover when open. Opt in with Settings → Timeline → Background activity → Panel | GUI |
 | [`blindfold`](blindfold) | Vendored vimtor/opencode-blindfold 0.5.0: agents use secrets without seeing them | server, TUI, GUI |
-| [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction | GUI |
+| [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction; the cache window (5m or 1h) is read from Claude Code's transcript | GUI + server |
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |
 | [`monitor`](monitor) | `monitor`, `list_monitors`, `stop_monitor`: run a command in the background and wake the session with its output lines (batched, escaped, untrusted-data trailer); optional re-arm | server |
