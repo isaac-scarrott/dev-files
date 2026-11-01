@@ -72,3 +72,67 @@ test("adds only the chips the host row lacks and rows the host did not list, ide
   cleanup(document)
   assert.equal(panel.querySelectorAll("[data-plugin-list]").length, 0)
 })
+
+const hostRow = (name: string, chips: string[], actions: boolean) => `<div class="settings-extension-row"><div class="settings-extension-lead"><svg></svg>
+  <div class="flex min-w-0 flex-col gap-0.5"><div class="settings-provider-main"><bdi dir="ltr" class="settings-extension-name truncate">${name}</bdi>
+  ${chips.map((chip) => `<span data-component="tag">${chip}</span>`).join("")}</div></div></div>
+  ${actions ? '<div class="settings-servers-actions"><button data-component="button-v2">Reload</button><div data-component="switch"></div></div>' : ""}</div>`
+
+function hostPage(rows: string) {
+  const window = new Window()
+  const document = window.document as unknown as Document
+  document.body.innerHTML = `<div id="panel"><div data-component="settings-list">${rows}</div></div>`
+  return { document, panel: document.getElementById("panel")! }
+}
+
+const mounted = () => {
+  const names: string[] = []
+  return { names, mount: (container: HTMLElement, entry: { name: string }) => { names.push(entry.name); container.textContent = "ours"; return () => undefined } }
+}
+
+test("host rows without Reload get ours, host rows with Reload keep theirs alone", () => {
+  const { document, panel } = hostPage(
+    hostRow("orchestrator-tools", ["Server"], false) + hostRow("agents-panel", [], true) + hostRow("claude-proxy", [], false),
+  )
+  const { names, mount } = mounted()
+  const list = [
+    { name: "orchestrator-tools", parts: ["desktop", "server"] as const, enabled: true },
+    { name: "agents-panel", parts: ["desktop"] as const, enabled: true },
+    { name: "claude-proxy", parts: ["server"] as const, enabled: true },
+  ]
+  sync(document, panel, list, mount)
+  sync(document, panel, list, mount)
+  const rows = [...panel.querySelectorAll(".settings-extension-row")]
+  assert.equal(rows.length, 3)
+  assert.deepEqual(names, ["orchestrator-tools", "claude-proxy"])
+  assert.equal(rows[0]!.querySelectorAll(".settings-servers-actions").length, 1)
+  assert.equal(rows[1]!.querySelectorAll(".settings-servers-actions").length, 1)
+  assert.equal(rows[1]!.querySelector(".settings-servers-actions")?.hasAttribute("data-plugin-list-actions"), false)
+  assert.equal(rows[2]!.querySelectorAll("[data-plugin-list-actions]").length, 1)
+  cleanup(document)
+  assert.equal(panel.querySelectorAll("[data-plugin-list-actions]").length, 0)
+})
+
+test("our actions leave when the host draws its own Reload later", () => {
+  const { document, panel } = hostPage(hostRow("orchestrator-tools", [], false))
+  const list = [{ name: "orchestrator-tools", parts: ["desktop"] as const, enabled: true }]
+  sync(document, panel, list, mounted().mount)
+  assert.equal(panel.querySelectorAll("[data-plugin-list-actions]").length, 1)
+  const host = document.createElement("div")
+  host.className = "settings-servers-actions"
+  panel.querySelector(".settings-extension-row")!.prepend(host)
+  sync(document, panel, list, mounted().mount)
+  assert.equal(panel.querySelectorAll(".settings-servers-actions").length, 1)
+  assert.equal(panel.querySelectorAll("[data-plugin-list-actions]").length, 0)
+})
+
+test("rows match across registration styles: path, name@version and plain id", () => {
+  const { document, panel } = hostPage(hostRow("/Users/x/apps/orchestrator-tools", [], false) + hostRow("pkg@1.2.0", [], false))
+  const { names, mount } = mounted()
+  sync(document, panel, [
+    { name: "orchestrator-tools", parts: ["server"], enabled: true },
+    { name: "pkg", parts: ["server"], enabled: true },
+  ], mount)
+  assert.equal(panel.querySelectorAll("[data-plugin-list-row]").length, 0)
+  assert.deepEqual(names, ["orchestrator-tools", "pkg"])
+})
