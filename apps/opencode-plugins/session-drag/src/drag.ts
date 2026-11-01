@@ -10,6 +10,12 @@ export const GHOST_OFFSET = { x: 0, y: 12 }
 export const GHOST_CLASS =
   "flex items-center gap-x-2 px-2 py-1 bg-surface-raised-base rounded-md border border-v2-border-border-base text-12-regular text-text-strong"
 
+/** Set on the root while the host's dropzone overlay shows our wording (see `styles.ts`). */
+export const LABEL_ATTR = "data-session-drag-label"
+
+/** The overlay fades out over 200ms (`transition-opacity duration-200`); the wording must not flip back mid-fade. */
+export const LABEL_HOLD = 200
+
 export type DragHost = {
   /** The session a row names, or undefined for a row that is not a session. */
   resolve(row: HTMLElement): SessionTarget | undefined
@@ -68,6 +74,21 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
   let pending: Pending | undefined
   let dragging: Dragging | undefined
   let suppressClick = false
+  let labelTimer: number | undefined
+
+  const showLabel = () => {
+    win.clearTimeout(labelTimer)
+    labelTimer = undefined
+    doc.documentElement.setAttribute(LABEL_ATTR, "")
+  }
+
+  const hideLabel = (hold: number) => {
+    win.clearTimeout(labelTimer)
+    labelTimer = undefined
+
+    if (!hold) return doc.documentElement.removeAttribute(LABEL_ATTR)
+    labelTimer = win.setTimeout(() => doc.documentElement.removeAttribute(LABEL_ATTR), hold)
+  }
 
   const signal = (type: "dragover" | "dragleave", target?: SessionTarget) => {
     const data = typeof win.DataTransfer === "function" ? new win.DataTransfer() : null
@@ -102,6 +123,7 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     const dispose = host.icon(icon)
     doc.body.append(ghost)
     doc.documentElement.setAttribute("data-session-drag", "")
+    showLabel()
     win.getSelection()?.removeAllRanges()
     dragging = { target: from.target, pointerId: from.pointerId, ghost, dispose }
     move(x, y)
@@ -119,6 +141,7 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     if (!current) return
     dragging = undefined
     doc.documentElement.removeAttribute("data-session-drag")
+    hideLabel(LABEL_HOLD)
     signal("dragleave")
     const ghost = current.ghost
 
@@ -257,5 +280,6 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     win.removeEventListener("keydown", onKeyDown, capture)
     win.removeEventListener("blur", cancel)
     cancel()
+    hideLabel(0)
   }
 }
