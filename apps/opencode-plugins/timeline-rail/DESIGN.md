@@ -1,100 +1,142 @@
 # timeline-rail: design
 
-A vertical tick rail in the gutter left of the chat column, one tick per prompt of yours, in the style of t3-code's
-message timeline (`MessagesTimeline` minimap, source `apps/web/src/components/chat/TimelineMinimap.tsx` and
-`MessagesTimeline.logic.ts` in pingdotgg/t3code). Point at the strip for a card with the prompt and the start of its
-reply; click to land that prompt under the sticky header. Written against OpenCode Desktop 2.2.5 (`@opencode/plugin` 2.2.5). Line references
-point at the renderer sources extracted from `app.asar`.
+A vertical tick rail in the gutter left of the chat column, one tick per prompt of yours, built to behave exactly like
+t3-code's message timeline minimap (`TimelineMinimap.tsx`, `MessagesTimeline.logic.ts` in pingdotgg/t3code), including
+how much of a conversation it covers: the newest 10 prompts, more only when the user scrolls for them. Point at the
+strip for a card with the prompt and the end of its reply; click to land that prompt under the sticky header. Written
+against OpenCode Desktop 2.2.5 (`@opencode/plugin` 2.2.5). Line references point at the renderer sources extracted
+from `app.asar`.
+
+## t3-code reference
+
+Studied at pingdotgg/t3code `8760d063e903406c8e8f695b0852c0a15fc1e00f` (MIT). Files under `apps/web/src/components/chat/`
+unless noted. This section is what the rail is held to; "Model" and below describe how OpenCode's data model realises it.
+
+**Which prompts the rail knows (the limit).** The minimap has no limit of its own and loads nothing: it is
+`deriveTimelineMinimapItems(rows)` ([timelineMinimapItems.ts](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/web/src/components/chat/timelineMinimapItems.ts)),
+one item per user-message row of the rows the timeline currently holds. The limit is the thread history window:
+
+- Server: `THREAD_HISTORY_PAGE_POLICY = { maxUserTurns: 10, maxItems: 75, maxTurnItems: 500, maxEncodedBytes: 1 MiB }`
+  ([apps/server/src/orchestration-v2/threadHistoryPaging.ts](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/server/src/orchestration-v2/threadHistoryPaging.ts)).
+  The initial window holds the newest **10 user turns** (all their items, at most 500 rows); an older page is
+  `OLDER_THREAD_USER_TURN_LIMIT = 20` user turns. `THREAD_HISTORY_MAX_RAW_TURNS = 150`.
+- Client: `useThreadHistory` / `hasMoreHistory` ([ChatView.tsx:529-548](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/web/src/components/ChatView.tsx#L529-L548),
+  [threadHistoryMerge.ts](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/packages/client-runtime/src/state/threadHistoryMerge.ts)).
+  Older turns load **only when the user presses "Load earlier turns"** (`TimelineHistoryControl`, the first row of the
+  list, [MessagesTimeline.tsx:1389-1415](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/web/src/components/chat/MessagesTimeline.tsx#L1389-L1415)).
+  Nothing loads in the background.
+- Past the limit: the minimap shows only the loaded window, 10 ticks at first. The ticks grow by the page (20) when
+  the user loads earlier turns; there is no marker, count or "more above" affordance on the rail, and no way to jump to
+  a prompt that is not loaded (no tick exists for it). Nothing is thinned, bucketed or capped by count.
+
+**Rail geometry** ([MessagesTimeline.logic.ts:281-284, 336-364, 432-469](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/web/src/components/chat/MessagesTimeline.logic.ts#L336-L364)):
+`TIMELINE_MINIMAP_MIN_ITEMS = 2` (fewer: render nothing); strip height `min(max(1, (n - 1) * 8)px, calc(100vh - 18rem))`,
+vertically centred; item `i` at `i / (n - 1)` of the height (`resolveTimelineMinimapTopPercent`); pointer maps linearly to
+`round(progress * (n - 1))` (`resolveTimelineMinimapIndexFromPointer`), so every item is reachable when ticks overlap.
+Side gutter = `(viewport - min(viewport, content)) / 2`; persistent (always visible) when it is at least 48px, otherwise
+the rail is `opacity-0` and shows on hover or focus-within; hit strip width = `clamp(floor(gutter) - 12, 0, 40)` (strip at
+`left-3` = 12px); chevrons are interactive only when that width is at least 14 (`TIMELINE_MINIMAP_NAVIGATION_REACH`);
+while a card is showing, the hit area widens to `22rem` so the card stays under the pointer. Only for `pointer: fine`.
+
+**Ticks** ([TimelineMinimap.tsx:155-186](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/apps/web/src/components/chat/TimelineMinimap.tsx#L155-L186)):
+one `<span>` per prompt, `h-0.5 w-6` (2x24px) `origin-left`, scale-x by index distance from the active index:
+0 -> 1, 1 -> 0.667, 2 -> 0.417, otherwise 0.333 (8px at rest). Colour `muted-foreground/25` at rest, `/60` for the active one.
+`transition-transform duration-150` (Tailwind default curve). **In view** = `after:` overlay `foreground/55` fades in
+(opacity 150ms) for each prompt whose **own user row** intersects the viewport (`isTimelineMinimapRowVisible`,
+`resolveTimelineMinimapVisibleRange`). There is no separate "current" tick colour. A 1px hairline (`border/15`) runs
+the strip's height at `left-3` (12px inside the strip). Only transform and opacity animate.
+
+**Hover, card, keyboard** (same file, 60-153, 188-258):
+- One `<button aria-label="Jump to message: <active text or 'User message'>">` covers the strip. `mousemove` sets the
+  active index from the pointer (ignored while a button is held that did not go down on the strip: pass-through for
+  selections); `mouseleave` and `blur` clear it. **No open delay, no enter or exit animation, no glide**: the card is
+  mounted while an index is active and removed when it is not.
+- Click selects the pointed index and blurs the button; clicks on the card do nothing (text selectable).
+- Keyboard: focus sets the active index to the current one (or 0); ArrowDown/ArrowUp +-1 (clamped), Home, End,
+  Enter/Space select. No PageUp/PageDown, no Escape.
+- Card: `left-8` (32px from the strip), `w-80` (320px), `rounded-xl p-3`, glass surface, `shadow-xl`. Top at the item's
+  percentage; `translateY(-50%)`, except `0%` for the first item and `-100%` for the last (no viewport clamping).
+  Content: the user text on one line (`text-sm font-medium leading-5`, ellipsis) and, if any, the turn's **final
+  assistant message** text (`resolveFinalAssistantTextForTurn`: the last assistant message before the next user
+  message) parsed from markdown to plain text (first 1,500 chars), `text-sm leading-5` muted, three-line clamp. No
+  "n of N", no "working" state; an empty user text reads "User message".
+- Chevrons: "Previous turn" / "Next turn" (`ChevronUp` / `ChevronDown`, `icon-micro` ghost buttons with a tooltip) centred
+  on the strip's left edge (`left-1`, `-translate-x-1/2`), 2px above/below the strip. `opacity-0` until the button itself
+  is hovered or focused (not on strip hover). They select the item before/after the **current** index, disabled at the
+  ends. Current index = the first visible user row, else the user row before the visible range, else none.
+- Wheel over the rail is forwarded to the timeline (`timelineMinimapWheel.ts`), ignoring `ctrlKey` and `deltaY === 0`.
+- Jump: `listRef.scrollToIndex({ index: item.rowIndex, viewOffset: 24, animated: !reducedMotion })` after
+  `navigateTimeline()` (releases follow).
+
+**Never in t3-code:** background history loading, count text, thinning, a current-tick colour, PageUp/PageDown, Escape,
+open delay, glide between ticks, "Working...", a separate loading mark, bucketing.
+
+## How OpenCode realises it
+
+| t3-code | here |
+| --- | --- |
+| Rows the timeline holds = thread history window (10 user turns, then 20 per "Load earlier turns") | `message.list(id)` is what the host has loaded (`message.sync`: newest `limit` 20 messages, older pages when the user scrolls up; in the harness the host also fetches a second page by itself ~250ms after the first). The rail covers the newest **10** prompts of that (`INITIAL_PROMPTS`), whatever the host holds; a page of older history joins (at most 20 prompts, `PAGE_PROMPTS`) only if it lands **after the user has scrolled, touched or typed in the timeline**, the stand-in for pressing "Load earlier turns" (`promptWindow`, `rail.ts`) |
+| `deriveTimelineMinimapItems(rows)` | `prompts(messages)`: user messages of the window, minus those at or after a pending revert (the host's `visibleUserMessages`) |
+| No loading by the minimap | The plugin has no way to request history: `Host` in `jump.ts` has no `loadMore`; `message.loadMore` and `message.more` are never called. The bundle does not mention them |
+| Item with no tick past the window | No tick, so no click, key, chevron or card can name a prompt older than the window; the host's own scrolling still reaches it, and when the host has loaded it after the user scrolled, it gets a tick |
+| `scrollToIndex(rowIndex, viewOffset 24)` | No API scrolls the host's virtualizer to an index, so `jump.ts` probes and glides (below); the landing is the sticky header's inset, not 24px |
+| Current index (first visible user row, else the turn before the visible range) | `currentPrompt` in `target.ts`, the same rule on the mounted rows inside the area under the sticky header |
+| In view = the prompt's own user row intersects the viewport | `visibleRange`, same rule, from the mounted `UserMessage` rows |
+| Final assistant message's text | The last assistant message of the turn, its `text` parts joined, first 1,500 characters, markdown stripped by `stripMarkdown` (regexes; t3-code parses with remark, which is not in a plugin bundle) |
+| Gutter from `[data-timeline-root]` width | Gutter from the first mounted row's left edge (follows the host's panel motion), else the `--container-session` token |
+| Rail inside the timeline viewport, which ends above the composer | The composer overlays the timeline here, so the rail spans from under the sticky header to the view's bottom and is centred in that box, so a composer or form appearing does not move it |
 
 ## What it does
 
 - Mounts through the `session.header` slot of every timeline, but renders nothing there: the slot's element only
   locates its own scroller (`closest("[data-scrollable]")`) and the session view root (the parent of
   `[data-slot='session-timeline-scroll']`), into which the rail is portalled.
-- The rail is absolutely positioned over the visible timeline area (`[data-slot='session-timeline-visible']`, below
-  the sticky header's `offsetHeight`), hugging the view's left edge (6px in), moving toward the chat column only when the gutter is narrower. The
-  gutter is read from the first mounted `[data-timeline-row][data-message-id]` (which follows the host's panel
-  motion), falling back to the `--container-session` token when no row is mounted.
-- The tick whose turn contains the fold is the current one and follows the scroll; the card and the click reuse the
-  reveal machinery below. The rail stands for the whole conversation: it pages older history in behind the user
-  (next section), so ticks, cards and jumps cover every prompt, not just the ones the host has loaded.
-
-## Full history (`history.ts`)
-
-The host loads the newest page of a session and pages older ones only when the user scrolls up
-(`message.sync`: `limit` 20 messages, `order: "desc"`; `message.more(id)` is true while a cursor remains;
-`message.loadMore(id, { signal, all, beforePublish })` prepends one page, or every page with `all`). A rail built on
-`message.list` alone showed only the loaded tail, so in a long thread it was wrong until the user scrolled up.
-
-While the slot is active and `more(id)` is true, `loadHistory` requests one page at a time:
-
-- **Cheap.** One request per page (10 prompts), never `all` (that holds every page back and publishes once, so the rail
-  would stay stale for the whole fetch and one huge store write would land at once). Before each request it waits a
-  frame and until the user has been still for 160ms (wheel, touch, pointer-down or key on the timeline; a scroll event
-  does not count, since the loader's own corrections would reset it). It joins a load the host started itself
-  (`loadMore` waits on the in-flight one) instead of duplicating it.
-- **Cancelled.** One `AbortController` per run, aborted by the effect's cleanup: the slot unmounting (session switch,
-  plugin reload), the timeline going inactive, or `more` flipping. The effect tracks `active` and `more` through
-  memos and runs the loader `untrack`ed: the loader's own reads of the cursor would otherwise restart it after every
-  page and abort the request in flight (found in the harness, one restart per page).
-- **No jump.** `beforePublish` runs inside the store batch, so the row at the fold and its offset are captured just
-  before the page lands, and for four frames after it the plugin puts that row back if it moved (more than 1px) unless
-  the user has started scrolling. Measured on 2.2.5, the host already holds the reading position (pinned to the end or
-  scrolled mid-thread), so the correction fires 0 times: it is a guard, not the mechanism. The plugin never calls
-  `scrollTo` for any other reason during a load, so it does not fight the host's virtualizer.
-- **Quiet while it works.** The tick column's `aria-busy` is set and a 2px mark above the first tick breathes
-  (opacity 0.25↔0.9, 1.4s; static 0.6 under reduced motion). The ticks reflow as pages arrive; the current-position
-  marker snaps instead of sliding while they do.
-- **Fails soft.** A failed page ends the run with the ticks it has; the next trigger (`more` flipping, reactivation)
-  starts again. Errors are the host's to report.
+- Nothing under two prompts. For `pointer: fine` only. Strip 12px from the view's left edge, `min(gutter - 12, 40)`px
+  wide, hidden entirely when that is 0. At least 48px of gutter: always visible; less: invisible until the pointer is
+  over it or it has focus. Chevrons need a strip of at least 14px.
+- Inactive (cached) timelines unmount the rail and read nothing. Below the host's 768px breakpoint there is none.
 
 ## Model (`rail.ts`, pure)
 
-- **Prompts**: `message.list(id)` filtered as the host's `visibleUserMessages` (`session-domain.ts`): `type ===
-  "user"`, and `id < info.revert.messageID` when a revert is pending. Each carries a one-line title
-  (`metadata.displayText` for commands, else the text; `[image]` / `[name]` / `@agent` for attachment-only prompts;
-  `(empty prompt)` otherwise; cut at 200 chars) and the start of its reply: the first non-blank `text` part of the
-  first assistant message with one, markdown stripped, cut at 240 chars. A reply with no text that is still
-  streaming (`time.completed` unset, no error) shows "Working…"; a finished tool-only turn shows the prompt alone.
-- **Layout** (t3-code's model; no bucketing; resting ticks thin out past 5px pitch, see Scale): one tick per prompt while the pitch allows. The strip is
-  `min((n - 1) * 8px, calc(100vh - 18rem))` tall (never negative), centred in the rail's box, with prompt `i` at
-  `i / (n - 1)` of it; past the cap, ticks overlap rather than merge into buckets. The height depends on the count and
-  the window only, so the composer or a question or permission form appearing does not move or resize it. Every tick
-  is 8px long and rests at 0.45 opacity (0.8 while the pointer is over the strip); in-view and current ticks are full
-  colour. There is no vertical bar.
-- **One hit target.** The strip is a single `<button aria-label="Jump to message: …">` over the whole rail. The pointer's
-  position maps linearly to the nearest prompt **index** (`round(progress * (n - 1))`, `indexFromPointer`), so every
-  prompt is reachable when ticks overlap, and no tick has a listener. Hover, drag and the keyboard all just set the
-  active index. Click jumps to it.
-- **Drawing ticks** (`strip.ts`): one DOM node per prompt was measured and rejected, because paint cost is linear in
-  the node count even when only a few change (see Verification). The faint ticks are one `repeating-linear-gradient`
-  element whose period is `height / (n - 1)`; only prompts with something to show get a real node: the fisheye band
-  (active index +-2), the in-view range and the current prompt. A node with nothing left to show is removed 220ms
-  later, after its transition. `--max` on the host places every node and the gradient, so a count change writes one
-  property.
-- **Fisheye by index distance** from the active prompt: scale-x 1, .667, .417 at distance 0, 1, 2 and 1/3 (the 8px rest
-  length) beyond, as t3-code, with a little extra thickness near the centre. It replaces the old pixel-distance dock
-  lift; the peak is 3x the rest length, against 2.4x before.
-- **In view.** Every prompt whose turn intersects the viewport (from the mounted rows: `visibleRange`, owners of rows
-  that intersect the area under the header; overscan rows are ignored) is drawn in full colour, not only the current
-  one. The current prompt stays the one under the fold, and the aria-label and chevrons use it.
-- **Previous / next turn**: the host's `ctx.ui.IconButton` (`ghost-muted`, `small`, `chevron-down`, rotated for
-  previous) in `ctx.ui.Tooltip` ("Previous turn" / "Next turn"), above and below the strip, invisible until the
-  pointer is over the strip or one of them or one has focus, disabled at the ends. The catalog has no `chevron-up`.
+- **Window** (`promptWindow`): see the table. Pure: `(previous window, host's loaded ids, asked) -> window`. The first call
+  keeps the newest 10; new prompts at the end always join; older ones join by page (<= 20) only when `asked`.
+  A reverted edge hands over to the next listed prompt; a window whose edge is gone reopens on the newest 10.
+- **Prompts**: title = `metadata.displayText` for commands, else the text, whitespace collapsed, cut at 200 chars, else
+  "User message". Snippet = the turn's last assistant message, markdown stripped.
+- **Layout**: strip `max(0px, min((n - 1) * 8px, calc(100vh - 18rem)))` tall, centred in the rail's box; prompt `i` at
+  `i / (n - 1)`. One `<span>` per prompt (`<Index>`, so a streaming update patches in place), 2x24px, drawn at a third
+  (8px). No thinning, no bucketing: past the cap, ticks overlap.
+- **One hit target**: a single `<button aria-label="Jump to message: <title of the pointed prompt, or 'User message'>">`
+  over the strip. The pointer maps linearly to `round(progress * (n - 1))`. Click jumps to the prompt the card shows.
+- **Fisheye**: scale-x by index distance from the pointed prompt, 1 / .667 / .417 / .333 at distance 0 / 1 / 2 / more.
+  `transform` 150ms on Tailwind's default curve. The pointed tick is the stronger colour.
+- **In view**: a second layer fades in (opacity 150ms) over ticks whose own prompt row is on screen. There is no
+  current-prompt tick.
+- **Card**: inside the button at 32px, 320px wide, 12px padding and radius, 14/20 type: the title on one line and the reply
+  at three lines of muted text. Mounted while a prompt is pointed or focused, removed when not: no delay, no animation, no
+  glide. It hangs off the tick (`top: <percent>%`, `translateY(-50%)`, `0%` for the first, `-100%` for the last). The
+  strip widens to 22rem while it shows, so the pointer can reach the card. Moving over the card keeps its prompt; its text
+  is selectable and a click on it does nothing. Colours and shadow are the host's menu surface tokens
+  (`--v2-background-bg-layer-01`, `--v2-elevation-floating`).
+- **Chevrons**: `ctx.ui.IconButton` (`ghost-muted`, `small`, `chevron-down`, rotated for previous) in `ctx.ui.Tooltip`,
+  centred on the strip's left edge 2px above and below it, invisible until the chevron itself is hovered or focused.
+  They step from the current prompt and disable at the ends.
+- **Keyboard** (t3-code's): focus opens the card on the current prompt; ArrowUp/ArrowDown move by one (clamped), Home and
+  End go to the ends, Enter or Space jump. The card goes when the strip loses focus.
 - **Pass-through**: a press that starts on the strip scrubs; a button-down pointer that arrives from elsewhere (a text
-  selection drag, a scrollbar) flips the strip to `pointer-events: none` until release, so it never hijacks them. A
-  release outside the window skips `pointerup`, so the next button-free move counts. The wheel on the rail is
-  forwarded to the timeline scroller (`scrollBy`, with the host's unpin nudge).
-- The rail hides under two prompts, when the gutter is under 44px (the column's own padding), below the host's 768px
-  desktop breakpoint, and for inactive (cached) timelines.
+  selection drag, a scrollbar) flips the strip to `pointer-events: none` until release. A release outside the window skips
+  `pointerup`, so the next button-free move counts. The wheel on the rail scrolls the timeline (`scrollBy`, preceded by the
+  host's unpin nudge), ignoring Ctrl and zero-`deltaY` wheels.
+- **First paint**: ticks and the in-view layer animate only from two frames after the rail exists (`data-armed`), so
+  nothing fades or slides in when the thread opens. t3-code has no such guard and fades the in-view layer on first load.
 
 ## Current prompt
 
-Recomputed on every scroll (rAF-throttled), resize (`ResizeObserver` on the view and the visible area), list change
-and after each jump. The fold is the viewport top plus the sticky header's `offsetHeight` (`[data-session-title]`,
-the inset `use-session-hash-scroll.ts` `scrollToElement` uses) plus an 8px tolerance. Every mounted row carries
-`data-message-id` = its owning prompt (`session-timeline-row.tsx:585`), so the first mounted row whose bottom is
-below the fold names the current turn; a row the host does not list resolves to the listed prompt before it.
+Recomputed on every scroll (rAF-throttled), resize (`ResizeObserver` on the view and the visible area), list change and
+after each jump. The viewport for the rule is the scroller below the sticky header's `offsetHeight`
+(`[data-session-title]`, the inset `use-session-hash-scroll.ts` `scrollToElement` uses). Every mounted row carries
+`data-message-id` = its owning prompt (`session-timeline-row.tsx:585`) and the prompt's own row has
+`data-timeline-row="UserMessage"`.
 
 ## Reveal (`jump.ts`)
 
@@ -120,9 +162,9 @@ The virtualizer can render a stop one frame late, so the row found at one stop m
 plugin waits until the anchor is mounted and the scroll offset has held still for three frames; if the anchor goes
 missing instead, it probes again from where it is, at most three attempts. Then it glides the final screen as above.
 
-**Unloaded page**: every prompt with a tick is in `message.list`, because the loader above pages the whole history in.
-A click while older pages are still arriving can only name a loaded prompt; `revealFar` keeps its own `loadMore`
-step for the case where the id list and the store disagree.
+**First prompt of the window**: it is probed for like any other. Older prompts the host has loaded may sit above it, so
+scrolling to the top is not the same as reaching it. The jump never loads history: every prompt with a tick is already in
+`message.list`.
 
 **Glide**: the final screen is tweened by the plugin (`tween.ts`): one `scrollTop` write per frame along
 `1 - (1 - t)^4` (a strong ease-out, the host's `--ease-out` shape), 180ms plus 0.12ms per px, capped at 420ms. A wheel,
@@ -138,50 +180,29 @@ programmatic `scrollTo` does not. Before scrolling, the plugin dispatches a bubb
 on the scroller. The host's `handleListWheel` (`virtualizer.tsx:794`) then releases its tool anchor, bumps the
 user-scroll mark and unpins. Nothing else in the wheel handler acts on a zero-distance wheel.
 
-## Native look and motion
+## Look and motion
 
-Motion follows `reference/animation.md` (Emil Kowalski): ease-out `cubic-bezier(0.23, 1, 0.32, 1)` for appearing and
-revealing, `cubic-bezier(0.77, 0, 0.175, 1)` for on-screen movement, only `transform` and `opacity`, nothing runs until
-`data-armed` (two frames after the rail exists, so nothing animates on first paint).
+Motion is t3-code's, nothing added: `transform` on the ticks (150ms, Tailwind's default `cubic-bezier(.4, 0, .2, 1)`),
+`opacity` on the in-view layer (150ms), on the chevrons' reveal (150ms) and, when the gutter is under 48px, on the rail's
+own (150ms). Only `transform` and `opacity`; nothing runs until `data-armed`. The card and its removal are instant.
 
-| what | how often | motion |
-| --- | --- | --- |
-| Tick in view / current | tens per day | opacity of a second line (`::after`, 0 → 1) 150ms ease-out; no colour or `background` transition |
-| Fisheye | tens per day | the active prompt and two neighbours each side scale-x by index distance (above); `transform` 150ms ease-out per tick, so it retargets as the pointer moves; cleared on leave; off under reduced motion |
-| Prev / next turn | on hover | `opacity` 150ms ease-out |
-| Card enter | occasional | the card mounts in its closed look and flips `data-entered` a frame later: opacity and `scale(.96 → 1)` 140ms ease-out, `transform-origin` at the hovered tick (`--card-origin`) so it grows out of the tick |
-| Card between ticks | continuous while open | stays mounted: `translateY` glides 140ms to the next tick, content swaps; no re-pop, no delay (the host tooltip's skip delay) |
-| Card exit | occasional | 90ms ease-out to opacity 0 / `scale(.96)`, then unmounts; reopening during it reverses from the current value (transitions, not keyframes, so both directions are interruptible) |
-| Rail appear / disappear | when the second prompt arrives | opacity 200ms in, 160ms out with `visibility` delayed; resizes and breakpoint changes are instant |
-| Jump | per click | the tween above |
-| History mark | while loading | the opacity breathe above |
-
-- Ticks use the host's text scale: `--v2-text-text-faint` at rest, the `-base` line shown at 0.6 for the hovered one
-  (a muted stand-in without a colour transition) and fully for in-view and current ticks; `:focus-visible` outlines with
+- Ticks use the host's text scale: `--v2-text-text-faint` at 45% at rest, `--v2-text-text-base` at 60% for the pointed
+  one and in full for in-view ticks (t3-code: `muted-foreground` 25% / 60% and `foreground` 55%). A 1px hairline at 15%
+  runs the strip's height at 12px in, as t3-code's `bg-border/15`. `:focus-visible` outlines with
   `--v2-border-border-focus`.
-- The card is `menu-v2-content`'s surface (`--v2-background-bg-layer-01`, `--v2-elevation-floating`, 6px radius) at
-  8px 10px padding: a faint "73 of 150" (hidden while history loads, because the total is not known
-  yet), the title 13px/16px weight 530 on one line with an ellipsis (t3-code: one line), the reply start 11px/14px weight 440 in
-  `--v2-text-text-muted` clamped to three lines, `dir="auto"` for RTL. Open delay 400ms, instant re-open within 300ms
-  of a close and instant on keyboard focus copy the host tooltip (`ui/src/overlays/tooltip/tooltip.tsx`). A 4px bridge
-  keeps the pointer inside while it moves from the rail to the card.
-- Keyboard on the focusable strip: focus sets the active index to the current prompt (the card opens at once on
-  `:focus-visible`), ArrowUp/Down, PageUp/PageDown (5), Home/End move it, Enter or Space jumps, Escape closes the card.
-  Touch pointers never open the card; a tap jumps.
-- The rail hugs the left edge and is at most 28px wide, so it never reaches the chat column; it hides under
-  the breakpoints in "Model".
-- `prefers-reduced-motion: reduce`: jumps write once with `behavior: "auto"`, the fisheye is off, the ticks
-  fade (opacity 120ms linear) instead of moving, the card fades without scale or glide, the history mark is static.
+- The jump itself is the plugin's: the final screen is tweened by `tween.ts`, one `scrollTop` write per frame along
+  `1 - (1 - t)^4`, 180ms plus 0.12ms per px, capped at 420ms; a wheel, touch, pointer-down or key on the scroller stops
+  it. Reduced motion writes the target once with `behavior: "auto"`, drops the tick transitions and fades the in-view
+  layer in 120ms linear.
 
 ### Native parity
 
-The card has no sibling the parity tool can put beside it: the library's `Popover`/`SummaryCard` (the session details
-dialog) is a click-opened `role=dialog` that takes focus and closes on outside press, and `ctx.ui.Tooltip` takes one
-line of text on the host's dark surface. A rail card must open on hover without focus, hold two text blocks and move
-between ticks, so neither fits, and wrapping it in one would change behaviour. N/A, with these stand-ins: surface,
-radius, shadow, padding and type scale are the `menu-v2-content` / session-summary values read from the host (list
-above), and the tooltip's delays are copied from its source. The ticks, marker and history mark have no native
-sibling at all. No `parity.spec.mjs` exists for this plugin.
+The card has no sibling `parity.mjs` can put beside it: the library's `Popover`/`SummaryCard` is a click-opened
+`role=dialog` that takes focus and closes on outside press, and `ctx.ui.Tooltip` takes one line of text on the host's
+dark surface. A rail card opens on hover without focus and holds two text blocks, so neither fits. N/A, with these
+stand-ins: the colour and shadow tokens of `menu-v2-content`; the geometry is t3-code's (320px, 12px, 14/20), not the
+host's menu (6px radius, 13px). The chevrons are the host's own `IconButton` and `Tooltip`. The ticks have no native
+sibling. No `parity.spec.mjs` exists for this plugin.
 
 ## Lifetimes
 
@@ -193,88 +214,66 @@ sibling at all. No `parity.spec.mjs` exists for this plugin.
 
 ## Rejected
 
-- **Header button + palette command** (the previous `message-jump`): one target at a time, no overview, and the
-  user reported the button not working for them. The rail shows every prompt and aims at any of them.
-- **DOM-scraped floating pill**: fixed positioning over the timeline broke on pane resize and bled over other
-  sessions. The portal into the session view root with per-timeline measurement has none of these problems.
+- **Background history loading so the rail covers the whole conversation** (the previous design, `history.ts`): the
+  conversation was fetched a page at a time behind the user, the rail grew visibly after opening, and it added requests
+  the host would not have made. t3-code's minimap covers only the window it has loaded. Removed.
+- **Tick thinning (`tickStride`) and the gradient-plus-band strip (`strip.ts`)**: built for 5,000 ticks, which the limit
+  makes unreachable by anything but the user scrolling up through that many pages. t3-code draws one span per prompt at
+  any count and so do we; measured below.
+- **Card open delay (400ms), enter/exit animation and glide between prompts, "n of N", "Working...", `[image]` /
+  `@agent` labels, PageUp/PageDown, Escape, the current-prompt tick colour, the hover brightening of the whole strip,
+  the history breathe mark, the appear/disappear fade, chevrons shown on strip hover, the 28px column at 6px from the
+  edge**: not in t3-code, removed.
+- **Header button + palette command** (the original `message-jump`): one target at a time, no overview.
+- **DOM-scraped floating pill**: fixed positioning over the timeline broke on pane resize and bled over other sessions.
 - **`location.hash = "#message-<id>"`**: desktop uses a memory router; the hash never changes the host's `useLocation`.
 - **Aiming the host's `message.previous` / `message.next`**: back-to-back host navigations collide in
-  `use-session-hash-scroll.ts` and land the wrong prompt; the probe needs nothing from the host's navigation state.
-- **Loading older history one page per click on the first tick** (the previous design): the rail was wrong in any thread
-  the host had not paged, until the user scrolled up. Replaced by the background loader.
-- **`loadMore(id, { all: true })`**: one long request with no intermediate state, then one store write for the whole
-  conversation. Page-wise loading keeps the ticks growing and each write small.
+  `use-session-hash-scroll.ts` and land the wrong prompt.
 - **Browser smooth scrolling for the glide**: no ease-out, not interruptible by a second jump.
 
-- **Bucketing prompts into fewer ticks** (previous design): past 4px of pitch one tick stood for N prompts and the card
-  showed the first. Replaced by one tick per prompt and index-based scrubbing.
-- **A DOM node per prompt**: paint cost is linear in the count (58ms a frame at 1,000 ticks); gradient plus a band.
-- **Per-tick buttons**: impossible once ticks overlap; one strip target maps the pointer to an index.
+## Open questions (OpenCode's data model differs from t3-code's)
+
+- **"Load earlier turns" has no counterpart.** OpenCode loads older pages when the user scrolls up. The rail takes a page
+  that lands after user input as asked-for. Alternatives: a rail that never grows past 10 (t3-code's *initial* window
+  only), or one that grows with every page the host loads, including the second page it fetches by itself (what the
+  rail did first: the ticks grew 10 to 17 about 300ms after a long realistic thread opened).
+- **Card text.** t3-code parses markdown with remark; here regexes, which handle fences, lists, quotes, links, tables and
+  emphasis, but not nested or HTML-heavy markdown.
+- **Card surface.** t3-code's `dropdown-glass` has no host equivalent; the host's menu surface colours are used.
+- **Initial window by turns, not messages.** t3-code's server counts 10 user turns; the host pages by 20 messages, so the
+  rail cuts the host's list to 10 prompts itself.
 
 ## Verification
 
-Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`) cover the prompt model, labels,
-markdown stripping, rail height, index from pointer (every index of 5,000 reachable), fisheye band, in-view range,
-the strip's band updates (only the ends that moved are touched, nodes retire), current-prompt selection, the probe direction and its turnaround, the
-reveal plan, the glide plan, the history loader (paging, quiet wait, abort, reading-position hold, failure), the scroll
-tween (ease-out shape, direction, user take-over, abort), and the slot (geometry, tracking, scrub-to-index, click, card timing and
-identity, fisheye, pass-through, wheel forwarding, keyboard, previous/next, history busy state and abort, hide conditions). Live
-verification runs against a second, isolated desktop app driven over CDP
-(`.claude/skills/opencode-gui-plugins/reference/browser-testing.md`, `scripts/desktop-harness.sh`); GUI plugins do
-not load on the web build (`runtime/plugin/root.tsx`: the plugin bridge is desktop-only). Prompt rows only unmount
-when a turn has many parts, so the far path needs a seeded session with multi-part answers. Subagent sessions have
-no desktop route to open directly, so the `compact` slot input is covered by the unit tests only.
+Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`, 55) cover the window (first 10, growth by
+page capped at 20 and gated on user input, revert edge, thread swap), prompts and the final-assistant snippet, labels,
+markdown stripping, rail height, index from pointer (every index of 5,000 reachable), in-view and current prompt, the
+probe direction, the glide plan, the scroll tween, and the slot (geometry, hit width and persistence by gutter, the
+card's timing, position and content, fisheye, pass-through, wheel forwarding, keyboard, chevrons, window limits with
+5,000 messages, zero `loadMore` calls, hide conditions). Live verification runs against a second, isolated desktop app
+driven over CDP (`.claude/skills/opencode-gui-plugins/reference/browser-testing.md`); GUI plugins do not load on the
+web build.
 
-Harness numbers from the earlier bucketed layout (2.2.5, seeded 150-turn session = 300 messages = 15 pages): ticks on open before the loader, 20 prompts
-of 150 (13%); after, all 150 covered (124 buckets at that height) in 4 requests-worth of frames locally and one page per
-request under a 450ms-delayed network. Reading position while 13 pages landed with the user scrolled mid-thread: tracked
-row top 55px → 55px every frame, content grew 8430 → 28230px, corrections fired 0 times; pinned to the end: bottom row
-at 850px every frame. Clicking 9 ticks across the thread (first, last, buckets, back and forth) landed the prompt at 0px
-under the header each time, except the very last prompt, which the list's end clamps below the fold like the host's
-own. Jump tween 290–500ms for 1–10k px. Not verified live: the 768px breakpoint (unit tests only), light/dark, touch.
+Harness, 2.2.5, isolated root, window 1400x1000 (strip 40px, gutter persistent), seeded sessions of 50, 300 and 5,000
+plain turns and 400 realistic turns (1 to 3 assistant messages each, reasoning, bash tool parts with 300-line output,
+fenced code and lists):
 
-### Thinning (`tickStride`, `strip.ts`)
+- Appears 68-124ms after the click with 10 ticks, and the count never changes over the next 6s, in all four sessions.
+  The realistic thread, where the host fetches a second page of its own 250ms after the first, went 10 -> 17 before the
+  user-input gate and stays at 10 with it.
+- Requests to `/message` on a first open: realistic 2 (`limit=40`, then `limit=20&cursor`), plain 5,000 and 300 turns 1,
+  identical with the plugin and without it (a baseline run with no plugin, same data). None come from the plugin: the
+  bundle contains no `loadMore`, `more` or fetch.
+- Scrolling up the realistic thread with the wheel (40 x 3,000px): 40 more page requests, all the host's, and the rail
+  grew from 10 to 263 ticks as they landed; 120 x 6,000px reached all 390 loaded prompts. The ticks overlap into a grey
+  bar there, as t3-code's do at 2px ticks on a 1.8px pitch.
+- Clicks on ticks 0, 4 and 7 landed the pointed prompt at 0px under the header; the previous-turn chevron, Home + Enter
+  and the arrows did the same and moved the label as expected. A wheel over the rail scrolled the timeline.
+- Frames during a 240-move sweep over the strip: p50 8.3ms, p95 9.1ms, max 9.3ms with 10 ticks (idle 8.3 / 9.0 / 9.3,
+  120Hz); with 390 ticks p50 8.3, p95 10.1, max 17.0.
+- Card: left edge at strip + 32px, 320px wide, flush with the strip's top for the first prompt, centred for the others,
+  flush with its bottom for the last; the strip widens to 22rem while it shows; chevrons at opacity 0 while the pointer
+  is on the strip and 1 on their own hover.
 
-One tick per prompt at 5,000 prompts is a 0.15px pitch: the gradient's 2px ticks merged into a solid grey bar (the
-"Collections" thread). Resting ticks now thin out by index: while `height / (count - 1)` is at least 5px
-(`MIN_TICK_PITCH`) the rail is exactly as before (stride 1); below it, `--stride = ceil(5 / pitch)` and the gradient's
-period becomes `stride x pitch`, so at most about one tick per 5px is drawn (every `stride`-th prompt, from the first).
-The strip reports its height through a `ResizeObserver`, so a window resize restrides. Only the drawn set changes:
-
-- The last prompt gets a real node while thinned, so the rail always ends on it (it follows the count as history pages in).
-- Pointer, scrub, hover, card, chevrons, keyboard and jump all use every prompt: the pointer maps to the exact nearest
-  index (`indexFromPointer`, unchanged) and the card shows that prompt whether or not a faint tick sits there.
-- The fisheye band, in-view range and current prompt are real nodes at their exact positions, so they are correct for
-  prompts the gradient does not draw. At sub-pixel pitch the band's neighbours overlap into one bump; it is not spread out.
-- DOM stays 18 nodes in the rail at any count (5-9 ticks while hovering at 5,000).
-
-### Scale (t3-code model, measured on 2.2.5)
-
-The previous layout bucketed prompts once the pitch hit 4px (60% of the height): at the harness window (898px rail box)
-that was 134 ticks, so 400 prompts were 134 ticks of 3, 1,000 of 7-8 and 5,000 of 37, and the card showed each
-bucket's first prompt only. Now there are 400 / 1,000 / 5,000 ticks and the pointer picks any prompt.
-
-- Harness, seeded 400 and 5,000-turn sessions (the loader paged all 5,000 in, 10 prompts a page, to the end): 360
-  scripted mouse moves along the strip, frames p50 8.3ms, p95 9.2ms, max 9.4ms (120Hz); 18 DOM nodes in the rail when
-  idle, 28 while hovering (the band: 5 fisheye + 3 in view + current).
-- One DOM node per prompt (the first implementation), 800px strip, band updates every frame: frame p50 16.7ms at 400,
-  57.9 at 1,000, 116.7 at 2,000 (paint cost grows with the node count while main-thread task time stays ~4-8ms). The
-  gradient plus band: p50 8.4ms at 400, 1,000 and 5,000 alike.
-- The pointermove handler runs 0.5ms (400) to 2.6ms (5,000) of script in a tight loop of synthetic events including
-  the forced layout of the strip rect.
-- **Far jumps** (`jump.ts` `seek`, `target.ts` `seekTop` / `correction`): when the prompt is 20+ viewports away, one
-  write goes to its share of the content height, then up to 24 corrections move by (index gap to the middle of the
-  turns in view) x (measured height between two mounted prompt rows, else content height / count), two frames each
-  for the virtualizer to render, until the prompt's turn is in view. The old one-viewport-per-frame probe then mounts
-  it and the final screen glides. The jump also ends on the user's own wheel, touch, pointer-down or key, and on abort,
-  and repeats reveal-and-glide up to 4 rounds because rows above a far prompt are estimates until they mount.
-  Harness, 5,000 prompts, click from the end, time to the prompt resting under the header (fold within 14px, scroll
-  still 12 frames): middle (question 2501) 2.6s before, 0.27s after; questions 501, 4500 and 151 did not land within
-  40s before and took 0.22 / 0.36 / 0.29s after. While seeking, 1-3 unrelated prompts pass the top for a frame or two.
-- Thinning, harness (strip 726px at the 1000px-high window, 2.2.5): 50 prompts stride 1 (8px pitch, unchanged), 300
-  stride 3 (7.3px period), 800 stride 6, 5,000 stride 35 (every period 5.3-7.3px). Pointer at 8 positions per thread
-  (including both ends) opened the right prompt in all four (card title and "n of N" equal to `round(progress x (n - 1)) + 1`).
-  Frames during a 240-move sweep: p50 8.3ms, p95 9.0-9.3ms, max 9.3-9.4ms (120Hz) at 50 / 300 / 800 / 5,000. Rail DOM 18
-  nodes at every count.
-- A click now jumps to the prompt the card shows (`pointed()`), not a re-derived one: a click's whole-pixel `clientY`
-  is several prompts off the pointermove position at 5,000 prompts (found when click 501 landed on 496).
+Not verified live: touch and `pointer: coarse`, reduced motion, a gutter under 48px (unit tests only), light theme, the
+768px breakpoint, subagent sessions (no desktop route).

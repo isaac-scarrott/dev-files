@@ -1,4 +1,4 @@
-import { correction, currentPrompt, glidePlan, probeDirection, revealPlan, seekTop, type Row } from "./target"
+import { correction, glidePlan, probeDirection, seekTop, type Row } from "./target"
 
 /** What a jump needs from the timeline it runs in. */
 export type Host = {
@@ -6,14 +6,9 @@ export type Host = {
   readonly scroller: HTMLElement
   /** The prompts the timeline shows, in order. */
   ids(): readonly string[]
-  /** Older history exists on the server. */
-  more(): boolean
-  loadMore(signal: AbortSignal): Promise<void>
   reducedMotion(): boolean
   /** Resolves on the next animation frame. */
   frame(): Promise<void>
-  /** Called with true while older history loads, false when it is done. */
-  loading?(value: boolean): void
   /** Scrolls to `to` along the host's own ease-out; absent, the browser's smooth scroll is used. */
   tween?(to: number, signal: AbortSignal): Promise<boolean>
 }
@@ -25,7 +20,6 @@ const SETTLE_LIMIT = 40
 const GLIDE_LIMIT = 120
 const PROBE_LIMIT = 200
 const PROBE_ATTEMPTS = 3
-const PAGE_LIMIT = 5
 /** A pre-seek pays off when probing would take this many viewports of one-per-frame paging or more. */
 const SEEK_VIEWPORTS = 20
 /** Correction rounds after the seek, each waiting for the virtualizer to render the new position. */
@@ -59,28 +53,12 @@ export function anchorOf(scroller: HTMLElement, id: string) {
   )
 }
 
-/** The index of the prompt whose turn contains the viewport top, under the sticky header. */
-export function currentIndex(host: Pick<Host, "scroller" | "ids">): number {
-  const box = host.scroller.getBoundingClientRect()
-
-  return currentPrompt(host.ids(), readRows(host.scroller), box.top + inset(host.scroller))
-}
-
 /**
  * Tells the host the user scrolled up: its wheel handler releases the tool anchor, marks a user scroll so its next
  * navigation starts from the cursor, and unpins the timeline from its end. A programmatic scroll does none of that.
  */
 export function unpin(scroller: HTMLElement) {
   scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }))
-}
-
-async function load(host: Host, signal: AbortSignal) {
-  host.loading?.(true)
-  try {
-    await host.loadMore(signal)
-  } finally {
-    host.loading?.(false)
-  }
 }
 
 /** The offset that puts `anchor` right under the sticky header. */
@@ -185,24 +163,8 @@ async function seek(host: Host, id: string, signal: AbortSignal) {
   }
 }
 
-async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0): Promise<void> {
+async function revealFar(host: Host, id: string, signal: AbortSignal): Promise<void> {
   const { scroller } = host
-  const plan = revealPlan({ ids: host.ids(), target: id, more: host.more() })
-
-  if (plan.kind === "load") {
-    if (pages >= PAGE_LIMIT) return
-    await load(host, signal)
-
-    if (signal.aborted) return
-
-    return revealFar(host, id, signal, pages + 1)
-  }
-
-  if (plan.kind === "top") {
-    scroller.scrollTo({ top: 0, behavior: "auto" })
-
-    return settle(host, id, signal)
-  }
 
   await seek(host, id, signal)
 

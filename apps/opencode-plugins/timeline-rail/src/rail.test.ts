@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { fisheyeBand, indexFromPointer, MIN_TICK_PITCH, tickStride, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
+import { indexFromPointer, INITIAL_PROMPTS, loadedIds, PAGE_PROMPTS, promptLabel, promptWindow, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -33,37 +33,45 @@ test("prompts: one per user message in order, reverted ones dropped, other messa
   )
 })
 
-test("the snippet is the first text of the first reply with text; tool-only or reasoning-only replies are skipped", () => {
+test("the snippet is the turn's final assistant message, as plain text; a final message without text shows the prompt alone", () => {
   const list = prompts([
     user("m1", "q"),
-    reply("a1", undefined, { content: [{ type: "tool" }, { type: "reasoning", text: "hmm" }] }),
-    reply("a2", "   "),
-    reply("a3", "# Title\n\nThe **answer** is `42`."),
+    reply("a1", "first step"),
+    reply("a2", "# Title\n\nThe **answer** is `42`."),
     user("m2", "q2"),
+    reply("b1", "said something"),
+    reply("b2", undefined, { content: [{ type: "tool" }, { type: "reasoning", text: "hmm" }] }),
+    user("m3", "q3"),
   ])
   assert.equal(list[0]!.snippet, "Title The answer is 42.")
-  assert.equal(list[0]!.working, false)
+  assert.equal(list[1]!.snippet, undefined, "t3-code reads the last assistant message, and that one has no text")
+  assert.equal(list[2]!.snippet, undefined)
 })
 
-test("a reply still streaming without text shows as working; a finished tool-only turn shows the prompt alone", () => {
-  const streaming = prompts([user("m1", "q"), reply("a1", undefined, { content: [{ type: "tool" }], time: {} })])
-  assert.equal(streaming[0]!.working, true)
-  assert.equal(streaming[0]!.snippet, undefined)
-  const done = prompts([user("m1", "q"), reply("a1", undefined, { content: [{ type: "tool" }] })])
-  assert.equal(done[0]!.working, false)
-  const failed = prompts([user("m1", "q"), reply("a1", undefined, { time: {}, error: { name: "x" } })])
-  assert.equal(failed[0]!.working, false)
-  const none = prompts([user("m1", "q")])
-  assert.equal(none[0]!.working, false)
-  assert.equal(none[0]!.snippet, undefined)
+test("the snippet strips a fenced block's fences, not just its lines", () => {
+  const list = prompts([user("m1", "q"), reply("a1", "Done.\n\n```ts\nconst a = 1\n```\n\n- one")])
+  assert.equal(list[0]!.snippet, "Done. const a = 1 one")
 })
 
-test("prompt labels: display text wins, attachments and agents stand in for empty text, long text is cut", () => {
+test("the snippet is parsed from the first 1,500 characters of the reply", () => {
+  const list = prompts([user("m1", "q"), reply("a1", `${"word ".repeat(400)}END`)])
+  assert.ok(list[0]!.snippet!.length <= 1500)
+  assert.ok(!list[0]!.snippet!.includes("END"))
+})
+
+test("prompts since an id: older prompts are left out, their replies still read", () => {
+  const messages = [user("m1", "a"), reply("a1", "x"), user("m2", "b"), reply("a2", "y"), user("m3", "c"), reply("a3", "z")]
+  assert.deepEqual(prompts(messages, undefined, "m2").map((prompt) => prompt.id), ["m2", "m3"])
+  assert.deepEqual(prompts(messages, "m3", "m2").map((prompt) => prompt.id), ["m2"])
+  assert.deepEqual(loadedIds(messages), ["m1", "m2", "m3"])
+  assert.deepEqual(loadedIds(messages, "m3"), ["m1", "m2"])
+})
+
+test("prompt labels: display text wins, empty text is \"User message\", long text is cut", () => {
   assert.equal(promptLabel(user("m", "  two\n lines ")), "two lines")
   assert.equal(promptLabel(user("m", "/raw", { metadata: { displayText: "/review the diff" } })), "/review the diff")
-  assert.equal(promptLabel(user("m", "", { files: [{ mime: "image/png" }, { mime: "text/plain", name: "a.txt" }] })), "[image] [a.txt]")
-  assert.equal(promptLabel(user("m", "", { agents: [{ name: "explore" }] })), "@explore")
-  assert.equal(promptLabel(user("m", "")), "(empty prompt)")
+  assert.equal(promptLabel(user("m", "", { files: [{ mime: "image/png" }] })), "User message")
+  assert.equal(promptLabel(user("m", "")), "User message")
   const label = promptLabel(user("m", "x".repeat(500)))
   assert.equal(label.length, 201)
   assert.ok(label.endsWith("…"))
@@ -117,48 +125,67 @@ test("index from pointer: linear to the nearest prompt, clamped, every index rea
   assert.equal(reached.size, 5000)
 })
 
-test("fisheye band: the active prompt and two neighbours each side, clipped to the list", () => {
-  assert.equal(fisheyeBand(undefined, 10), undefined)
-  assert.equal(fisheyeBand(10, 10), undefined)
-  assert.deepEqual(fisheyeBand(5, 10), [3, 7])
-  assert.deepEqual(fisheyeBand(0, 10), [0, 2])
-  assert.deepEqual(fisheyeBand(9, 10), [7, 9])
-})
-
-test("visible range: owners of rows that intersect the box; off-screen rows and unlisted owners are ignored", () => {
+test("visible range: prompts whose own row intersects the box; their replies, off-screen rows and unlisted owners are ignored", () => {
   const indexOf = new Map([["a", 0], ["b", 1], ["c", 2], ["d", 3]])
-  const row = (owner: string, top: number, bottom: number) => ({ owner, prompt: false, top, bottom })
+  const row = (owner: string, top: number, bottom: number, prompt = true) => ({ owner, prompt, top, bottom })
   const box = { top: 50, bottom: 650 }
   assert.deepEqual(visibleRange(indexOf, [row("a", -300, 40), row("b", 40, 400), row("c", 400, 700), row("d", 700, 900)], box), [1, 2])
   assert.deepEqual(visibleRange(indexOf, [row("b", 100, 200), row("x", 200, 300)], box), [1, 1])
+  assert.equal(visibleRange(indexOf, [row("b", 100, 200, false)], box), undefined, "a reply row is not its prompt")
   assert.equal(visibleRange(indexOf, [row("d", 900, 1000)], box), undefined)
   assert.equal(visibleRange(indexOf, [], box), undefined)
 })
 
-test("tickStride: 1 while the pitch is at least 5px, else the smallest whole stride that restores it", () => {
-  assert.equal(tickStride(0, 100), 1)
-  assert.equal(tickStride(2, 8), 1)
-  assert.equal(tickStride(50, 392), 1, "8px pitch")
-  assert.equal(tickStride(100, 495), 1, "exactly 5px")
-  assert.equal(tickStride(100, 494), 2)
-  assert.equal(tickStride(300, 898), 2, "3px pitch")
-  assert.equal(tickStride(800, 898), 5)
-  assert.equal(tickStride(5000, 898), 28)
-  assert.equal(tickStride(5000, 0), 1, "unmeasured")
-  for (const n of [3, 10, 60, 100, 101, 300, 800, 5000, 20000]) {
-    for (const h of [100, 400, 898, 1400]) {
-      const k = tickStride(n, h)
-      const drawn = Math.floor((n - 1) / k) + 1
-      assert.ok(k === 1 || (h / (n - 1)) * k >= MIN_TICK_PITCH, `${n}/${h}: pitch of drawn ticks`)
-      assert.ok(k === 1 || (h / (n - 1)) * (k - 1) < MIN_TICK_PITCH, `${n}/${h}: no thinner than needed`)
-      assert.ok(drawn <= h / MIN_TICK_PITCH + 1, `${n}/${h}: at most one tick per 5px`)
-    }
-  }
-})
-
-test("tickStride leaves pointer mapping alone: every index of 5,000 stays reachable", () => {
+test("every index of 5,000 stays reachable from the pointer", () => {
   const seen = new Set<number>()
   for (let y = 0; y <= 8980; y += 1) seen.add(indexFromPointer({ count: 5000, top: 0, height: 898, y: y / 10 })!)
   assert.equal(seen.size, 5000)
   assert.equal(indexFromPointer({ count: 800, top: 100, height: 898, y: 100 + 449 }), 400)
+})
+
+const names = (count: number, from = 0) => Array.from({ length: count }, (_, index) => `m${String(from + index).padStart(4, "0")}`)
+
+test("window: a thread opens on its newest 10 prompts, whatever the host holds", () => {
+  assert.equal(INITIAL_PROMPTS, 10)
+  assert.equal(promptWindow(undefined, []), undefined)
+  assert.equal(promptWindow(undefined, names(3))?.from, "m0000")
+  assert.equal(promptWindow(undefined, names(10))?.from, "m0000")
+  assert.equal(promptWindow(undefined, names(11))?.from, "m0001")
+  assert.equal(promptWindow(undefined, names(5000))?.from, "m4990")
+})
+
+test("window: new prompts join, the oldest stays put", () => {
+  const first = promptWindow(undefined, names(30))!
+  assert.equal(first.from, "m0020")
+  const next = promptWindow(first, names(31))!
+  assert.equal(next.from, "m0020")
+  assert.equal(promptWindow(next, names(35))!.from, "m0020")
+})
+
+test("window: a page the host loads above joins, up to 20 prompts", () => {
+  const first = promptWindow(undefined, names(30, 100))!
+  assert.equal(first.from, "m0120")
+  const paged = promptWindow(first, names(40, 90))!
+  assert.equal(paged.from, "m0110", "ten older prompts arrived and all join")
+  const huge = promptWindow(paged, names(100, 30))!
+  assert.equal(huge.from, "m0090", "a page of 70 adds only 20")
+  assert.equal(PAGE_PROMPTS, 20)
+  assert.equal(promptWindow(huge, names(100, 30))!.from, "m0090", "no change, no growth")
+})
+
+test("window: a page the host loads before the user asked for one does not join", () => {
+  const first = promptWindow(undefined, names(30, 100))!
+  const hosted = promptWindow(first, names(40, 90), false)!
+  assert.equal(hosted.from, "m0120", "the host's own second page stays out of the rail")
+  const asked = promptWindow(hosted, names(50, 80), true)!
+  assert.equal(asked.from, "m0110", "a page the user asked for adds ten, from the window's edge")
+  assert.equal(promptWindow(hosted, names(41, 90), false)!.from, "m0120", "a new prompt at the end still joins")
+})
+
+test("window: a reverted edge hands over to the next prompt still listed; a lost thread reopens on its newest", () => {
+  const first = promptWindow(undefined, names(30))!
+  assert.equal(first.from, "m0020")
+  const without = names(30).filter((id) => id !== "m0020")
+  assert.equal(promptWindow(first, without)!.from, "m0021")
+  assert.equal(promptWindow(first, names(5, 100))!.from, "m0100")
 })
