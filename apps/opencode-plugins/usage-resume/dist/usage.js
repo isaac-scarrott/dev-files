@@ -73,7 +73,15 @@ export class UsageSource {
      * Current readings for every enabled account. An account is fetched only when its newest reading (ours or the notch
      * app's) is at least five minutes old and its own backoff has passed, so calling this often costs nothing.
      */
-    async refresh() {
+    refresh() {
+        // The plugin runs once per project location and they share this source: concurrent callers share one pass.
+        this.inflight ??= this.refreshNow().finally(() => {
+            this.inflight = undefined;
+        });
+        return this.inflight;
+    }
+    inflight;
+    async refreshNow() {
         const { now } = this.deps;
         const credentials = await loadCredentials(this.deps.authDir);
         const snapshot = new Map((await loadSnapshot(this.deps.snapshotPath)).map((r) => [r.id, r]));

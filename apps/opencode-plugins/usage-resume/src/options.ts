@@ -1,5 +1,6 @@
 import os from "node:os"
 import path from "node:path"
+import { defaultSampleDir } from "./diag.js"
 
 export interface Options {
   /** Text sent to a stalled session when usage is back. */
@@ -21,8 +22,8 @@ export interface Options {
   readonly snapshotPath: string
   /** Post a timeline notice when a session starts waiting. */
   readonly notices: boolean
-  /** Also resume subagent sessions (those with a parent). */
-  readonly includeChildren: boolean
+  /** Where the first real limit error is saved for detector tests. */
+  readonly sampleDir: string
 }
 
 export const DEFAULTS: Options = {
@@ -36,7 +37,7 @@ export const DEFAULTS: Options = {
   authDir: path.join(os.homedir(), ".cli-proxy-api"),
   snapshotPath: path.join(os.homedir(), "Library", "Caches", "NotchUsage", "snapshot.json"),
   notices: true,
-  includeChildren: false,
+  sampleDir: defaultSampleDir(),
 }
 
 const NAME = "usage-resume option"
@@ -79,6 +80,6 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Optio
     authDir: text(raw, "authDir", DEFAULTS.authDir, false),
     snapshotPath: text(raw, "snapshotPath", DEFAULTS.snapshotPath, true),
     notices: flag(raw, "notices", DEFAULTS.notices),
-    includeChildren: flag(raw, "includeChildren", DEFAULTS.includeChildren),
+    sampleDir: text(raw, "sampleDir", DEFAULTS.sampleDir, false),
   }
 }

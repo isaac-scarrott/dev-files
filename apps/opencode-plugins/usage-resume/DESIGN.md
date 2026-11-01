@@ -38,7 +38,7 @@ and the usage endpoint covers the rest.
   is doing and never steers a running turn.
 - `ctx.session.synthetic({ ..., description, resume: false })` for the "Resumes at 14:05" notice. A synthetic item with a
   description renders in the timeline, and `resume: false` keeps it from waking the session. There is no server-side toast
-  API (`ctx.toast` is GUI-only), and a timeline notice sits in the session it is about, so there is no GUI part.
+  API (`ctx.toast` is GUI-only), and a timeline notice sits in the session it is about. The GUI part (v2) is only the opt-in toggle and setting, below.
 - `ctx.storage` for state.
 
 Not verifiable here: no real limit can be triggered in the harness, so the exact error shape rests on the binary's
@@ -75,11 +75,69 @@ limited whether or not the account has extra usage on, except that an `overage` 
 Note the interaction with the cliproxy overage problem (extra-usage-guard research): this plugin only resumes work when a
 subscription window has reset, so it does not make overage spending more likely.
 
+## Opt-in (v2)
+
+Auto-resume is **off by default** and needs a human opt-in, at two levels:
+
+1. **Per session**: an icon toggle in the composer toolbar, right after the model picker (the host's own `IconButton`,
+   large ghost-muted, lit while on, tooltip "Auto-resume after usage limit: …"). Sessions without a choice are off.
+2. **Global default**: a switch "Auto-resume after usage limit" in Settings > Preferences > General, off by default.
+   On means a session starts with its toggle on when it is **created** (`session.created`, root sessions only). It is
+   not retroactive: a session that already exists keeps what it had, and turning the default off later leaves sessions
+   already created as they are. The session's own toggle always overrides the default.
+
+The server plugin checks the toggle when a limit is detected, again right before resuming (so switching it off while
+waiting stops the resume), and in the `retry` hook: an opted-out session keeps OpenCode's own retry behaviour.
+
+### Where the state lives
+
+GUI and server are separate processes. The server plugin owns the state in `ctx.storage` (`toggle/default`,
+`toggle/session/<id>`) and the GUI reads and writes it over the plugin's RPC (`src/rpc.ts`: `get`, `set`, `getDefault`,
+`setDefault`, and a `changed` event so every window re-reads). Session metadata was rejected: the GUI has no write path to
+it, and storage keeps the toggle out of exported sessions. A draft composer (no session yet) shows no toggle; the default
+applies when the session is created.
+
+### One instance per project location
+
+Measured in the harness: the server loads this plugin once per project location (3 instances for 3 locations), all in
+one process, over **one shared storage**, and every instance's `event.subscribe` hears every session's events. Left
+alone that resumes a session once per location and polls the usage endpoint once per location. So:
+
+- an instance acts only on sessions whose `location.directory` equals its own; the rest are ignored silently;
+- waiting/attempt state is keyed per location (`state/v2/<hash of directory>`);
+- the usage readings, backoff schedules and the in-flight refresh are one shared object (`src/hub.ts`) persisted under
+  `usage/v1`, so the 5-minute floor holds however many locations are open;
+- the toggle state is shared storage and needs no ownership.
+
+### Diagnostics
+
+The plugin API has no logger, and the service's stderr is not kept anywhere readable (checked in the harness), so every
+line goes to stderr **and** to `<sampleDir>/usage-resume.log` (default `$XDG_DATA_HOME/opencode/usage-resume/`,
+`~/.local/share/opencode/usage-resume/`), rotated once at 1 MB. It logs: startup (location, default, waiting count),
+every failed run (type, status, redacted message), every detected limit (kind, resetsAt), every schedule, every
+"not yet available" re-check, every resume, and every skip with its reason (`toggle off`, `subagent`, `archived`,
+`attempt cap`, `touched since the stall`, …). Tokens, bearer values, JWTs and key-like blobs are redacted from log lines
+and samples.
+
+Samples: the first detected limit error is written to `limit-error.json`, and the first error that **reads** like a limit
+(`limit|quota|usage|429|rate limit|exhausted|resets|overage|billing`) but did not match the detector to
+`unmatched-limit-like-error.json`. Neither is overwritten. They are real provider text for future detector tests.
+
+### Known gap: a limit that never fails
+
+On the night this was specified, all accounts hit their window limits and the v1 plugin did nothing: it loaded but logged
+nothing, and work did not stop. Most likely a run **never failed**: an account with extra usage on (the holibob Max 20x)
+keeps serving past 100% and bills the overage, so no limit error reaches OpenCode and there is nothing to detect. This
+plugin reacts to a failed run; it cannot see a window being exceeded while requests keep succeeding, and it must not
+enable or pay for extra usage. The new log shows whether that is what happened (no `run failed` lines at all while usage
+was at 100%), and `unmatched-limit-like-error.json` catches the other possibility, that the error text differs from what
+the detector expects.
+
 ## Decisions (defaults)
 
 | Decision | Default | Option |
 |---|---|---|
-| Which sessions | all top-level sessions stalled by a Claude limit; subagent sessions (with a parent) skipped, since the parent decides what to do with a failed child | `includeChildren` |
+| Which sessions | **opt-in only.** A session is resumed only when its own toggle is on. Subagent sessions (with a parent) are never resumed and have no toggle: the parent decides what to do with a failed child | |
 | Prompt | `Continue.`, queued | `prompt` |
 | One resume per stall | the stall is forgotten before the prompt is sent; a new stall needs a new failure | |
 | Loop cap | 3 resumes per session, counted until the session completes a run; the Nth+1 failure posts a notice and stops | `maxAttempts` |
@@ -97,7 +155,10 @@ subscription window has reset, so it does not make overage spending more likely.
 - `src/usage.ts`: accounts, polling with floor/backoff, snapshot reuse, pure `availability`.
 - `src/plan.ts`: pure `decide` (resume or when to look again).
 - `src/resume.ts`: `Resumer`, the state machine behind a small `Host` interface.
-- `src/server.ts`: wiring: events, retry hook, tick.
+- `src/server.ts`: wiring: events, retry hook, tick, rpc.
+- `src/toggles.ts`: opt-in state (default and per session). `src/rpc.ts`: the GUI/server contract.
+- `src/hub.ts`: the usage source shared by every location's instance. `src/diag.ts`: log file, redaction, samples.
+- `src/gui.tsx`, `src/composer.ts`: the composer toggle and the Settings row.
 
 ## Known limits
 

@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { defaultSampleDir } from "./diag.js";
 export const DEFAULTS = {
     prompt: "Continue.",
     marginMs: 60_000,
@@ -11,7 +12,7 @@ export const DEFAULTS = {
     authDir: path.join(os.homedir(), ".cli-proxy-api"),
     snapshotPath: path.join(os.homedir(), "Library", "Caches", "NotchUsage", "snapshot.json"),
     notices: true,
-    includeChildren: false,
+    sampleDir: defaultSampleDir(),
 };
 const NAME = "usage-resume option";
 function seconds(raw, key, fallbackMs, min) {
@@ -55,7 +56,7 @@ export function parseOptions(raw = {}) {
         authDir: text(raw, "authDir", DEFAULTS.authDir, false),
         snapshotPath: text(raw, "snapshotPath", DEFAULTS.snapshotPath, true),
         notices: flag(raw, "notices", DEFAULTS.notices),
-        includeChildren: flag(raw, "includeChildren", DEFAULTS.includeChildren),
+        sampleDir: text(raw, "sampleDir", DEFAULTS.sampleDir, false),
     };
 }
 //# sourceMappingURL=options.js.map
