@@ -13,10 +13,16 @@ const SIDEBAR = "[data-slot=vertical-tabs-sidebar]"
 
 export type Sidebar = "open" | "closed" | "none"
 
-/** The host has no API for the left tab sidebar (`layout.side` is the right region): its aside carries the state. "none" is top-tabs layout (no aside), which behaves like an open sidebar: popover only. */
+/**
+ * The host has no API for the left tab sidebar (`layout.side` is the right region). Its shell renders, in the Side-tabs
+ * layout only, `<aside id="vertical-tabs-sidebar" data-slot="vertical-tabs-sidebar" data-state={open ? "open" : "closed"}>`
+ * from the persisted `appearance.sidebarOpen` (app/src/shell/shell.tsx 2.2.5); a hover peek adds `data-peek` and keeps
+ * `data-state="closed"`. Anything but "open" counts as closed, so a value the host adds later does not read as popover mode.
+ * "none" is no aside, or one without the attribute: top tabs or the narrow mobile layout, which behave like an open sidebar.
+ */
 export const readSidebar = (root: ParentNode = document): Sidebar => {
   const state = root.querySelector(SIDEBAR)?.getAttribute("data-state")
-  return state === "open" ? "open" : state === "closed" ? "closed" : "none"
+  return state === null || state === undefined ? "none" : state === "open" ? "open" : "closed"
 }
 
 /** Reactive left-sidebar state. One observer, filtered to `data-state` and coalesced into a frame. */

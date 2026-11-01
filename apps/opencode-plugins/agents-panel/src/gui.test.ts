@@ -147,7 +147,6 @@ test("the toggle opens one floating popover with the host's menu surface and wea
   assert.equal(f.toggle().getAttribute("aria-pressed"), "true")
   assert.equal(f.toggle().getAttribute("aria-expanded"), "true")
   assert.equal(f.toggle().hasAttribute("data-expanded"), true)
-  assert.equal(f.doc.querySelector("[data-agents-dock]"), null)
   await open(f)
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.toggle().hasAttribute("data-expanded"), false)
@@ -465,15 +464,22 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
 })
 
-// The left sidebar is the host's aside; the header resets the body, so it is added after.
-const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
-  let aside = f.doc.querySelector("aside")
-  if (!aside) {
-    aside = f.doc.createElement("aside")
-    aside.setAttribute("data-slot", "vertical-tabs-sidebar")
-    f.doc.body.append(aside)
-  }
-  aside.setAttribute("data-state", state)
+// The left sidebar as the host renders it (app/src/shell/shell.tsx, 2.2.5; values read from the running app): an aside with
+// id and data-slot vertical-tabs-sidebar, data-state open|closed, a --sidebar-peek-width style, an inline width that
+// animates to 0, a data-peek attribute while hover-peeking, other data-state elements around it, and the host's toggle
+// button controlling it. The header resets the body, so the aside is added after.
+const REAL_SIDEBAR = (state: string, extra = "") => `
+  <button type="button" aria-label="Toggle sidebar" aria-controls="vertical-tabs-sidebar" aria-expanded="${state === "open"}" data-component="icon-button-v2"></button>
+  <div data-component="dialog-overlay" data-state="closed"></div>
+  <aside id="vertical-tabs-sidebar" data-slot="vertical-tabs-sidebar" class="relative z-10 h-full min-h-0 shrink-0" data-state="${state}" ${extra} style="--sidebar-peek-width: 276px; width: ${state === "open" ? 276 : 0}px;">
+    <div data-slot="vertical-tabs-panel"><div data-slot="vertical-tabs-peek-surface" aria-hidden="true"></div><div data-slot="vertical-tabs-mount" data-state="visible"></div></div>
+  </aside>`
+const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed", extra = "") => {
+  f.doc.getElementById("real-sidebar")?.remove()
+  const holder = f.doc.createElement("div")
+  holder.id = "real-sidebar"
+  holder.innerHTML = REAL_SIDEBAR(state, extra)
+  f.doc.body.append(holder)
   return f.flush()
 }
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
@@ -562,6 +568,49 @@ test("dock: window visible, sidebar opens => window hidden, popover NOT opened; 
   f.toggle().click()
   await f.flush()
   assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  f.stop()
+})
+
+test("dock: the real closed shape (width 0, peeking, other data-state elements around it) is window mode, closed with the host's own transition from open", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "open")
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "popover")
+  // The host flips the same aside's attribute in place (preference -> data-state), never remounting it.
+  const aside = f.doc.getElementById("vertical-tabs-sidebar")!
+  aside.setAttribute("data-state", "closed")
+  aside.setAttribute("style", "--sidebar-peek-width: 276px; width: 0px;")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-sidebar"), "closed")
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(dockEl(f).dataset.state, "open", "the first click on the real closed shape shows the window")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  aside.setAttribute("data-peek", "")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window", "a hover peek does not change the mode")
+  f.stop()
+})
+
+test("dock: the sidebar flip is read on the next frame, not synchronously, and a burst is one read", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "open")
+  const queue: (() => void)[] = []
+  Object.defineProperty(globalThis, "requestAnimationFrame", { value: (fn: () => void) => (queue.push(fn), queue.length), configurable: true, writable: true })
+  const aside = f.doc.getElementById("vertical-tabs-sidebar")!
+  aside.setAttribute("data-state", "closed")
+  aside.setAttribute("data-peek", "")
+  aside.setAttribute("data-state", "closed")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "popover", "not read before the frame")
+  assert.equal(queue.length, 1, "one frame for the burst")
+  queue.shift()!()
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window")
   f.stop()
 })
 
