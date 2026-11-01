@@ -20,7 +20,7 @@ The provider launches `claude` with `--setting-sources=`, so the CLI never reads
 ## Install
 Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
-"plugin": ["/path/to/apps/opencode-plugins/claude-proxy"]
+"plugins": ["/path/to/apps/opencode-plugins/claude-proxy"]
 ```
 Kind: server. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
 
