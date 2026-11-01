@@ -6,6 +6,7 @@ import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
+import { styles } from "./panel"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 type Info = { id: string; parentID?: string; agent?: string; title?: string; time: { created: number; busy?: number } }
@@ -476,13 +477,13 @@ const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
   return f.flush()
 }
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
-const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-inset")
+const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-pad")
 
-test("dock: with the sidebar open the button shows and hides the window, remembered in the store, and no popover opens", async () => {
+test("dock: with the sidebar closed the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   assert.equal(dockEl(f), null)
   assert.equal(inset(f), "0px")
   f.toggle().click()
@@ -511,37 +512,60 @@ test("dock: the window has no close button; only the header button hides it", as
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 
-test("dock: closing the sidebar hides the window and frees the chat, opening it restores the remembered choice, and the closed button opens the popover", async () => {
+test("dock: opening the sidebar hides the window, stores hidden and turns the button into the popover; closing it again does not bring the window back", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
-  await sidebar(f, "closed")
-  assert.equal(f.dockStore.visible, true)
+  assert.equal(dockEl(f).dataset.state, "open")
+  await sidebar(f, "open")
+  assert.equal(f.dockStore.visible, false)
   assert.equal(dockEl(f).dataset.state, "closed")
   assert.equal(inset(f), "0px")
   assert.equal(f.toggle().hasAttribute("aria-controls"), false)
   f.toggle().click()
   await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  assert.equal(f.dockStore.visible, true)
-  await sidebar(f, "open")
+  assert.ok(f.doc.querySelector("[data-agents-popover]"), "sidebar open: popover mode")
+  assert.equal(f.dockStore.visible, false)
+  await sidebar(f, "closed")
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  assert.equal(dockEl(f).dataset.state, "open")
-  assert.equal(inset(f), "328px")
+  assert.equal(f.dockStore.visible, false)
+  assert.ok(!dockEl(f) || dockEl(f).dataset.state === "closed")
+  assert.equal(inset(f), "0px")
   f.stop()
 })
 
-test("dock: no sidebar in the document (top tabs) behaves as closed: popover only", async () => {
+test("dock: window visible, sidebar opens => window hidden, popover NOT opened; it opens only on a button click", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "closed")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(dockEl(f).dataset.state, "open")
+  await sidebar(f, "open")
+  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "false")
+  assert.equal(inset(f), "0px")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null, "still closed after settling")
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  f.stop()
+})
+
+test("dock: no sidebar in the document (top tabs) is popover mode, never the window", async () => {
   const f = fixture()
   f.start()
   f.header()
@@ -553,7 +577,7 @@ test("dock: no sidebar in the document (top tabs) behaves as closed: popover onl
   f.stop()
 })
 
-test("dock: rows in the window keep the popover's behaviour (stop, open child)", async () => {
+test("dock: sidebar open is popover mode exactly: no window, no inset, rows in the popover", async () => {
   const f = fixture()
   f.start()
   running(f, ["c1"])
@@ -561,7 +585,81 @@ test("dock: rows in the window keep the popover's behaviour (stop, open child)",
   await sidebar(f, "open")
   f.toggle().click()
   await f.flush()
+  assert.equal(dockEl(f), null)
+  assert.equal(inset(f), "0px")
+  assert.equal(f.rows().length, 1)
+  assert.ok(f.doc.querySelector("[data-agents-popover]")!.contains(f.rows()[0]))
+  f.stop()
+})
+
+test("dock: rows in the window keep the popover's behaviour", async () => {
+  const f = fixture()
+  f.start()
+  running(f, ["c1"])
+  f.header()
+  await sidebar(f, "closed")
+  f.toggle().click()
+  await f.flush()
   assert.equal(f.rows().length, 1)
   assert.equal(dockEl(f).contains(f.rows()[0]), true)
   f.stop()
+})
+
+// Regression: data arrives late (sessions list, family, status, background tasks sync at different times). The heading
+// count and the rows come from one list, so after every step they agree, and rows appear as soon as the data does.
+test("dock: heading count and rows change together as data arrives late", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "closed")
+  f.toggle().click() // the window is mounted before any child data has synced
+  await f.flush()
+  const agree = (n: number, why: string) => {
+    const heading = dockEl(f).querySelector("[data-agents-heading]")!.textContent!
+    assert.match(heading, new RegExp(`${n} running`), `${why}: heading`)
+    assert.equal(f.rows().length, n, `${why}: rows`)
+    assert.equal(!!dockEl(f).querySelector("[data-agents-empty]"), n === 0, `${why}: empty state`)
+  }
+  agree(0, "nothing synced")
+  f.setInfos([child("c1"), child("c2")])
+  await f.flush()
+  agree(0, "children listed but idle")
+  f.setFamily(["parent", "c1", "c2"])
+  f.setRunning(["c1"])
+  await f.flush()
+  agree(1, "one child running")
+  f.setRunning(["c1", "c2"])
+  await f.flush()
+  agree(2, "both running")
+  f.setBackground([{ id: "sh1", type: "shell", label: "sleep 9" }])
+  await f.flush()
+  agree(3, "a shell arrives late")
+  f.setRunning(["c2"])
+  f.setBackground([])
+  await f.flush()
+  agree(1, "data retracts")
+  f.stop()
+})
+
+// Regression: inside the dock the list panel inherited a percentage max-height from the window and collapsed to its
+// heading, so "2 running" showed with no rows. Layout is not computed here, so the stylesheet is checked instead.
+const dockRule = (selector: string) => {
+  const match = styles.match(new RegExp(`${selector.replace(/[[\]().*+?^${}|]/g, "\\$&")}\\s*\\{([^}]*)\\}`))
+  return match?.[1] ?? ""
+}
+
+test("dock: the list panel never inherits a clipping max-height from the window, and the window's menu scrolls instead", () => {
+  const panel = dockRule("[data-agents-dock] [data-agents-panel]")
+  assert.match(panel, /max-height:\s*none/)
+  assert.match(panel, /overflow:\s*visible/)
+  assert.match(dockRule("[data-agents-dock] > [data-component=menu-v2-content]"), /overflow-y:\s*auto/)
+})
+
+test("dock: every selector the chat re-centring depends on is valid", () => {
+  const doc = globalThis.document
+  for (const line of styles.split("\n").filter((l) => l.includes("--agents-dock-pad") && l.includes("{") && !l.includes("@property"))) {
+    const selector = line.slice(0, line.indexOf("{")).trim()
+    if (!selector || selector.startsWith(":root") || selector.startsWith("/*")) continue
+    assert.doesNotThrow(() => doc.querySelector(selector), selector)
+  }
 })

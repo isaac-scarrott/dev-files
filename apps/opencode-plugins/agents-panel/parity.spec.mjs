@@ -1,5 +1,5 @@
 // Parity spec for the agents-panel dock window (and its header button) against the native siblings in the harness
-// window: left sidebar open (Side tabs layout), Panel mode on, the dock shown, one session open with running rows.
+// window: left sidebar CLOSED (Side tabs layout, sidebar toggled shut), Panel mode on, the dock shown, one session open with running rows.
 // Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/agents-panel/parity.spec.mjs
 
 const DOCK = "[data-agents-dock] > [data-component=menu-v2-content]"
@@ -11,14 +11,13 @@ const showDock = `
   const own = document.querySelector(${JSON.stringify(TOGGLE)});
   if (own.getAttribute("aria-expanded") !== "true") own.click();
 `
-// The host's tab context menu is the nearest native menu surface a harness window can show (the composer's background
+// The sidebar is closed, so the tab link has no usable box: the menu opens at a fixed point. The host's tab context menu is the nearest native menu surface a harness window can show (the composer's background
 // activity menu needs a running subagent, which no model can start here).
 const openNativeMenu = `
   ${showDock}
   if (!document.querySelector(${JSON.stringify(NATIVE_MENU)})) {
     const link = document.querySelector(${JSON.stringify(TAB_LINK)});
-    const b = link.getBoundingClientRect();
-    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: b.x + 40, clientY: b.y + b.height / 2 }));
+    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 600, clientY: 300 }));
   }
 `
 const closeNativeMenu = `document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));`
