@@ -21,7 +21,7 @@ Kind: library. Rebuild the importing plugin.
 None.
 
 ## Credits
-- OpenCode (MIT): the markup, class names and layout of each component, adapted from the desktop app's renderer source (2.2.5) at https://github.com/sst/opencode.
+- OpenCode (MIT): the markup, class names and layout of each component, adapted from the desktop app's renderer source (2.2.5) at https://github.com/anomalyco/opencode.
 
 ## Development
 `pnpm typecheck && pnpm test` (no build; consumers bundle the source).
