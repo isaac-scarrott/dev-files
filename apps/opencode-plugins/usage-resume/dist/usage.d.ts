@@ -51,6 +51,8 @@ export declare class UsageSource {
      * app's) is at least five minutes old and its own backoff has passed, so calling this often costs nothing.
      */
     refresh(): Promise<Reading[]>;
+    private inflight;
+    private refreshNow;
     /** Earliest moment any account may be fetched again. Used to avoid waking before a fresh reading is possible. */
     nextPollAt(accountIDs: readonly string[]): number;
     private fetchOne;

@@ -2,7 +2,9 @@ import type { Plugin } from "@opencode/plugin"
 import { detectUsageLimit, type ErrorLike, type UsageLimit } from "./detect.js"
 import type { Options } from "./options.js"
 import { decide, type Waiting } from "./plan.js"
-import { availability, emptyUsageState, UsageSource, type UsageState } from "./usage.js"
+import { LIMIT_LIKE, oneLine, type Samples } from "./diag.js"
+import type { Toggles } from "./toggles.js"
+import { availability, type UsageSource } from "./usage.js"
 
 /** The slice of the plugin context the resumer uses; tests supply a fake. */
 export type Host = Pick<Plugin.Context, "session" | "storage">
@@ -15,7 +17,6 @@ export interface Attempts {
 export interface State {
   waiting: Record<string, Waiting>
   attempts: Record<string, Attempts>
-  usage: UsageState
 }
 
 export interface Clock {
@@ -23,14 +24,20 @@ export interface Clock {
   sleep(ms: number): Promise<void>
 }
 
-const STORAGE_KEY = "state/v1"
 const MAX_ANNOUNCEMENTS = 3
 const REANNOUNCE_MS = 5 * 60_000
 // A run that started this long after the failure was recorded was started by someone else.
 const TOUCH_SLACK_MS = 2_000
 
 export function emptyState(): State {
-  return { waiting: {}, attempts: {}, usage: emptyUsageState() }
+  return { waiting: {}, attempts: {} }
+}
+
+/** One state key per project location: the server runs one plugin instance per location over one shared storage. */
+export function stateKey(directory: string): string {
+  let hash = 2166136261
+  for (const char of directory) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0
+  return `state/v2/${hash.toString(16)}`
 }
 
 export function formatTime(at: number, now: number): string {
@@ -50,6 +57,10 @@ export class Resumer {
     private readonly clock: Clock,
     private readonly usage: UsageSource,
     private readonly state: State,
+    private readonly toggles: Toggles,
+    private readonly samples: Samples,
+    private readonly directory: string,
+    private readonly key: string,
     private readonly log: (message: string) => void,
   ) {}
 
@@ -57,18 +68,17 @@ export class Resumer {
     host: Host,
     options: Options,
     clock: Clock,
-    usageDeps: Omit<ConstructorParameters<typeof UsageSource>[0], "now" | "authDir" | "snapshotPath">,
+    usage: UsageSource,
+    toggles: Toggles,
+    samples: Samples,
+    /** The project location this instance serves; it acts only on sessions that live there. */
+    directory: string,
     log: (message: string) => void = () => {},
   ): Promise<Resumer> {
-    const stored = (await host.storage.get(STORAGE_KEY).catch(() => undefined)) as Partial<State> | undefined
-    const state: State = { ...emptyState(), ...stored, usage: { ...emptyUsageState(), ...stored?.usage } }
-    const save = () => host.storage.set(STORAGE_KEY, state as never)
-    const source = new UsageSource(
-      { ...usageDeps, now: () => clock.now(), authDir: options.authDir, snapshotPath: options.snapshotPath },
-      state.usage,
-      save,
-    )
-    return new Resumer(host, options, clock, source, state, log)
+    const key = stateKey(directory)
+    const stored = (await host.storage.get(key).catch(() => undefined)) as Partial<State> | undefined
+    const state: State = { ...emptyState(), ...stored }
+    return new Resumer(host, options, clock, usage, state, toggles, samples, directory, key, log)
   }
 
   /** Session IDs currently waiting, for tests and diagnostics. */
@@ -80,22 +90,41 @@ export class Resumer {
     return this.state.attempts[sessionID]
   }
 
-  /** A run failed. If it is a Claude usage limit, start waiting for it to clear. */
+  /** A run failed. If it is a Claude usage limit and the session's toggle is on, start waiting for it to clear. */
   async onFailed(sessionID: string, error: ErrorLike | undefined, at: number): Promise<void> {
-    const limit = detectUsageLimit(error, at)
-    if (!limit) return
+    if (!error) return
     const info = await this.host.session.get({ sessionID }).catch(() => undefined)
-    if (!info || info.time.archived !== undefined) return
-    if (info.parentID !== undefined && !this.options.includeChildren) return
+    // Every location's instance hears every session's events; only the one serving the session's location acts.
+    if (info && info.location.directory !== this.directory) return
+    this.log(`${sessionID}: run failed type=${error.type ?? "?"} status=${error.status ?? "-"} message="${oneLine(error.message)}"`)
+    const limit = detectUsageLimit(error, at)
+    if (!limit) {
+      if (LIMIT_LIKE.test(`${error.message ?? ""} ${error.response?.body ?? ""}`)) {
+        this.log(`${sessionID}: error reads like a limit but is not one the detector knows; not resuming`)
+        await this.samples.saveFirst("unmatched-limit-like-error", error)
+      }
+      return
+    }
+    this.log(`${sessionID}: usage limit detected kind=${limit.kind ?? "unknown"} resetsAt=${limit.resetsAt ? new Date(limit.resetsAt).toISOString() : "not stated"}`)
+    await this.samples.saveFirst("limit-error", error)
+
+    if (!info) return this.skip(sessionID, "session not found")
+    if (info.time.archived !== undefined) return this.skip(sessionID, "archived")
+    const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created)
+    if (!toggle.on) return this.skip(sessionID, toggle.why)
     const attempts = this.state.attempts[sessionID]
     if (attempts && attempts.count >= this.options.maxAttempts) {
-      this.log(`${sessionID}: giving up after ${attempts.count} resumes`)
+      this.log(`${sessionID}: skip: attempt cap reached (${attempts.count}/${this.options.maxAttempts} resumes)`)
       await this.notice(sessionID, `Usage limit reached again after ${attempts.count} automatic resumes. Not resuming automatically.`)
       delete this.state.waiting[sessionID]
       await this.save()
       return
     }
     await this.register(sessionID, limit, at)
+  }
+
+  private skip(sessionID: string, reason: string): void {
+    this.log(`${sessionID}: not resuming: ${reason}`)
   }
 
   /** The session moved on without us (a user prompt, a run, deletion, completion): stop waiting for it. */
@@ -149,6 +178,7 @@ export class Resumer {
     const decision = await this.evaluate(waiting)
     waiting.dueAt = decision.action === "wait" ? decision.at : waiting.notBefore
     this.state.waiting[sessionID] = waiting
+    this.log(`${sessionID}: scheduled first check at ${new Date(waiting.dueAt).toISOString()} (not before ${new Date(notBefore).toISOString()}, attempt ${prior + 1}/${this.options.maxAttempts})`)
     await this.announce(waiting)
     await this.save()
   }
@@ -172,10 +202,14 @@ export class Resumer {
     if (info.time.busy !== undefined && (info.time.idle === undefined || info.time.busy > info.time.idle)) return this.drop(sessionID, "running again")
     if (info.time.busy !== undefined && info.time.busy > waiting.stalledAt + TOUCH_SLACK_MS) return this.drop(sessionID, "touched since the stall")
     if (info.outcome !== undefined && info.outcome !== "failed") return this.drop(sessionID, `finished ${info.outcome}`)
+    // The toggle can be turned off while waiting; it is read again at the moment of resuming.
+    const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created)
+    if (!toggle.on) return this.drop(sessionID, toggle.why)
 
     const decision = await this.evaluate(waiting)
     if (decision.action === "wait") {
       waiting.dueAt = decision.at
+      this.log(`${sessionID}: not yet available, next check at ${new Date(decision.at).toISOString()}${decision.unverified ? " (reset passed, usage not confirmed)" : ""}`)
       if (decision.unverified) waiting.unverified += 1
       await this.announce(waiting)
       await this.save()
@@ -198,7 +232,7 @@ export class Resumer {
   }
 
   private async drop(sessionID: string, reason: string): Promise<void> {
-    this.log(`${sessionID}: not resuming (${reason})`)
+    this.log(`${sessionID}: not resuming: ${reason}`)
     delete this.state.waiting[sessionID]
     await this.save()
   }
@@ -221,6 +255,6 @@ export class Resumer {
   }
 
   private save(): Promise<void> {
-    return this.host.storage.set(STORAGE_KEY, this.state as never)
+    return this.host.storage.set(this.key, this.state as never)
   }
 }

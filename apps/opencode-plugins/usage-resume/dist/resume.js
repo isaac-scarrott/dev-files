@@ -1,13 +1,20 @@
 import { detectUsageLimit } from "./detect.js";
 import { decide } from "./plan.js";
-import { availability, emptyUsageState, UsageSource } from "./usage.js";
-const STORAGE_KEY = "state/v1";
+import { LIMIT_LIKE, oneLine } from "./diag.js";
+import { availability } from "./usage.js";
 const MAX_ANNOUNCEMENTS = 3;
 const REANNOUNCE_MS = 5 * 60_000;
 // A run that started this long after the failure was recorded was started by someone else.
 const TOUCH_SLACK_MS = 2_000;
 export function emptyState() {
-    return { waiting: {}, attempts: {}, usage: emptyUsageState() };
+    return { waiting: {}, attempts: {} };
+}
+/** One state key per project location: the server runs one plugin instance per location over one shared storage. */
+export function stateKey(directory) {
+    let hash = 2166136261;
+    for (const char of directory)
+        hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+    return `state/v2/${hash.toString(16)}`;
 }
 export function formatTime(at, now) {
     const date = new Date(at);
@@ -22,22 +29,31 @@ export class Resumer {
     clock;
     usage;
     state;
+    toggles;
+    samples;
+    directory;
+    key;
     log;
     busy = false;
-    constructor(host, options, clock, usage, state, log) {
+    constructor(host, options, clock, usage, state, toggles, samples, directory, key, log) {
         this.host = host;
         this.options = options;
         this.clock = clock;
         this.usage = usage;
         this.state = state;
+        this.toggles = toggles;
+        this.samples = samples;
+        this.directory = directory;
+        this.key = key;
         this.log = log;
     }
-    static async create(host, options, clock, usageDeps, log = () => { }) {
-        const stored = (await host.storage.get(STORAGE_KEY).catch(() => undefined));
-        const state = { ...emptyState(), ...stored, usage: { ...emptyUsageState(), ...stored?.usage } };
-        const save = () => host.storage.set(STORAGE_KEY, state);
-        const source = new UsageSource({ ...usageDeps, now: () => clock.now(), authDir: options.authDir, snapshotPath: options.snapshotPath }, state.usage, save);
-        return new Resumer(host, options, clock, source, state, log);
+    static async create(host, options, clock, usage, toggles, samples, 
+    /** The project location this instance serves; it acts only on sessions that live there. */
+    directory, log = () => { }) {
+        const key = stateKey(directory);
+        const stored = (await host.storage.get(key).catch(() => undefined));
+        const state = { ...emptyState(), ...stored };
+        return new Resumer(host, options, clock, usage, state, toggles, samples, directory, key, log);
     }
     /** Session IDs currently waiting, for tests and diagnostics. */
     waiting() {
@@ -46,25 +62,44 @@ export class Resumer {
     attempts(sessionID) {
         return this.state.attempts[sessionID];
     }
-    /** A run failed. If it is a Claude usage limit, start waiting for it to clear. */
+    /** A run failed. If it is a Claude usage limit and the session's toggle is on, start waiting for it to clear. */
     async onFailed(sessionID, error, at) {
-        const limit = detectUsageLimit(error, at);
-        if (!limit)
+        if (!error)
             return;
         const info = await this.host.session.get({ sessionID }).catch(() => undefined);
-        if (!info || info.time.archived !== undefined)
+        // Every location's instance hears every session's events; only the one serving the session's location acts.
+        if (info && info.location.directory !== this.directory)
             return;
-        if (info.parentID !== undefined && !this.options.includeChildren)
+        this.log(`${sessionID}: run failed type=${error.type ?? "?"} status=${error.status ?? "-"} message="${oneLine(error.message)}"`);
+        const limit = detectUsageLimit(error, at);
+        if (!limit) {
+            if (LIMIT_LIKE.test(`${error.message ?? ""} ${error.response?.body ?? ""}`)) {
+                this.log(`${sessionID}: error reads like a limit but is not one the detector knows; not resuming`);
+                await this.samples.saveFirst("unmatched-limit-like-error", error);
+            }
             return;
+        }
+        this.log(`${sessionID}: usage limit detected kind=${limit.kind ?? "unknown"} resetsAt=${limit.resetsAt ? new Date(limit.resetsAt).toISOString() : "not stated"}`);
+        await this.samples.saveFirst("limit-error", error);
+        if (!info)
+            return this.skip(sessionID, "session not found");
+        if (info.time.archived !== undefined)
+            return this.skip(sessionID, "archived");
+        const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created);
+        if (!toggle.on)
+            return this.skip(sessionID, toggle.why);
         const attempts = this.state.attempts[sessionID];
         if (attempts && attempts.count >= this.options.maxAttempts) {
-            this.log(`${sessionID}: giving up after ${attempts.count} resumes`);
+            this.log(`${sessionID}: skip: attempt cap reached (${attempts.count}/${this.options.maxAttempts} resumes)`);
             await this.notice(sessionID, `Usage limit reached again after ${attempts.count} automatic resumes. Not resuming automatically.`);
             delete this.state.waiting[sessionID];
             await this.save();
             return;
         }
         await this.register(sessionID, limit, at);
+    }
+    skip(sessionID, reason) {
+        this.log(`${sessionID}: not resuming: ${reason}`);
     }
     /** The session moved on without us (a user prompt, a run, deletion, completion): stop waiting for it. */
     async onSettled(sessionID, completed = false) {
@@ -119,6 +154,7 @@ export class Resumer {
         const decision = await this.evaluate(waiting);
         waiting.dueAt = decision.action === "wait" ? decision.at : waiting.notBefore;
         this.state.waiting[sessionID] = waiting;
+        this.log(`${sessionID}: scheduled first check at ${new Date(waiting.dueAt).toISOString()} (not before ${new Date(notBefore).toISOString()}, attempt ${prior + 1}/${this.options.maxAttempts})`);
         await this.announce(waiting);
         await this.save();
     }
@@ -146,9 +182,14 @@ export class Resumer {
             return this.drop(sessionID, "touched since the stall");
         if (info.outcome !== undefined && info.outcome !== "failed")
             return this.drop(sessionID, `finished ${info.outcome}`);
+        // The toggle can be turned off while waiting; it is read again at the moment of resuming.
+        const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created);
+        if (!toggle.on)
+            return this.drop(sessionID, toggle.why);
         const decision = await this.evaluate(waiting);
         if (decision.action === "wait") {
             waiting.dueAt = decision.at;
+            this.log(`${sessionID}: not yet available, next check at ${new Date(decision.at).toISOString()}${decision.unverified ? " (reset passed, usage not confirmed)" : ""}`);
             if (decision.unverified)
                 waiting.unverified += 1;
             await this.announce(waiting);
@@ -171,7 +212,7 @@ export class Resumer {
         }
     }
     async drop(sessionID, reason) {
-        this.log(`${sessionID}: not resuming (${reason})`);
+        this.log(`${sessionID}: not resuming: ${reason}`);
         delete this.state.waiting[sessionID];
         await this.save();
     }
@@ -194,7 +235,7 @@ export class Resumer {
             .catch((error) => this.log(`${sessionID}: notice failed: ${String(error)}`));
     }
     save() {
-        return this.host.storage.set(STORAGE_KEY, this.state);
+        return this.host.storage.set(this.key, this.state);
     }
 }
 //# sourceMappingURL=resume.js.map
