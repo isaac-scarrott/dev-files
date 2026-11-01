@@ -479,11 +479,11 @@ const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
 const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-pad")
 
-test("dock: with the sidebar open the button shows and hides the window, remembered in the store, and no popover opens", async () => {
+test("dock: with the sidebar closed the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   assert.equal(dockEl(f), null)
   assert.equal(inset(f), "0px")
   f.toggle().click()
@@ -512,37 +512,39 @@ test("dock: the window has no close button; only the header button hides it", as
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 
-test("dock: closing the sidebar hides the window and frees the chat, opening it restores the remembered choice, and the closed button opens the popover", async () => {
+test("dock: opening the sidebar hides the window, stores hidden and turns the button into the popover; closing it again does not bring the window back", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
-  await sidebar(f, "closed")
-  assert.equal(f.dockStore.visible, true)
+  assert.equal(dockEl(f).dataset.state, "open")
+  await sidebar(f, "open")
+  assert.equal(f.dockStore.visible, false)
   assert.equal(dockEl(f).dataset.state, "closed")
   assert.equal(inset(f), "0px")
   assert.equal(f.toggle().hasAttribute("aria-controls"), false)
   f.toggle().click()
   await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  assert.equal(f.dockStore.visible, true)
-  await sidebar(f, "open")
+  assert.ok(f.doc.querySelector("[data-agents-popover]"), "sidebar open: popover mode")
+  assert.equal(f.dockStore.visible, false)
+  await sidebar(f, "closed")
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  assert.equal(dockEl(f).dataset.state, "open")
-  assert.equal(inset(f), "328px")
+  assert.equal(f.dockStore.visible, false)
+  assert.ok(!dockEl(f) || dockEl(f).dataset.state === "closed")
+  assert.equal(inset(f), "0px")
   f.stop()
 })
 
-test("dock: no sidebar in the document (top tabs) behaves as closed: popover only", async () => {
+test("dock: no sidebar in the document (top tabs) is popover mode, never the window", async () => {
   const f = fixture()
   f.start()
   f.header()
@@ -554,12 +556,27 @@ test("dock: no sidebar in the document (top tabs) behaves as closed: popover onl
   f.stop()
 })
 
-test("dock: rows in the window keep the popover's behaviour (stop, open child)", async () => {
+test("dock: sidebar open is popover mode exactly: no window, no inset, rows in the popover", async () => {
   const f = fixture()
   f.start()
   running(f, ["c1"])
   f.header()
   await sidebar(f, "open")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(dockEl(f), null)
+  assert.equal(inset(f), "0px")
+  assert.equal(f.rows().length, 1)
+  assert.ok(f.doc.querySelector("[data-agents-popover]")!.contains(f.rows()[0]))
+  f.stop()
+})
+
+test("dock: rows in the window keep the popover's behaviour", async () => {
+  const f = fixture()
+  f.start()
+  running(f, ["c1"])
+  f.header()
+  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(f.rows().length, 1)

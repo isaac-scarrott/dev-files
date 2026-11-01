@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { createEffect, onCleanup, Show } from "solid-js"
 import { cleanupOnce, closeSubagentTabs } from "./cleanup"
 import { styles } from "./panel"
-import { createSidebarOpen, dockState } from "./dock"
+import { createSidebar, dockState } from "./dock"
 import { installBackgroundOption } from "./setting"
 import { SubagentsToggle } from "./toggle"
 
@@ -32,18 +32,22 @@ export default Plugin.define({
       background.refresh()
     })
 
-    const sidebarOpen = createSidebarOpen()
+    const sidebar = createSidebar()
     const visible = () => ctx.stores.dock.value.visible
     const dock = {
-      sidebarOpen,
+      sidebar,
       visible,
       setVisible: (value: boolean) => {
         if (value !== visible()) ctx.stores.dock.update((draft) => { draft.visible = value })
       },
     }
+    // Opening the sidebar hides the window for good: the stored choice becomes hidden, so closing the sidebar later starts without it.
+    createEffect(() => {
+      if (sidebar() === "open") dock.setVisible(false)
+    })
     // The chat row reserves the window's width through this variable (see the dock rules in panel.tsx).
     createEffect(() => {
-      const inset = dockState({ enabled: enabled(), sidebarOpen: sidebarOpen(), visible: visible() }).inset
+      const inset = dockState({ enabled: enabled(), sidebar: sidebar(), visible: visible() }).inset
       document.documentElement.style.setProperty("--agents-dock-pad", `${inset}px`)
       onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-pad"))
     })

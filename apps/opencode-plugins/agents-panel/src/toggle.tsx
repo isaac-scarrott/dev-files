@@ -1,13 +1,13 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { chatCard, dockState } from "./dock"
+import { chatCard, dockState, type Sidebar } from "./dock"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast">
 type Input = { readonly session: MountedSession; readonly active: boolean }
 export type Dock = {
-  readonly sidebarOpen: () => boolean
+  readonly sidebar: () => Sidebar
   readonly visible: () => boolean
   readonly setVisible: (value: boolean) => void
 }
@@ -27,7 +27,7 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   const { ctx } = props
   const session = () => props.input.session
   const [open, setOpen] = createSignal(false)
-  const state = () => dockState({ enabled: true, sidebarOpen: props.dock.sidebarOpen(), visible: props.dock.visible() })
+  const state = () => dockState({ enabled: true, sidebar: props.dock.sidebar(), visible: props.dock.visible() })
 
   // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It opens a frame
   // after mounting so the entrance transitions, except when it is already shown at load.
