@@ -7,6 +7,8 @@ Every plugin under `apps/opencode-plugins/` has a `README.md` in this shape. It 
 
 <One sentence: what the user sees or gets.>
 
+> **Credit:** <only when something was borrowed: who, what (idea, layout model, interaction, code), licence, link to the source. 1 to 3 lines.>
+
 ![alt text](media/demo.gif) or ![alt text](media/demo.png), then for motion: [Full-quality video](media/demo.mp4)
 
 ## What it does
@@ -26,8 +28,7 @@ Kind: GUI (`gui-experimental`) or server. Restart the app for server plugins, Cm
 Table of options with defaults, or "None".
 
 ## Credits
-- <Project> (<licence>), <what was taken: the idea, the layout model, the interaction, code>: <link to the source file or repo>.
-Omit the section when nothing was borrowed. Say "inspired by" for an idea, "adapted from" for ported logic or numbers.
+Only when more than the headline credit applies: one bullet per source, `<Project> (<licence>): <what was taken>, <link to the file or repo>`. Say "inspired by" for an idea, "adapted from" for ported logic, numbers or markup. Omit the section when the top credit says it all.
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).
@@ -41,5 +42,8 @@ Omit the section when nothing was borrowed. Say "inspired by" for an idea, "adap
 - Store in `<plugin>/media/`; reference by relative path.
 
 ## Credit
+
+The credit sits above the fold: the blockquote right under the one-line description, before the hero media (a tall GIF pushes everything below it off screen). It is optional: leave it out when nothing was borrowed, never pad it. A vendored plugin (blindfold) keeps its upstream README as `README.upstream.md` and ours leads with the credit.
+
 
 Find borrowed material by reading the plugin's `DESIGN.md` and source comments for named projects (t3-code, Emil Kowalski's skills, native OpenCode source). Credit each at the grain it was used. t3-code is MIT (pingdotgg/t3code).

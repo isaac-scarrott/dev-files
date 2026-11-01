@@ -1,10 +1,10 @@
 # Host API
 
-Everything here is typed in `node_modules/@opencode/plugin/dist/gui/*.d.ts` for the app's own version — read those files when a signature matters, and prefer them over this page. It covers `2.2.5`.
+Everything here is typed in `node_modules/@opencode/plugin/dist/gui/*.d.ts` for the app's own version — read those files when a signature matters, and prefer them over this page. It covers `2.2.5`. Registry behaviour (order, scope, error isolation), lifecycle, built-in versus user differences and the job-to-extension-point guide are in [host-architecture.md](host-architecture.md).
 
 ## Registries — `ctx.add(Registry, item)`
 
-`ctx.add` returns a `Cleanup`, and an item may also be a getter (`() => item | undefined`) so it appears and disappears reactively. The host re-runs getters; keep returning the same object while it is unchanged.
+`ctx.add` returns a `Cleanup`, and an item may also be a function (`() => item | undefined`) so it appears, disappears and relabels reactively. The host re-runs the function when what it reads changes; keep returning the same object while it is unchanged. Read labels with `ctx.t` inside the function; a literal-typed field (`hidden: true`, `section`, `icon`, `menu`) needs a return annotation, `(): Command => ({ ... })`. Objects the host keeps stable (`Panel.list` tabs, items with a `render`) take getters: `get title() { return ctx.t("title") }`.
 
 | Registry | Adds | Required fields |
 | --- | --- | --- |
@@ -18,6 +18,9 @@ Everything here is typed in `node_modules/@opencode/plugin/dist/gui/*.d.ts` for 
 | `Style` | CSS the host adds to the document while contributed | a CSS string |
 | `LinkHandler` | Opens local paths and URLs from messages | `match`, `open`; `exists`, `priority` |
 | `Server` | Server sources the app lists (e.g. SSH hosts) | `ready`, `entries` |
+| `FileViewer` (`@opencode/plugin/gui/file`) | A viewer for a binary file kind | `kinds`, `View` |
+| `Registry.define<T>(id)` | A list your plugin owns; others `ctx.add` to it, you read `ctx.list(Registry)` | id under your plugin id |
+| `MenubarItem` (`@opencode/plugin/gui/main`, main process) | An item of the native app menu | `menu`, `id`, `label`, `run(window)` |
 
 The four `Slot`s:
 
@@ -38,7 +41,11 @@ The four `Slot`s:
 | `ctx.sessions` | `list()` sessions of open tabs, `current()` the routed one |
 | `ctx.screen` | `current()` mounted session screen: composer, comments, files |
 | `ctx.layout` | Open side-panel tabs, settings/project dialogs (`ctx.layout.open(...)`) |
-| `ctx.storage` | `store(key, {schema, initial, scope})` durable, `memory(key, {initial})` window-local, `remove()` |
+| `ctx.stores` | Stores declared in `Plugin.define({ stores })` with `Store.global(schema, initial)` (loaded before setup, `ctx.stores.name.value`) or `Store.session(...)` (`ctx.stores.name(session).value`, undefined until it loads). Prefer them over `ctx.storage`. |
+| `ctx.storage` | For keys known only at runtime: `store(key, {schema, initial, scope, from})` durable, `memory(key, {initial})` window-local, `remove()` |
+| `ctx.id`, `ctx.options`, `ctx.client` | The plugin's id (prefix of everything it creates), its `opencode.json` options, and the OpenCode client of the server that runs it (`ctx.client.rpc(Def)` reaches your server part; read it where you call it) |
+| `ctx.list(Registry)` | Reactive list of every contribution to a registry |
+| `ctx.links` | `open(link)` / `exists(link)` through the best `LinkHandler` |
 | `ctx.commands` | `run(id)` any published command, as the palette does |
 | `ctx.keybinds` | `keybind(commandId)` the effective binding for display |
 | `ctx.router` | `path()` the app's route |
@@ -52,7 +59,7 @@ The four `Slot`s:
 | `ctx.attention` | `notify({title, session})` system notification + sound, only while no window is focused |
 | `ctx.servers` | `list()` server ids, `get(id)` live `ServerRef` |
 | `ctx.workspaces` | `on("remove", ...)` and other workspace lifecycle events |
-| `ctx.ui` | Host components: `Button`, `Icon`, `Menu`, `Tooltip`, `Switch`, `TextField`, `Keybind`, `Markdown`, … |
+| `ctx.ui` | The 12 host components: `Icon`, `Button`, `IconButton`, `Tooltip`, `Menu`, `Loader`, `Dialog`, `Switch`, `TextInput`, `Keybind`, `Markdown`, `Code` |
 | `ctx.embeds` | `<ctx.embeds.View id visible />` for pages the main entry created |
 | `ctx.provide` / `ctx.use` | In-process contracts between plugins (`Contract.define`) |
 | `ctx.main` | Client for an `Ipc` your `main(ctx)` provides |
@@ -60,7 +67,7 @@ The four `Slot`s:
 
 ## Reactive data
 
-Read app state inside `createEffect` / `createKeyed`; Solid tracks the reads.
+Read app state in render, in `createMemo`, or in a `createKeyed` source; Solid tracks the reads. The core team's plugins import no `createEffect` ([host-architecture.md §7](host-architecture.md#7-idioms-of-the-core-teams-own-plugins)).
 
 ```ts
 for (const tab of ctx.tabs.list()) {
@@ -91,5 +98,5 @@ Fetch with `sync` and it lands in the same store: `void session.server.data.loca
 
 ## i18n and options
 
-- Declare `i18n: { en: { title: "…" } }` in the definition and read it with `ctx.t("title")`; `title` fields may be getters so they follow a locale change.
+- Declare `i18n: { en: { title: "…" } }` in the definition (every locale inline) and read it with `ctx.t("title")`; shared keys such as `common.*` fall through to the app. Labels follow a locale change through the function item form or getters (see Registries above).
 - Options from the `opencode.json` entry (`{ "package": "…", "options": { … } }`) arrive as `ctx.options`.

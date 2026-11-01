@@ -1,7 +1,7 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { chatCard, dockState } from "./dock"
+import { chatCard, claimPad, dockState } from "./dock"
 import { glide, present } from "./dock-motion"
 import { SubagentsList } from "./panel"
 
@@ -15,7 +15,6 @@ export type Dock = {
 const DOCK_ID = "agents-dock"
 // Below this window width the chat has no room beside a 288px window (the host narrows its own panels there too).
 const NARROW_BELOW = 900
-const PAD = "data-agents-pad"
 
 const GAP = 8
 
@@ -47,45 +46,63 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
     queueMicrotask(() => setCard(chatCard(wrap)))
   })
 
+  // Only a change of the window's shown state while this toggle is on screen with its card resolved is the user's doing
+  // (the header button, or the right panel hiding the window). Everything else - load, reload, a tab or route mounting or
+  // switching, a stored `visible`, the plugin re-mounting - is derived state: it appears final, with no glide, slide or
+  // fade. Each effect decides from its own previous value, never from a flag another effect set, because the order
+  // effects re-run in is not fixed.
+  //
   // The chat reserves the window's width while the card carries this attribute (see the dock rules in panel.tsx). An
   // attribute restyles only the few elements its rules name; a custom property would restyle the whole card subtree. It
-  // changes once: the content glides to its new place with a Web Animation (see dock-motion.ts).
-  let applied: { card: Element; inset: number } | undefined
+  // changes once: the content glides to its new place with a Web Animation (see dock-motion.ts), but only when the inset
+  // changes on the card this toggle already holds. The card is shared by every session's toggle (see claimPad), so this
+  // toggle only holds and drops its own claim.
+  const owner = {}
+  let held: Element | undefined
+  let heldInset = 0
   const release = () => {
-    applied?.card.removeAttribute(PAD)
-    applied = undefined
+    if (held) claimPad(held, owner, 0).write()
+    held = undefined
   }
   onCleanup(release)
   createEffect(() => {
     const target = props.input.active ? card() : undefined
     const next = state().inset
     if (!target) return release()
-    if (applied && applied.card !== target) release()
-    const play = applied ? glide(target, next - applied.inset) : undefined
-    target.toggleAttribute(PAD, next > 0)
-    applied = { card: target, inset: next }
+    if (held && held !== target) release()
+    const claim = claimPad(target, owner, next)
+    const play = held && next !== heldInset ? glide(target, claim.after - claim.before) : undefined
+    claim.write()
+    held = target
+    heldInset = next
     play?.()
   })
 
-  // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It enters and
-  // leaves with a Web Animation started as it mounts or as it is hidden, except when it is already shown at load.
+  // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. On a user change
+  // it enters and leaves with a Web Animation started as it mounts or as it is hidden; as derived state it just is there
+  // (or just is gone).
   const [mounted, setMounted] = createSignal(state().shown)
   const [dock, setDock] = createSignal<HTMLElement>()
-  let skipEnter = state().shown
   const seen = new WeakSet<HTMLElement>()
+  const onScreen = () => props.input.active && held !== undefined
+  let opening = false
   createEffect(() => {
     if (state().shown) setMounted(true)
   })
   createEffect(
-    on([dock, () => state().shown], ([el, shown]) => {
-      if (!el) return shown ? undefined : setMounted(false)
+    on([dock, () => state().shown], ([el, shown], previous) => {
+      const changed = previous !== undefined && previous[1] !== shown
+      if (!el) {
+        // The window is about to mount: remember whether the user asked for it.
+        if (shown) return void (opening = changed && onScreen())
+        opening = false
+        return setMounted(false)
+      }
       const fresh = !seen.has(el)
       seen.add(el)
-      if (shown && skipEnter) {
-        skipEnter = false
-        return
-      }
-      skipEnter = false
+      const animate = changed ? onScreen() : opening && shown
+      opening = false
+      if (!animate) return shown ? undefined : setMounted(false)
       const done = present(el, shown, fresh)
       if (!shown) void done.then(() => state().shown || setMounted(false))
     }),

@@ -2,6 +2,12 @@
 
 Source: https://github.com/emilkowalski/skills/tree/main/skills (`animate`, `animation-performance`, `improve-animations`, `emil-design-eng`). Re-read `animate` for components not covered here (dropdown, toast, drawer, stagger, drag).
 
+## Match the host
+
+A native sibling sets the motion: its property, duration, easing and whether it animates at all. A plugin element copies it exactly, and instant is a valid copy (the host's collapsibles show their content in one frame). Consistency across the app is the goal, so taste is not a reason to deviate.
+
+When a request or an idea asks for motion the sibling lacks (a smoother grow, a fade, a longer duration), measure the sibling first (frames in the harness plus its source), then recommend matching it, state the evidence in one line, and ask for an explicit yes before deviating. Record any accepted deviation in `DESIGN.md` under `## Decisions` with the sibling's behaviour next to it. Gates below apply only where no sibling exists.
+
 ## Gate first
 
 | How often the user triggers it | Decision |

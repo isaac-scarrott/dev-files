@@ -37,9 +37,12 @@ Setup-level Solid tests need the browser export condition (`tsx --conditions=bro
 - A failing server entry prevents its GUI loading. A GUI-only package needs no dummy server export.
 - Keep DOM and host-window access inside `setup`: the same file evaluates in the main process, where window modules are inert placeholders. Keep Node/Electron operations inside `main` for the inverse reason.
 - Local bundle rebuilds reload the GUI automatically. If stale, use the Plugins Reload action rather than restarting the background service to apply config.
+- Build the bundle and add `exports["./gui-experimental"]` **before** the plugin's first load. A service that resolved a directory without a GUI keeps `features.gui` unset even after the export and file appear and the config or server entry changes (✔ 2.2.5); only a service restart picks it up. Check `GET /api/plugin` for `features.gui` ([host-architecture.md §3](host-architecture.md#3-lifecycle)).
 
 ## Inspect installed source (read-only)
 
-App internals were recovered from `/Applications/OpenCode.app/Contents/Resources/app.asar` JavaScript source maps. Use an ASAR reader, or parse its four little-endian header integers: JSON directory length is the fourth; file-data base offset is `8 + second`. Walk `files.out.files.renderer.files.assets.files`, read each `.js.map` at `base + offset`, then match `sources` to `sourcesContent`. Narrow by source path before extracting.
+The renderer sources in the installed app equal tag `v2.2.5` of https://github.com/anomalyco/opencode (✔ four files byte-identical), so read the tag: `git clone --filter=blob:none --no-checkout` then `git checkout v2.2.5`, in a new empty directory. Use the app only to confirm a build that is not a tagged release.
+
+App internals can also be recovered from `/Applications/OpenCode.app/Contents/Resources/app.asar` JavaScript source maps. Use an ASAR reader, or parse its four little-endian header integers: JSON directory length is the fourth; file-data base offset is `8 + second`. Walk `files.out.files.renderer.files.assets.files`, read each `.js.map` at `base + offset`, then match `sources` to `sourcesContent`. Narrow by source path before extracting.
 
 Write extracts to the approved session temporary directory and record original source paths. Treat them as implementation evidence for that app version, not an API promise. Leave the installed app unchanged.

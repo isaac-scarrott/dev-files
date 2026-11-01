@@ -65,27 +65,76 @@ Sessions message each other in the shape Claude Code uses, so models trained on 
 - **Not built: `notify_when_idle`.** A one-shot idle notice needs a background subscription that outlives the tool
   call and a way to prompt the sender later; `wait_for_sessions` already covers the need.
 
-### Peer card (`src/gui.tsx`)
+### Peer row (`src/gui.tsx`, `src/card.ts`)
 
 The wrapper text is for the model. `send_message` also sets `metadata.peerMessage = { sessionID, title, ref, text }` on
 the prompt (`peers.ts` `peerMetadata`); the desktop reads it back from the message in the session store (`card.ts`
-`peerOf`). Only a message carrying it becomes a card, so a user who types the tag stays a user bubble. The wire format
-of the wrapper is unchanged.
+`peerOf`). Only a message carrying it becomes a row, so a user who types the tag stays a user bubble. The wire format
+of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wrapper tags and the trailer are never shown.
 
+- **Loading.** The host decides a plugin's `features` (`server`, `gui`) when its service starts and never re-detects them: in
+  2.2.5 an in-place update that adds `./gui-experimental` reloads the server half (`loading plugin`) while `/api/plugin`
+  keeps `features: {server: true}`, and a config re-save or `POST /api/location/reload` does not change it. A service
+  started before the GUI export existed therefore shows the wrapper and trailer as a user bubble and gives the Plugins row
+  no Reload/switch until `opencode service restart`. A test keeps the export and the built bundle in the package.
+  A hot reload of the bundle in a live window can leave a stale mount; reload the window to be sure when testing.
 - **Where.** The host has no message-renderer registry, so the GUI entry decorates mounted `[data-timeline-row=UserMessage]`
   rows whose id is a peer message. The row, its id and its footer slot stay the host's (virtualization, copy, retry,
   timeline-rail ids); only the host's `[data-component=user-message]` inside it is `display: none` and ours is appended
-  in the same slot, in the same turn as the host adds the row (a `MutationObserver` runs before paint). Cleanup removes
-  cards and the row attribute.
-- **Markup.** The card wears the host's user-message `data-slot`s, so the host's CSS gives it the bubble's padding,
-  radius, type and its hover-revealed footer. Differences by design: left-aligned, fill `color-mix(info 5%, layer 01/02)`
-  (about #eef1f7 light, follows dark), 12px top padding for the `From` pill on the top edge, no model label.
-- **Body.** Plain text, `white-space: pre-wrap`: the host does not render Markdown in user bubbles.
-- **Footer.** `ctx.ui.IconButton` (reply, `arrow-undo-down`) and `ctx.ui.Menu`; both open the sender with
-  `ctx.tabs.open({ server, id }, { focus: true })`, Copy text uses `ctx.system.copy`.
-- **Not done: sender-side "Sent to X · delivered".** The call runs through Code Mode `execute`; the host has no tool-part
-  renderer registry, and the only route is rewriting the DOM of the tool row. Skipped.
-- **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; nothing to change.
+  in the same slot, in the same turn as the host adds the row (a `MutationObserver` runs before paint). It is rendered
+  under the setup owner (`runWithOwner`): the host's Markdown needs the app's contexts, which a rAF callback does not have.
+  Cleanup removes rows and the row attribute.
+- **Design.** A left-aligned grey rounded row in the style of the host's background-subagent row, replacing the user's
+  right-hand bubble: `[direction icon] Sender title  message on one line …  [open-session button][triangle]`.
+  Surface `--v2-background-bg-layer-02`, no hard-coded colours (a test greps the stylesheet), so both themes follow. No
+  times, chips or labels. `width: fit-content` up to the message column (696px), like the host row.
+- **Audit facts (2.2.5, measured in the harness).** Host subagent row: `[data-component=collapsible].tool-collapsible >
+  a[data-slot=collapsible-trigger]` holding `task-tool-card > task-tool-surface`; 36px high, padding `8px 12px`, radius
+  8px, background `bg-layer-02` (#f2f2f2 light), gap 8px; title `task-tool-title` 13px/530/20px, letter-spacing
+  -0.04px; subtitle weight 440; trailing action slot hidden at rest, opacity 0→1 over 150ms on hover/focus. Basic-tool
+  action buttons (`[data-slot=basic-tool-action]`): 24px ghost icon button, radius 6px, revealed on `:hover` /
+  `:focus-within` / `(hover: none)`. Questions arrow: 14px `fill-triangle-down`, rotates -90°→0 in 150ms ease. The host
+  catalog has `arrow-up-right` but no down-left arrow.
+- **Header.** A 16px direction icon, drawn (an inline SVG, as `ctx.ui.Icon` only takes catalog names): the catalog's `arrow-up-right` path turned to down-left
+  (`M5 6.44V11H9.56M5 11L11 5`, 1px stroke, `currentColor`, `text-faint`). Title weight 530, one line, ellipsis at 280px.
+  Only received messages exist today (see "Sender side"), so there is no outgoing arrow.
+- **Trailing slot.** Fixed 42px wide in both states, so revealing it never re-wraps the text: a 16px triangle (host
+  Questions look: 14px `fill-triangle-down` via `ctx.ui.Icon`, opacity 0 at rest, 1 on hover, focus or open, rotates
+  with 150ms ease) and the Open-session button: `ctx.ui.IconButton` (`arrow-up-right`, ghost, normal = 24px, radius 6px)
+  inside `ctx.ui.Tooltip` "Open session", `aria-label` "Open session <title>", its own tab stop, revealed like
+  `basic-tool-action`. It opens the sender with `ctx.tabs.open({ server, id }, { focus: true })`. Hidden when the
+  message fits on one line and has one block (nothing to expand).
+- **Expand.** One text element holds the message in both states, rendered with `ctx.ui.Markdown` (the timeline's
+  renderer: lists, code, links). Collapsed, its height is 20px and the first Markdown block is line-clamped to one line with a
+  real ellipsis; expanded, the clamp lifts and the height is `auto`, so the text keeps its left edge (right of the title)
+  and its first line stays where it was. There is no separate body and no fade-swap. The message goes through
+  `escapeMarkup` first: the host's Markdown passes inline HTML through (`<b>` bolds, `<script>` vanishes), so `&` and `<`
+  outside code are entities and show as typed; code is untouched. Code blocks lose their vertical padding so a message
+  that starts with one keeps its first line in place. The row is `fit-content`; its width does not change on expand.
+- **Input.** The row has a native `<button data-slot=peer-trigger>` over it (`aria-expanded`, `aria-controls`, Enter and
+  Space), focus ring `1px solid text-accent, offset 2px` on the row (the host's fold-toggle ring). A click anywhere on the
+  row toggles it, except the Open-session button, links and the expanded text: open text is a selection zone, so a click
+  there does not close the row. Expandability is measured when clamped (`scrollHeight` of the first block, or more than
+  one block) and re-measured as the host's Markdown finishes rendering.
+- **Motion: the host's, instant (decided by the user: consistency and feel, not taste).** Expand and collapse swap the
+  clamp and the height in one frame; no height animation, no scroller anchoring. Evidence from 2.2.5 in the harness:
+  the host's collapsibles (Used N Execute, Questions, user message Show more) show and hide content in a single frame and
+  animate only the arrow (150ms ease rotate), and `[data-slot=collapsible-content]` has no height transition. The host
+  also does not compensate the scroll position: with the timeline at the bottom, opening Execute moved its header 180px
+  and opening Questions 70px; in the harness session it re-pins to the bottom even from 450-800px above it (Execute
+  header 352 → -106px). The row copies that exactly: one frame changes (row height 36 → 203px), and the host then
+  scrolls to the bottom, so the header moves just as a host row's does (167px pinned, up to 425px from higher up). There is no
+  state where the header stays put, and none is added. The row's own layout is stable in that frame: x of header and
+  first line and the row width change by 0.00. The triangle rotates 150ms ease and the arrow and Open-session button reveal over 150ms opacity, as
+  the host's. Reduced motion needs no branch. An earlier design grew the height over 200ms and held the header against
+  the scroller; both were removed.
+- **Sender side: not done.** The call runs through Code Mode `execute`; the host has no tool-part renderer registry and
+  the only route to a "Sent to X" row is rewriting the DOM of the tool row. Skipped.
+- **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; the timeline rail
+  ignores peer messages (its own tests).
+- **Parity.** `parity.spec.mjs` runs the row against the host's subagent row, the arrow against the Questions arrow
+  (opacity curve, declarations, reduced motion), and records the host action button as N/A (it only exists inside an
+  opened Execute part): 109 PASS, 0 FAIL, 33 N/A, each N/A with its reason in the spec.
 
 ## What a child sees
 
