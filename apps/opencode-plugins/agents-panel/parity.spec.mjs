@@ -55,6 +55,7 @@ export default {
         "width": "the row fills its container: a 288px window against the tab menu's 156px",
         "box.width": "same",
         "icon": "a row leads with the spinner or a console icon; the tab menu's items carry none",
+        "hover.animations": "a running row's spinner loops (the host's radar, 1.8s, linear, infinite); the tab menu's items have no animation",
         "hover.changed-props": "the host highlights an item from Kobalte's pointer handler before the first sampled frame; both declare no transition (decl rows) and the hover style state matches",
       },
       style: { states: ["rest", "hover", "focus"] },

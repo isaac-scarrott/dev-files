@@ -117,24 +117,49 @@ Reason for each DOM hook, against the "no extension point" list in [host-archite
 
 ## Performance
 
-Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). The full seeded-session trace (bare vs plugin, three runs) was not run; this change removes standing costs, measured with a happy-dom script on the Settings option installer (old `setting.ts` from master against the new one, mode off, Settings never opened): 1000 `<p>` appends under the app root in batches of 10, count of `MutationObserver` callbacks.
+Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). Private harness (OpenCode 2.2.5, 2000x1190), the user's GUI plugin set from `.config/opencode/opencode.json` minus blindfold, claude-proxy and usage-resume (server side, secrets), the plugin options of orchestrator-tools dropped. A stub OpenAI-compatible provider holds three subagent sessions running (so the dock shows three spinner rows) and streams a reply into a 240-message thread. Mode on, dock shown. Scenarios: idle 30 s; scroll 40 fast wheel ticks down and 40 up; switch 10 tab switches; stream 15 s of a streaming reply. Metrics from CDP `Performance.getMetrics` (per second of the window), `MutationObserver` callbacks counted by wrapping the constructor (all plugins and the host), `longtask` entries. Three runs each, median. Bare is the same set without agents-panel; master is `master` at 8497253.
 
-| Standing cost (mode off, Settings closed) | Before | After |
+| Scenario, metric | bare | master | branch | master (fresh run) | branch (fresh run) |
+| --- | --- | --- | --- | --- | --- |
+| idle script ms/s | 0.28 | 0.30 | 0.36 | 0.38 | 0.41 |
+| idle style ms/s | 1.37 | 2.32 | 2.82 | 4.21 | 3.08 |
+| idle task ms/s | 6.3 | 8.1 | 9.5 | 12.2 | 10.5 |
+| idle MutationObserver callbacks/s | 0 | 0 | 0 | 0.17 | 0 |
+| scroll script ms/s | 136.6 | 137.2 | 137.2 | 138.3 | 138.0 |
+| scroll task ms/s | 382.8 | 408.2 | 413.4 | 417.1 | 412.7 |
+| switch script ms/s | 15.8 | 22.4 | 22.9 | 23.1 | 23.6 |
+| switch task ms/s | 155.8 | 178.7 | 182.8 | 180.7 | 188.9 |
+| switch long tasks (10 switches) | 0 | 3 | 1 | 2 | 1 |
+| stream script ms/s | 16.4 | 16.9 | 17.0 | 16.7 | 16.9 |
+| stream task ms/s | 170 | 199.8 | 202.7 | 201.6 | 196.8 |
+
+Branch and master are equal within run-to-run spread on every row (idle style and task swing 2x between runs of the same build); the branch's idle MutationObserver callbacks are 0 on every run. The plugin set's cost over bare (switch +7 ms/s script, stream +30 ms/s task) is the same on master and does not change here: the bars (within 3% of bare scripting, no new long task) are **not** met by the set, nor by this plugin alone, and this pass did not try to meet them (the per-plugin split needs one run per plugin). Heap after GC, 100 tab switches: branch 32.9 -> 39.7 MB, master 33.6 -> 39.1 MB (flat after the first 20 switches on both).
+
+What this change removes, measured in the real window and, for the Settings installer, in happy-dom:
+
+| Standing cost | master | branch |
 | --- | --- | --- |
-| Settings `MutationObserver` observing | `<body>` `childList`, **subtree** | `<body>` `childList` only (portals) |
-| Observer callbacks for 1000 app-root mutations | 100 (+ an rAF and a `querySelector` each) | 1 |
-| Document-level listeners | 5 (capture `pointerup`, `keydown` x2, `pointermove`, `focusin`) | 0 (listeners sit on the Settings listbox and go with it) |
-| Module-level observers at import (spinner phase) | `ResizeObserver` + `IntersectionObserver`, never disconnected | none; created per spinner, disconnected with it |
-| Hand-made `<style>` in `<head>` | one, never removed, again on every Reload | none (`ctx.add(Style)`) |
-| Header reorder rule | applies to every session header | only beside our toggle (`:has([data-agents-toggle])`) |
-
-Not measured: idle main-thread time, streaming scripting delta and switch cost in the real app (the 3% bars) were not run.
+| Settings `MutationObserver` (real window, outside Settings) | connected for the whole window life | disconnected; connected only while the route is `/settings` (connected 1 -> 0 on leaving, verified) |
+| Observer callbacks for 1000 app-root mutations (happy-dom, mode off) | 100 | 1 |
+| Document-level listeners the plugin adds | 5 | 0 (58 vs 63 counted for the whole window; the listeners sit on the Settings listbox) |
+| Module-level spinner observers at import | 2, never disconnected | none; per spinner, disconnected with it |
+| Hand-made `<style>` in `<head>` | one, never removed | none (`ctx.add(Style)`) |
+| Header reorder rule | `order: -1` on the host's context button in every session header, mode on or off | only beside our toggle: with the mode off the header's computed `order` is 0, as on bare |
 
 ## Changes from the owner pass
 
 - **Spinner from native-ui.** `spinner.tsx`, `spin-phase.ts`, `spinner-radar.ts` were byte copies; they are deleted and `ProgressSpinner` is imported from `../../native-ui/src`. To make that safe, native-ui got a backward-compatible change: `spinnerCss` (the keyframes, also in `nativeUiCss`) replaces the spinner's own `<style>` injection, and `syncSpinPhase` creates its observers per spinner inside the owner and disconnects them on cleanup. A consumer of `ProgressSpinner` must now register `spinnerCss` (or `nativeUiCss`) with `ctx.add(Style, ...)`; only this plugin and the demo use the spinner today.
-- **Settings option scoped.** Idle, one observer on `<body>`'s direct children (portals) wakes the installer. Once the select or its listbox is found, only those subtrees are observed, and the keyboard and pointer listeners sit on that listbox. The option is still offered when the mode is off, since that is the only way to turn it on.
-- **Header rule scoped** so the host header is not re-ordered when the mode is off.
+- **Settings option scoped to the route.** The first design assumed Settings was a body portal. The real DOM (captured in `test/fixtures/settings-background-activity.html`) shows the page is a route, `/settings`, rendered inside `#root`, and only the select's popup is a portal under `<body>`. So the installer takes `active()` (`ctx.router.path().startsWith("/settings")`) and observes `<body>` (childList, subtree) only while it is true; on any other route the observer is disconnected and nothing runs. The keyboard and pointer listeners sit on the listbox, which the host removes with the popup. The option is still offered when the mode is off, since that is the only way to turn it on.
+- **Header rule scoped** so the host header is not re-ordered when the mode is off (`order` computed 0 against bare, was -1).
 - **Dropped the load-time `cleanupOnce`.** It closed child-session tabs once per load as a migration for tabs "an older version of this plugin opened per subagent" (added in 78bbd26, 2026-10-31, one day before this change), and could close tabs the user opened on purpose. The command "Close subagent tabs" stays. The `ctx.storage.memory` once-flag went with it.
 - **`openInCurrentTab`** (AP-9) is kept: no API navigates the current tab; recorded in Decisions above. Re-check each release.
 - Effects in `toggle.tsx`, `gui.tsx` and `panel.tsx` are untouched on purpose; the keyed rewrite is a later pass.
+
+## Live verification (private harness, 2.2.5)
+
+- Settings > Timeline > Background activity, mode off, on, and after Cmd+R: "Panel" is the fifth option, Down/Up from Left reach it and Up from it returns to Right, Enter and a pointer click both select it (host value commits Hidden, trigger shows Panel, check moves), picking a host option while on turns the mode off, Escape closes; the listbox sequences are line-for-line identical on master and branch.
+- Spinners: three running rows, identical opacity vectors on all three at 12 samples (in phase), 12 distinct frames, 24 infinite animations at start time 0, duration 1800 ms; reduced motion stops them; light and dark screenshots; same on master.
+- Header: mode off, children and rects equal bare; mode on, the context button moves ahead of the toggle (`order -1`) with the dock open or closed, same x as master.
+- Dock: reload with the window open, centre 852 on every frame and opacity 1 (no animation); toggle hide and show glide as on master; 0 of 100 tab switches ended with the window open and no pad; count badge renders `3` and the tooltip reads "Subagents · 3".
+- `parity.mjs --spec parity.spec.mjs`: 327 PASS, 0 FAIL on the branch. The one failure on both master and branch was `hover.animations` on the dock row: with running subagents the row's spinner loops, which the native tab-menu item has not; it is now an `allow` in the spec with that reason.
+- Not live: popover mode (right panel open) was not re-driven; the pad claim and glide code is untouched.

@@ -69,11 +69,13 @@ function fixture() {
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
   const [mode, setMode] = createStore({ enabled: true })
+  const [route, setRoute] = createSignal("/settings")
   const [sideOpen, setSide] = createSignal(false)
   const [dockStore, setDockStore] = createStore({ visible: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
+    router: { path: () => route(), routing: () => false },
     sessions: { current: mounted },
     layout: { ready: () => true, side: { opened: () => sideOpen() } },
     tabs: {
@@ -112,7 +114,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setRoute, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -415,6 +417,43 @@ test("setting: a fifth option clones the host's markup and sits after the host o
   assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
   assert.equal(ours.getAttribute("aria-selected"), "false")
   assert.equal(f.doc.getElementById("o-center")!.hasAttribute("data-selected"), true)
+  f.stop()
+})
+
+const REAL = readFileSync(new URL("../test/fixtures/settings-background-activity.html", import.meta.url), "utf8")
+
+test("setting: the host's real markup (select in the page, listbox in a body portal) gets the fifth option", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  const ours = option(f)!
+  assert.ok(ours)
+  assert.equal(ours.parentElement!.id, "select-cl-29-listbox")
+  assert.equal(ours.parentElement!.lastElementChild, ours)
+  assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
+  assert.equal(f.doc.querySelectorAll("[data-agents-option]").length, 1)
+  f.stop()
+})
+
+test("setting: off Settings nothing is injected or observed; arriving there injects, leaving stops", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.setRoute("/")
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  assert.equal(option(f), null, "no option on another route")
+  f.setRoute("/settings")
+  await settle()
+  assert.ok(option(f), "option appears once Settings is the route")
+  f.setRoute("/")
+  await settle()
+  option(f)!.remove()
+  f.doc.getElementById("select-cl-29-listbox")!.append(f.doc.createElement("li"))
+  await settle()
+  assert.equal(option(f), null, "a mutation off Settings is not observed, so nothing is put back")
   f.stop()
 })
 

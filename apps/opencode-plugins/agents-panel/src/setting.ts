@@ -6,6 +6,8 @@ export type BackgroundOption = {
   label: string
   /** Whether "Panel" is the chosen mode. Reactive reads are fine; it is polled on every pass. */
   enabled(): boolean
+  /** Whether the Settings page is the route. The page mounts inside the app root, so nothing is observed outside it. */
+  active(): boolean
   set(enabled: boolean): void
 }
 
@@ -91,11 +93,10 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
   }
 
   const sync = () => {
+    if (!option.active()) return
     const root = document.querySelector<HTMLElement>(ROOT)
     const on = option.enabled()
     if (!root) return
-    // The select's own subtree: the host re-renders its value text there.
-    watching.observe(root, { childList: true, subtree: true })
     const trigger = root.querySelector<HTMLElement>('[data-component="select-v2"]')
     const value = root.querySelector<HTMLElement>('[data-slot="select-v2-value-text"]:not([data-agents-value])')
     root.toggleAttribute(ON, on)
@@ -114,7 +115,6 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
 
     const list = document.getElementById(`${root.id}-listbox`)
     if (!list) return
-    watching.observe(list, { childList: true, subtree: true })
     wire(list)
     const built = list.querySelector<HTMLElement>(`[${OPTION}]`) ?? build(list)
     if (!built) return
@@ -176,14 +176,19 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
     for (const type of ["pointermove", "focusin"]) list.addEventListener(type, release, opts)
   }
 
-  // Idle, only the portals mounting under <body> wake this (a dialog, a popup); the app root with the streaming timeline
-  // is not observed. The settings select and its listbox are watched from the first time they are found.
+  // Observed only while Settings is the route: its page mounts inside the app root, and its select popup is a portal under
+  // <body>. On any other page nothing is observed and no listener exists.
   const isOwn = (node: Node) => node.nodeType !== 1 || (node as Element).matches(`[${OPTION}], [data-agents-value]`)
   const watching = new MutationObserver((records) => {
     if (records.some((record) => [...record.addedNodes, ...record.removedNodes].some((node) => !isOwn(node)))) schedule()
   })
-  watching.observe(document.body, { childList: true })
-  schedule()
+  const refresh = () => {
+    if (disposed) return
+    if (option.active()) watching.observe(document.body, { childList: true, subtree: true })
+    else watching.disconnect()
+    schedule()
+  }
+  refresh()
 
   const dispose = () => {
     disposed = true
@@ -192,5 +197,5 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
     for (const node of document.querySelectorAll(`[${OPTION}], [data-agents-value]`)) node.remove()
     for (const node of document.querySelectorAll(`[${ON}]`)) node.removeAttribute(ON)
   }
-  return Object.assign(dispose, { refresh: schedule })
+  return Object.assign(dispose, { refresh })
 }

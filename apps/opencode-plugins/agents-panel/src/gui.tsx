@@ -22,6 +22,7 @@ export default Plugin.define({
     const background = installBackgroundOption({
       label: OPTION_LABEL,
       enabled,
+      active: () => ctx.router.path().startsWith("/settings"),
       set: (value) => {
         if (value !== enabled()) ctx.stores.mode.update((draft) => { draft.enabled = value })
       },
@@ -29,6 +30,7 @@ export default Plugin.define({
     onCleanup(background)
     createEffect(() => {
       enabled()
+      ctx.router.path()
       background.refresh()
     })
 
