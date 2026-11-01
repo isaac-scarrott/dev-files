@@ -1,41 +1,89 @@
 # file-viewer: design
 
-Status: the detection engine is built and tested. No UI is wired (`src/gui.ts` registers nothing). Research behind the
-architecture: `.git/orchestration/file-viewer-research.md` (OpenCode 2.2.5).
+Opens file paths from assistant messages in the Files plugin's side-panel tab. It extends two host behaviours and nothing else.
+Research behind it: `.git/orchestration/file-viewer-research.md` (OpenCode 2.2.5, source tag `v2.2.5`).
 
 ## Decisions
 
 Settled with the user:
 
-- Open files in a **side panel tab**, native looking.
-- Formats: video (mp4 mov webm m4v), image (png jpg gif webp svg avif), audio (mp3 m4a wav ogg flac), markdown, CSV, JSON, PDF.
-- Detection is for **inline code and links only**. Fenced code blocks and plain prose are not linkified.
-- The file must exist. Roots are the **project directory or `~`** only; absolute paths elsewhere are refused.
+1. **Reuse the host's viewer.** No new viewer, route, library or `Panel`. The Files plugin already opens image, video (ranged reads), audio, PDF, Markdown and CSV in a native side-panel tab; JSON shows as highlighted text. The plugin hands it an absolute path with `ctx.links.open`.
+2. **No path policy.** No roots rule, no denylist, no real-path check. The host already opens any absolute path a message names (it lists the parent directory and reads the file from there), so a partial policy in the plugin would only look safe. The plugin expands `~` and `$HOME`, resolves relative paths against the session directory, collapses `.` and `..`, and leaves symlinks to the host. `~user` is not handled: another user's home cannot be read from the renderer or the server part reliably, so it stays declined.
+3. **Home directory from a server part.** `server.ts` registers an RPC `home` that returns `os.homedir()`; the window asks once per server and keeps the answer (a failed lookup is forgotten and retried). A session on a remote server is declined, because `~` is the local machine's home. **First install needs a service restart**, because the host fixes a plugin's parts per service lifetime (host-architecture.md §3). Later rebuilds hot-reload.
+4. **Spaces in inline code: a scoped DOM fallback** (`spaced-code.ts`, below). Can be switched off with the plugin option `spacedCode: false`.
+5. **Timestamps are parsed but ignored.** `file.mp4#t=72` and `@1:12` open the file; nothing seeks.
+6. **Relative paths keep the host's fuzzy search.** The plugin declines everything it cannot resolve exactly, so `docs/a.md` (no spaces) never reaches it, and a spaced name that is not found at the exact path falls back to the host (`ctx.links.exists/open` with our own origin). Relative paths use the directory the Files API reports (`files.root`, the session's directory, which is the worktree for a worktree session).
 
-Open (need the user): see "Open questions" at the end.
+## How it fits the host
 
-## What the host already does (so what the plugin adds)
+The host links an inline code span or a link only if its `LinkHandler.exists` says the file is there, and opens it with `LinkHandler.open`. The Files plugin's handler has priority 0 and matches everything.
 
-2.2.5 already linkifies inline code and `[x](path)` links whose file exists, opens them in a side-panel tab, and has native
-viewers for every format above except JSON (shown as highlighted text). It refuses `~` paths, never sees a path with a space in
-inline code, drops `#t=` and `@1:12`, and applies no root or denylist policy. The plugin therefore does not need its own
-viewer, route or library to meet the brief; it fills the detection and policy gaps and hands an absolute path to the host.
+`gui.ts` adds one `LinkHandler` with **priority 5**:
 
-Hook: one `LinkHandler` (`priority` above the Files plugin's 0). `exists(link)` runs `parseSpan(link.href, {origin: "decoded-href"})`
-then `resolve`. `open(link)` rewrites to the absolute real path and calls `ctx.links.open({...link, href, origin: ctx.id})`; `match`
-returns false for our own origin so the Files plugin opens it. Not built yet; see open questions 1 to 3.
+- `match(link)`: the text is a `~` or `$HOME` path, or a name with spaces and a known extension (`claim` in `expand.ts`), and the link is not ours (`origin !== ctx.id`), not `exact`/`background` (palette, agent previews) and has no `base` (links inside a previewed document). Everything else is declined, so the host behaves exactly as before.
+- `exists(link)`: expand, then `files.exists(path)` (the host's own parent-directory listing, nothing read), cached like the host's check (60 s hit, 5 s miss, 512 entries). If the exact file is missing, answer with the host's own check (`ctx.links.exists({...link, origin: ctx.id})`).
+- `open(link)`: the same lookup, then `ctx.links.open({...link, href: absolute + #L.., origin: ctx.id})`, which the Files handler opens; when nothing exact exists, the original link goes to the host unchanged.
+
+What the host did before this plugin, and what it does with it, measured in the harness (control run, then with the plugin; same seeded message):
+
+| Text in a message | Host alone | With the plugin |
+| --- | --- | --- |
+| `` `~/dir/video.mp4` `` (also png, pdf, md, csv, json) | plain code, not clickable | link, opens in the Files tab; the video loads (readyState 4, 3 s) and plays |
+| `[x](~/dir/readme.md)` | link that does nothing | opens |
+| `` `$HOME/dir/shot.png` `` | plain code | opens |
+| `` `~/dir/My Video.mp4` `` (space) | plain code | link, opens |
+| `` `docs/My Notes.md` `` (space, relative) | plain code | link, opens |
+| `` `docs/plain.md` ``, absolute path | link, opens | unchanged |
+| missing file (`~/dir/missing.mp4`, `docs/Missing Notes.md`) | plain code | plain code |
+| `npm run build`, `ffplay ~/x.mp4` | plain code | plain code |
+| inside a fenced block | plain | plain |
+
+## Spaced inline code (workaround)
+
+`spaced-code.ts` **is a workaround against a host limit, not a feature.** The host offers an inline code span to the link handlers only if its text has no whitespace (`inlineCodeKind` in `session-ui/src/components/markdown-inline-code-kind.ts`), so no `LinkHandler` ever sees `` `~/Movies/My Video.mp4` ``.
+
+What it does, as narrowly as possible:
+
+- One `MutationObserver` on `document.body` with `childList` + `subtree` and an `attributes` filter of `data-inline-code-kind`. It reads added nodes with `getElementsByTagName("code")` (a live collection, no selector matching), keeps `code` whose parent is not `pre` and which sits in `[data-component="markdown"]`, and queues them.
+- A queue flushed in one `requestAnimationFrame`, at most 150 spans per frame, longer batches continue next frame.
+- A span qualifies only if it has no host mark yet, is not inside a link, is 5 to 400 characters, contains whitespace, and parses as a path with a known extension that is not a shell command (`eligible`). Existence is the same cached check as above.
+- It then sets the host's own attribute `data-inline-code-kind="path"` (plus `data-fv-spaced` to recognise its own marks). The host's CSS (path colour, pointer, hover underline) and its click handler then treat the span like any other path, and the click arrives at our `LinkHandler`: **no listener of our own**, no styles, no injected nodes.
+- If the host re-renders a block and drops the attribute, the attribute observer re-queues the span and a cached answer restores the mark in the same frame. A changed text or a disconnected node drops the stale answer.
+- Cleanup removes every mark, disconnects the observer and cancels the frame. Hot reload, `Cmd+R` and a second `setup` leave the counts unchanged (verified).
+
+**Remove this module when the host's inline code gate accepts whitespace** (or exposes a plugin-extensible gate). Then delete `spaced-code.ts`, its test, the `spacedCode` option and the call in `gui.ts`; the `LinkHandler` already handles spaced names.
+
+### Performance
+
+Harness, 300-turn seeded session (virtualised timeline, 30 code spans visible), scripted fast scroll top to bottom and back (122 frames), median of 5 warm runs, bare app (same UI plugins, no file-viewer) vs with:
+
+| Metric | bare | with | delta |
+| --- | --- | --- | --- |
+| idle 10 s, task ms | 1 | 1 | 0 |
+| scroll, script ms | 142 | 162 | +20 (+14%) |
+| scroll, layout ms | 23 | 26 | +3 |
+| scroll, style ms | 77 | 72 | -5 |
+| scroll, task ms | 392 | 435 | +43 |
+| long tasks, heap, nodes | 0, 36 MB, 1151 | 0, 38 MB, 1152 | none |
+
+Hill climb: the first version used a selector query over every added node (script +28 ms). Switching to `getElementsByTagName` and a cheap parent check brought it to +20. A variant with the observer callback emptied measured 159, and a variant with no observer at all 145 (= bare), so **the remaining cost is the browser delivering mutation records for the rows a scroll mounts, not our callback**, and the LinkHandler alone is free. That is over the 3% bar in `performance.md` for fast scroll of a very long session. It cannot be narrowed further without the observer missing rows, so the option `spacedCode: false` removes it entirely. Idle cost is zero (no timers, no observer callbacks without a DOM change).
 
 ## Modules
 
 | File | Job |
 | --- | --- |
-| `kinds.ts` | Extension → viewer kind, mime, size cap; known-extension and known-name sets. |
-| `types.ts` | `Candidate`, `Origin`, `RejectReason`. |
-| `detect.ts` | `parseSpan` (one text → one path or a reason), `detectPaths` (span or prose), suffix parsing. |
-| `markdown.ts` | `scanMarkdown`: inline code, link and image destinations, `file:` autolinks, reference definitions, raw HTML `src`/`href`; fences masked. |
-| `policy.ts` | Pure roots and denylist logic. No Node imports. |
-| `resolve.ts` | `resolve(candidate, env, io)`: lexical path, roots, denylist, `stat`, real path re-check, kind, size. |
-| `node-io.ts`, `fake-io.ts` | `FileIO` over Node (server part or tests) and an in-memory one for tests. Not bundled. |
+| `gui.ts` | Registers the `LinkHandler`, asks the server part for the home directory, starts the DOM fallback. |
+| `server.ts`, `rpc.ts` | Server part: RPC `home` → `os.homedir()`. Emitted by `tsc` to `dist/server.js`; the GUI bundle is added beside it. |
+| `expand.ts` | `claim` (does the plugin take this text), `expand` (absolute path and `#L` selection). Pure. |
+| `links.ts` | `createLinks(deps)`: exact existence check through the host's Files API, cache, remote-server guard. |
+| `spaced-code.ts` | The DOM workaround above. |
+| `detect.ts`, `kinds.ts`, `types.ts` | Path grammar: `parseSpan` is what `claim` uses. |
+| `markdown.ts`, prose scanning in `detect.ts` | Complete and tested, **not used by the plugin** (the host scans markdown itself). Kept as the engine for a future DOM-free scan; delete if unused. |
+| `policy.ts` | `normalizeAbsolute`, `join`, `isAbsolute` only. |
+
+## Not done
+
+`~user` expansion; timestamps seeking; JSON tree or CSV sort (host viewers as they are); Windows `~` (`%USERPROFILE%` expands via the same home answer but is untested on Windows).
 
 ## Detection model
 
@@ -53,13 +101,13 @@ and HTML attributes are scanned; **fenced code, indented code and prose are not*
 
 Every result is `Candidate`: `path` (suffix removed, unescaped, `file://` decoded, `\` → `/`, diff prefix removed), `form`, `ext`,
 `viewerKind`, `line/column/endLine/endColumn`, `time`, `page`, `anchor`, `quoted`, `confidence`, `alternatives`, and the source range.
-Detection is syntax only. Existence and permission are `resolve`.
+Detection is syntax only. Existence is the host's Files API (`links.ts`).
 
 ### Decisions in the grammar
 
 - **Confidence** `high | medium | low`. Spans keep `low` (an existence check follows); prose keeps `medium` and up. `and/or`, `src/utils`,
   `/api/users`, `@scope/pkg`, `Next.js` are `low`: they parse, but prose never returns them.
-- **Forms**: `tilde` (`~`), `tilde-user` (`~root`, refused by `resolve`), `env` (`$HOME`, `${HOME}`, `%USERPROFILE%`; only HOME, USERPROFILE and PWD expand),
+- **Forms**: `tilde` (`~`), `tilde-user` (`~root`, parsed but declined by `claim`), `env` (`$HOME`, `${HOME}`, `%USERPROFILE%`; `claim` takes only HOME and USERPROFILE),
   `absolute`, `relative-dot`, `relative`, `bare`, `windows`, `unc` (always refused), `file-url`.
 - **Extension rule**: a bare word needs a known extension or known file name (`Dockerfile`, `README`, `.gitignore`). `Foo.Bar.baz`,
   `console.error`, `e.g`, `user@example.com`, `1.2.3`, `v2.0.1`, `3.14` are refused. A path with a slash or a strong start (`~`, `/`, `./`, drive)
@@ -84,8 +132,8 @@ Detection is syntax only. Existence and permission are `resolve`.
 - **Hostile text**: null byte, other control characters, newline, bidi overrides (U+202A-E, U+2066-9), zero-width characters (U+200B/C, U+2060, U+FEFF)
   refuse the candidate (`gpj.png` spoofing). U+200D stays for emoji. `%2e%2e`, `%2f`, `%5c`, `%00` in a segment are refused (encoded traversal). Spans
   above 4096 characters and segments above 255 are refused without scanning.
-- **Unicode**: any letter, emoji, CJK, RTL is a path character. NFC/NFD variants are tried by `resolve`.
-- **Windows**: detected (`C:\x`, `C:/x`, mixed slashes, `file:///C:/x`), refused on non-Windows by `resolve`. `C:foo` (drive-relative) and `\\server\share` are refused.
+- **Unicode**: any letter, emoji, CJK, RTL is a path character. Paths are handed to the host as written; the host's listing check decides (APFS ignores the normalization form).
+- **Windows**: detected (`C:\x`, `C:/x`, mixed slashes, `file:///C:/x`), not claimed by the plugin (the host handles them). `C:foo` (drive-relative) and `\\server\share` are refused.
 - **Time**: all scans are single pass with bounded look-ahead (quote search 1024 characters, spaced reading 6 words, line start 512), no nested quantifiers.
   36 hostile inputs of 80 000 characters scale linearly in the tests.
 
@@ -97,37 +145,8 @@ fence cannot have a backtick in its info string; indented code needs a blank lin
 `<...>` with spaces, balanced parentheses, titles; raw `src`/`href`/`data` of `img a video audio source embed track link object iframe`.
 CRLF is handled. Not handled: setext or HTML block context, nested emphasis edge cases (irrelevant to paths).
 
-## Resolution and policy
-
-`resolve(candidate, {cwd, home, platform, roots?, caseInsensitive?}, io)`:
-
-1. Lexical absolute path: `~` → home, `$HOME`, `$PWD`, relative → cwd, `..` collapsed (never above `/`).
-2. **Roots check on the lexical path, before any `stat`**: under cwd or home (segment-wise, NFC, case-insensitive on macOS/Windows). A root of `/` or a bare drive is unusable. Nothing outside the roots is ever probed (no network mounts, no `/proc`).
-3. **Denylist on the lexical path**: `.ssh .aws .gnupg .git` anywhere; under home `.kube .docker .azure .config/{gcloud,gh,op,opencode,git} .local/share/opencode Library/{Keychains,Cookies,Mail,Messages,Safari,Containers,"Application Support"} AppData`; files `.env .env.*` (not `.example/.sample/.template/.dist`), `id_rsa* id_ed25519*`, `*.pem *.key *.p12 *.pfx *.keystore *.jks *.kdbx *.tfstate *.tfvars`, `.npmrc .netrc .pgpass .git-credentials credentials(.json) secrets.* auth.json token(s).json client_secret*.json service-account*.json known_hosts`.
-4. `stat` (follows symlinks; `real` is canonical), trying as-is, NFC, NFD for each reading (at most 4 readings).
-5. **Re-check on the real path**: still under a root (roots also count their own real path, e.g. `/var` → `/private/var`), not denied, same viewer kind as the requested name (`a.png → notes.json` is refused, so a symlink cannot disguise a file).
-6. Size cap by kind (image 64 MB, svg 8 MB, pdf 256 MB (the host reads it whole), markdown 8 MB, csv/json 32 MB; audio and video are streamed, no cap).
-
-Refusals: `windows-path-on-posix unc-refused other-user-home unresolved-variable outside-roots denied-location symlink-escape symlink-type-mismatch not-found permission-denied is-directory not-a-file unsupported-type too-large no-usable-root`.
-
-SVG is only ever shown by the host as an image (`<img>`/data URL), never inline. PDF is Chromium's own viewer. Nothing here serves bytes.
-
 ## Test corpus
 
-`pnpm test`: 481 tests. `detect.test.ts` 273 span cases; `prose.test.ts` 78 prose cases + range invariants + 36 performance/ReDoS inputs;
-`markdown.test.ts` 65; `resolve.test.ts` 20 (fake file system and a real temp tree with real symlinks, traversal, and a 28-path denylist).
+`pnpm test`: 485 tests. `detect.test.ts` 273 span cases; `prose.test.ts` 78 prose cases + range invariants + 36 performance/ReDoS inputs;
+`markdown.test.ts` 65; `expand.test.ts` (claim and expansion), `links.test.ts` (cache, remote server, missing home), `spaced-code.test.ts` (happy-dom: marking, scoping, re-marking, cleanup, frame budget). The earlier roots, denylist and real-path tests were removed with that code.
 
-## Open questions
-
-Everything below changes what gets built; the engine does not depend on the answers.
-
-1. **Build a viewer or reuse the host's?** The host already opens every format except JSON in a native side-panel tab. Recommended: reuse
-   it (LinkHandler hands an absolute path to the Files plugin) and build a plugin `Panel` only for what it lacks: video `#t=` seek, a JSON tree, CSV sort. Which of those do you want?
-2. **Home directory source.** The renderer cannot expand `~`. Options: a server part returning `os.homedir()` (right for remote servers, but a
-   service restart on first install); `main(ctx)` + Ipc (local servers only); or infer from the session directory. Recommended: server part.
-3. **Block or decline outside the roots?** Today the host opens `/etc/passwd` or `~/.ssh/id_rsa` if a message names it. If our handler only
-   declines, that stays. If it claims every local link and refuses outside the roots, we tighten the host (and break opening `/tmp/x.png`, `/Volumes/...` files). Recommended: claim and refuse for the denylist only; decline (host behaviour) for other outside paths? or the full roots rule?
-4. **Spaces in inline code.** The host rejects whitespace before our handler runs, so `` `~/Movies/My Video.mp4` `` can never be linked through `LinkHandler`. Only a DOM pass can. Accept the gap (recommended), or approve the DOM fallback (one observer, scoped, delegated click)?
-5. **Timestamps.** `file.mp4@1:12` and `#t=72` parse, but the built-in video viewer cannot seek. Needed? (Implies the custom panel from question 1.)
-6. **Relative paths with a unique match elsewhere.** The host also resolves `a.png` anywhere in the workspace by search. Our `resolve` is exact (cwd-relative). Keep the host's fuzzy search as fallback?
-7. **Project directory for relative paths.** `cwd` should be the session's directory. Confirm that sessions in a git worktree use the worktree directory as the root (not the repo root).
