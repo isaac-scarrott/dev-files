@@ -31,6 +31,7 @@ export const spawnShell = ({ command, cwd }, events) => {
         });
     });
     return {
+        pid: child.pid,
         kill(signal) {
             const pid = child.pid;
             if (pid === undefined)

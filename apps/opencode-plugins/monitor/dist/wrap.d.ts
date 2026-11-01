@@ -9,6 +9,8 @@ export interface Wake {
     readonly dropped: number;
     /** Plain sentences from the plugin: pause notices, restart notices, how the monitor ended. */
     readonly notes: readonly string[];
+    /** Restart counter, shown on the notice that announces a service restart. */
+    readonly restart?: number;
 }
 /** Output lines arrive escaped, so a line containing the closing tag cannot end the block early. */
 export declare function renderWake(wake: Wake): string;

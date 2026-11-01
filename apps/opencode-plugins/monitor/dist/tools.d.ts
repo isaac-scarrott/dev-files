@@ -5,7 +5,7 @@ type Editor = Parameters<Parameters<Plugin.Context["tool"]["transform"]>[0]>[0];
 type Host = Pick<Plugin.Context, "session" | "permission">;
 export declare const NAMESPACE = "monitor";
 export declare function describeMonitor(options: Options): string;
-export declare const LIST_DESCRIPTION = "List the background monitors that are running: name, id, command, when each started, how many events it produced, the last event, and which session it wakes.";
+export declare const LIST_DESCRIPTION = "List the background monitors that are running: name, id, command, pid, when each started, how many events it produced, the last event, which session it wakes, and for re-arm monitors lastRearm, nextRearm and restartCount (service restarts survived).";
 export declare const STOP_DESCRIPTION = "Stop a background monitor by id (see monitor.list). Its process and anything it started are ended.";
 export declare function registerTools(editor: Editor, monitors: Monitors, host: Host, options: Options): void;
 export {};

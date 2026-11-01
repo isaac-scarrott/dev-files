@@ -16,7 +16,7 @@ export function renderWake(wake) {
         parts.push(`${open}\n${body.join("\n")}\n</monitor-event>`);
     }
     if (wake.notes.length > 0) {
-        parts.push(`<monitor-notice name="${attribute(wake.name)}" id="${attribute(wake.id)}" seq="${wake.seq}">\n${wake.notes.map(escape).join("\n")}\n</monitor-notice>`);
+        parts.push(`<monitor-notice name="${attribute(wake.name)}" id="${attribute(wake.id)}" seq="${wake.seq}"${wake.restart === undefined ? "" : ` restart="${wake.restart}"`}>\n${wake.notes.map(escape).join("\n")}\n</monitor-notice>`);
     }
     parts.push(TRAILER);
     return parts.join("\n");

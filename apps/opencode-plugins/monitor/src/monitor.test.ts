@@ -5,6 +5,7 @@ import { Monitors, type ManagerDeps } from "./manager.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import type { Child, ChildEvents, Clock, Spawn } from "./process.js"
 import { mayWake, type SessionLike } from "./reach.js"
+import { spawnShell } from "./process.js"
 import { TRAILER, renderWake } from "./wrap.js"
 
 class FakeClock implements Clock {
@@ -41,6 +42,7 @@ function fakeSpawn() {
     const run: Run = { events, signals: [], alive: true, ignoreTerm: false }
     runs.push(run)
     const child: Child = {
+      pid: 4200 + runs.length,
       kill(signal) {
         run.signals.push(signal)
         if (!run.alive) return
@@ -84,7 +86,8 @@ function setup(over: Partial<Options> = {}) {
   }
   const monitors = new Monitors(deps)
   const input = { command: "cmd", cwd: "/work", sessionID: "ses_1", batchSeconds: 5, ttlMinutes: 1440 }
-  return { clock, sp, wakes, storage, states, logs, monitors, deps, input }
+  const defs = () => [...storage.keys()].filter((k) => k.startsWith("monitor/def/")).length
+  return { clock, sp, wakes, storage, states, logs, monitors, deps, input, defs }
 }
 
 test("line splitting across chunks and characters", () => {
@@ -292,7 +295,7 @@ test("definitions persist; only re-arm monitors come back after a restart, and s
   const t = setup()
   await t.monitors.start(t.input)
   await t.monitors.start({ ...t.input, name: "watch", rearmMinutes: 30 })
-  assert.equal(t.storage.size, 2)
+  assert.equal(t.defs(), 2)
   const stored = JSON.stringify([...t.storage.values()])
   assert.ok(!stored.includes("tick"))
   const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
@@ -302,7 +305,7 @@ test("definitions persist; only re-arm monitors come back after a restart, and s
   await t.clock.advance(5000)
   const restored = t.wakes.filter((w) => w.text.includes("restarted automatically"))
   assert.equal(restored.length, 1)
-  assert.equal(t.storage.size, 1)
+  assert.equal(t.defs(), 1)
   await second.dispose()
   await t.monitors.dispose()
 })
@@ -313,7 +316,7 @@ test("a plugin instance restores only its own directory's monitors", async () =>
   const other = new Monitors({ ...t.deps, origin: "/elsewhere" })
   await other.restore()
   assert.equal(other.count, 0)
-  assert.equal(t.storage.size, 1)
+  assert.equal(t.defs(), 1)
   await t.monitors.dispose()
 })
 
@@ -348,7 +351,7 @@ test("options reject bad values", () => {
 test("a monitor lost at restart wakes its session once, saying it is gone", async () => {
   const t = setup()
   await t.monitors.start({ ...t.input, name: "plain" })
-  assert.equal(t.storage.size, 1)
+  assert.equal(t.defs(), 1)
   const second = new Monitors(t.deps)
   await second.restore()
   assert.equal(second.count, 0)
@@ -356,7 +359,7 @@ test("a monitor lost at restart wakes its session once, saying it is gone", asyn
   assert.equal(t.wakes.length, 1)
   const wake = t.wakes[0]!
   assert.equal(wake.sessionID, "ses_1")
-  assert.match(wake.text, /<monitor-notice name="plain" id="mon_1" seq="1">/)
+  assert.match(wake.text, /<monitor-notice name="plain" id="mon_1" seq="1" restart="1">/)
   assert.match(wake.text, /Monitor gone/)
   assert.match(wake.text, /Start it again/)
   assert.ok(wake.text.endsWith(TRAILER))
@@ -412,4 +415,198 @@ test("a monitor may wake only the caller's own tree", async () => {
   const me = infos.get("me")!
   for (const id of ["me", "parent", "sibling", "child", "grandchild", "made", "madechild"]) assert.equal(await mayWake(reader, me, infos.get(id)!), true, id)
   for (const id of ["stranger", "strangerchild", "uncle", "grandparent"]) assert.equal(await mayWake(reader, me, infos.get(id)!), false, id)
+})
+
+/** The service restarts: the old instance shuts down cleanly, a new one restores from the same storage. */
+async function restart(t: ReturnType<typeof setup>, current: Monitors): Promise<Monitors> {
+  await current.dispose()
+  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await next.restore()
+  return next
+}
+const MIN = 60_000
+
+test("a restart at 10 minutes of a 30 minute cycle keeps 20 minutes remaining", async () => {
+  const t = setup()
+  const started = t.clock.t
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.clock.advance(10 * MIN)
+  const next = await restart(t, t.monitors)
+  assert.equal(t.sp.runs.length, 2) // the restored process is fresh, but it is not a re-arm
+  const info = next.list()[0]!
+  assert.equal(info.nextRearm, new Date(started + 30 * MIN).toISOString())
+  assert.equal(info.lastRearm, undefined)
+  await t.clock.advance(19 * MIN)
+  assert.equal(t.sp.runs.length, 2)
+  await t.clock.advance(MIN)
+  assert.equal(t.sp.runs.length, 3)
+  const after = next.list()[0]!
+  assert.equal(after.lastRearm, new Date(started + 30 * MIN).toISOString())
+  assert.equal(after.nextRearm, new Date(started + 60 * MIN).toISOString())
+  await next.dispose()
+})
+
+test("a restart after the mark counts as the re-arm and schedules the next from now", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.clock.advance(10 * MIN)
+  await t.monitors.dispose()
+  t.clock.t += 25 * MIN // down across the 30 minute mark
+  const resumedAt = t.clock.t
+  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await next.restore()
+  assert.equal(t.sp.runs.length, 2)
+  const info = next.list()[0]!
+  assert.equal(info.lastRearm, new Date(resumedAt).toISOString())
+  assert.equal(info.nextRearm, new Date(resumedAt + 30 * MIN).toISOString())
+  await t.clock.advance(29 * MIN)
+  assert.equal(t.sp.runs.length, 2)
+  await t.clock.advance(MIN)
+  assert.equal(t.sp.runs.length, 3)
+  await next.dispose()
+})
+
+test("restarts every 5 minutes never starve a 30 minute re-arm", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  let current = t.monitors
+  let restarts = 0
+  for (let i = 0; i < 8; i++) {
+    await t.clock.advance(5 * MIN)
+    current = await restart(t, current)
+    restarts += 1
+  }
+  // 1 first run + 8 restored runs + the re-arm that fired at minute 30.
+  assert.equal(t.sp.runs.length, 1 + restarts + 1)
+  assert.ok(current.list()[0]!.lastRearm)
+  assert.equal(current.list()[0]!.restartCount, 8)
+  await current.dispose()
+})
+
+test("a restart notice gives the downtime window and a restart counter, and seq keeps counting", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  t.sp.out(t.sp.runs[0]!, "one\n")
+  await t.clock.advance(5000)
+  assert.match(t.wakes[0]!.text, /<monitor-event name="cmd" id="mon_1" seq="1">/)
+  const down = t.clock.t
+  await t.monitors.dispose()
+  t.clock.t += 3 * MIN
+  const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await second.restore()
+  await t.clock.advance(5000)
+  const notice = t.wakes[1]!.text
+  assert.match(notice, /<monitor-notice name="cmd" id="mon_1" seq="2" restart="1">/)
+  assert.ok(notice.includes(`It was down from ${new Date(down).toISOString()} to ${new Date(down + 3 * MIN).toISOString()}.`), notice)
+  assert.ok(notice.endsWith(TRAILER))
+  assert.doesNotMatch(notice, /steer|delivery|prompt/i)
+  const third = await restart(t, second)
+  await t.clock.advance(5000)
+  assert.match(t.wakes[2]!.text, /seq="3" restart="2"/)
+  await third.dispose()
+})
+
+test("a restart with no recorded last-alive time says the start of the window is unknown", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.monitors.dispose()
+  t.storage.delete("monitor/state/mon_1")
+  const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await second.restore()
+  await t.clock.advance(5000)
+  assert.match(t.wakes[0]!.text, /when it went down is unknown/)
+  assert.match(t.wakes[0]!.text, /seq="1" restart="1"/)
+  await second.dispose()
+})
+
+test("the heartbeat records the last time the monitor was alive, for a crash with no clean shutdown", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.clock.advance(5 * MIN + 30_000)
+  const stored = t.storage.get("monitor/state/mon_1") as { aliveAt: number }
+  assert.ok(t.clock.t - stored.aliveAt < 60_000 + 1)
+  assert.ok(t.clock.t - stored.aliveAt >= 0)
+  await t.monitors.dispose()
+})
+
+test("a lost monitor's notice continues its seq and carries the restart counter and window", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  t.sp.out(t.sp.runs[0]!, "x\n")
+  await t.clock.advance(5000)
+  const down = t.clock.t
+  await t.monitors.dispose()
+  t.clock.t += MIN
+  await new Monitors(t.deps).restore()
+  const text = t.wakes[1]!.text
+  assert.match(text, /<monitor-notice name="cmd" id="mon_1" seq="2" restart="1">/)
+  assert.ok(text.includes(`down from ${new Date(down).toISOString()} to ${new Date(down + MIN).toISOString()}`), text)
+  assert.equal(t.storage.size, 0)
+})
+
+test("list shows pid, restartCount, lastRearm and nextRearm", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 10 })
+  const first = t.monitors.list()[0]!
+  assert.equal(first.pid, 4201)
+  assert.equal(first.restartCount, 0)
+  assert.equal(first.lastRearm, undefined)
+  assert.equal(first.nextRearm, new Date(t.clock.t + 10 * MIN).toISOString())
+  await t.clock.advance(10 * MIN)
+  const again = t.monitors.list()[0]!
+  assert.equal(again.pid, 4202)
+  assert.equal(again.lastRearm, new Date(t.clock.t).toISOString())
+  await t.monitors.dispose()
+})
+
+test("ttl counts from the first start only: neither a re-arm nor a restart extends it", async () => {
+  const t = setup()
+  const started = t.clock.t
+  await t.monitors.start({ ...t.input, rearmMinutes: 10, ttlMinutes: 60 })
+  await t.clock.advance(35 * MIN) // three re-arms
+  const next = await restart(t, t.monitors)
+  assert.equal(next.list()[0]!.expiresAt, new Date(started + 60 * MIN).toISOString())
+  await t.clock.advance(24 * MIN)
+  assert.equal(next.count, 1)
+  await t.clock.advance(MIN)
+  assert.equal(next.count, 0)
+  assert.ok(t.wakes.some((w) => w.text.includes("time limit")))
+})
+
+test("match filters before batching: batches and maxEvents see matched lines only", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, match: "^E", maxEvents: 2 })
+  t.sp.out(t.sp.runs[0]!, "a\nE1\nb\nc\nE2\nd\n")
+  await t.clock.advance(5000)
+  assert.equal(t.wakes.length, 1)
+  assert.match(t.wakes[0]!.text, /\nE1\nE2\n<\/monitor-event>/)
+  assert.doesNotMatch(t.wakes[0]!.text, /\n[abcd]\n/)
+  assert.match(t.wakes[0]!.text, /reached its limit of 2 events/)
+})
+
+test("a re-arm kills the whole process group of the previous run (real processes)", async () => {
+  const t = setup()
+  const monitors = new Monitors({ ...t.deps, spawn: spawnShell, newID: () => "mon_real" })
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+  const pidsOf = (text: string) => text.match(/^\d+$/gm)!.map(Number)
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const waitWake = async (n: number) => {
+    for (let i = 0; i < 200 && t.wakes.length < n; i++) { await pause(20); await t.clock.advance(5000) }
+    assert.ok(t.wakes.length >= n, "no wake arrived")
+  }
+  await monitors.start({ ...t.input, command: "(sleep 300 & echo $!); sleep 301 & echo $!; wait", cwd: "/tmp", rearmMinutes: 10 })
+  await waitWake(1)
+  const first = pidsOf(t.wakes[0]!.text)
+  assert.equal(first.length, 2) // a sleep in a subshell, and one beside it
+  assert.ok(first.every(alive))
+  await t.clock.advance(10 * MIN)
+  await waitWake(2)
+  const second = pidsOf(t.wakes[1]!.text)
+  await pause(200)
+  assert.notDeepEqual(first, second)
+  assert.ok(first.every((pid) => !alive(pid)))
+  assert.ok(second.every(alive))
+  await monitors.dispose()
+  await pause(200)
+  assert.ok(second.every((pid) => !alive(pid)))
 })
