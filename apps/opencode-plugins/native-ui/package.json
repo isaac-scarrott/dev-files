@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=browser --import tsx --import ./test/register.mjs --test src/*.test.tsx"
+    "test": "node --conditions=browser --import tsx --import ./test/register.mjs --test src/*.test.ts src/*.test.tsx"
   },
   "peerDependencies": {
     "@opencode/plugin": "2.2.5",

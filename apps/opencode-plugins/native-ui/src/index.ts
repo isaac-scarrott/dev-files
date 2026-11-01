@@ -9,7 +9,11 @@ export { ProjectAvatar, getProjectAvatarVariant, displayName, first, PROJECT_AVA
 export { ProgressSpinner, spinnerCss } from "./spinner"
 export { syncSpinPhase } from "./spin-phase"
 export { HeaderIconButton, type HeaderIconButtonProps } from "./header-icon-button"
-export { ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { InjectedMessageRow, injectedMessageRowCss, type InjectedMessageAction, type InjectedMessageRowProps } from "./injected-message-row"
+export { mountInjectedRows, type InjectedRows, type InjectedRowsOptions } from "./injected-rows"
+export { unescapeMarkup, firstLine, hasMore } from "./injected-text"
+export { holdTop, scrollerOf } from "./anchor"
+export { AgentIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
 
 import { tabRowActionCss } from "./tab-row-action"
 import { popoverCss } from "./popover"
