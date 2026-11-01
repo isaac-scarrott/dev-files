@@ -9,6 +9,8 @@ import { openMenu, type MenuLine } from "./menu"
 export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
+const FOLLOW_MS = 220
+const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
 
 function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
@@ -36,6 +38,22 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
     panel.toggleAttribute("data-open", next)
     panel.toggleAttribute("inert", !next)
     toggle()?.setAttribute("aria-expanded", String(next))
+    if (next) follow()
+  }
+  // The sidebar scroller grows with the panel; keep the content coming into view while the toggle stays visible, in step with the accordion.
+  const follow = () => {
+    const win = doc.defaultView!
+    const start = win.performance.now()
+    const step = () => {
+      const scroller = section.closest<HTMLElement>("[data-sa-host]")
+      if (!scroller || !open) return
+      const box = scroller.getBoundingClientRect()
+      const hidden = section.getBoundingClientRect().bottom - box.bottom
+      const room = header.getBoundingClientRect().top - box.top
+      if (hidden > 0 && room > 0) scroller.scrollTop += Math.min(hidden, room)
+      if (win.performance.now() - start < FOLLOW_MS) schedule(step)
+    }
+    schedule(step)
   }
   const disposeHeader = host.mount(header, () => createComponent(host.ui.Button, {
     variant: "ghost-muted",
@@ -162,8 +180,7 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   root.append(snoozed.section, archived.section)
   let parent: HTMLElement | undefined
   const attach = () => {
-    const strip = doc.querySelector<HTMLElement>('[data-slot="vertical-tabs"]')
-    const next = strip?.parentElement ?? undefined
+    const next = doc.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
     if (parent !== next) parent?.removeAttribute("data-sa-host")
     parent = next
     if (next) {
@@ -175,9 +192,9 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   const observer = new doc.defaultView!.MutationObserver((records) => {
     if (!records.some((r) => {
       if (root.contains(r.target)) return false
-      if (r.type === "attributes") return (r.target as Element).matches('[data-slot="vertical-tabs"], [data-slot="titlebar-tabs"]')
+      if (r.type === "attributes") return (r.target as Element).matches(`[data-slot="vertical-tabs"], ${SCROLLER}, [data-slot="titlebar-tabs"]`)
       return [...r.addedNodes, ...r.removedNodes].some((node) =>
-        node.nodeType === 1 && node !== root && ((node as Element).matches('[data-slot="vertical-tabs"]') || (node as Element).querySelector('[data-slot="vertical-tabs"]')))
+        node.nodeType === 1 && node !== root && ((node as Element).matches(SCROLLER) || (node as Element).querySelector(SCROLLER)))
     })) return
     if (frame === undefined) frame = schedule(() => { frame = undefined; attach() })
   })
@@ -190,9 +207,13 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
 }
 
 export const css = `
-[data-sa-host] > [data-slot="vertical-tabs"] { flex: 1; min-height: 0; }
-[data-sa-host] > [data-slot="vertical-tabs"] > [data-slot="vertical-tabs-scroll"] { max-height: 100%; }
-[data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 0; app-region: no-drag; }
+/* The groups live inside the host's scroll region, after the tab list, so live rows, Snoozed and Archived scroll as one and the host's edge fades cover all of it.
+   The scroller fills the strip so the groups sit at the bottom while the list is short; the host's bottom padding moves under the tab list so the gap above them stays. */
+[data-slot="vertical-tabs"]:has(> [data-sa-host]) { flex: 1; min-height: 0; }
+[data-sa-host] { flex: 1 1 auto; }
+[data-slot="vertical-tabs-sidebar"] [data-sa-host] { padding-block-end: 0; }
+[data-sa-host] > [data-titlebar-tab-list] { padding-bottom: 16px; }
+[data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 16px; app-region: no-drag; }
 .sa-toggle { width: 100%; justify-content: flex-start; }
 .sa-label { display: inline-flex; align-items: center; gap: 6px; }
 [data-sa-count] { margin-inline-start: auto; font-variant-numeric: tabular-nums; color: var(--v2-text-text-faint); }
@@ -201,7 +222,7 @@ export const css = `
 [data-sa-panel] { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 150ms cubic-bezier(0.23,1,0.32,1), visibility 0s linear 200ms; }
 [data-sa-panel][data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 180ms cubic-bezier(0.23,1,0.32,1), visibility 0s; }
 [data-sa-clip] { min-height: 0; overflow: hidden; }
-[data-sa-contents] { display: flex; flex-direction: column; gap: 4px; max-height: min(24vh, 220px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
+[data-sa-contents] { display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
 /* Snoozed: the time until wake outranks the branch. The second line is a flex row; the project part gives way with an
    ellipsis and the time never shrinks. The link's end fade (the action's reveal) would mask a time that reaches the
