@@ -121,12 +121,12 @@ test("setup cold-starts, hydrates server inventory, tears down and reloads witho
   const f = fixture()
   try {
     f.start(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     f.setServers(["server"]); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(f.calls.list, 0, "nothing is fetched until Archived is expanded")
     f.openArchive(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(f.calls.list, 1)
     assert.ok([...f.listeners.values()].every((handlers) => handlers.size === 1))
     f.stop()
@@ -179,16 +179,16 @@ test("archive failure keeps tabs; confirmed archive count and restore use native
     assert.equal(f.calls.closed.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /denied/)
     f.fail(false); await f.commands.get("archive")!.run(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived1/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     const restore = f.doc.querySelector<HTMLButtonElement>('button[aria-label="Restore Session"]')!
     restore.click(); await f.flush()
     assert.deepEqual(f.calls.updates.at(-1), { sessionID: "s", archived: false })
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(f.calls.opened.length, 1)
     f.setConnected(false); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     f.setConnected(true); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
   } finally { await f.close() }
 })
 
@@ -216,7 +216,7 @@ test("expired snooze is retained offline, wakes on reconnect; archive failures n
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
     f.openArchive(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.match(f.doc.body.textContent, /offline/)
   } finally { await f.close() }
 })
@@ -769,7 +769,7 @@ function archiveServer(f: ReturnType<typeof fixture>, total: number) {
 const archivedIds = (f: { doc: Document }) => [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="archived"] [data-sa-row]')].map((row) => row.dataset.saRow!.split("\n")[1])
 const moreButton = (f: { doc: Document }, kind: string) => f.doc.querySelector<HTMLButtonElement>(`[data-sa-kind="${kind}"] [data-sa-more]:not([hidden]) button`)
 
-test("Archived loads page by page: 10 first, then 25 per press, count carries + until the last page", async () => {
+test("Archived loads page by page: 10 first, then 25 per press, no count is shown", async () => {
   const f = fixture()
   try {
     archiveServer(f, 40)
@@ -778,15 +778,15 @@ test("Archived loads page by page: 10 first, then 25 per press, count carries + 
     f.openArchive(); await f.flush()
     assert.deepEqual(f.calls.listInputs, [{ archived: true, parentID: null, limit: 10, cursor: undefined }])
     assert.equal(archivedIds(f).length, 10)
-    assert.match(f.doc.body.textContent, /Archived10\+/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(moreButton(f, "archived")!.textContent, "Show 25 more")
     click(moreButton(f, "archived")); await f.flush()
     assert.deepEqual(f.calls.listInputs.at(-1), { archived: true, parentID: null, limit: 25, cursor: "r9" })
     assert.equal(archivedIds(f).length, 35)
-    assert.match(f.doc.body.textContent, /Archived35\+/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     click(moreButton(f, "archived")); await f.flush()
     assert.equal(archivedIds(f).length, 40)
-    assert.match(f.doc.body.textContent, /Archived40(?!\+)/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(moreButton(f, "archived"), null, "nothing left: no button")
     assert.equal(new Set(archivedIds(f)).size, 40)
     assert.equal(f.calls.listInputs.length, 3, "no fetch beyond what was asked for")
@@ -809,7 +809,7 @@ test("restore on page 2 loses and duplicates nothing; a new archive lands first;
     assert.deepEqual(ids, [...Array(36).keys()].filter((i) => i !== 12).map((i) => `r${i}`))
     assert.equal(f.calls.listInputs.length, calls + 1)
     // The refill fetched a whole page (25): all 59 are loaded, so the count is exact and the button names what is left.
-    assert.match(f.doc.body.textContent, /Archived59(?!\+)/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(moreButton(f, "archived")!.textContent, "Show 24 more")
     server.archiveNew("fresh", 2000); await f.flush()
     assert.equal(archivedIds(f)[0], "fresh")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { countText, firstOf, moreLabel, moreStep } from "./page"
+import { firstOf, moreLabel, moreStep } from "./page"
 
 test("step is 25, or what remains when that is fewer; unknown remainder means a full page", () => {
   assert.equal(moreStep(10, 500, false), 25)
@@ -21,16 +21,6 @@ test("walking the pages: 10, then 25 at a time, ends exactly", () => {
   for (let step = moreStep(shown, 62, false); step; step = moreStep(shown, 62, false)) { steps.push(step); shown += step }
   assert.deepEqual(steps, [25, 25, 2])
   assert.equal(shown, 62)
-})
-test("count: dash until every server's first page, + while pages remain, exact on the last", () => {
-  assert.equal(countText([]), undefined)
-  assert.equal(countText([{ loaded: false, rows: 0, more: false }]), undefined)
-  assert.equal(countText([{ loaded: true, rows: 10, more: true }]), "10+")
-  assert.equal(countText([{ loaded: true, rows: 35, more: true }]), "35+")
-  assert.equal(countText([{ loaded: true, rows: 62, more: false }]), "62")
-  assert.equal(countText([{ loaded: true, rows: 0, more: false }]), "0")
-  assert.equal(countText([{ loaded: true, rows: 5, more: false }, { loaded: true, rows: 3, more: true }]), "8+")
-  assert.equal(countText([{ loaded: true, rows: 5, more: false }, { loaded: false, rows: 0, more: false }]), undefined)
 })
 test("window merges servers newest first, keeps each server's order, and caps at the limit", () => {
   const r = (id: string, updated: number) => ({ id, time: { updated } })

@@ -10,7 +10,7 @@ import { openMenu, type MenuLine } from "./menu"
 export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?(): boolean; run(): void; open?(): void; menu?: MenuLine[] }
 const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
 // more: the button below the rows; busy while its page loads.
-export interface GroupState { rows: GroupRow[]; status?: string; count?: number | string; more?: { label: string; busy?: boolean; run(): void } }
+export interface GroupState { rows: GroupRow[]; status?: string; count?: number | string | null; more?: { label: string; busy?: boolean; run(): void } }
 export interface Hooks { toggled?(kind: "snoozed" | "archived", open: boolean): void }
 
 function group(doc: Document, host: Host, name: string, toggled: (open: boolean) => void) {
@@ -127,7 +127,7 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
   return {
     section,
     update(state: GroupState) {
-      const text = state.count === undefined ? "—" : String(state.count)
+      const text = state.count === null ? "" : state.count === undefined ? "—" : String(state.count)
       if (count.textContent !== text) count.textContent = text
       const hint = state.status ?? `${state.rows.length} ${name.toLowerCase()}`
       const button = toggle()

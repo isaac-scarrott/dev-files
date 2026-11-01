@@ -12,7 +12,7 @@ Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archiv
 - **Snooze** is a submenu of the session right-click menu, the session header "…" menu and the Home row menu: In 1 hour, In 3 hours, This evening, Tomorrow, Next week, each with its wake time, then Custom… (duration or calendar and time). The palette has "Snooze session…".
 - A snoozed session wakes at its deadline or when it needs attention (approval, question, new work, completion). It then shows a clock until you open it. Snoozes are stored on this device and survive restarts.
 - **Archive** and **Restore** use OpenCode's native archive state. Opening an archived row reads it without unarchiving. Snoozed and Archived rows have Wake, Restore and Delete… (always confirmed) in their own menus.
-- Archived loads lazily. Each group shows 10 rows, and **Show N more** adds the next 25. The count reads `10+` until the last page arrives.
+- Archived loads lazily. Each group shows 10 rows, and **Show N more** adds the next 25.  The Archived header shows no count, because the total isn't known until every page is loaded; Snoozed shows its count.
 - The groups scroll with the live rows inside the sidebar. Expanding one grows it upward into the empty space first, then downward. Rows never move.
 
 ## Context

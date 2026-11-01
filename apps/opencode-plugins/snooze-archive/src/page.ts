@@ -8,12 +8,6 @@ export function moreStep(shown: number, loaded: number, more: boolean) {
 }
 export const moreLabel = (step: number) => `Show ${step} more`
 
-// Servers report no total, so the count is what is loaded, with "+" while a server still has pages. Undefined until every server's first page is in.
-export function countText(servers: { loaded: boolean; rows: number; more: boolean }[]) {
-  if (!servers.length || servers.some((s) => !s.loaded)) return undefined
-  return `${servers.reduce((n, s) => n + s.rows, 0)}${servers.some((s) => s.more) ? "+" : ""}`
-}
-
 // The first `limit` of several servers' lists, newest update first. Each list keeps its own order; ties go to the earlier list.
 export function firstOf<T extends { time: { updated: number } }>(lists: { id: string; rows: T[] }[], limit: number) {
   const heads = lists.map(() => 0)

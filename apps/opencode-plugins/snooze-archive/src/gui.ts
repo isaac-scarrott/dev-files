@@ -6,7 +6,7 @@ import { iconCss } from "./icons"
 import { menuCss } from "./menu"
 import { createSessionMenus } from "./sessionmenu"
 import { appendPage, archivedActivity, dropArchived, emptyPage, loadArchivePage, removeSession, setArchived, upsertArchived, type ArchivedSession, type ArchivePage } from "./archive"
-import { countText, FIRST_PAGE, firstOf, moreLabel, moreStep } from "./page"
+import { FIRST_PAGE, firstOf, moreLabel, moreStep } from "./page"
 import { tabRowActionCss } from "../../native-ui/src"
 import { createSidebar, css, type GroupState } from "./sidebar"
 import { avatarFor } from "./avatar"
@@ -434,7 +434,7 @@ export default Plugin.define({
       const archivedLoaded = states.reduce((n, state) => n + state.rows.length, 0)
       const archivedStep = moreStep(rows.length, archivedLoaded, states.some((state) => state.more))
       return { hidden: groupDown(), why: guard.reasons(), group: {
-        rows, count: complete ? countText(states.map((state) => ({ loaded: state.loaded, rows: state.rows.length, more: state.more }))) : undefined,
+        rows, count: null,
         more: archivedStep ? { label: moreLabel(archivedStep), busy: states.some((state) => state.busy && state.loaded && !state.stale), run: loadMoreArchived } : undefined,
         status: errors.length ? errors.join("; ") : complete ? undefined : "Loading archived sessions…",
       } }
