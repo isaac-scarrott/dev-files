@@ -111,7 +111,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -716,3 +716,127 @@ for (const order of ["entering effect first", "leaving effect first"] as const) 
     f.stop()
   })
 }
+
+// Motion only on a real transition. A recording stand-in for Web Animations: happy-dom has none.
+function recordAnimations() {
+  const proto = (globalThis as any).window.HTMLElement.prototype
+  const calls: string[] = []
+  const had = Object.getOwnPropertyDescriptor(proto, "animate")
+  const hadGet = Object.getOwnPropertyDescriptor(proto, "getAnimations")
+  proto.animate = function (_k: unknown, o: { id?: string }) { calls.push(o.id ?? "?"); return { finished: Promise.resolve() } }
+  proto.getAnimations = () => []
+  return { calls, has: (id: string) => calls.includes(id), restore() { had ? Object.defineProperty(proto, "animate", had) : delete proto.animate; hadGet ? Object.defineProperty(proto, "getAnimations", hadGet) : delete proto.getAnimations } }
+}
+
+// A card with the timeline and composer the glide moves, and two headers: one per session's toggle, as on a tab switch.
+function twoToggles(f: ReturnType<typeof fixture>, startA: boolean) {
+  f.doc.body.innerHTML = `<div data-slot="session-chat-panel"><div id="card"><div data-slot="session-timeline-scroll"><div class="scroll-view__viewport"><div id="content"></div></div></div><div id="headerA"></div><div id="headerB"></div></div></div>`
+  const [a, setA] = createSignal(startA)
+  const stops = (["headerA", "headerB"] as const).map((id) =>
+    createRoot((stop) => {
+      const active = id === "headerA" ? a : () => !a()
+      insert(f.doc.getElementById(id)!, f.registered("slot")[0].render({ get active() { return active() }, get session() { return f.session } }))
+      return stop
+    }),
+  )
+  return { switchTab: () => setA((value) => !value), stop: () => stops.forEach((s) => s()) }
+}
+const cardPad = (f: ReturnType<typeof fixture>) => f.doc.getElementById("card")!.hasAttribute("data-agents-pad")
+const buttonOf = (f: ReturnType<typeof fixture>, id: string) => f.doc.querySelector(`#${id} [data-agents-toggle] button`) as HTMLButtonElement
+
+test("motion: mounting with the window already shown (load, reload, remount) animates nothing and is final at once", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  assert.equal(cardPad(f), true)
+  assert.equal(dockEl(f).dataset.state, "open")
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: a hidden mount animates nothing", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  assert.equal(cardPad(f), false)
+  assert.equal(dockEl(f), null)
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: the header button after mount glides the chat and slides and fades the window, both ways", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  assert.equal(cardPad(f), true)
+  for (const id of ["agents-dock-glide", "agents-dock-slide", "agents-dock-fade"]) assert.ok(rec.has(id), `open: ${id}`)
+  rec.calls.length = 0
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  assert.equal(cardPad(f), false)
+  for (const id of ["agents-dock-glide", "agents-dock-slide", "agents-dock-fade"]) assert.ok(rec.has(id), `close: ${id}`)
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: switching tabs with the window shown animates nothing, in either direction, and keeps the pad", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  for (let i = 0; i < 4; i++) {
+    pair.switchTab()
+    await f.flush()
+    assert.equal(cardPad(f), true, `switch ${i + 1}`)
+    assert.equal(dockEl(f).dataset.state, "open")
+  }
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: a toggle right after a tab switch animates; the window opened on one tab appears final on the other", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  rec.calls.length = 0
+  pair.switchTab()
+  await f.flush()
+  assert.deepEqual(rec.calls, [])
+  buttonOf(f, "headerB").click()
+  await f.flush()
+  assert.ok(rec.has("agents-dock-glide"))
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: the right panel opening hides the window with the exit; closing it does not show the window again", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  await side(f, true)
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(cardPad(f), false)
+  assert.ok(rec.has("agents-dock-glide") && rec.has("agents-dock-fade"), "the hide animates")
+  rec.calls.length = 0
+  await side(f, false)
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(cardPad(f), false)
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
