@@ -28,7 +28,7 @@ Kind: GUI (`gui-experimental`). Cmd+R for GUI. The groups need the Side tabs lay
 ## Options
 | Option | Default | |
 |---|---|---|
-| `archive` | `auto` | `auto`: stand down when OpenCode shows its own archive UI. `ours`: always show ours. `theirs`: always stand down. |
+| `archive` | `auto` | `auto`: yield to OpenCode's own archive UI (its own archived group, or an Archive item of its own for our Archive actions). `ours`: always show ours. `theirs`: always stand down. |
 
 ```json
 "plugins": [{ "package": "/path/to/apps/opencode-plugins/snooze-archive", "options": { "archive": "theirs" } }]
@@ -37,18 +37,19 @@ Kind: GUI (`gui-experimental`). Cmd+R for GUI. The groups need the Side tabs lay
 ## When OpenCode adds archive UI
 OpenCode 2.2.5 stores archived sessions but has no archive UI in its Side tabs sidebar, its menus or its palette. Its experimental Inbox layout has an Archived section and an Archive menu item of its own; that layout shows none of this plugin's groups, so it does not count. In `auto` the plugin watches for the host's own:
 
-- **Command**: a bound `session.archive` or `session.unarchive` keybind.
 - **Menu**: a session menu (tab, header, Home row) that already has an Archive or Unarchive item. Our menu item is then left out of that menu.
-- **Sidebar**: an archived group inside the Side tabs sidebar (`data-slot` or `data-component` containing `archived`).
 - **Home**: the Home row's `data-action="home-session-archive"` button.
+- **Sidebar**: an archived group inside the Side tabs sidebar (`data-slot` or `data-component` containing `archived`).
 
-Any one of them makes the **Archived** group, the **Archive** menu items, the hover Archive button (the host's close X comes back), the Archive and Refresh palette commands, and the Snoozed row's Archive stand down. Snooze, the Snoozed group, Delete…, waking when a session is archived elsewhere, and the woke mark stay. It is live: the group stays mounted but hidden, nothing is fetched while it is down, and it comes back, and loads what it missed, when the host's UI goes away. The reading is on the sidebar root as `data-sa-archive="ours|theirs"`.
+A host **Archive action** (the menu item or the Home button) makes our Archive actions stand down: the Archive menu items, the hover Archive button (the host's close X comes back), the Archive palette command, and the Snoozed row's Archive. It does not make the **Archived** group stand down, because the group is how you browse and restore what was archived. Only a host **archived group** in the sidebar does that, and then the Refresh palette command goes too. Snooze, the Snoozed group, Delete…, waking when a session is archived elsewhere, and the woke mark always stay. It is live: the group stays mounted but hidden, nothing is fetched while it is down, and it comes back, and loads what it missed, when the host's UI goes away. The sidebar root carries `data-sa-archive="ours|theirs"` (the group) and, when a signal fired, `data-sa-standdown="menu,home,sidebar"` naming it.
+
+A bound `session.archive` keybind is not a signal: OpenCode answers keybind lookups from a stored catalog of commands that includes ones of older builds, so it cannot tell a live command from a stale one.
 
 Archive and Restore call the client's own `session.archive` / `session.unarchive` when it has them, else `session.update({ archived })`, then check the server's state.
 
 ### Re-check on each OpenCode update
 - **SDK**: do `client.session.archive` / `unarchive` exist, and with which argument (the plugin assumes `{ sessionID }` and falls back to `update` on any error)? Does `session.list({ archived: true })` still work?
-- **Commands**: the id the host gives its archive command. The plugin only knows `session.archive` and `session.unarchive` (`HOST_COMMANDS` in `src/guard.ts`); no registry lists the host's commands.
+- **Commands**: whether the host registers an archive command (its bundle has no `session.archive` id in 2.2.5). Not detectable from a keybind (see above); look for the menu item or button it would come with.
 - **Menus**: the label or `data-action` of the host's Archive item in the tab, header and Home row menus (`hasNativeArchive`).
 - **Sidebar**: the `data-slot` / `data-component` of an archived group in the Side tabs sidebar (`SIDEBAR_ARCHIVED`). The probe is scoped to `[data-slot="vertical-tabs-sidebar"]`.
 - **Home**: whether `SHOW_HOME_SESSION_ARCHIVE` is on (`home-session-archive`).
