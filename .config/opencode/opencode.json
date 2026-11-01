@@ -4,6 +4,18 @@
   "experimental": {
     "artifacts": true
   },
+  "provider": {
+    "claude-agent": {
+      "models": {
+        "claude-fable-5-1[1m]": {
+          "limit": {
+            "context": 1000000,
+            "output": 0
+          }
+        }
+      }
+    }
+  },
   "plugins": [
     "/Users/isaac/git/dev-files/apps/opencode-plugins/sidebar-repos",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/timeline-rail",
