@@ -1,3 +1,9 @@
+/**
+ * Policy of every page. `default-src 'none'` closes fetch, XHR, WebSocket, images, fonts, media, frames, objects,
+ * workers and prefetch to anything but inline or `data:`/`blob:` content the page makes itself. `navigate-to` is listed
+ * because it is the right directive, but Chromium does not implement it: navigation is stopped by the bridge (the
+ * Navigation API) and by the parent (a second load of the frame replaces it), see DESIGN.md "Isolation".
+ */
 export const csp = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
@@ -7,12 +13,17 @@ export const csp = [
   "media-src data: blob:",
   "connect-src 'none'",
   "frame-src 'none'",
+  "child-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'none'",
+  "prefetch-src 'none'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
+  "navigate-to 'none'",
 ].join("; ")
 
-/** Without allow-same-origin the page gets an opaque origin: no app cookies, storage, DOM or session. */
+/** Without allow-same-origin the page gets an opaque origin: no app cookies, storage, DOM or session. No popups, forms, modals or top navigation. */
 export const sandbox = "allow-scripts"
 
 export type ThemeVars = Readonly<Record<string, string>>
@@ -30,9 +41,16 @@ export type FrameMessage =
   | { type: "height"; height: number }
   | { type: "open"; url: string }
 
+/**
+ * Runs first in the page. It cancels every navigation of the frame (`location.href`, `<meta refresh>`, `a.click()`,
+ * `navigation.navigate`), removes WebRTC (its ICE servers reach the network outside CSP), reports height and applies
+ * theme and zoom pushed by the parent. A link click only becomes an `open` message when a real user caused it.
+ */
 const bridge = (id: string) => `(function(){
 var id=${JSON.stringify(id)},p=parent,raf=0,last=0;
 function send(m){m.vr=id;p.postMessage(m,"*")}
+try{var nav=window.navigation;if(nav&&nav.addEventListener)nav.addEventListener("navigate",function(e){e.preventDefault()},true)}catch(_){}
+["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCSessionDescription","RTCIceCandidate"].forEach(function(n){try{Object.defineProperty(window,n,{value:undefined,writable:false,configurable:false})}catch(_){}});
 function measure(){raf=0;var b=document.body;if(!b)return;var s=getComputedStyle(b);
 var h=Math.ceil(b.getBoundingClientRect().height+(parseFloat(s.marginTop)||0)+(parseFloat(s.marginBottom)||0));
 if(h!==last){last=h;send({type:"height",height:h})}}
@@ -43,9 +61,9 @@ var r=document.documentElement;
 if(m.type==="theme"){for(var k in m.vars)r.style.setProperty(k,m.vars[k]);r.style.colorScheme=m.mode;queue()}
 else if(m.type==="zoom"){r.style.zoom=String(m.value);queue()}});
 document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[href]");if(!a)return;
-var h=a.getAttribute("href")||"";if(h.charAt(0)==="#")return;e.preventDefault();if(ext(a.href))send({type:"open",url:a.href})},true);
+var h=a.getAttribute("href")||"";if(h.charAt(0)==="#")return;e.preventDefault();if(e.isTrusted&&ext(a.href))send({type:"open",url:a.href})},true);
 document.addEventListener("submit",function(e){e.preventDefault()},true);
-window.open=function(u){if(u&&ext(String(u)))send({type:"open",url:String(u)});return null};
+window.open=function(){return null};
 addEventListener("load",function(){queue();send({type:"ready"})});
 if(typeof ResizeObserver==="function"){var ro=new ResizeObserver(queue);ro.observe(document.documentElement);
 document.addEventListener("DOMContentLoaded",function(){ro.observe(document.body);queue()})}
@@ -65,15 +83,16 @@ function cssVars(theme: Theme) {
 
 /**
  * Builds the sandboxed page. The HTML is always wrapped, never spliced, so a `<head>` or `<!--` inside it cannot
- * displace the CSP meta or the bridge. The iframe's own `csp` attribute enforces the same policy a second time.
+ * displace the CSP meta or the bridge, which come first. The iframe's own `csp` attribute enforces the same policy a
+ * second time.
  */
 export function buildDocument(input: { id: string; html: string; theme: Theme }) {
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
+    `<script>${bridge(input.id).replaceAll("</", "<\\/")}</script>` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
-    `<style>${cssVars(input.theme)}${base}</style>` +
-    `<script>${bridge(input.id).replaceAll("</", "<\\/")}</script></head><body>${input.html}</body></html>`
+    `<style>${cssVars(input.theme)}${base}</style></head><body>${input.html}</body></html>`
   )
 }
 

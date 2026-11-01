@@ -15,10 +15,23 @@ test("sandbox never grants the app origin", () => {
   assert.ok(!/https?:/.test(csp))
 })
 
+test("the policy closes every network-capable directive and keeps only inline and data content", () => {
+  const directives = Object.fromEntries(csp.split("; ").map((part) => [part.split(" ")[0], part.split(" ").slice(1).join(" ")]))
+  for (const name of ["default-src", "connect-src", "frame-src", "child-src", "worker-src", "manifest-src", "prefetch-src", "object-src", "base-uri", "form-action", "navigate-to"]) {
+    assert.equal(directives[name], "'none'", name)
+  }
+  assert.equal(directives["script-src"], "'unsafe-inline'")
+  assert.equal(directives["style-src"], "'unsafe-inline'")
+  assert.equal(directives["img-src"], "data: blob:")
+  assert.equal(directives["font-src"], "data:")
+  assert.ok(!csp.includes("unsafe-eval") && !csp.includes("*"))
+})
+
 test("the document wraps hostile HTML after the CSP and the bridge", () => {
   const html = `<!-- <head> --><head><meta http-equiv="Content-Security-Policy" content="default-src *"></head><script>fetch("//x")</script>`
   const doc = buildDocument({ id: "c1", html, theme })
   assert.ok(doc.indexOf("Content-Security-Policy") < doc.indexOf("<!-- <head>"))
+  assert.ok(doc.indexOf("Content-Security-Policy") < doc.indexOf("<script>"))
   assert.ok(doc.indexOf("<script>") < doc.indexOf(html))
   assert.ok(doc.startsWith("<!doctype html><html><head>"))
   assert.match(doc, /:root\{color-scheme:dark;--bg:#111;--fg:#eee\}/)
@@ -51,18 +64,38 @@ test("readTheme maps app tokens and keys on content", () => {
   assert.notEqual(themeKey(dark), themeKey({ ...dark, mode: "light" }))
 })
 
-test("the bridge script reports height, forwards theme and routes links", () => {
+function runBridge(html = "") {
   const window = new Window({ url: "about:blank" })
   const posted: any[] = []
   const parent = { postMessage: (message: unknown) => posted.push(message) }
-  const script = buildDocument({ id: "c1", html: "", theme }).match(/<script>([\s\S]*?)<\/script>/)![1]!
-  const fn = new window.Function("parent", "ResizeObserver", "requestAnimationFrame", script.replace("(function(){", "(function(){"))
-  window.document.body.innerHTML = `<a id="x" href="https://a.dev/">x</a><a id="y" href="javascript:1">y</a>`
-  ;(window as any).parent = parent
+  const script = buildDocument({ id: "c1", html, theme }).match(/<script>([\s\S]*?)<\/script>/)![1]!
+  const navigation = new window.EventTarget()
+  ;(window as any).navigation = navigation
+  ;(window as any).RTCPeerConnection = function () {}
+  window.document.body.innerHTML = `<a id="x" href="https://a.dev/">x</a><a id="y" href="javascript:1">y</a><form id="f"></form>`
+  const fn = new window.Function("parent", "ResizeObserver", "requestAnimationFrame", script)
   fn.call(window, parent, undefined, (run: () => void) => run())
+  return { window, posted, navigation }
+}
+
+test("the bridge reports ready, and a link click never opens without a trusted event", () => {
+  const { window, posted } = runBridge()
   window.dispatchEvent(new window.Event("load"))
   assert.ok(posted.some((message) => message.type === "ready" && message.vr === "c1"))
-  window.document.getElementById("x")!.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }))
-  window.document.getElementById("y")!.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }))
-  assert.deepEqual(posted.filter((message) => message.type === "open").map((message) => message.url), ["https://a.dev/"])
+  const click = new window.MouseEvent("click", { bubbles: true, cancelable: true })
+  window.document.getElementById("x")!.dispatchEvent(click)
+  assert.equal(click.defaultPrevented, true, "navigation by link is always stopped")
+  assert.deepEqual(posted.filter((message) => message.type === "open"), [], "a script-made click is not a user gesture")
+})
+
+test("the bridge cancels every navigation, removes WebRTC and neuters window.open and forms", () => {
+  const { window, navigation } = runBridge()
+  const event = Object.assign(new window.Event("navigate", { cancelable: true }))
+  navigation.dispatchEvent(event)
+  assert.equal(event.defaultPrevented, true)
+  assert.equal((window as any).RTCPeerConnection, undefined)
+  assert.equal((window as any).open("https://evil.test"), null)
+  const submit = new window.Event("submit", { bubbles: true, cancelable: true })
+  window.document.getElementById("f")!.dispatchEvent(submit)
+  assert.equal(submit.defaultPrevented, true)
 })

@@ -1,10 +1,13 @@
 import { openPublishedGroups } from "./groups"
-import { buildDocument, csp, parseFrameMessage, sandbox, themeKey, zoomSteps, type Theme } from "./frame"
+import type { Frames, View } from "./frames"
+import { rowLabel, type Placement } from "./ids"
 
 export const wrapperSelector = '[data-component="tool-part-wrapper"][data-timeline-part-id]'
 const HOST = "data-visual-reply"
+const ROW = "data-visual-reply-update"
 const OVERLAY = "data-visual-reply-overlay"
 
+/** What a card shows: the artifact's current page, or the page its tool call carried when the artifact is gone. */
 export interface PageData {
   title: string
   html: string
@@ -12,23 +15,24 @@ export interface PageData {
 
 export interface AttachOptions {
   doc: Document
-  /** Ids of tool calls known to have published a page. */
-  known: () => ReadonlySet<string>
-  load: (callID: string) => Promise<PageData | undefined>
-  theme: () => Theme
-  openExternal: (url: string) => void
-  /** Called with ids on screen that no page is known for yet. */
+  frames: Frames
+  /** Tool parts the session scan placed something under, and every finished part it examined. */
+  scan: () => { placements: ReadonlyMap<string, readonly Placement[]>; settled: ReadonlySet<string> }
+  load: (placement: Placement) => Promise<PageData | undefined>
+  failedLabel: () => string
+  /** The word on an update row, in the app's language. */
+  updatedLabel: () => string
+  /** Title of an artifact the scan listed, for update rows that carry none. */
+  titleOf: (artifactID: string) => string | undefined
+  /** Called with tool part ids on screen that are neither placed nor finished. */
   unknown?: (callIDs: string[]) => void
   schedule?: (run: () => void) => void
-  /**
-   * Mounts the zoom/expand/close buttons into `container` and returns their disposer. The caller renders the app's
-   * own buttons; this file only owns the sandboxed frame and its placement.
-   */
+  /** Mounts the zoom/panel/expand/close buttons into `container` and returns their disposer. */
   mountControls: (container: HTMLElement, actions: ControlActions) => () => void
+  openPanel: (artifactID: string) => void
 }
 
 export interface ControlActions {
-  /** Which surface the buttons are on: the inline card (expand) or the full-window overlay (close). */
   surface: "inline" | "overlay"
   title: string
   zoomIn: () => void
@@ -36,99 +40,68 @@ export interface ControlActions {
   zoomReset: () => void
   /** Expands the inline card, or closes the overlay. */
   primary: () => void
+  /** Opens the same artifact in the side panel; absent when the call's artifact id is unknown. */
+  panel?: () => void
 }
 
-interface View {
-  callID: string
-  frame: HTMLIFrameElement
-  overlay: boolean
-}
-
-interface Entry {
-  wrapper: Element
-  disposeControls: () => void
+interface Item {
+  key: string
+  placement: Placement
   host: HTMLElement
-  body: HTMLElement
+  body?: HTMLElement
+  titleEl?: HTMLElement
+  disposeControls?: () => void
   view?: View
   loading: boolean
 }
 
+interface Entry {
+  wrapper: Element
+  items: Item[]
+}
+
 const pageCacheSize = 40
+/** A part still running when asked is asked again after 1s, 2s, 4s ... up to this many times, so a finished one is found. */
+const maxAsks = 6
+const eligible = (entry: { count: number; at: number } | undefined, at: number) =>
+  !entry || (entry.count < maxAsks && at - entry.at >= 1000 * 2 ** (entry.count - 1))
+
+/**
+ * Inserts a card under the tool row of each artifact the agent created and a compact row under each update. The host
+ * has no timeline extension point (host-architecture §8), so this is DOM next to the host's row, never inside it.
+ */
 export function createAttacher(options: AttachOptions) {
-  const { doc } = options
+  const { doc, frames } = options
   const schedule = options.schedule ?? ((run) => void requestAnimationFrame(run))
   const entries = new Map<Element, Entry>()
   const pages = new Map<string, PageData>()
-  const heights = new Map<string, number>()
-  const zooms = new Map<string, number>()
-  const askedUnknown = new Set<string>()
+  const asked = new Map<string, { count: number; at: number }>()
   const openedGroups = new Set<string>()
-  let overlay: { root: HTMLElement; view: View; callID: string; keydown: (event: KeyboardEvent) => void; disposeControls: () => void } | undefined
-  let theme = options.theme()
-  let themeId = themeKey(theme)
+  let overlay: { root: HTMLElement; view: View; disposeControls: () => void; keydown: (event: KeyboardEvent) => void } | undefined
   let disposed = false
   let pending = false
 
-  const views = () => [...entries.values()].flatMap((entry) => (entry.view ? [entry.view] : [])).concat(overlay ? [overlay.view] : [])
+  const pageKey = (placement: Placement) => placement.artifactID ?? placement.callID
 
-  function post(view: View, message: Record<string, unknown>) {
-    view.frame.contentWindow?.postMessage({ vr: view.callID, ...message }, "*")
+  function remember(key: string, page: PageData) {
+    pages.delete(key)
+    pages.set(key, page)
+    for (const stale of pages.keys()) {
+      if (pages.size <= pageCacheSize) break
+      if (![...entries.values()].some((entry) => entry.items.some((item) => pageKey(item.placement) === stale))) pages.delete(stale)
+    }
   }
 
-  function sync(view: View) {
-    post(view, { type: "theme", mode: theme.mode, vars: theme.vars })
-    post(view, { type: "zoom", value: zooms.get(view.callID) ?? 1 })
-  }
-
-  function makeFrame(callID: string, page: PageData, overlayView: boolean): View {
-    const frame = doc.createElement("iframe")
-    frame.setAttribute("sandbox", sandbox)
-    frame.setAttribute("csp", csp)
-    frame.setAttribute("referrerpolicy", "no-referrer")
-    frame.setAttribute("loading", "eager")
-    frame.title = page.title
-    frame.setAttribute("data-visual-reply-frame", overlayView ? "overlay" : "inline")
-    if (!overlayView) frame.style.height = `${heights.get(callID) ?? 240}px`
-    frame.srcdoc = buildDocument({ id: callID, html: page.html, theme })
-    return { callID, frame, overlay: overlayView }
-  }
-
-  function onMessage(event: MessageEvent) {
-    const view = views().find((item) => item.frame.contentWindow && item.frame.contentWindow === event.source)
-    if (!view) return
-    const message = parseFrameMessage(event.data, view.callID)
-    if (!message) return
-    if (message.type === "ready") sync(view)
-    else if (message.type === "height") {
-      if (view.overlay) return
-      if (Math.abs((heights.get(view.callID) ?? 0) - message.height) < 2) return
-      heights.set(view.callID, message.height)
-      view.frame.style.height = `${message.height}px`
-    } else options.openExternal(message.url)
-  }
-  doc.defaultView?.addEventListener("message", onMessage)
-
-  function setZoom(callID: string, next: number) {
-    const value = Math.min(zoomSteps.at(-1)!, Math.max(zoomSteps[0], next))
-    zooms.set(callID, value)
-    for (const view of views()) if (view.callID === callID) post(view, { type: "zoom", value })
-  }
-
-  function stepZoom(callID: string, direction: 1 | -1) {
-    const current = zooms.get(callID) ?? 1
-    const index = zoomSteps.findIndex((step) => step >= current - 1e-9)
-    const next = zoomSteps[Math.min(zoomSteps.length - 1, Math.max(0, index + direction))]!
-    setZoom(callID, next)
-  }
-
-  function controlsFor(container: HTMLElement, callID: string, surface: ControlActions["surface"]) {
+  const controlsFor = (container: HTMLElement, placement: Placement, surface: ControlActions["surface"]) => {
+    const group = pageKey(placement)
     return options.mountControls(container, {
       surface,
-      title: pages.get(callID)?.title ?? "",
-      zoomIn: () => stepZoom(callID, 1),
-      zoomOut: () => stepZoom(callID, -1),
-      zoomReset: () => setZoom(callID, 1),
-      primary: () => (surface === "inline" ? openOverlay(callID) : closeOverlay()),
+      title: pages.get(group)?.title ?? "",
+      zoomIn: () => frames.zoomStep(group, 1),
+      zoomOut: () => frames.zoomStep(group, -1),
+      zoomReset: () => frames.zoomReset(group),
+      primary: () => (surface === "inline" ? openOverlay(placement) : closeOverlay()),
+      panel: placement.artifactID ? () => options.openPanel(placement.artifactID!) : undefined,
     })
   }
 
@@ -136,16 +109,17 @@ export function createAttacher(options: AttachOptions) {
     if (!overlay) return
     doc.removeEventListener("keydown", overlay.keydown, true)
     overlay.disposeControls()
+    frames.retire(overlay.view)
     overlay.root.remove()
     overlay = undefined
   }
 
-  function openOverlay(callID: string) {
-    const page = pages.get(callID)
+  function openOverlay(placement: Placement) {
+    const page = pages.get(pageKey(placement))
     if (!page) return
     closeOverlay()
     const root = doc.createElement("div")
-    root.setAttribute(OVERLAY, callID)
+    root.setAttribute(OVERLAY, placement.callID)
     root.setAttribute("role", "dialog")
     root.setAttribute("aria-modal", "true")
     root.setAttribute("aria-label", page.title)
@@ -157,8 +131,8 @@ export function createAttacher(options: AttachOptions) {
     const slot = doc.createElement("div")
     slot.setAttribute("data-slot", "controls")
     head.append(title, slot)
-    const disposeControls = controlsFor(slot, callID, "overlay")
-    const view = makeFrame(callID, page, true)
+    const disposeControls = controlsFor(slot, placement, "overlay")
+    const view = frames.create({ group: pageKey(placement), html: page.html, surface: "overlay", title: page.title })
     root.append(head, view.frame)
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
@@ -167,142 +141,208 @@ export function createAttacher(options: AttachOptions) {
     }
     doc.addEventListener("keydown", keydown, true)
     doc.body.append(root)
-    overlay = { root, view, callID, keydown, disposeControls }
+    overlay = { root, view, disposeControls, keydown }
   }
 
-  function remember(callID: string, page: PageData) {
-    pages.delete(callID)
-    pages.set(callID, page)
-    const live = new Set([...entries.values()].map((entry) => entry.host.getAttribute(HOST)))
-    for (const key of pages.keys()) {
-      if (pages.size <= pageCacheSize) break
-      if (!live.has(key)) pages.delete(key)
-    }
+  function div(slot?: string) {
+    const node = doc.createElement("div")
+    if (slot) node.setAttribute("data-slot", slot)
+    return node
   }
 
-  function fill(entry: Entry, callID: string, page: PageData) {
-    entry.body.replaceChildren()
-    entry.view = makeFrame(callID, page, false)
-    entry.body.append(entry.view.frame)
-  }
-
-  function mount(wrapper: Element, callID: string) {
-    const host = doc.createElement("div")
-    host.setAttribute(HOST, callID)
-    const head = doc.createElement("div")
-    head.setAttribute("data-slot", "head")
+  function buildCard(item: Item) {
+    const head = div("head")
     const title = doc.createElement("span")
     title.setAttribute("data-slot", "title")
-    title.textContent = pages.get(callID)?.title ?? ""
-    const slot = doc.createElement("div")
-    slot.setAttribute("data-slot", "controls")
+    title.textContent = item.placement.title ?? pages.get(pageKey(item.placement))?.title ?? ""
+    const slot = div("controls")
     head.append(title, slot)
-    const body = doc.createElement("div")
-    body.setAttribute("data-slot", "body")
-    host.append(head, body)
-    wrapper.after(host)
-    const entry: Entry = { wrapper, host, body, loading: false, disposeControls: controlsFor(slot, callID, "inline") }
-    entries.set(wrapper, entry)
-    const page = pages.get(callID)
-    if (page) fill(entry, callID, page)
-    else {
-      entry.loading = true
-      void options
-        .load(callID)
-        .then((loaded) => {
-          if (disposed || entries.get(wrapper) !== entry) return
-          if (loaded) {
-            remember(callID, loaded)
-            title.textContent = loaded.title
-            fill(entry, callID, loaded)
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          entry.loading = false
-        })
-    }
+    const body = div("body")
+    item.host.append(head, body)
+    item.body = body
+    item.titleEl = title
+    item.disposeControls = controlsFor(slot, item.placement, "inline")
+  }
+
+  /** The host's own tool-row markup (`BasicTool` trigger), so its CSS styles the row: no copy of its rules here. */
+  function buildRow(item: Item) {
+    const label = rowLabel(item.placement, { title: options.titleOf(item.placement.artifactID ?? "") ?? "" })
+    // The same two wrappers the host puts around a tool row, so its layout rules apply (no part id: this is not a part).
+    item.host.setAttribute("data-component", "tool-part-wrapper")
+    const collapsible = div()
+    collapsible.setAttribute("data-component", "collapsible")
+    collapsible.setAttribute("data-variant", "normal")
+    collapsible.classList.add("tool-collapsible")
+    item.host.append(collapsible)
+    const button = doc.createElement("button")
+    button.type = "button"
+    button.setAttribute("data-slot", "collapsible-trigger")
+    const trigger = div()
+    trigger.setAttribute("data-component", "tool-trigger")
+    const content = div("basic-tool-tool-trigger-content")
+    const info = div("basic-tool-tool-info")
+    const structured = div("basic-tool-tool-info-structured")
+    const main = div("basic-tool-tool-info-main")
+    const title = doc.createElement("span")
+    title.setAttribute("data-slot", "basic-tool-tool-title")
+    title.textContent = options.updatedLabel()
+    const arg = doc.createElement("span")
+    arg.setAttribute("data-slot", "basic-tool-tool-arg")
+    arg.textContent = label
+    main.append(title, arg)
+    structured.append(main)
+    info.append(structured)
+    content.append(info)
+    trigger.append(content)
+    button.append(trigger)
+    collapsible.append(button)
+    const id = item.placement.artifactID
+    if (id) button.addEventListener("click", () => options.openPanel(id))
+    else button.disabled = true
+  }
+
+  function fill(item: Item, page: PageData) {
+    if (!item.body || !item.titleEl) return
+    item.titleEl.textContent = page.title
+    if (item.view) frames.retire(item.view)
+    item.body.replaceChildren()
+    item.view = frames.create({ group: pageKey(item.placement), html: page.html, surface: "inline", title: page.title })
+    item.body.append(item.view.frame)
+  }
+
+  function fail(item: Item) {
+    item.body?.replaceChildren()
+    const note = div("error")
+    note.textContent = options.failedLabel()
+    item.body?.append(note)
+  }
+
+  function request(item: Item) {
+    const key = pageKey(item.placement)
+    const cached = pages.get(key)
+    if (cached) return fill(item, cached)
+    item.loading = true
+    void options
+      .load(item.placement)
+      .then((loaded) => {
+        if (disposed || !item.host.isConnected) return
+        if (!loaded) return fail(item)
+        remember(key, loaded)
+        fill(item, loaded)
+      })
+      .catch(() => item && !disposed && fail(item))
+      .finally(() => {
+        item.loading = false
+      })
+  }
+
+  function mountItem(wrapper: Element, entry: Entry, placement: Placement, index: number, after: Element) {
+    const item: Item = { key: `${placement.callID}#${index}`, placement, host: div(), loading: false }
+    item.host.setAttribute(placement.kind === "card" ? HOST : ROW, item.key)
+    if (placement.kind === "card") buildCard(item)
+    else buildRow(item)
+    after.after(item.host)
+    entry.items.push(item)
+    if (placement.kind === "card") request(item)
+    return item.host
   }
 
   function unmount(wrapper: Element) {
-    entries.get(wrapper)?.disposeControls()
-    entries.get(wrapper)?.host.remove()
+    const entry = entries.get(wrapper)
+    if (!entry) return
+    for (const item of entry.items) {
+      item.disposeControls?.()
+      if (item.view) frames.retire(item.view)
+      item.host.remove()
+    }
     entries.delete(wrapper)
   }
+
+  const intact = (entry: Entry, placements: readonly Placement[]) =>
+    entry.items.length === placements.length &&
+    entry.items.every((item, index) => {
+      const placement = placements[index]!
+      const previous = index === 0 ? entry.wrapper : entry.items[index - 1]!.host
+      return item.host.isConnected && item.host.previousElementSibling === previous && item.placement.artifactID === placement.artifactID && item.placement.kind === placement.kind
+    })
 
   function run() {
     pending = false
     if (disposed) return
-    const known = options.known()
+    const { placements, settled } = options.scan()
     const seen = new Set<Element>()
     const fresh = new Set<string>()
-    for (const callID of openPublishedGroups(doc, known, openedGroups).unknown) if (!askedUnknown.has(callID)) fresh.add(callID)
+    const resolved = { has: (id: string) => placements.has(id) }
+    const finished = { has: (id: string) => placements.has(id) || settled.has(id) }
+    const at = Date.now()
+    for (const callID of openPublishedGroups(doc, resolved, openedGroups, finished).unknown) if (eligible(asked.get(callID), at)) fresh.add(callID)
     for (const wrapper of doc.querySelectorAll(wrapperSelector)) {
       const callID = wrapper.getAttribute("data-timeline-part-id")!
-      if (!known.has(callID)) {
-        if (!askedUnknown.has(callID)) fresh.add(callID)
+      const found = placements.get(callID)
+      if (!found) {
+        if (!finished.has(callID) && eligible(asked.get(callID), at)) fresh.add(callID)
         continue
       }
       seen.add(wrapper)
       const entry = entries.get(wrapper)
-      if (entry && entry.host.isConnected && entry.host.previousElementSibling === wrapper && entry.host.getAttribute(HOST) === callID) continue
+      if (entry && intact(entry, found)) continue
       if (entry) unmount(wrapper)
-      mount(wrapper, callID)
+      const next: Entry = { wrapper, items: [] }
+      entries.set(wrapper, next)
+      let anchor: Element = wrapper
+      found.forEach((placement, index) => {
+        anchor = mountItem(wrapper, next, placement, index, anchor)
+      })
     }
     for (const wrapper of [...entries.keys()]) if (!seen.has(wrapper)) unmount(wrapper)
-    for (const host of doc.querySelectorAll(`[${HOST}]`)) {
-      const owned = [...entries.values()].some((entry) => entry.host === host)
-      if (!owned) host.remove()
+    for (const host of doc.querySelectorAll(`[${HOST}],[${ROW}]`)) {
+      if (![...entries.values()].some((entry) => entry.items.some((item) => item.host === host))) host.remove()
     }
     if (fresh.size) {
-      for (const callID of fresh) askedUnknown.add(callID)
+      for (const callID of fresh) asked.set(callID, { count: (asked.get(callID)?.count ?? 0) + 1, at })
       options.unknown?.([...fresh])
     }
   }
 
+  const ours = (node: Node) => node instanceof Element && (node.hasAttribute(HOST) || node.hasAttribute(ROW) || node.hasAttribute(OVERLAY))
   const observer = new (doc.defaultView as unknown as { MutationObserver: typeof MutationObserver }).MutationObserver((mutations) => {
-    const ours = (node: Node) => node instanceof Element && (node.hasAttribute(HOST) || node.hasAttribute(OVERLAY))
     if (mutations.every((mutation) => [...mutation.addedNodes, ...mutation.removedNodes].every(ours))) return
-    request()
+    ask()
   })
 
-  function request() {
+  function ask() {
     if (pending || disposed) return
     pending = true
     schedule(run)
   }
 
-  /** Forget that an id had no page, so the next scan asks again. */
-  function recheck(callIDs?: Iterable<string>) {
-    if (callIDs) for (const callID of callIDs) askedUnknown.delete(callID)
-    else askedUnknown.clear()
-    request()
-  }
-
-  for (const stale of doc.querySelectorAll(`[${HOST}],[${OVERLAY}]`)) stale.remove()
+  for (const stale of doc.querySelectorAll(`[${HOST}],[${ROW}],[${OVERLAY}]`)) stale.remove()
   observer.observe(doc.body, { childList: true, subtree: true })
-  request()
+  ask()
 
   return {
-    scan: request,
-    recheck,
-    /** Applies a changed theme to every live page. */
-    refreshTheme() {
-      const next = options.theme()
-      const id = themeKey(next)
-      if (id === themeId) return
-      theme = next
-      themeId = id
-      for (const view of views()) post(view, { type: "theme", mode: theme.mode, vars: theme.vars })
+    scan: ask,
+    /** The artifact changed: reload every live card that shows it, in place. */
+    async refresh(artifactID: string) {
+      pages.delete(artifactID)
+      for (const entry of entries.values()) {
+        for (const item of entry.items) {
+          if (item.placement.kind !== "card" || item.placement.artifactID !== artifactID || !item.view) continue
+          const loaded = await options.load(item.placement).catch(() => undefined)
+          if (disposed || !loaded || !item.view) continue
+          remember(artifactID, loaded)
+          item.titleEl && (item.titleEl.textContent = loaded.title)
+          frames.reload(item.view, loaded.html)
+        }
+      }
     },
-    count: () => entries.size,
+    count: () => [...entries.values()].reduce((total, entry) => total + entry.items.length, 0),
     dispose() {
       disposed = true
       observer.disconnect()
-      doc.defaultView?.removeEventListener("message", onMessage)
       closeOverlay()
       for (const wrapper of [...entries.keys()]) unmount(wrapper)
-      for (const stale of doc.querySelectorAll(`[${HOST}],[${OVERLAY}]`)) stale.remove()
+      for (const stale of doc.querySelectorAll(`[${HOST}],[${ROW}],[${OVERLAY}]`)) stale.remove()
       entries.clear()
     },
   }

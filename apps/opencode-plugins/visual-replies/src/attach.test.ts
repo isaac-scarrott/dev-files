@@ -2,28 +2,34 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
 import { createAttacher, type ControlActions, type PageData } from "./attach"
-import type { Theme } from "./frame"
+import { createFrames } from "./frames"
+import type { Placement } from "./ids"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function setup(initial: string[] = ["c1"]) {
+function setup() {
   const window = new Window({ url: "https://app.test/" })
   const doc = window.document as unknown as Document
   doc.body.innerHTML = `<div id="timeline"></div>`
   const timeline = doc.getElementById("timeline")!
-  const known = new Set(initial)
-  const opened: string[] = []
+  const placements = new Map<string, Placement[]>()
+  const settled = new Set<string>()
+  const panels: string[] = []
   const unknown: string[][] = []
   const controls: ControlActions[] = []
+  const pages = new Map<string, PageData | undefined>()
   let loads = 0
-  let theme: Theme = { mode: "light", vars: { "--bg": "#fff" } }
+  const frames = createFrames({ doc, theme: () => ({ mode: "light", vars: {} }), open: async () => false })
   const attacher = createAttacher({
     doc,
-    known: () => known,
-    load: async (id): Promise<PageData | undefined> => (loads++, known.has(id) ? { title: `Page ${id}`, html: `<p>${id}</p>` } : undefined),
-    theme: () => theme,
-    openExternal: (url) => opened.push(url),
+    frames,
+    scan: () => ({ placements, settled }),
+    load: async (placement) => (loads++, pages.get(placement.artifactID ?? placement.callID)),
+    updatedLabel: () => "Updated",
+    failedLabel: () => "Could not load this page.",
+    titleOf: () => undefined,
     unknown: (ids) => unknown.push(ids),
+    openPanel: (id) => panels.push(id),
     schedule: (run) => run(),
     mountControls: (container, actions) => {
       controls.push(actions)
@@ -38,22 +44,17 @@ function setup(initial: string[] = ["c1"]) {
     wrapper.setAttribute("data-timeline-part-id", id)
     return wrapper
   }
+  const card = (callID: string, artifactID: string): Placement => ({ callID, kind: "card", artifactID })
   const hosts = () => [...doc.querySelectorAll("[data-visual-reply]")]
-  const frames = () => [...doc.querySelectorAll("iframe")] as HTMLIFrameElement[]
-  /** Gives a frame a recordable window and returns the messages posted to it. */
-  const fake = (frame: HTMLIFrameElement) => {
-    const posted: any[] = []
-    const win = { postMessage: (message: unknown) => posted.push(message) }
-    Object.defineProperty(frame, "contentWindow", { value: win, configurable: true })
-    return { win, posted }
-  }
-  const send = (source: unknown, data: unknown) =>
-    window.dispatchEvent(Object.assign(new window.MessageEvent("message", { data }), { source }) as never)
-  return { window, doc, timeline, known, opened, unknown, controls, attacher, row, hosts, frames, fake, send, loads: () => loads, setTheme: (next: Theme) => (theme = next) }
+  const rows = () => [...doc.querySelectorAll("[data-visual-reply-update]")]
+  const iframes = () => [...doc.querySelectorAll("iframe")] as HTMLIFrameElement[]
+  return { window, doc, timeline, placements, settled, panels, unknown, controls, pages, attacher, frames, row, card, hosts, rows, iframes, loads: () => loads }
 }
 
-test("attaches one sandboxed frame after the tool row and is idempotent", async () => {
+test("attaches one sandboxed card after the tool row and is idempotent", async () => {
   const t = setup()
+  t.placements.set("c1", [t.card("c1", "art_1")])
+  t.pages.set("art_1", { title: "Page", html: "<p>c1</p>" })
   const wrapper = t.row("c1")
   t.timeline.append(wrapper, t.row("other"))
   t.attacher.scan()
@@ -63,169 +64,108 @@ test("attaches one sandboxed frame after the tool row and is idempotent", async 
   await tick()
   assert.equal(t.hosts().length, 1)
   assert.equal(wrapper.nextElementSibling, t.hosts()[0])
-  const [frame] = t.frames()
+  const [frame] = t.iframes()
   assert.equal(frame!.getAttribute("sandbox"), "allow-scripts")
-  assert.match(frame!.getAttribute("csp")!, /default-src 'none'/)
   assert.match(frame!.srcdoc, /<p>c1<\/p>/)
   assert.equal(wrapper.textContent, "", "app-owned row is untouched")
   assert.equal(t.loads(), 1)
+  assert.ok(t.controls[0]!.panel, "a card with an artifact id offers the panel")
 })
 
-test("unknown rows are reported once and attach after the page is announced", async () => {
-  const t = setup([])
-  t.timeline.append(t.row("c1"))
-  t.attacher.scan()
-  t.attacher.scan()
-  assert.deepEqual(t.unknown, [["c1"]])
-  assert.equal(t.hosts().length, 0)
-  t.known.add("c1")
-  t.attacher.recheck(["c1"])
-  await tick()
-  assert.equal(t.hosts().length, 1)
-})
-
-test("virtualization: a row that unmounts and remounts re-attaches without duplicates or a second fetch", async () => {
+test("an update is a compact row in the host's tool-row markup, not a second card, and opens the panel", async () => {
   const t = setup()
-  const first = t.row("c1")
-  t.timeline.append(first)
-  t.attacher.scan()
-  await tick()
-  const [frame] = t.frames()
-  const { win } = t.fake(frame!)
-  t.send(win, { vr: "c1", type: "height", height: 480 })
-
-  first.remove()
-  t.hosts()[0]?.remove()
-  t.attacher.scan()
-  assert.equal(t.hosts().length, 0)
-
-  const second = t.row("c1")
-  t.timeline.append(second)
-  t.attacher.scan()
+  t.placements.set("c1", [t.card("c1", "art_1")])
+  t.placements.set("u1", [{ callID: "u1", kind: "update", artifactID: "art_1", title: "Rev v2" }])
+  t.pages.set("art_1", { title: "Rev", html: "<p>latest</p>" })
+  t.timeline.append(t.row("c1"), t.row("u1"))
   t.attacher.scan()
   await tick()
   assert.equal(t.hosts().length, 1)
-  assert.equal(t.frames().length, 1)
-  assert.equal(t.loads(), 1, "page comes from cache")
-  assert.equal(t.frames()[0]!.style.height, "480px", "height is remembered so the row does not jump")
-
-  // The same call mounted in a cached hidden timeline gets its own card; both are cleaned with their rows.
-  const twin = t.row("c1")
-  t.timeline.append(twin)
-  t.attacher.scan()
-  await tick()
-  assert.equal(t.hosts().length, 2)
-  twin.remove()
-  t.attacher.scan()
-  assert.equal(t.hosts().length, 1)
+  assert.equal(t.rows().length, 1)
+  assert.equal(t.iframes().length, 1)
+  const row = t.rows()[0]!
+  assert.equal(row.querySelector('[data-component="collapsible"]')!.getAttribute("data-variant"), "normal")
+  assert.equal(row.getAttribute("data-timeline-part-id"), null, "not mistaken for a tool part")
+  assert.equal(row.querySelector('[data-slot="basic-tool-tool-title"]')!.textContent, "Updated")
+  assert.equal(row.querySelector('[data-slot="basic-tool-tool-arg"]')!.textContent, "Rev v2")
+  row.querySelector("button")!.dispatchEvent(new t.window.MouseEvent("click", { bubbles: true }) as never)
+  assert.deepEqual(t.panels, ["art_1"])
 })
 
-test("a host the app dropped from the DOM is rebuilt next to its row", async () => {
+test("several placements under one row stack in order and unmount together", async () => {
   const t = setup()
-  const wrapper = t.row("c1")
+  t.placements.set("e1", [t.card("e1", "art_a"), t.card("e1", "art_b")])
+  t.pages.set("art_a", { title: "A", html: "a" })
+  t.pages.set("art_b", { title: "B", html: "b" })
+  const wrapper = t.row("e1")
   t.timeline.append(wrapper)
   t.attacher.scan()
   await tick()
-  t.hosts()[0]!.remove()
-  t.attacher.scan()
-  await tick()
-  assert.equal(t.hosts().length, 1)
+  assert.deepEqual(t.hosts().map((host) => host.querySelector('[data-slot="title"]')!.textContent), ["A", "B"])
   assert.equal(wrapper.nextElementSibling, t.hosts()[0])
+  wrapper.remove()
+  t.attacher.scan()
+  assert.equal(t.hosts().length, 0)
+  assert.equal(t.frames.count(), 0, "frames are retired with their cards")
 })
 
-test("height messages resize within limits and only from the owning frame", async () => {
+test("a card with no loadable page shows the failure as a state", async () => {
   const t = setup()
+  t.placements.set("c1", [t.card("c1", "art_x")])
   t.timeline.append(t.row("c1"))
   t.attacher.scan()
   await tick()
-  const frame = t.frames()[0]!
-  const { win } = t.fake(frame)
-  t.send(win, { vr: "c1", type: "height", height: 300 })
-  assert.equal(frame.style.height, "300px")
-  t.send(win, { vr: "c1", type: "height", height: 99999 })
-  assert.equal(frame.style.height, "900px")
-  t.send({}, { vr: "c1", type: "height", height: 100 })
-  t.send(win, { vr: "wrong", type: "height", height: 100 })
-  assert.equal(frame.style.height, "900px")
+  assert.equal(t.hosts()[0]!.querySelector('[data-slot="error"]')!.textContent, "Could not load this page.")
+  assert.equal(t.iframes().length, 0)
 })
 
-test("links open externally only for http(s) and mailto", async () => {
+test("unknown rows are reported, finished ones are not, and a running one is asked again later with backoff", async () => {
   const t = setup()
-  t.timeline.append(t.row("c1"))
+  t.timeline.append(t.row("c1"), t.row("c2"))
+  t.settled.add("c2")
   t.attacher.scan()
-  await tick()
-  const { win } = t.fake(t.frames()[0]!)
-  t.send(win, { vr: "c1", type: "open", url: "https://example.com/a" })
-  t.send(win, { vr: "c1", type: "open", url: "javascript:alert(1)" })
-  assert.deepEqual(t.opened, ["https://example.com/a"])
+  assert.deepEqual(t.unknown, [["c1"]])
+  t.attacher.scan()
+  assert.equal(t.unknown.length, 1, "not asked again at once")
+  const realNow = Date.now
+  try {
+    Date.now = () => realNow() + 1100
+    t.attacher.scan()
+    assert.deepEqual(t.unknown.at(-1), ["c1"])
+    Date.now = () => realNow() + 1100 + 1200
+    t.attacher.scan()
+    assert.equal(t.unknown.length, 2, "the second backoff is 2s")
+  } finally {
+    Date.now = realNow
+  }
 })
 
-test("theme changes reach live frames once and new frames start themed", async () => {
+test("refresh reloads a live card in place, keeping its frame count", async () => {
   const t = setup()
+  t.placements.set("c1", [t.card("c1", "art_1")])
+  t.pages.set("art_1", { title: "Old", html: "<p>old</p>" })
   t.timeline.append(t.row("c1"))
   t.attacher.scan()
   await tick()
-  const { win, posted } = t.fake(t.frames()[0]!)
-  t.attacher.refreshTheme()
-  assert.equal(posted.length, 0)
-  t.setTheme({ mode: "dark", vars: { "--bg": "#000" } })
-  t.attacher.refreshTheme()
-  t.attacher.refreshTheme()
-  assert.deepEqual(posted, [{ vr: "c1", type: "theme", mode: "dark", vars: { "--bg": "#000" } }])
-  t.send(win, { vr: "c1", type: "ready" })
-  assert.deepEqual(posted.slice(1).map((message) => message.type), ["theme", "zoom"])
-
-  t.timeline.append(t.row("c1"))
-  t.attacher.scan()
-  await tick()
-  assert.match(t.frames()[1]!.srcdoc, /color-scheme:dark;--bg:#000/)
+  t.pages.set("art_1", { title: "New", html: "<p>new</p>" })
+  await t.attacher.refresh("art_1")
+  assert.equal(t.iframes().length, 1)
+  assert.match(t.iframes()[0]!.srcdoc, /<p>new<\/p>/)
+  assert.equal(t.hosts()[0]!.querySelector('[data-slot="title"]')!.textContent, "New")
 })
 
-test("zoom steps are shared by the card and the overlay; expand and Escape work", async () => {
+test("expand opens one overlay frame and closes on its button; dispose removes everything", async () => {
   const t = setup()
+  t.placements.set("c1", [t.card("c1", "art_1")])
+  t.pages.set("art_1", { title: "Page", html: "<p>c1</p>" })
   t.timeline.append(t.row("c1"))
   t.attacher.scan()
   await tick()
-  const { posted } = t.fake(t.frames()[0]!)
-  t.controls[0]!.zoomIn()
-  t.controls[0]!.zoomIn()
-  t.controls[0]!.zoomOut()
-  assert.deepEqual(posted.map((message) => message.value), [1.25, 1.5, 1.25])
-  t.controls[0]!.zoomReset()
-  assert.equal(posted.at(-1).value, 1)
-
   t.controls[0]!.primary()
-  const overlay = t.doc.querySelector("[data-visual-reply-overlay]")!
-  assert.ok(overlay)
-  assert.equal(t.frames().length, 2)
-  assert.equal(t.controls.at(-1)!.surface, "overlay")
-  t.attacher.scan()
   assert.equal(t.doc.querySelectorAll("[data-visual-reply-overlay]").length, 1)
-  t.doc.dispatchEvent(new t.window.KeyboardEvent("keydown", { key: "Escape" }) as never)
-  assert.equal(t.doc.querySelector("[data-visual-reply-overlay]"), null)
-  t.controls[0]!.primary()
+  assert.equal(t.iframes().length, 2)
   t.controls.at(-1)!.primary()
-  assert.equal(t.doc.querySelector("[data-visual-reply-overlay]"), null)
-})
-
-test("dispose removes every node and a new instance clears leftovers from the old one", async () => {
-  const t = setup()
-  t.timeline.append(t.row("c1"))
-  t.attacher.scan()
-  await tick()
-  t.controls[0]!.primary()
-  assert.equal(t.hosts().length, 1)
+  assert.equal(t.doc.querySelectorAll("[data-visual-reply-overlay]").length, 0)
   t.attacher.dispose()
-  assert.equal(t.hosts().length, 0)
-  assert.equal(t.doc.querySelectorAll("[data-visual-reply-overlay],iframe").length, 0)
-
-  const stale = t.doc.createElement("div")
-  stale.setAttribute("data-visual-reply", "c1")
-  t.timeline.append(stale)
-  const again = createAttacher({
-    doc: t.doc, known: () => new Set(), load: async () => undefined, theme: () => ({ mode: "light", vars: {} }),
-    openExternal: () => {}, schedule: (run) => run(), mountControls: () => () => {},
-  })
-  assert.equal(t.hosts().length, 0)
-  again.dispose()
+  assert.equal(t.doc.querySelectorAll("[data-visual-reply]").length, 0)
 })
