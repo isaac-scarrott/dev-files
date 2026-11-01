@@ -28,11 +28,6 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 Kind: server. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
 
 ## Options
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `cacheTtl` | `1h` | Prompt-cache lifetime Claude Code requests for the main conversation: `1h` adds `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` to the Claude spawn env, `5m` leaves Claude Code's default. Behind a base URL Claude Code looks like API-key mode and would otherwise use 5 minutes; a direct subscription login gets 1 hour by default. Subagents and compaction stay on 5m. Verified through the proxy: 16,457 tokens written on the 1-hour tier instead of the 5-minute tier. A 1-hour write costs more than a 5-minute one (2x vs 1.25x API price); Max plan metering is unpublished, so compare limit use after a week and revert with `"cacheTtl": "5m"` if it costs more. |
-
-Register with options: `{ "package": "/path/to/claude-proxy", "options": { "cacheTtl": "5m" } }`.
 None.
 
 ## Development

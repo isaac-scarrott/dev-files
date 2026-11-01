@@ -10,9 +10,6 @@ import path from "node:path"
 const PROVIDER = "claude-agent"
 const PACKAGE = "@opencode/claude-agent"
 const TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
-// Behind a base URL Claude Code looks like API-key mode and writes its cache on the 5-minute tier; a subscription login would
-// get 1 hour by default. This env var asks for the 1-hour tier on the main conversation (subagents and compaction stay 5m).
-const TTL_ENV = "CLAUDE_CODE_PROMPT_CACHE_TTL"
 const HELPER_TIMEOUT_MS = 10_000
 const CACHE_MS = 30_000
 
@@ -106,9 +103,7 @@ export function apply(editor, baseURL) {
 // The Claude Agent provider's own `sdk` hook runs first (it is built in, so it precedes plugins) and builds the
 // model with a connection env made from the public settings. That model and its connection are cached for the life
 // of the provider settings, so the token is a getter on the connection: it is read when each `claude` is spawned.
-export const cacheTtlOption = (value) => (value === "5m" ? "5m" : "1h")
-
-export function withToken(source, cacheTtl = "1h") {
+export function withToken(source) {
   return (evt) => {
     if (evt.package !== PACKAGE) return
     const make = evt.sdk?.languageModel
@@ -123,7 +118,6 @@ export function withToken(source, cacheTtl = "1h") {
       // Without a token the spawn keeps whatever the server env has, as if the plugin were absent.
       const get = () => source.get() ?? process.env[TOKEN_ENV]
       Object.defineProperty(connection, TOKEN_ENV, { enumerable: true, configurable: true, get })
-      if (cacheTtl === "1h") Object.defineProperty(connection, TTL_ENV, { enumerable: true, configurable: true, value: "1h" })
       return model
     }
   }
@@ -134,6 +128,6 @@ export default {
   async setup(ctx) {
     const baseURL = readBaseURL()
     await ctx.provider.transform((editor) => apply(editor, baseURL))
-    await ctx.aisdk.hook("sdk", withToken(tokenSource(), cacheTtlOption(ctx.options?.cacheTtl)), { providerID: PROVIDER })
+    await ctx.aisdk.hook("sdk", withToken(tokenSource()), { providerID: PROVIDER })
   },
 }

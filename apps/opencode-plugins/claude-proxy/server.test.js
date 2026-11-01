@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { test } from "node:test"
-import plugin, { apply, cacheTtlOption, readBaseURL, resolveToken, tokenSource, withToken } from "./server.js"
+import plugin, { apply, readBaseURL, resolveToken, tokenSource, withToken } from "./server.js"
 
 function home(settings) {
   const dir = mkdtempSync(path.join(tmpdir(), "claude-proxy-"))
@@ -230,18 +230,4 @@ test("setup puts only the base URL in the provider settings, hooks the sdk, and 
   hooks[0][1](evt)
   assert.equal({ ...evt.sdk.languageModel("m").connection }.ANTHROPIC_AUTH_TOKEN, SECRET)
   assert.ok(!JSON.stringify(provider).includes(SECRET))
-})
-
-test("the 1-hour cache tier is requested in the spawn env by default and can be turned off", () => {
-  const spawnEnv = (ttl) => {
-    const connection = {}
-    const evt = { package: "@opencode/claude-agent", sdk: { languageModel: () => ({ connection }) } }
-    withToken({ get: () => "t" }, ttl)(evt)
-    evt.sdk.languageModel("sonnet")
-    return connection
-  }
-  assert.equal(spawnEnv(cacheTtlOption(undefined)).CLAUDE_CODE_PROMPT_CACHE_TTL, "1h")
-  assert.equal(spawnEnv(cacheTtlOption("1h")).CLAUDE_CODE_PROMPT_CACHE_TTL, "1h")
-  assert.equal("CLAUDE_CODE_PROMPT_CACHE_TTL" in spawnEnv(cacheTtlOption("5m")), false)
-  assert.equal(cacheTtlOption("nonsense"), "1h")
 })
