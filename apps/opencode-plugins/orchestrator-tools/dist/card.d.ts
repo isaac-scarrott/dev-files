@@ -11,3 +11,9 @@ export declare function peerOf(message: {
     readonly type?: string;
     readonly metadata?: Readonly<Record<string, unknown>>;
 }): PeerMessage | undefined;
+/**
+ * Message text for the host's Markdown renderer, which passes inline HTML through: a peer writing `<div>` or `<b>`
+ * would lose the tag or format text. Outside code fences and code spans `&` and `<` become entities, so they show as typed;
+ * code is left alone because Markdown shows its content literally.
+ */
+export declare function escapeMarkup(text: string): string;
