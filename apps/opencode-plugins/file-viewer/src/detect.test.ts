@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { detectPaths, parseSpan, parseTime, splitSuffix } from "./detect"
+import { parseSpan, parseTime, splitSuffix } from "./detect"
 import type { Candidate, Origin, RejectReason } from "./types"
 
 type Expect = string | Partial<Candidate> | `!${RejectReason}`
@@ -375,13 +375,7 @@ test("a candidate reports its range inside the input", () => {
   assert.equal(parsed.ok && parsed.candidate.raw, "docs/a.md:3")
 })
 
-test("detectPaths on a span returns one candidate or none", () => {
-  assert.equal(detectPaths("~/a.png").length, 1)
-  assert.equal(detectPaths("hello world").length, 0)
-  assert.equal(detectPaths("see a.png").length, 0)
-})
-
 test("spans below minConfidence are dropped", () => {
-  assert.equal(detectPaths("and/or", { minConfidence: "medium" }).length, 0)
-  assert.equal(detectPaths("and/or").length, 1)
+  assert.equal(parseSpan("and/or", { minConfidence: "medium" }).ok, false)
+  assert.equal(parseSpan("and/or").ok, true)
 })

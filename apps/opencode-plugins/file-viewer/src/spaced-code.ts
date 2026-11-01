@@ -1,10 +1,16 @@
 import { claim } from "./expand"
 
 /**
- * WORKAROUND against a host limit; see DESIGN.md "Spaced inline code". OpenCode 2.2.5 only offers an inline code span to the
- * link handlers when its text has no whitespace, so `~/Movies/My Video.mp4` stays plain code. This marks such spans with
- * the host's own attribute (`data-inline-code-kind="path"`) once the file exists. The host's styles and click handler then
- * treat the span like any other path, and the click reaches our LinkHandler: no listener of our own.
+ * WORKAROUND against a host limit; see DESIGN.md "Spaced inline code". OpenCode 2.2.5 offers an inline code span to the
+ * link handlers only when its text has no whitespace, so `~/Movies/My Video.mp4` stays plain code. This marks such a span
+ * with the host's own attribute (`data-inline-code-kind="path"`) the moment the pointer reaches it, once the file exists.
+ * The host's styles and click handler then treat the span like any other path, and the click reaches our LinkHandler.
+ *
+ * Nothing runs while rows mount or scroll: three delegated listeners on the document, and the span is resolved only when
+ * it is pointed at or clicked. The host reads the attribute at click time (`localLinkTarget` in
+ * `session-ui/src/components/markdown.tsx`), so a mark set on `pointerover` or `pointerdown` is seen by the click that
+ * follows. A click that lands while the first check is still running opens through `open` instead; the host sees an
+ * unmarked span for that click and does nothing, so nothing opens twice.
  *
  * Remove this file when the host's inline code gate accepts whitespace (its `inlineCodeKind` in
  * `session-ui/src/components/markdown-inline-code-kind.ts`).
@@ -14,28 +20,38 @@ const MARKDOWN = '[data-component="markdown"]'
 const KIND = "data-inline-code-kind"
 const MARK = "data-fv-spaced"
 const MAX_TEXT = 400
-const BUDGET = 150
 
 export interface Checker {
   /** The href to open when the file exists; undefined otherwise. */
   target(href: string): Promise<string | undefined>
+  /** The cached answer, without waiting; undefined when unknown. */
   peek(href: string): string | undefined
+  /** Opens a spaced path through the plugin's own LinkHandler (the host's click handler saw no mark). */
+  open(href: string): void
 }
 
-/** A span the host left alone that this plugin might mark. Pure string and attribute tests, no layout reads. */
-export function eligible(code: Element) {
-  if (code.hasAttribute(KIND) && !code.hasAttribute(MARK)) return false
+/**
+ * The text of an inline code span the host left alone and this plugin might mark, or undefined. Pure string and
+ * attribute tests, no layout reads: the host's own mark (`data-inline-code-kind` without ours), a parent `pre`, an
+ * enclosing link, a place outside message markdown, or a part that is still streaming all decline.
+ */
+export function eligible(code: Element): string | undefined {
+  if (code.hasAttribute(KIND) && !code.hasAttribute(MARK)) return
 
-  if (code.closest("a")) return false
+  const root = code.closest(MARKDOWN)
+
+  // While a part streams the host re-renders its blocks on every delta and clears the kind attribute on every span, so a
+  // mark there would flicker; its own paths stay plain until the part completes, and so do ours.
+  if (code.parentElement?.localName === "pre" || code.closest("a") || !root || root.hasAttribute("data-streaming")) return
 
   const text = code.textContent?.trim() ?? ""
 
-  return text.length > 4 && text.length <= MAX_TEXT && /\s/.test(text) && claim(text)?.spaced === true
+  if (text.length <= 4 || text.length > MAX_TEXT || !/\s/.test(text) || claim(text)?.spaced !== true) return
+
+  return text
 }
 
 export function watchSpacedCode(doc: Document, checker: Checker): () => void {
-  const queue = new Set<Element>()
-  let frame = 0
   let stopped = false
 
   const apply = (code: Element, on: boolean) => {
@@ -48,86 +64,61 @@ export function watchSpacedCode(doc: Document, checker: Checker): () => void {
     }
   }
 
-  const check = (code: Element) => {
-    if (!eligible(code)) return apply(code, false)
+  /** Marks the span: at once when the answer is cached (true), else after the host's listing answers (a promise). */
+  const resolve = (code: Element, text: string): true | Promise<boolean> => {
+    if (checker.peek(text) !== undefined) {
+      apply(code, true)
 
-    const text = code.textContent!.trim()
-    const known = checker.peek(text)
+      return true
+    }
 
-    // The host re-renders blocks and drops attributes it does not own; a known answer restores the mark in this frame.
-    if (known !== undefined) return apply(code, true)
+    return checker.target(text).then((target) => {
+      if (stopped || !code.isConnected || code.textContent?.trim() !== text) return false
 
-    void checker.target(text).then((target) => {
-      if (stopped || !code.isConnected || code.textContent?.trim() !== text) return
       apply(code, target !== undefined)
+
+      return target !== undefined
     })
   }
 
-  const flush = () => {
-    frame = 0
-    let spent = 0
+  // Inline code holds text only, so the span itself is the event target.
+  const span = (target: EventTarget | null) => (target instanceof Element && target.localName === "code" ? target : undefined)
 
-    for (const code of queue) {
-      queue.delete(code)
-      check(code)
+  const onPointer = (event: Event) => {
+    const code = span(event.target)
+    const text = code && eligible(code)
 
-      if (++spent >= BUDGET) break
-    }
-
-    if (queue.size > 0) frame = requestAnimationFrame(flush)
+    if (text) void resolve(code, text)
   }
 
-  // Inline code of a message only: `code` whose parent is not `pre`, inside the host's markdown container.
-  const consider = (code: Element) => {
-    if (code.parentElement?.localName === "pre" || !code.closest(MARKDOWN)) return
+  const onClick = (event: MouseEvent) => {
+    if (event.button !== 0 || event.defaultPrevented) return
 
-    queue.add(code)
+    const code = span(event.target)
+
+    // A marked span (ours or the host's) is the host's click.
+    if (!code || code.hasAttribute(KIND)) return
+
+    const text = eligible(code)
+
+    if (!text) return
+
+    const result = resolve(code, text)
+
+    // Marked before the host's bubbling handler runs, so that opens it. Otherwise this click is ours once the answer lands.
+    if (result !== true) void result.then((ok) => ok && !stopped && checker.open(text))
   }
 
-  // Tag lookups are live collections, far cheaper than a selector over every node a scroll mounts.
-  const enqueue = (node: Node) => {
-    if (!(node instanceof Element)) return
-
-    if (node.localName === "code") return consider(node)
-
-    const codes = node.getElementsByTagName("code")
-
-    for (let index = 0; index < codes.length; index++) consider(codes[index]!)
-  }
-
-  const schedule = () => {
-    if (!frame && queue.size > 0) frame = requestAnimationFrame(flush)
-  }
-
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      if (record.type === "attributes") {
-        // Only the host removing the kind from a span we marked matters; our own writes leave it set.
-        if (record.target instanceof Element && record.target.hasAttribute(MARK) && !record.target.hasAttribute(KIND)) queue.add(record.target)
-
-        continue
-      }
-
-      // A code span whose text node was replaced (streaming, edits).
-      if (record.target instanceof Element && record.target.localName === "code") consider(record.target)
-
-      for (const node of record.addedNodes) enqueue(node)
-    }
-
-    schedule()
-  })
-
-  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: [KIND] })
-  enqueue(doc.body)
-  schedule()
+  const options = { capture: true, passive: true } as const
+  doc.addEventListener("pointerover", onPointer, options)
+  doc.addEventListener("pointerdown", onPointer, options)
+  doc.addEventListener("click", onClick, true)
 
   return () => {
     stopped = true
-    observer.disconnect()
-
-    if (frame) cancelAnimationFrame(frame)
-
-    queue.clear()
+    doc.removeEventListener("pointerover", onPointer, options)
+    doc.removeEventListener("pointerdown", onPointer, options)
+    doc.removeEventListener("click", onClick, true)
 
     for (const code of doc.querySelectorAll(`[${MARK}]`)) apply(code, false)
   }

@@ -1,5 +1,5 @@
 import { extensionOf, isKnownDotfile, isKnownExtension, isKnownName, isTechName, kindOfPath, viewerInfo } from "./kinds"
-import type { Candidate, Confidence, DetectOptions, Origin, ParseOptions, Parsed, PathForm, RejectReason } from "./types"
+import type { Candidate, Confidence, Origin, ParseOptions, Parsed, PathForm, RejectReason } from "./types"
 
 const MAX_SPAN = 4096
 const MAX_SEGMENT = 255
@@ -254,13 +254,12 @@ function unescapeShell(text: string) {
 }
 
 /**
- * Reads one piece of text (an inline code span, a link destination or a token cut out of prose) as a file path.
- * Returns the candidate or the reason it is not one. Linear in the input length: no regex here backtracks.
+ * Reads one piece of text (an inline code span or a link destination) as a file path. Returns the candidate or the
+ * reason it is not one. Linear in the input length: no regex here backtracks.
  */
 export function parseSpan(input: string, options: ParseOptions = {}): Parsed {
   const origin: Origin = options.origin ?? "code"
-  const offset = options.offset ?? 0
-  const minimum = options.minConfidence ?? (origin === "prose" ? "medium" : "low")
+  const minimum = options.minConfidence ?? "low"
 
   if (input.length > MAX_SPAN) return reject("too-long")
 
@@ -279,9 +278,9 @@ export function parseSpan(input: string, options: ParseOptions = {}): Parsed {
 
   if (text.startsWith("#") || text.startsWith("?")) return reject("fragment-only")
 
-  const quoted = trimmed.quoted || options.quoted === true
-  const start = offset + trimmed.from
-  const end = offset + trimmed.to
+  const quoted = trimmed.quoted
+  const start = trimmed.from
+  const end = trimmed.to
 
   // URLs. A `file://` URL is the only scheme that names a local file.
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(text)
@@ -402,14 +401,10 @@ export function parseSpan(input: string, options: ParseOptions = {}): Parsed {
     const command =
       words.slice(1).some((word) => /^--?[A-Za-z]/.test(word) || /^(?:&&|\|\||;|>>?|<|2>&1)$/.test(word)) ||
       commandVerbs.has(words[0]!.toLowerCase())
-    const spacedName = spacedPrefixes.some((prefix) => path.startsWith(prefix))
-    const strongForm = form !== "bare" && form !== "relative"
 
-    // A name with spaces is read as one path when the whole text is the path (code span, link destination), when it is
-    // quoted, or when it starts like a macOS capture name. In free text it needs a strong start (`~/`, `/`, `./`).
-    const whole = origin !== "prose" || quoted || spacedName || strongForm
-
-    if (command || words.length > 12 || !whole) return reject("not-a-path")
+    // The whole text is the path (code span, link destination), so a name with spaces is one path unless it reads like
+    // a command.
+    if (command || words.length > 12) return reject("not-a-path")
   }
 
   const name = segments.at(-1)!
@@ -469,256 +464,8 @@ export function parseSpan(input: string, options: ParseOptions = {}): Parsed {
     ...(suffix.anchor !== undefined ? { anchor: suffix.anchor } : {}),
     quoted,
     confidence,
-    alternatives: [],
     ...(envVar ? { envVar } : {}),
   }
 
   return { ok: true, candidate }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Prose scanning
-// ---------------------------------------------------------------------------------------------------------------------
-
-const hardStop = new Set(['"', "'", "`", "<", ">", "|", "\n", "\r", "\t"])
-
-const startBoundary = new Set(['"', "'", "`", "(", "[", "{", "<", "=", ",", ";", ">", "|", ":", "*", "!"])
-
-const spacedPrefixes = ["Screenshot ", "Screen Recording ", "CleanShot ", "Simulator Screenshot "]
-
-const diffLine = /^(?:diff --git a\/|--- a\/|\+\+\+ b\/|--- \S|\+\+\+ \S|rename (?:from|to) |copy (?:from|to) |Binary files )/
-
-function lineStart(text: string, index: number) {
-  const floor = Math.max(0, index - 512)
-
-  for (let cursor = index - 1; cursor >= floor; cursor--) if (text[cursor] === "\n") return cursor + 1
-
-  return floor
-}
-
-function isStartChar(char: string) {
-  if (isSpace(char)) return false
-
-  return !")]}.,;:!?-*#>=|\"'`%&+^".includes(char) || char === "."
-}
-
-function tokenEnd(text: string, from: number) {
-  let cursor = from
-
-  while (cursor < text.length) {
-    const char = text[cursor]!
-
-    if (char === "\\" && text[cursor + 1] === " ") {
-      cursor += 2
-      continue
-    }
-
-    if (isSpace(char) || hardStop.has(char)) break
-
-    if (char === "&" && text[cursor + 1] === "&") break
-
-    // `[label](dest)`: the destination is its own token.
-    if (char === "]" && text[cursor + 1] === "(") break
-
-    cursor++
-  }
-
-  return cursor
-}
-
-/** Extra readings of a path that continues past a space: `~/Movies/My Video.mp4`, `Screenshot 2026-11-01 at 10.12.34 AM.png`. */
-function spacedReadings(text: string, from: number, firstEnd: number, maxWords = 6) {
-  const readings: string[] = []
-  let cursor = firstEnd
-
-  for (let word = 0; word < maxWords; word++) {
-    const gap = /^[   ]+/.exec(text.slice(cursor, cursor + 8))
-
-    if (!gap) break
-
-    const next = cursor + gap[0].length
-    const stop = tokenEnd(text, next)
-
-    if (stop === next) break
-
-    const piece = text.slice(next, stop)
-
-    if (/^[-*+>|#]$/.test(piece) || /^[\d]+[.)]$/.test(piece)) break
-
-    cursor = stop
-
-    const candidate = text.slice(from, cursor).replace(/[.,;:!?)\]]+$/, "")
-    const tail = candidate.split(/[\\/ ]/).pop() ?? ""
-    const ext = extensionOf(tail)
-
-    if (ext && (isKnownExtension(ext) || viewerInfo(ext))) readings.push(candidate)
-
-    if (/[.,;:!?]$/.test(piece)) break
-  }
-
-  return readings
-}
-
-/** Finds the end of a quoted run on the same line, or -1. */
-function closingQuote(text: string, from: number, quote: string, limit = 1024) {
-  const close = quote === "<" ? ">" : quote
-  const stop = Math.min(text.length, from + limit)
-
-  for (let cursor = from; cursor < stop; cursor++) {
-    const char = text[cursor]!
-
-    if (char === "\n") return -1
-
-    // `Bob's file` : an apostrophe before a letter is not a closing quote.
-    if (char === close && !(quote === "'" && /[\p{L}\p{N}]/u.test(text[cursor + 1] ?? ""))) return cursor
-  }
-
-  return -1
-}
-
-function withDiffPrefix(text: string, token: number, candidate: Candidate): Candidate {
-  if (!/^[ab]\//.test(candidate.path)) return candidate
-
-  if (!diffLine.test(text.slice(lineStart(text, token), token + 8))) return candidate
-
-  return { ...candidate, path: candidate.path.slice(2), alternatives: [candidate.path, ...candidate.alternatives] }
-}
-
-/** Free-text scan. Every candidate is a path-looking token; none is checked against the file system. */
-function scanProse(text: string, options: DetectOptions): Candidate[] {
-  const found: Candidate[] = []
-  const limit = options.maxCandidates ?? 500
-  const minimum = options.minConfidence ?? "medium"
-  const length = text.length
-  let index = 0
-
-  const accept = (parsed: Parsed, token: number) => {
-    if (!parsed.ok) return false
-    found.push(withDiffPrefix(text, token, parsed.candidate))
-    return true
-  }
-
-  while (index < length && found.length < limit) {
-    const char = text[index]!
-    const before = index === 0 ? "" : text[index - 1]!
-
-    // Skip to the next boundary quickly: a path can only begin after whitespace or an opening mark.
-    if (!isStartChar(char) || (before !== "" && !isSpace(before) && !startBoundary.has(before))) {
-      index++
-      continue
-    }
-
-    // Quoted: `"my file.png"`, `'...'`, `` `...` ``, `<...>`.
-    const beforeQuote = index >= 2 ? text[index - 2]! : ""
-    const opensQuote = beforeQuote === "" || isSpace(beforeQuote) || "([{=,:;>|".includes(beforeQuote)
-
-    if (opensQuote && (before === '"' || before === "'" || before === "`" || before === "<")) {
-      const close = closingQuote(text, index, before)
-
-      if (close > index) {
-        const parsed = parseSpan(text.slice(index, close), { origin: "prose", offset: index, minConfidence: "low", quoted: true })
-
-        if (parsed.ok) {
-          if (rank[parsed.candidate.confidence] >= rank[minimum]) found.push(withDiffPrefix(text, index, parsed.candidate))
-
-          index = close + 1
-          continue
-        }
-
-        // Not one path as a whole (`ffplay ~/a.mp4`, `open a.png`): look for paths inside it.
-      }
-    }
-
-    const end = tokenEnd(text, index)
-
-    if (end === index) {
-      index++
-      continue
-    }
-
-    const token = text.slice(index, end)
-
-    // `OUT=build/a.png`, `--out=a.png`: the value starts after `=`.
-    const assignment = /^(?:--?[\w.-]+|[A-Za-z_][\w.]*)=/.exec(token)
-
-    if (assignment) {
-      index += assignment[0].length
-      continue
-    }
-
-    // `a.png,b.png`: split a comma list when every part is a file on its own.
-    if (token.includes(",") && !token.startsWith("http")) {
-      const parts = token.split(",").filter(Boolean)
-      let cursor = index
-      const pieces: Parsed[] = []
-
-      for (const part of parts) {
-        pieces.push(parseSpan(part, { origin: "prose", offset: cursor, minConfidence: minimum }))
-        cursor += part.length + 1
-      }
-
-      if (parts.length > 1 && pieces.every((piece) => piece.ok && piece.candidate.ext && isKnownExtension(piece.candidate.ext))) {
-        for (const piece of pieces) accept(piece, index)
-
-        index = end
-        continue
-      }
-    }
-
-    const parsed = parseSpan(token, { origin: "prose", offset: index, minConfidence: minimum })
-
-    let candidate: Candidate | undefined
-
-    if (parsed.ok) candidate = parsed.candidate
-
-    const strong = parsed.ok ? parsed.candidate.form !== "bare" && parsed.candidate.form !== "relative" : /^(?:~|\/|\.\.?\/|[A-Za-z]:[\\/])/.test(token)
-    const spacedStart = spacedPrefixes.some((prefix) => text.startsWith(prefix, index))
-
-    if (strong || spacedStart || (candidate && candidate.form === "relative")) {
-      const own = candidate ? isKnownExtension(candidate.ext) : false
-
-      if (!own) {
-        const readings = spacedReadings(text, index, end)
-
-        if (readings.length > 0) {
-          const primary = readings[0]!
-          const reparsed = parseSpan(primary, { origin: "prose", offset: index, minConfidence: "low" })
-
-          if (reparsed.ok && rank[reparsed.candidate.confidence] >= rank[minimum]) {
-            // Shortest first: `~/Movies/My Video.mp4 and notes.md` must not swallow the second file. `resolve` tries the
-            // longer readings only if the shortest does not exist.
-            found.push({ ...reparsed.candidate, alternatives: readings.slice(1) })
-            index += primary.length
-            continue
-          }
-        }
-      }
-    }
-
-    if (candidate) accept(parsed, index)
-
-    index = end
-  }
-
-  return found
-}
-
-/**
- * Finds file path candidates in `text`.
- *
- * - `origin: "code"` (default), `"href"`, `"decoded-href"`: the whole text is one path or nothing.
- * - `origin: "prose"`: scans free text and returns every path-looking token with its range.
- *
- * The result is only syntax. Whether the file exists and may be opened is `resolve`.
- */
-export function detectPaths(text: string, options: DetectOptions = {}): Candidate[] {
-  const origin = options.origin ?? "code"
-
-  if (origin === "prose") return scanProse(text, options)
-
-  const parsed = parseSpan(text, { origin, minConfidence: options.minConfidence ?? "low" })
-
-  if (!parsed.ok) return []
-
-  return [parsed.candidate]
 }
