@@ -36,3 +36,12 @@ test("archive write errors and unconfirmed server state remain failures", async 
   server.client.session.update = async () => {}
   await assert.rejects(setArchived(server, "s", true, signal), /confirm/)
 })
+
+test("archivedActivity ignores the archive's own update bump", async () => {
+  const { archivedActivity } = await import("./archive")
+  assert.equal(archivedActivity({ created: 1, updated: 50, archived: 40 }), 1, "bumped, nothing else known: creation")
+  assert.equal(archivedActivity({ created: 1, updated: 50, archived: 40, busy: 10, idle: 30 }), 30, "last idle")
+  assert.equal(archivedActivity({ created: 1, updated: 50, archived: 40, busy: 35, idle: 30 }), 35, "ended mid-run")
+  assert.equal(archivedActivity({ created: 1, updated: 20, archived: 40 }), 20, "updated before archiving stands")
+  assert.equal(archivedActivity({ created: 1, updated: 20 }), 20)
+})
