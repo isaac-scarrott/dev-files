@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { peerOf, PEER_KEY } from "./card.js"
+import { escapeMarkup, peerOf, PEER_KEY } from "./card.js"
 import { deliver, peerMetadata, TRAILER } from "./peers.js"
 
 test("peerOf reads what the server writes", () => {
@@ -37,4 +37,21 @@ test("the package exports a built GUI bundle that carries the card", () => {
   assert.equal(entry, "./dist/gui-experimental.cjs")
   const bundle = readFileSync(new URL(`../${entry}`, import.meta.url), "utf8")
   assert.ok(bundle.includes("data-peer-card"))
+})
+
+test("escapeMarkup shows tags as typed and leaves code alone", () => {
+  assert.equal(escapeMarkup("a <b>x</b> & y"), "a &lt;b>x&lt;/b> &amp; y")
+  assert.equal(escapeMarkup("run `<div> & 1` now"), "run `<div> & 1` now")
+  assert.equal(escapeMarkup("```html\n<p>&</p>\n```\n<i>"), "```html\n<p>&</p>\n```\n&lt;i>")
+  assert.equal(escapeMarkup("```open <x>"), "```open <x>")
+  assert.equal(escapeMarkup("plain"), "plain")
+})
+
+// The row takes every colour from the host's --v2 tokens so both themes follow.
+test("the card's styles hard-code no colour", () => {
+  const source = readFileSync(new URL("./gui.tsx", import.meta.url), "utf8")
+  const css = source.slice(source.indexOf("const css = `"), source.indexOf("`\n\ntype Located"))
+  assert.ok(css.length > 500)
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(css))
+  assert.ok(css.includes("var(--v2-background-bg-layer-02)"))
 })
