@@ -8,6 +8,7 @@ type Ctx = Pick<Context, "ui" | "toast">
 type Input = { readonly session: MountedSession; readonly active: boolean }
 export type Dock = {
   readonly sidebar: () => Sidebar
+  readonly asideWidth: () => number | undefined
   readonly visible: () => boolean
   readonly setVisible: (value: boolean) => void
 }
@@ -125,6 +126,7 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
           ref={wrap}
           data-agents-toggle
           data-agents-sidebar={props.dock.sidebar()}
+          data-agents-aside-width={props.dock.asideWidth()}
           data-agents-mode={state().docked ? "window" : "popover"}
           onMouseDown={(event) => event.preventDefault()}>
           <ctx.ui.IconButton
