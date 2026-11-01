@@ -82,8 +82,14 @@ write_claude "claude-holibob"  "$PLUGINS/holibob/.mcp.json"
 OC="$HOME/.config/opencode/opencode.json"
 if [ -f "$OC" ]; then
   mcp="$(servers_for "opencode" | jq "$OPENCODE_SHAPE")"
-  content="$(jq --argjson mcp "$mcp" '
-    if .mcp.servers? then .mcp.servers = $mcp else .mcp = $mcp end
+  # agentOnly servers: deny their tools for every agent; the named agent file re-allows them.
+  deny="$(jq '[.servers | to_entries[] | select(.value.agentOnly and (.value.targets | index("opencode")))
+    | {action: (.key + "_*"), resource: "*", effect: "deny"}]' "$MANIFEST")"
+  content="$(jq --argjson mcp "$mcp" --argjson deny "$deny" '
+    (if .mcp.servers? then .mcp.servers = $mcp else .mcp = $mcp end)
+    | if ($deny | length) > 0
+      then .permissions = (((.permissions // []) - $deny) + $deny)
+      else . end
   ' "$OC")"
   render "$OC" "$content"
 else
