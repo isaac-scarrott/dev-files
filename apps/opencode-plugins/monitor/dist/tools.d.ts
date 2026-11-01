@@ -1,0 +1,10 @@
+import type { Plugin } from "@opencode/plugin";
+import type { Monitors } from "./manager.js";
+import type { Options } from "./options.js";
+type Editor = Parameters<Parameters<Plugin.Context["tool"]["transform"]>[0]>[0];
+type Host = Pick<Plugin.Context, "session" | "permission">;
+export declare function describeMonitor(options: Options): string;
+export declare const LIST_DESCRIPTION = "List the background monitors that are running: name, id, command, when each started, how many events it produced, the last event, and which session it wakes.";
+export declare const STOP_DESCRIPTION = "Stop a background monitor by id (see list_monitors). Its process and anything it started are ended.";
+export declare function registerTools(editor: Editor, monitors: Monitors, host: Host, options: Options): void;
+export {};
