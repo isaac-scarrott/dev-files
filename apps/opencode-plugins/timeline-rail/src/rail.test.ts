@@ -191,3 +191,21 @@ test("peer messages are not prompts: no tick, not loaded, whatever their number"
 test("a typed look-alike without the metadata stays a prompt", () => {
   assert.deepEqual(prompts([user("m1", `<cross-session-message from="X [1]">t</cross-session-message>`)]).map((prompt) => prompt.id), ["m1"])
 })
+
+test("a snippet is built when a card first reads it, once, not when the prompts are listed", () => {
+  let reads = 0
+  const reply = {
+    id: "a1",
+    type: "assistant",
+    get content() {
+      reads += 1
+      return [{ type: "text", text: "**done**" }]
+    },
+  } as Message
+  const list = prompts([{ id: "m1", type: "user", text: "q" }, reply])
+
+  assert.equal(reads, 0)
+  assert.equal(list[0]!.snippet, "done")
+  assert.equal(list[0]!.snippet, "done")
+  assert.equal(reads, 1)
+})
