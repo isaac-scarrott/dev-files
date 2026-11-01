@@ -19,6 +19,7 @@ async function boot(directory: string, storage: Map<string, unknown>, bus: Bus, 
     storage: {
       get: async (k: string) => storage.get(k),
       set: async (k: string, v: unknown) => void storage.set(k, JSON.parse(JSON.stringify(v))),
+      remove: async (k: string) => void storage.delete(k),
     },
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
@@ -93,20 +94,20 @@ test("wiring: toggle over rpc, session.created seeding, a limit failure, resume 
   // A second location's instance over the same storage hears the same events and must stay out of it.
   const b = await boot("/other", storage, bus, options, sessions)
   try {
-    assert.deepEqual(await a.handlers.get({ sessionID: "on" }), { enabled: false, available: true })
-    assert.deepEqual(await a.handlers.get({ sessionID: "child" }), { enabled: false, available: false })
+    assert.deepEqual(await a.handlers.get({ sessionID: "on" }), { enabled: false, available: true, limited: false })
+    assert.deepEqual(await a.handlers.get({ sessionID: "child" }), { enabled: false, available: false, limited: false })
     assert.deepEqual(await a.handlers.getDefault({}), { enabled: false })
     await a.handlers.set({ sessionID: "on", enabled: true })
     await a.handlers.set({ sessionID: "child", enabled: true })
-    assert.deepEqual(await b.handlers.get({ sessionID: "on" }), { enabled: true, available: true })
-    assert.deepEqual(await a.handlers.get({ sessionID: "child" }), { enabled: false, available: false })
+    assert.deepEqual(await b.handlers.get({ sessionID: "on" }), { enabled: true, available: true, limited: false })
+    assert.deepEqual(await a.handlers.get({ sessionID: "child" }), { enabled: false, available: false, limited: false })
 
     // The default turns on: a session created afterwards starts on without anyone touching it.
     await a.handlers.setDefault({ enabled: true })
     make("fresh")
     bus.emit({ type: "session.created", created: Date.now(), data: { sessionID: "fresh", location: { directory: "/work" } } })
     await wait(100)
-    assert.deepEqual(await a.handlers.get({ sessionID: "fresh" }), { enabled: true, available: true })
+    assert.deepEqual(await a.handlers.get({ sessionID: "fresh" }), { enabled: true, available: true, limited: false })
 
     const failed = (sessionID: string) =>
       bus.emit({
@@ -139,6 +140,65 @@ test("wiring: toggle over rpc, session.created seeding, a limit failure, resume 
   } finally {
     await a.cleanup()
     await b.cleanup()
+    globalThis.fetch = realFetch
+  }
+})
+
+test("the pill state: limited only while stopped at a limit, opt in while limited, cleared when the session moves on", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "usage-resume-pill-"))
+  await writeFile(path.join(dir, "claude-a.json"), JSON.stringify({ access_token: "tok-a" }))
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify(free))) as typeof fetch
+  const storage = new Map<string, unknown>()
+  const bus = new Bus()
+  const now = Date.now()
+  const sessions = new Map<string, any>()
+  const make = (id: string, extra: Record<string, any> = {}) =>
+    sessions.set(id, { id, outcome: "failed", location: { directory: "/work" }, time: { created: now, busy: now - 10, idle: now }, ...extra })
+  make("s")
+  make("child", { parentID: "s" })
+  const options = { authDir: dir, snapshotPath: "", sampleDir: path.join(dir, "samples"), marginSeconds: 3600, tickSeconds: 60, staggerSeconds: 0, notices: false }
+  const a = await boot("/work", storage, bus, options, sessions)
+  const get = (sessionID: string) => a.handlers.get({ sessionID })
+  const resetsAt = new Date(Date.now() + 3_600_000).toISOString()
+  const failed = (sessionID: string) =>
+    bus.emit({
+      type: "session.execution.failed",
+      created: Date.now(),
+      data: { sessionID, error: { type: "unknown", message: `Claude Code subscription limit reached (five hour). Resets at ${resetsAt}.` } },
+    })
+  try {
+    assert.equal((await get("s")).limited, false)
+    failed("s")
+    failed("child")
+    await wait(100)
+    // Visible although the session never opted in; a subagent never.
+    assert.deepEqual(await get("s"), { enabled: false, available: true, limited: true })
+    assert.deepEqual(await get("child"), { enabled: false, available: false, limited: false })
+    assert.ok(a.events.some(([name, data]) => name === "changed" && data.sessionID === "s"))
+
+    // Opting in while limited starts the wait; opting out stops it.
+    await a.handlers.set({ sessionID: "s", enabled: true })
+    const on = await get("s")
+    assert.equal(on.enabled, true)
+    assert.equal(on.limited, true)
+    assert.equal(typeof on.resumesAt, "number")
+    await a.handlers.set({ sessionID: "s", enabled: false })
+    assert.deepEqual(await get("s"), { enabled: false, available: true, limited: true })
+
+    // Running again clears it.
+    bus.emit({ type: "session.execution.started", created: Date.now(), data: { sessionID: "s" } })
+    await wait(100)
+    assert.equal((await get("s")).limited, false)
+
+    // A deleted session loses its stored choice.
+    await a.handlers.set({ sessionID: "s", enabled: true })
+    assert.ok([...storage.keys()].some((key) => key.endsWith("/s")))
+    bus.emit({ type: "session.deleted", created: Date.now(), data: { sessionID: "s" } })
+    await wait(100)
+    assert.ok(![...storage.keys()].some((key) => key.endsWith("/s")))
+  } finally {
+    await a.cleanup()
     globalThis.fetch = realFetch
   }
 })

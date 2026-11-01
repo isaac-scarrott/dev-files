@@ -14,9 +14,17 @@ export interface Attempts {
   lastAt: number
 }
 
+/** A session whose last run hit a usage limit, whether or not it opted in to resuming. */
+export interface Limited {
+  at: number
+  kind?: string
+  resetsAt?: number
+}
+
 export interface State {
   waiting: Record<string, Waiting>
   attempts: Record<string, Attempts>
+  limited: Record<string, Limited>
 }
 
 export interface Clock {
@@ -30,7 +38,7 @@ const REANNOUNCE_MS = 5 * 60_000
 const TOUCH_SLACK_MS = 2_000
 
 export function emptyState(): State {
-  return { waiting: {}, attempts: {} }
+  return { waiting: {}, attempts: {}, limited: {} }
 }
 
 /** One state key per project location: the server runs one plugin instance per location over one shared storage. */
@@ -50,6 +58,9 @@ export function formatTime(at: number, now: number): string {
 
 export class Resumer {
   private busy = false
+
+  /** Called with a session id when what the GUI shows for it may have changed. */
+  changed: (sessionID: string) => void = () => {}
 
   private constructor(
     private readonly host: Host,
@@ -86,6 +97,29 @@ export class Resumer {
     return Object.values(this.state.waiting)
   }
 
+  /**
+   * The usage limit the session is stopped at, while it is stopped: set when a run fails on the limit, cleared when the
+   * session moves on, and ignored once a stated reset time has passed (nothing would clear it for an opted-out session).
+   */
+  limited(sessionID: string): { resumesAt?: number } | undefined {
+    const entry = this.state.limited[sessionID]
+    if (!entry) return undefined
+    if (entry.resetsAt !== undefined && entry.resetsAt <= this.clock.now()) return undefined
+    return { resumesAt: this.state.waiting[sessionID]?.dueAt }
+  }
+
+  /** The session's toggle was turned on: if it is stopped at a limit now, start waiting for it. */
+  async optIn(sessionID: string): Promise<void> {
+    const entry = this.limited(sessionID) && this.state.limited[sessionID]
+    if (!entry || this.state.waiting[sessionID]) return
+    await this.register(sessionID, entry, entry.at)
+  }
+
+  /** The session's toggle was turned off: stop waiting for it. */
+  async optOut(sessionID: string): Promise<void> {
+    if (this.state.waiting[sessionID]) await this.drop(sessionID, "toggled off")
+  }
+
   attempts(sessionID: string): Attempts | undefined {
     return this.state.attempts[sessionID]
   }
@@ -110,7 +144,11 @@ export class Resumer {
 
     if (!info) return this.skip(sessionID, "session not found")
     if (info.time.archived !== undefined) return this.skip(sessionID, "archived")
-    const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created)
+    if (info.parentID !== undefined) return this.skip(sessionID, "subagent")
+    this.state.limited[sessionID] = { at, kind: limit.kind, resetsAt: limit.resetsAt }
+    await this.save()
+    this.changed(sessionID)
+    const toggle = await this.toggles.effective(sessionID, true, info.time.created)
     if (!toggle.on) return this.skip(sessionID, toggle.why)
     const attempts = this.state.attempts[sessionID]
     if (attempts && attempts.count >= this.options.maxAttempts) {
@@ -134,11 +172,18 @@ export class Resumer {
       delete this.state.waiting[sessionID]
       changed = true
     }
+    if (this.state.limited[sessionID]) {
+      delete this.state.limited[sessionID]
+      changed = true
+    }
     if (completed && this.state.attempts[sessionID]) {
       delete this.state.attempts[sessionID]
       changed = true
     }
-    if (changed) await this.save()
+    if (changed) {
+      await this.save()
+      this.changed(sessionID)
+    }
   }
 
   /** Look at every waiting session that is due. Call on an interval; after sleep the first call catches up. */
@@ -181,6 +226,7 @@ export class Resumer {
     this.log(`${sessionID}: scheduled first check at ${new Date(waiting.dueAt).toISOString()} (not before ${new Date(notBefore).toISOString()}, attempt ${prior + 1}/${this.options.maxAttempts})`)
     await this.announce(waiting)
     await this.save()
+    this.changed(sessionID)
   }
 
   private async evaluate(waiting: Waiting) {
@@ -235,6 +281,7 @@ export class Resumer {
     this.log(`${sessionID}: not resuming: ${reason}`)
     delete this.state.waiting[sessionID]
     await this.save()
+    this.changed(sessionID)
   }
 
   private async announce(waiting: Waiting): Promise<void> {

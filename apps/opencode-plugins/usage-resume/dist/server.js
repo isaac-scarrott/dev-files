@@ -43,9 +43,10 @@ export default Plugin.define({
                 const { sessionID } = input;
                 const info = await ctx.session.get({ sessionID }).catch(() => undefined);
                 if (!info || info.parentID !== undefined)
-                    return { enabled: false, available: false };
+                    return { enabled: false, available: false, limited: false };
                 const state = await toggles.effective(sessionID, true, info.time.created);
-                return { enabled: state.on, available: true };
+                const limited = resumer.limited(sessionID);
+                return { enabled: state.on, available: true, limited: limited !== undefined, ...(limited?.resumesAt !== undefined && state.on ? { resumesAt: limited.resumesAt } : {}) };
             },
             set: async (input) => {
                 const { sessionID, enabled } = input;
@@ -53,6 +54,10 @@ export default Plugin.define({
                 if (!info || info.parentID !== undefined)
                     return { enabled: false };
                 await toggles.set(sessionID, enabled);
+                if (enabled)
+                    await resumer.optIn(sessionID);
+                else
+                    await resumer.optOut(sessionID);
                 log(`${sessionID}: auto-resume turned ${enabled ? "on" : "off"} for this session`);
                 await rpc.events.emit("changed", { sessionID });
                 return { enabled };
@@ -68,6 +73,7 @@ export default Plugin.define({
         });
         // OpenCode retries a failed request with backoff; a usage limit lasts hours, so end the run and let us wait.
         // Only for sessions that opted in: an opted-out session keeps OpenCode's own behaviour.
+        resumer.changed = (sessionID) => void rpc.events.emit("changed", { sessionID }).catch(() => { });
         const retry = await ctx.session.hook("retry", async (event) => {
             if (!detectUsageLimit(event.error, Date.now()))
                 return;
@@ -99,6 +105,10 @@ export default Plugin.define({
                                 // Our own notices are synthetic; only a person's message means they are back in the session.
                                 if (event.data.item.type === "user")
                                     await resumer.onSettled(sessionID);
+                                break;
+                            case "session.deleted":
+                                await resumer.onSettled(sessionID);
+                                await toggles.forget(sessionID);
                                 break;
                             default:
                                 await resumer.onSettled(sessionID);

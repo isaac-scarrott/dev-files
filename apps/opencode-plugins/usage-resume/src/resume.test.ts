@@ -612,3 +612,19 @@ test("the log file gets every line with a timestamp", async () => {
   await new Promise((resolve) => setTimeout(resolve, 150))
   assert.match(await readFile(path.join(dir, "usage-resume.log"), "utf8"), /^2026-10-31T12:00:00.000Z hello world\n$/)
 })
+
+test("createLog redacts every line, including ones that carry a raw error string", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "usage-resume-log-"))
+  const log = createLog(dir, () => T0)
+  const error = console.error
+  console.error = () => {}
+  try {
+    log("event stream ended: Error: 401 Authorization: Bearer abcdefghijklmnop1234")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  } finally {
+    console.error = error
+  }
+  const body = await readFile(path.join(dir, "usage-resume.log"), "utf8")
+  assert.equal(body.includes("abcdefghijklmnop1234"), false)
+  assert.match(body, /event stream ended/)
+})

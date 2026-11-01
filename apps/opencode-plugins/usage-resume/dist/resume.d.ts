@@ -11,9 +11,16 @@ export interface Attempts {
     count: number;
     lastAt: number;
 }
+/** A session whose last run hit a usage limit, whether or not it opted in to resuming. */
+export interface Limited {
+    at: number;
+    kind?: string;
+    resetsAt?: number;
+}
 export interface State {
     waiting: Record<string, Waiting>;
     attempts: Record<string, Attempts>;
+    limited: Record<string, Limited>;
 }
 export interface Clock {
     now(): number;
@@ -35,12 +42,25 @@ export declare class Resumer {
     private readonly key;
     private readonly log;
     private busy;
+    /** Called with a session id when what the GUI shows for it may have changed. */
+    changed: (sessionID: string) => void;
     private constructor();
     static create(host: Host, options: Options, clock: Clock, usage: UsageSource, toggles: Toggles, samples: Samples, 
     /** The project location this instance serves; it acts only on sessions that live there. */
     directory: string, log?: (message: string) => void): Promise<Resumer>;
     /** Session IDs currently waiting, for tests and diagnostics. */
     waiting(): readonly Waiting[];
+    /**
+     * The usage limit the session is stopped at, while it is stopped: set when a run fails on the limit, cleared when the
+     * session moves on, and ignored once a stated reset time has passed (nothing would clear it for an opted-out session).
+     */
+    limited(sessionID: string): {
+        resumesAt?: number;
+    } | undefined;
+    /** The session's toggle was turned on: if it is stopped at a limit now, start waiting for it. */
+    optIn(sessionID: string): Promise<void>;
+    /** The session's toggle was turned off: stop waiting for it. */
+    optOut(sessionID: string): Promise<void>;
     attempts(sessionID: string): Attempts | undefined;
     /** A run failed. If it is a Claude usage limit and the session's toggle is on, start waiting for it to clear. */
     onFailed(sessionID: string, error: ErrorLike | undefined, at: number): Promise<void>;

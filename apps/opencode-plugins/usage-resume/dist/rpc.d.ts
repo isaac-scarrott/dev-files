@@ -24,8 +24,16 @@ export declare const UsageResume: {
                     readonly available: {
                         readonly type: "boolean";
                     };
+                    /** The session's last run stopped at a usage limit and it has not moved on since. */
+                    readonly limited: {
+                        readonly type: "boolean";
+                    };
+                    /** Epoch ms of the next check while the session is waiting to resume. */
+                    readonly resumesAt: {
+                        readonly type: "number";
+                    };
                 };
-                readonly required: readonly ["enabled", "available"];
+                readonly required: readonly ["enabled", "available", "limited"];
                 readonly additionalProperties: false;
             };
         };

@@ -79,8 +79,8 @@ subscription window has reset, so it does not make overage spending more likely.
 
 Auto-resume is **off by default** and needs a human opt-in, at two levels:
 
-1. **Per session**: an icon toggle in the composer toolbar, right after the model picker (the host's own `IconButton`,
-   large ghost-muted, lit while on, tooltip "Auto-resume after usage limit: …"). Sessions without a choice are off.
+1. **Per session**: a `ComposerPill` above the composer, shown **only while the session is stopped at a usage limit**
+   (see "The composer pill"). Clicking it turns auto-resume on or off for that session. Sessions without a choice are off.
 2. **Global default**: a switch "Auto-resume after usage limit" in Settings > Preferences > General, off by default.
    On means a session starts with its toggle on when it is **created** (`session.created`, root sessions only). It is
    not retroactive: a session that already exists keeps what it had, and turning the default off later leaves sessions
@@ -89,12 +89,31 @@ Auto-resume is **off by default** and needs a human opt-in, at two levels:
 The server plugin checks the toggle when a limit is detected, again right before resuming (so switching it off while
 waiting stops the resume), and in the `retry` hook: an opted-out session keeps OpenCode's own retry behaviour.
 
+### The composer pill
+
+The toggle used to be an `IconButton` injected into the composer controls row by a body-wide `MutationObserver`. It
+looked detached (the host shows the reasoning-effort control there only on hover, leaving our button alone) and was
+visible all the time. It is now a `ComposerPill`, the host's registry for status capsules in the row above the composer
+beside the background-work and todo pills: host spacing, tones and hover states, no DOM injection, no observer, no
+`resize` listener, and no pill in a subagent's session (which matches "never subagents").
+
+Visibility rule, evaluated by the host's reactive `show`: the pill exists only while the server reports the session as
+`limited`. The server marks a session limited when a run fails on a usage limit (whether or not it opted in, which is why
+the state is kept apart from `waiting`) and clears it on any event that moves the session on (a run starts or ends, a
+user message, deletion). A stated reset time that has passed also ends it, since an opted-out session has nothing else to
+clear it.
+
+States: limited and off is a warning pill "Resume after limit" (click opts in and starts the wait at once); limited and
+on is a success pill "Resuming 14:05" (click opts out); a failed read is a danger pill "Auto-resume unavailable". The
+pill has no `pressed` state, so on and off are told apart by label and tone. Gap: `ComposerPill` has no hover-reveal
+rule of its own; it is simply absent when not limited.
+
 ### Where the state lives
 
 GUI and server are separate processes. The server plugin owns the state in `ctx.storage` (`toggle/default`,
 `toggle/session/<id>`) and the GUI reads and writes it over the plugin's RPC (`src/rpc.ts`: `get`, `set`, `getDefault`,
 `setDefault`, and a `changed` event so every window re-reads). Session metadata was rejected: the GUI has no write path to
-it, and storage keeps the toggle out of exported sessions. A draft composer (no session yet) shows no toggle; the default
+it, and storage keeps the toggle out of exported sessions. A draft composer (no session yet) shows no pill; the default
 applies when the session is created.
 
 ### One instance per project location
@@ -158,7 +177,7 @@ the detector expects.
 - `src/server.ts`: wiring: events, retry hook, tick, rpc.
 - `src/toggles.ts`: opt-in state (default and per session). `src/rpc.ts`: the GUI/server contract.
 - `src/hub.ts`: the usage source shared by every location's instance. `src/diag.ts`: log file, redaction, samples.
-- `src/gui.tsx`, `src/composer.ts`: the composer toggle and the Settings row.
+- `src/gui.tsx`: the composer pill and the Settings row. `src/view.ts`: pure `pillFor`, what the pill shows.
 
 ## Known limits
 
