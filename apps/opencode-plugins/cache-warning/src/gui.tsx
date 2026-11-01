@@ -5,8 +5,12 @@ import { attach } from "./lane"
 import { afterExit } from "./leave"
 import { readConfig } from "./options"
 import { forecast, humanize, type Notice, type Selection } from "./predict"
+import { settler } from "./settle"
 import { SETTLE } from "./spring"
 import { styles } from "./styles"
+
+const selectionKey = (value: Selection | undefined) =>
+  value ? `${value.providerID}/${value.modelID}/${value.variant ?? ""}` : ""
 
 const tokensOf = (notice: Notice | undefined) => (notice && "tokens" in notice ? notice.tokens : 0)
 
@@ -34,18 +38,6 @@ export default Plugin.define({
       return current?.id ? current.server.data.session.message.list(current.id) : []
     }
 
-    // A session that has just mounted, or just finished loading its messages (Cmd+R, a switch), shows its tray at rest;
-    // one that turns stale while you watch slides in.
-    let born = performance.now()
-
-    createMemo((previous?: string) => {
-      const next = messages().length > 0 ? key() : undefined
-
-      if (next !== previous) born = performance.now()
-
-      return next
-    })
-
     const selection = createMemo<Selection | undefined>(
       () => {
         const model = ctx.screen.current()?.composer.model()
@@ -72,6 +64,28 @@ export default Plugin.define({
       equals: (a, b) => a?.kind === b?.kind && tokensOf(a) === tokensOf(b),
     })
 
+    // A session shows no tray until its inputs have settled (see settle.ts), so the host's first-load steps never flash one.
+    // A tray that is true at the first settle appears at rest, as a restored session's does; later ones slide in.
+    const [settled, setSettled] = createSignal<string>()
+    let atRest = false
+
+    const gate = settler((at) => {
+      atRest = true
+      setSettled(at)
+      atRest = false
+    })
+    onCleanup(gate.stop)
+
+    createKeyed(
+      () => (messages().length > 0 && key() ? `${key()}|${selectionKey(selection())}|${notice()?.kind ?? ""}` : undefined),
+      () => gate.watch(key(), selection() !== undefined),
+      { otherwise: () => (gate.watch(undefined, false), setSettled(undefined)) },
+    )
+
+    const visible = createMemo(() => (key() && settled() === key() ? notice() : undefined), undefined, {
+      equals: (a, b) => a?.kind === b?.kind && tokensOf(a) === tokensOf(b),
+    })
+
     createKeyed(
       () => next().expiresAt,
       (at) => {
@@ -94,16 +108,16 @@ export default Plugin.define({
     onCleanup(() => leaving.forEach((finish) => finish()))
 
     createKeyed(
-      () => (key() && notice() ? key() : undefined),
+      () => (key() && visible() ? key() : undefined),
       (mounted) => {
         leaving.forEach((finish) => finish())
-        const animate = performance.now() - born > 250
+        const animate = !atRest
         const host = document.createElement("div")
         host.setAttribute("data-cache-warning", "")
         host.setAttribute("data-dock-surface", "tray")
         host.setAttribute("role", "status")
         host.setAttribute("data-state", animate ? "closed" : "rest")
-        const dispose = render(() => <Text notice={notice} locale={ctx.locale.locale} t={ctx.t} />, host)
+        const dispose = render(() => <Text notice={visible} locale={ctx.locale.locale} t={ctx.t} />, host)
         // The closed state must be painted once in the lane before it opens, or there is nothing to transition from.
         const detach = attach(host, () => {
           if (!animate) return

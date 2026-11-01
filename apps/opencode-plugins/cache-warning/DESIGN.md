@@ -64,8 +64,7 @@ about 0.5 s, opacity equal to (height/full)² on every frame when opening; when 
 left, then `height/full / 0.4`. This plugin replays the same curves as CSS `linear()` easings generated from the closed
 form (`spring.ts`, 24 points, settle 0.42 s at the host's half-pixel rest): the tray travels from behind the composer
 (`translateY(100% - 14px)`) with the spring, fades in as its square, and on close retracts and fades only over the last 40%.
-A tray present when a session mounts, or after a switch, is at rest at once (the host's `born < 250 ms` rule); only a
-change you watch animates. Reduced motion (`prefers-reduced-motion`, `:root[data-motion="reduce"]`): 150 ms opacity, no
+A tray true when a session first settles (mount, Cmd+R, a switch) is at rest at once; only a change you watch animates. Reduced motion (`prefers-reduced-motion`, `:root[data-motion="reduce"]`): 150 ms opacity, no
 movement. The state changes on a class of its own attribute (`data-state`), set a frame after the closed state has been
 painted in the lane.
 
@@ -82,6 +81,22 @@ harness by blocking the main thread 450 ms when `data-state` became `closing` (t
 intermediate frame). Now `leave.ts` ends it on `transitionend` of the opacity track (or `transitioncancel`); the timers
 are backstops only, one armed after the first painted frame, one hard cap. A session switch and a plugin reload still end
 it at once (the host has replaced the panel).
+
+**First load: no tray until the session has settled.** On app start, Cmd+R and the first open of a session, the host fills
+its state in steps: the message list arrives (a page of the latest 40, `GET .../message?limit=40&order=desc`; the SDK
+exposes no "loaded" flag, `message.list` is `[]` until it lands), and the composer reports its *fallback* model
+(`opencode/flint-40b-free` in the harness) a few milliseconds before the session's own. A forecast taken between the two
+read "Cache reset · model changed" against a session whose model matched, built the tray, and retracted it 3 ms later
+(`CWDBG` log: `msgs 13 sel opencode/flint… model sonnet` at 271 ms, `sel claude-agent/sonnet` at 274 ms): a flash of
+about 280 ms, reproduced by per-frame sampling on Cmd+R with the message and model requests delayed (opacity 1.00, state
+`closing`, 34 frames, gone). So the first tray of a session visit waits for `settle.ts`: the messages loaded and none of
+the inputs (session, composer model, forecast kind) changed for 250 ms, or 1500 ms when the composer has reported no model
+(it must not hide an expired cache for ever). A change inside the window restarts it, which is why the fallback-then-real
+chain never settles early. After the session has settled, changes show at once (a model picked, expiry, a compaction), with
+their entry motion. A tray that is true when the session first settles appears at rest (this replaces the `born < 250 ms`
+timestamp, which the new delay would have defeated); the flag is set around the single synchronous `setSettled`. Found by
+test in the harness: `{ set: setTimeout }` called as `timers.set(...)` throws "Illegal invocation" in a browser and the host
+disposes a plugin that throws, so the default timers are wrapped (unit test with a receiver-checking `setTimeout`).
 
 **Session switch.** The app replaces the whole chat panel on every switch, a few frames after the route changes. The tray
 is therefore placed again whenever it leaves the document: it checks `isConnected` each frame for 45 frames after a
@@ -116,6 +131,8 @@ positives); the single token-less-step case in the data (an 80 minute gap, a ful
 | After a compaction | "Cache reset · compacted · next message writes a new cache" | session with a completed compaction after its last step |
 | Small context (8k) | nothing | harness |
 | Prompt already sent | nothing, and a visible tray retracts | typed and sent from an idle session: 470 ms retract |
+| First load flash (Cmd+R, switch, delayed messages 600-1200 ms, delayed model list 300-1200 ms), warm session on the model it was answered with | before: tray at opacity 1, `closing`, 34 frames, then gone; after: 0 frames in 6 runs (HEAD build vs fix, same session) | per-frame (rAF) sampler from navigation start, harness |
+| Real changes after the fix | model picked: `closed` then `open`, opacity 0 to 1 over 45 frames; picked back: `closing` and gone; real expiry of a warm session: `closed` then `open`; expired / compacted session on Cmd+R: one frame, `rest`, opacity 1, no leave | same sampler |
 | Session switch, Cmd+R, hot rebuild | one tray, one `<style>`, `window` marker survived the rebuild | harness: `[data-cache-warning]` and `style[data-plugin]` counts |
 | Full width | tray left/right edges equal the composer's at 1400, 700, 380 and 300 px; text 16px in, as the composer's | harness `getBoundingClientRect` |
 | No layout shift | composer box identical (340, 792, 720×88) with and without the tray | `getBoundingClientRect` per session |
