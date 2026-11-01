@@ -2,6 +2,7 @@ import { Monitor, type Definition } from "./monitor.js"
 import type { Options } from "./options.js"
 import type { Clock, Spawn } from "./process.js"
 import { oneLine } from "./diag.js"
+import { renderWake } from "./wrap.js"
 
 export interface Store {
   get(key: string): Promise<unknown>
@@ -115,8 +116,9 @@ export class Monitors {
   }
 
   /**
-   * Monitors from a previous run. Only those with a re-arm schedule come back, and the first wake says so; the rest are
-   * forgotten, because a command nobody asked for in this run must not start by itself.
+   * Monitors from a previous run. Only those with a re-arm schedule come back, and the first wake says so. The rest are
+   * forgotten, because a command nobody asked for in this run must not start by itself, and their session is told once
+   * that they are gone.
    */
   async restore(): Promise<void> {
     const { store, clock, log, sessions, options } = this.deps
@@ -124,23 +126,42 @@ export class Monitors {
     for (const { key, value } of await store.scan(PREFIX)) {
       const def = value as Definition
       if (def.origin !== this.deps.origin) continue
-      const forget = async (why: string) => {
+      const active = (await sessions.state(def.sessionID)) === "active"
+      const forget = async (why: string, notify: boolean) => {
         log(`${def.id} (${def.name}): not restored: ${why}`)
+        // Removed before the wake, so a failed or repeated restart cannot announce it twice.
         await store.remove(key)
+        if (notify && active) await this.announceLost(def)
       }
       if (def.rearmMinutes === undefined) {
-        await forget("no re-arm schedule, so it does not survive a restart")
+        await forget("no re-arm schedule, so it does not survive a restart", true)
       } else if (def.expiresAt <= now) {
-        await forget("its time limit passed")
-      } else if ((await sessions.state(def.sessionID)) !== "active") {
-        await forget(`session ${def.sessionID} is gone or archived`)
+        await forget("its time limit passed", true)
+      } else if (!active) {
+        await forget(`session ${def.sessionID} is gone or archived`, false)
       } else if (this.running.size >= options.maxMonitors) {
-        await forget(`maxMonitors ${options.maxMonitors} reached`)
+        await forget(`maxMonitors ${options.maxMonitors} reached`, true)
       } else {
         const monitor = this.create(def)
         log(`${def.id} (${def.name}): restored after a restart`)
         monitor.start("This monitor was restarted automatically after OpenCode restarted. Output produced while it was down was not seen.")
       }
+    }
+  }
+
+  private async announceLost(def: Definition): Promise<void> {
+    const text = renderWake({
+      name: def.name,
+      id: def.id,
+      seq: 1,
+      lines: [],
+      dropped: 0,
+      notes: [`Monitor gone: OpenCode restarted and this monitor was lost with it. It is no longer running and will not send anything more. Start it again with the monitor tool if you still need it.`],
+    })
+    try {
+      await this.deps.sessions.prompt(def.sessionID, text, { monitorID: def.id, seq: 1 })
+    } catch (error) {
+      this.deps.log(`${def.id} (${def.name}): could not tell ${def.sessionID} it is gone: ${String(error)}`)
     }
   }
 

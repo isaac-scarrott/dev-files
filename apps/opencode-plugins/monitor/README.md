@@ -10,6 +10,7 @@ Start a command in the background and wake the session with its output as it hap
 - `rearmMinutes` starts the command again every N minutes, ending a run that is still going (the "storefront watch" pattern).
 - `list_monitors` shows what is running; `stop_monitor` ends a monitor and everything it started (SIGTERM to the process group, SIGKILL after a grace period).
 - Monitors end when their session is archived or deleted, after `ttlMinutes` (default 24 h), and when the service shuts down.
+- `session` can name another session to wake, but only the caller's own tree: itself, its parent, its children and descendants, sessions it created through `orchestrator-tools`, and its siblings (the `parent`/`child`/`sibling` relations `list_peers` shows, the `tree` scope of `send_message`). Anything else is rejected with an error.
 - A noisy monitor pauses with a notice after `maxEventsPerHour` lines; extra lines are counted, not shown.
 
 ## Context
@@ -17,7 +18,7 @@ OpenCode's background shell only notifies when the command exits. This fills the
 
 Safety: the command goes through the host's normal `shell` approval (and `external_directory` for a `cwd` outside the session directory), asked on the calling session, so a session that may not run shell cannot start a monitor. Re-arm restarts and restores after a service restart reuse that first approval. Output is wrapped and escaped, but a model can still be influenced by what a program prints.
 
-A monitor started by a previous run is not restarted, unless it has `rearmMinutes`; then the first wake says it was restarted. If the service is killed hard (SIGKILL, crash), running commands are orphaned: the plugin cannot reap what it cannot signal.
+A monitor started by a previous run is not restarted, unless it has `rearmMinutes`; then the first wake says it was restarted. One that is not restarted wakes its session once with a `<monitor-notice>` saying it is gone and can be started again (nothing is sent if the session is archived or deleted). If the service is killed hard (SIGKILL, crash), running commands are orphaned: the plugin cannot reap what it cannot signal.
 
 ## Install
 Register by absolute path in `~/.config/opencode/opencode.json`:

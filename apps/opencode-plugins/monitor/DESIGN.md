@@ -26,12 +26,17 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor`, `list_monitors`, `st
   directory and instances share storage, so each stores its `origin` directory and restores only its own.
 - **Process**: `$SHELL -c command`, `detached` so it leads a process group; kill signals `-pid`. After the leader exits the
   group gets a final SIGKILL for strays. Output is drained for at most 300 ms after exit.
-- **`session` argument**: may name another session of the same project (not archived); the working directory is always
-  the caller's.
+- **`session` argument**: may name only a session the caller already controls: itself, its parent, descendants, sessions
+  it created (`orchestrator` metadata marker) and siblings. That is orchestrator-tools' `tree` scope (`reachable` plus
+  the parent `list_peers` shows), copied into `reach.ts` since plugins are separate packages; there is no wider option.
+  Archived or missing targets and anything outside the tree are rejected. The working directory is always the caller's.
+- **Lost at restart**: a definition that is not restored (no re-arm, TTL passed, `maxMonitors` hit) wakes its session
+  once with a `<monitor-notice>`: gone, can be started again. The stored entry is removed before the wake, so repeated
+  restarts or a failed wake never announce it twice. Archived/deleted sessions get nothing.
+- **TTL**: expiry wakes as before; there is no renew option.
 
 ## Not done
-- Renewing a TTL without starting a new monitor.
-- Waking a session for a non-re-arm monitor lost at restart (only logged).
+- Renewing a TTL without starting a new monitor (decided against: the expiry wake is the prompt to start again).
 
 ## Tests
 `monitor.test.ts` uses a fake clock and fake spawn. `process.test.ts` uses real processes and checks the group kill.
