@@ -95,6 +95,8 @@ export class Monitor {
     if (resume) {
       this.seq = resume.state.seq
       this.restartCount = resume.state.restartCount
+      this.events = resume.state.events
+      this.lastEventAt = resume.state.lastEventAt
       this.restartNotice = resume.state.restartCount
       this.lastRearmAt = resume.state.lastRearmAt
       this.notes.push(resume.note)
@@ -116,6 +118,8 @@ export class Monitor {
       seq: this.seq,
       restartCount: this.restartCount,
       aliveAt: this.deps.clock.now(),
+      events: this.events,
+      ...(this.lastEventAt === undefined ? {} : { lastEventAt: this.lastEventAt }),
       ...(this.lastRearmAt === undefined ? {} : { lastRearmAt: this.lastRearmAt }),
       ...(this.nextRearmAt === undefined ? {} : { nextRearmAt: this.nextRearmAt }),
     }

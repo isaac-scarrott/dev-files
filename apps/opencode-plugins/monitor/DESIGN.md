@@ -25,7 +25,7 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
 - **Lifetime**: TTL covers the whole monitor, re-arm included. Ends on exit (no re-arm), `maxEvents`, TTL, stop, session
   archived/deleted (`session.archived`, `session.deleted`), 3 failed wakes in a row, and dispose.
 - **Persistence**: definitions under `monitor/def/<id>`, never output. Run state under `monitor/state/<id>`: `seq`, `restartCount`,
-  `aliveAt` (heartbeat every 60 s, each wake, and clean shutdown), `lastRearmAt`, `nextRearmAt`. Writes per monitor are serialized
+  `events`, `lastEventAt`, `aliveAt` (heartbeat every 60 s, each wake, and clean shutdown), `lastRearmAt`, `nextRearmAt`. Writes per monitor are serialized
   and the state is removed with the definition. Missing state (older entries) reads as: unknown downtime start, due re-arm. On startup only entries with a re-arm
   schedule, an unexpired TTL and an active session come back, and the first wake says so. The plugin loads once per
   directory and instances share storage, so each stores its `origin` directory and restores only its own.
@@ -44,6 +44,11 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   restarts or a failed wake never announce it twice. Archived/deleted sessions get nothing.
 - **TTL**: `expiresAt` is stored absolute and set once at the first start. Re-arms and restarts never move it (tested). Expiry
   wakes as before; there is no renew option.
+- **Event count**: `events` (matched lines accepted as events) is persisted in the run state and restored, so `maxEvents` is a true
+  lifetime cap (restart at 3 of 5 leaves 2). Re-arms never reset it. Saved on each wake, heartbeat and clean shutdown, not per
+  line, so a hard kill can lose a few seconds of count. A restored state already at `maxEvents` is not restored (forgotten, session
+  told it is gone). Older state without `events` reads as 0. The hourly window (sliding timestamps) is deliberately NOT persisted:
+  it resets on restart, since downtime usually exceeds the hour and the cap is a flood guard, not a quota; `paused` likewise.
 - **`match`**: tested before an output line counts as an event, so batching, `maxEvents` and the rate window see matched lines only.
 
 ## Not done

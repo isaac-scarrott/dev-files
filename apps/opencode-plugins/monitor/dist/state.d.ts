@@ -6,6 +6,9 @@ export interface RunState {
     readonly restartCount: number;
     /** Last time the monitor was known alive (heartbeat, wake, clean shutdown). */
     readonly aliveAt: number;
+    /** Matched lines accepted as events over the monitor's whole life (all re-arms and restarts): what `maxEvents` counts. */
+    readonly events: number;
+    readonly lastEventAt?: number;
     readonly lastRearmAt?: number;
     readonly nextRearmAt?: number;
 }
