@@ -2,6 +2,7 @@ import { createKeyed, Plugin, Slot, Style, type SlotMap, type Ui } from "@openco
 import { createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { inset, jumpTo, unpin, type Host } from "./jump"
+import { atEnd, heldPrompt } from "./target"
 import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, type Message, type PromptWindow } from "./rail"
 import { readReading, type Reading } from "./reading"
 
@@ -78,6 +79,9 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const [geometry, setGeometry] = createSignal<Geometry>()
   // The prompt whose turn is being read (see `activePrompt`), lit at rest. The pointer's index is separate.
   const [current, setCurrent] = createSignal(-1)
+  // The prompt a chevron or tick jump chose while the scroller sits at its end (see `heldPrompt`); cleared by the user's input.
+  let chosen: number | undefined
+  let jumping = false
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
   const data = () => session().server.data.session
@@ -134,7 +138,13 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   })
 
   createKeyed(scroller, (root) => {
-    const mark = () => setAskedIn(session().id)
+    const mark = () => {
+      setAskedIn(session().id)
+      // The plugin's own unpin, dispatched synchronously by a jump, is not the user taking the wheel.
+      if (jumping || chosen === undefined) return
+      chosen = undefined
+      setCurrent(reading?.active(ids()) ?? -1)
+    }
     const types = ["wheel", "touchmove", "pointerdown", "keydown"] as const
 
     for (const type of types) root.addEventListener(type, mark, { passive: true })
@@ -158,6 +168,18 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   }
 
   let pending: number | undefined
+
+  // The reading rule's answer, or the prompt a jump chose while the scroller is still at its end.
+  const resolve = (computed: number) => {
+    const root = scroller()
+
+    if (chosen === undefined || !root) return computed
+    const held = heldPrompt({ chosen, computed, count: ids().length, scroll: { top: root.scrollTop, max: root.scrollHeight - root.clientHeight } })
+
+    if (held === computed) chosen = undefined
+
+    return held
+  }
 
   // The rail's place changes with the view's size or the prompts, never with scrolling.
   const refresh = () => {
@@ -202,7 +224,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     (root) => {
       let ready = false
       const watch: Reading = readReading(root, () => {
-        if (ready) setCurrent(watch.active(ids()))
+        if (ready) setCurrent(resolve(watch.active(ids())))
       })
       ready = true
       reading = watch
@@ -221,6 +243,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     (list) => {
       schedule()
       reading?.rescan()
+      chosen = undefined
       setCurrent(reading?.active(list) ?? -1)
     },
   )
@@ -235,8 +258,18 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     inflight?.abort()
     const controller = new AbortController()
     inflight = controller
-    void jumpTo(target, id, controller.signal).finally(() => {
+    jumping = true
+    const jump = jumpTo(target, id, controller.signal)
+    jumping = false
+    void jump.then((outcome) => {
       if (inflight === controller) inflight = undefined
+
+      if (outcome !== "done") return
+      const root = scroller()
+
+      if (!root || !atEnd({ top: root.scrollTop, max: root.scrollHeight - root.clientHeight })) return
+      chosen = index
+      setCurrent(index)
     })
   }
 

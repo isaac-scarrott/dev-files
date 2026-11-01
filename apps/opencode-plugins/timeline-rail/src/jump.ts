@@ -282,7 +282,10 @@ export async function jumpTo(host: Host, id: string, outer: AbortSignal): Promis
       if (signal.aborted) return "aborted"
       const landed = anchorOf(host.scroller, id)
 
-      if (landed && Math.abs(offsetOf(host.scroller, landed) - host.scroller.scrollTop) <= 2) break
+      // A prompt whose offset lies past the scroll maximum cannot land closer: stop at the end, as the host does.
+      const { scroller } = host
+
+      if (landed && (Math.abs(offsetOf(scroller, landed) - scroller.scrollTop) <= 2 || scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 2)) break
     }
 
     return signal.aborted ? "aborted" : "done"
