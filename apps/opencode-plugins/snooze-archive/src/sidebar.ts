@@ -5,7 +5,7 @@ import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
 
-// activeAt: last activity, shown by sidebar-repos at the row's end (Archived rows); project: the second line ("repo · branch"); until: the trailing detail on it (time until wake); detail: the hover title.
+// activeAt: last activity, shown by sidebar-repos at the row's end (Archived rows); project: the second line (the repo name); until: the trailing detail on it (time until wake); detail: the hover title.
 export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
