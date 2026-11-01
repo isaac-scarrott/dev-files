@@ -1,9 +1,10 @@
-import { Plugin, Style } from "@opencode/plugin/gui"
-import { createEffect, createMemo, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js"
+import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
+import { createMemo, createSignal, createUniqueId, getOwner, onCleanup, runWithOwner } from "solid-js"
 import { render } from "solid-js/web"
 import { escapeMarkup, peerOf, type PeerMessage } from "./card.js"
 
 const ROW = "[data-timeline-row='UserMessage'][data-message-id]"
+const TIMELINE = "[data-slot='session-timeline-scroll']"
 const ROW_ATTR = "data-peer-row"
 const CARD_ATTR = "data-peer-card"
 
@@ -69,8 +70,6 @@ const css = `
 
 type Located = { readonly peer: PeerMessage; readonly server: string }
 
-let serial = 0
-
 export default Plugin.define({
   i18n: {
     en: {
@@ -98,7 +97,7 @@ export default Plugin.define({
 
     const Row = (props: { located: Located }) => {
       const peer = () => props.located.peer
-      const id = `peer-text-${++serial}`
+      const id = `peer-text-${createUniqueId()}`
       const [expanded, setExpanded] = createSignal(false)
       const [expandable, setExpandable] = createSignal(false)
       let root!: HTMLDivElement
@@ -182,44 +181,79 @@ export default Plugin.define({
 
     let frame: number | undefined
     let disposed = false
+    // False when the row is a peer message whose content slot is not there yet; the next frame scan retries it.
+    const decorateRow = (row: HTMLElement, known: Map<string, Located>) => {
+      const located = known.get(row.dataset.messageId ?? "")
+      if (!located || row.querySelector(`[${CARD_ATTR}]`)) return true
+      const content = row.querySelector("[data-slot='session-turn-message-content']")
+      if (!content) return false
+      row.setAttribute(ROW_ATTR, "")
+      const host = document.createElement("div")
+      host.setAttribute("data-peer-mount", "")
+      host.style.display = "contents"
+      content.append(host)
+      mounted.set(host, runWithOwner(owner, () => render(() => <Row located={located} />, host))!)
+      return true
+    }
     const decorate = () => {
       frame = undefined
       if (disposed) return
       sweep()
       const known = peers()
-      for (const row of document.querySelectorAll<HTMLElement>(ROW)) {
-        const located = known.get(row.dataset.messageId ?? "")
-        if (!located) continue
-        if (row.querySelector(`[${CARD_ATTR}]`)) continue
-        const content = row.querySelector("[data-slot='session-turn-message-content']")
-        if (!content) continue
-        row.setAttribute(ROW_ATTR, "")
-        const host = document.createElement("div")
-        host.setAttribute("data-peer-mount", "")
-        host.style.display = "contents"
-        content.append(host)
-        mounted.set(host, runWithOwner(owner, () => render(() => <Row located={located} />, host))!)
-      }
+      if (known.size === 0) return
+      for (const timeline of watched) for (const row of timeline.querySelectorAll<HTMLElement>(ROW)) decorateRow(row, known)
     }
     const schedule = () => {
       if (!disposed) frame ??= requestAnimationFrame(decorate)
     }
 
-    createEffect(() => {
-      peers()
-      schedule()
-    })
-    // Mutation callbacks run before the next paint, so a row the host adds is swapped before it is ever drawn.
+    // Rows only appear inside a timeline's scroll region, so that is all the observer watches. Cached timelines stay
+    // mounted, and a new one arrives with a session switch, so the regions are looked up again then.
+    const watched = new Set<Element>()
+    // Mutation callbacks run before the next paint, so a row the host adds is swapped before it is ever drawn. Only the
+    // added nodes are searched, and nothing runs while no open session holds a peer message.
     const observer = new MutationObserver((records) => {
-      if (!disposed && records.some((record) => record.addedNodes.length > 0)) decorate()
+      if (disposed) return
+      const known = peers()
+      if (known.size === 0) return
+      let retry = false
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== 1) continue
+          const element = node as Element
+          if (element.matches(ROW)) retry ||= !decorateRow(element as HTMLElement, known)
+          else if (element.firstElementChild) for (const row of element.querySelectorAll<HTMLElement>(ROW)) retry ||= !decorateRow(row, known)
+        }
+      }
+      if (retry) schedule()
     })
-    observer.observe(document.body, { childList: true, subtree: true })
-    schedule()
+    let looking: number | undefined
+    const locate = (attempts: number) => {
+      looking = undefined
+      if (disposed) return
+      for (const timeline of watched) if (!timeline.isConnected) watched.delete(timeline)
+      for (const timeline of document.querySelectorAll(TIMELINE)) {
+        if (watched.has(timeline)) continue
+        watched.add(timeline)
+        observer.observe(timeline, { childList: true, subtree: true })
+        schedule()
+      }
+      if (attempts > 0) looking = requestAnimationFrame(() => locate(attempts - 1))
+    }
+    const look = () => {
+      if (looking === undefined && !disposed) looking = requestAnimationFrame(() => locate(12))
+    }
+
+    createKeyed(peers, schedule)
+    createKeyed(() => ctx.sessions.current()?.key, look, { otherwise: look })
+    look()
 
     onCleanup(() => {
       disposed = true
       observer.disconnect()
+      watched.clear()
       if (frame !== undefined) cancelAnimationFrame(frame)
+      if (looking !== undefined) cancelAnimationFrame(looking)
       for (const host of [...mounted.keys()]) drop(host)
       for (const row of document.querySelectorAll(`[${ROW_ATTR}]`)) row.removeAttribute(ROW_ATTR)
     })

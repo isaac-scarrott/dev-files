@@ -1,4 +1,4 @@
-import { Plugin, Style } from "@opencode/plugin/gui"
+import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect } from "solid-js"
 import { render } from "solid-js/web"
 import { createTicker, lastActivity } from "./activity"
@@ -169,6 +169,7 @@ export default Plugin.define({
       if (frame !== undefined) return
       frame = requestAnimationFrame(() => {
         frame = undefined
+        findRegion()
         stampActivity(document, activity)
         badges(document, names, display, attention, mountIcon)
         renderTimes(document, Date.now(), (text) => measure(timeFont(), text))
@@ -194,12 +195,16 @@ export default Plugin.define({
 
     const resizeObserver = new ResizeObserver(refresh)
 
-    createEffect(() => {
-      for (const session of ctx.sessions.list()) {
+    // Permission and form lists are fetched once per session; the stores keep them current after that.
+    const formsRequested = new Set<string>()
+    createKeyed(() => ctx.sessions.list(), (sessions) => {
+      for (const session of sessions) {
+        const key = `${session.server.id}:${session.id}`
+        if (formsRequested.has(key)) continue
+        formsRequested.add(key)
         const data = session.server.data
         // A pending permission or question form reads as attention; errors surface as unread, not a mark.
-        void data.session.permission.sync(session.id).catch(() => undefined)
-        void data.session.form.sync(session.id).catch(() => undefined)
+        void Promise.all([data.session.permission.sync(session.id), data.session.form.sync(session.id)]).catch(() => formsRequested.delete(key))
       }
     })
 
@@ -250,6 +255,10 @@ export default Plugin.define({
       const element = node.nodeType === 1 ? node as Element : node.parentElement
       return !!element?.closest("[data-sidebar-repo], [data-sidebar-status-icon], [data-sidebar-time]")
     }
+    // Rows only change inside the sidebar's tab region, so that is all the observer watches; streaming replies elsewhere
+    // never reach it. The region is found again when it is gone (the sidebar toggled or the layout switched).
+    const TABS = "[data-slot='vertical-tabs']"
+    let region: Element | null = null
     const observer = new MutationObserver((records) => {
       if (records.some((record) => {
         if (owned(record.target)) return false
@@ -257,12 +266,27 @@ export default Plugin.define({
         return [...record.addedNodes, ...record.removedNodes].some((node) => !owned(node))
       })) refresh()
     })
-    observer.observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["data-tab-key", "data-orientation", "data-status"],
-    })
+    const attach = (found: Element) => {
+      if (region) observer.disconnect()
+      region = found
+      observer.observe(found, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-tab-key", "data-orientation", "data-status"] })
+    }
+    let locating: number | undefined
+    const locate = (attempts: number) => {
+      locating = undefined
+      if (region?.isConnected) return
+      const found = document.querySelector(TABS)
+      if (found) {
+        attach(found)
+        refresh()
+      } else if (attempts > 0) locating = requestAnimationFrame(() => locate(attempts - 1))
+    }
+    const findRegion = () => {
+      if (!region?.isConnected && locating === undefined) locating = requestAnimationFrame(() => locate(60))
+    }
+    const present = document.querySelector(TABS)
+    if (present) attach(present)
+    else findRegion()
 
     // One timer for every row; only while the window is visible.
     const ticker = createTicker({
@@ -276,6 +300,7 @@ export default Plugin.define({
 
     return () => {
       observer.disconnect()
+      if (locating !== undefined) cancelAnimationFrame(locating)
       ticker.dispose()
       window.removeEventListener("focus", wake)
       document.removeEventListener("visibilitychange", wake)
