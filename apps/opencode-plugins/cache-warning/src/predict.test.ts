@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { forecast, humanize, millis, touched, type Config, type Msg } from "./predict"
+import { forecast, humanize, LEARNED_WINDOW_MS, measuredStep, millis, touched, ttlFor, type Config, type Msg } from "./predict"
 
 const MIN = 60_000
 const config: Config = { ttlMs: 5 * MIN, minTokens: 20_000 }
@@ -161,4 +161,33 @@ test("token counts read like the context ring", () => {
   assert.equal(humanize(180_000, "en"), "180k")
   assert.equal(humanize(1_200_000, "en"), "1m")
   assert.equal(humanize(21_400, "en"), "21k")
+})
+
+test("a learned 1h tier stretches the window; a learned 5m keeps it; none falls back to the option", () => {
+  const messages = [user, step(t0)]
+  const hour = { ttl: "1h", at: t0 } as const
+  assert.deepEqual(forecast({ messages, now: t0 + 30 * MIN, config, learned: hour }), { expiresAt: t0 + 60 * MIN })
+  assert.deepEqual(forecast({ messages, now: t0 + 61 * MIN, config, learned: hour }), {
+    notice: { kind: "expired", tokens: 180_000 },
+  })
+  assert.deepEqual(forecast({ messages, now: t0 + 6 * MIN, config, learned: { ttl: "5m", at: t0 } }), {
+    notice: { kind: "expired", tokens: 180_000 },
+  })
+  const configured = { ...config, ttlMs: 20 * MIN }
+  assert.deepEqual(forecast({ messages, now: t0, config: configured }), { expiresAt: t0 + 20 * MIN })
+  assert.deepEqual(forecast({ messages, now: t0, config: configured, learned: { ttl: "5m", at: t0 } }), { expiresAt: t0 + 5 * MIN })
+})
+
+test("a tier read too long before the step is not trusted", () => {
+  assert.equal(ttlFor(config, t0, { ttl: "1h", at: t0 - LEARNED_WINDOW_MS }), 60 * MIN)
+  assert.equal(ttlFor(config, t0, { ttl: "1h", at: t0 - LEARNED_WINDOW_MS - 1 }), config.ttlMs)
+  assert.equal(ttlFor(config, t0, { ttl: "1h", at: t0 + 4_000 }), 60 * MIN)
+})
+
+test("the measured step is the latest assistant message with usage", () => {
+  const a = step(t0, { id: "a" })
+  const b = step(t0 + MIN, { id: "b" })
+  const bare: Msg = { type: "assistant", id: "c" }
+  assert.equal(measuredStep([a, b, bare, user])?.id, "b")
+  assert.equal(measuredStep([user]), undefined)
 })

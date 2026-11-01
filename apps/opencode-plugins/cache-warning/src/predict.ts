@@ -1,5 +1,25 @@
+/** The cache tier Claude Code's transcript showed for a session's newest cache write. */
+export interface Learned {
+  readonly ttl: "5m" | "1h"
+  /** Epoch ms the request was logged. */
+  readonly at: number
+}
+
+/** A tier read longer ago than this before the step cannot be trusted to still apply (the 1 hour tier plus slack). */
+export const LEARNED_WINDOW_MS = 65 * 60_000
+
+const TIER_MS = { "5m": 5 * 60_000, "1h": 60 * 60_000 } as const
+
+/** The learned tier's lifetime when it comes from a write at or shortly before the step, else the configured one. */
+export function ttlFor(config: Config, anchor: number, learned?: Learned) {
+  if (!learned || anchor - learned.at > LEARNED_WINDOW_MS) return config.ttlMs
+
+  return TIER_MS[learned.ttl]
+}
+
 /** A session message as far as the prediction reads it; the host's `SessionMessageInfo` satisfies it. */
 export interface Msg {
+  readonly id?: string
   readonly type: string
   readonly status?: string
   readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
@@ -87,6 +107,8 @@ export function forecast(input: {
   now: number
   config: Config
   selection?: Selection
+  /** The tier the session's transcript showed; the configured TTL applies without it. */
+  learned?: Learned
 }): Forecast {
   const messages = input.messages
   let compacted = false
@@ -128,7 +150,7 @@ export function forecast(input: {
   const at = touched(step)
 
   if (at === undefined) return {}
-  const expiresAt = at + input.config.ttlMs
+  const expiresAt = at + ttlFor(input.config, at, input.learned)
 
   if (input.now >= expiresAt) return { notice: { kind: "expired", tokens: size } }
 
@@ -145,6 +167,15 @@ export function forecast(input: {
   }
 
   return { expiresAt }
+}
+
+/** The latest assistant step with usage: the one the forecast reads, and so the point at which a learned tier is stale. */
+export function measuredStep(messages: ReadonlyArray<Msg>) {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+
+    if (message?.type === "assistant" && message.tokens) return message
+  }
 }
 
 /** The host's number style for token counts: compact, whole, lower case ("180k"). */
