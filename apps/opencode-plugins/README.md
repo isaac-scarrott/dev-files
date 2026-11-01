@@ -14,6 +14,7 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions | server |
 | [`plugin-list`](plugin-list) | Extensions → Plugins lists server-only plugins and tags rows Desktop, Server, TUI, RPC | GUI |
 | [`session-drag`](session-drag) | Drag a sidebar session row into the chat to attach a `@session:<id>` chip | GUI |
+| [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep | server |
 | [`sidebar-repos`](sidebar-repos) | Two-line sidebar rows (project name over title), permission and question icons, last-active time on idle rows | GUI |
 | [`sidepanel`](sidepanel) | Original pinned counter-panel experiment | GUI |
 | [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu | GUI |
