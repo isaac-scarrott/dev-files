@@ -4,6 +4,7 @@ import { LineSplitter } from "./lines.js"
 import { Monitors, type ManagerDeps } from "./manager.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import type { Child, ChildEvents, Clock, Spawn } from "./process.js"
+import { mayWake, type SessionLike } from "./reach.js"
 import { TRAILER, renderWake } from "./wrap.js"
 
 class FakeClock implements Clock {
@@ -342,4 +343,73 @@ test("three failed deliveries stop the monitor", async () => {
 test("options reject bad values", () => {
   assert.throws(() => parseOptions({ maxMonitors: 0 }), /maxMonitors/)
   assert.equal(parseOptions({}).ttlMinutes, 1440)
+})
+
+test("a monitor lost at restart wakes its session once, saying it is gone", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, name: "plain" })
+  assert.equal(t.storage.size, 1)
+  const second = new Monitors(t.deps)
+  await second.restore()
+  assert.equal(second.count, 0)
+  assert.equal(t.storage.size, 0)
+  assert.equal(t.wakes.length, 1)
+  const wake = t.wakes[0]!
+  assert.equal(wake.sessionID, "ses_1")
+  assert.match(wake.text, /<monitor-notice name="plain" id="mon_1" seq="1">/)
+  assert.match(wake.text, /Monitor gone/)
+  assert.match(wake.text, /Start it again/)
+  assert.ok(wake.text.endsWith(TRAILER))
+  await new Monitors(t.deps).restore()
+  assert.equal(t.wakes.length, 1)
+  await t.monitors.dispose()
+})
+
+test("a lost monitor does not wake an archived or missing session, and is still forgotten", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  t.states.set("ses_1", "archived")
+  await new Monitors(t.deps).restore()
+  assert.equal(t.wakes.length, 0)
+  assert.equal(t.storage.size, 0)
+  await t.monitors.dispose()
+})
+
+test("a failed notice wake is logged and not retried", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  t.deps.sessions.prompt = async () => { throw new Error("busy") }
+  await new Monitors(t.deps).restore()
+  assert.equal(t.storage.size, 0)
+  assert.ok(t.logs.some((l) => l.includes("could not tell ses_1")))
+  await t.monitors.dispose()
+})
+
+test("a re-arm monitor past its ttl at restart is reported gone too", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30, ttlMinutes: 1 })
+  t.clock.t += 120_000
+  await new Monitors(t.deps).restore()
+  assert.equal(t.wakes.filter((w) => w.text.includes("Monitor gone")).length, 1)
+  await t.monitors.dispose()
+})
+
+test("a monitor may wake only the caller's own tree", async () => {
+  const infos = new Map<string, SessionLike>()
+  const add = (id: string, parentID?: string, metadata?: Record<string, unknown>) => void infos.set(id, { id, parentID, metadata })
+  add("me", "parent")
+  add("parent")
+  add("sibling", "parent")
+  add("child", "me")
+  add("grandchild", "child")
+  add("made", undefined, { orchestrator: { creator: "me" } })
+  add("madechild", "made")
+  add("stranger")
+  add("strangerchild", "stranger")
+  add("uncle", "grandparent")
+  add("grandparent")
+  const reader = { get: async ({ sessionID }: { sessionID: string }) => { const i = infos.get(sessionID); if (!i) throw new Error("missing"); return i } }
+  const me = infos.get("me")!
+  for (const id of ["me", "parent", "sibling", "child", "grandchild", "made", "madechild"]) assert.equal(await mayWake(reader, me, infos.get(id)!), true, id)
+  for (const id of ["stranger", "strangerchild", "uncle", "grandparent"]) assert.equal(await mayWake(reader, me, infos.get(id)!), false, id)
 })
