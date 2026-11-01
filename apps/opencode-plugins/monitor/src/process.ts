@@ -21,6 +21,7 @@ export interface ChildEvents {
 export interface Child {
   /** Signals the whole process group, so grandchildren die too. */
   kill(signal: "SIGTERM" | "SIGKILL"): void
+  readonly pid?: number
 }
 
 export type Spawn = (spec: { command: string; cwd: string }, events: ChildEvents) => Child
@@ -52,6 +53,7 @@ export const spawnShell: Spawn = ({ command, cwd }, events) => {
     })
   })
   return {
+    pid: child.pid,
     kill(signal) {
       const pid = child.pid
       if (pid === undefined) return

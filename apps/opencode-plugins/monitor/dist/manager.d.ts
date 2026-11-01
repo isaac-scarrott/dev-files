@@ -52,11 +52,20 @@ export interface MonitorInfo {
     readonly expiresAt: string;
     readonly rearmMinutes?: number;
     readonly nextRunAt?: string;
+    /** When the schedule last started a fresh run (a re-arm, or the restart that satisfied a due one); absent until it has. */
+    readonly lastRearm?: string;
+    readonly nextRearm?: string;
+    /** Service restarts this monitor has been through. */
+    readonly restartCount: number;
+    readonly pid?: number;
     readonly paused?: boolean;
 }
 export declare class Monitors {
     private readonly deps;
     private readonly running;
+    /** Writes of one monitor's state, in order, so a late heartbeat cannot land after the removal. */
+    private readonly writes;
+    private readonly finishedIDs;
     constructor(deps: ManagerDeps);
     get count(): number;
     start(input: StartInput): Promise<MonitorInfo>;
@@ -73,5 +82,6 @@ export declare class Monitors {
     private announceLost;
     dispose(): Promise<void>;
     private create;
+    private write;
     private describe;
 }

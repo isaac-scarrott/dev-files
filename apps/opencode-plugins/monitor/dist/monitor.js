@@ -2,6 +2,7 @@ import { LineSplitter } from "./lines.js";
 import { renderWake } from "./wrap.js";
 const HOUR = 3_600_000;
 const MAX_DELIVERY_FAILURES = 3;
+const HEARTBEAT_MS = 60_000;
 export class Monitor {
     def;
     deps;
@@ -10,7 +11,12 @@ export class Monitor {
     events = 0;
     lastEventAt;
     paused = false;
+    restartCount = 0;
+    lastRearmAt;
+    nextRearmAt;
     seq = 0;
+    restartNotice;
+    heartbeatTimer;
     child;
     exited = Promise.resolve();
     splitter;
@@ -22,7 +28,6 @@ export class Monitor {
     batchTimer;
     cycleTimer;
     ttlTimer;
-    cycleStart = 0;
     cycling = false;
     closing = false;
     chain = Promise.resolve();
@@ -34,19 +39,56 @@ export class Monitor {
         this.splitter = new LineSplitter(deps.options.maxLineChars);
         this.matcher = def.match === undefined ? undefined : new RegExp(def.match);
     }
-    /** `note` goes into the first wake, for example that the monitor came back after a restart. */
-    start(note) {
+    /**
+     * A fresh start, or (with `resume`) a restore after a service restart. The process is always new; what is kept is the
+     * re-arm clock: a mark still ahead keeps its remaining time, a mark that passed while the service was down counts as
+     * satisfied by this fresh start and the next one is set from now. The ttl is the stored absolute `expiresAt`, so
+     * neither a re-arm nor a restart extends it.
+     */
+    start(resume) {
         const { clock } = this.deps;
-        this.startedAt = clock.now();
-        if (note)
-            this.notes.push(note);
-        this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - clock.now()));
-        this.spawnRun();
-        if (note)
+        const now = clock.now();
+        this.startedAt = now;
+        let keepMark;
+        if (resume) {
+            this.seq = resume.state.seq;
+            this.restartCount = resume.state.restartCount;
+            this.restartNotice = resume.state.restartCount;
+            this.lastRearmAt = resume.state.lastRearmAt;
+            this.notes.push(resume.note);
+            const mark = resume.state.nextRearmAt;
+            if (this.def.rearmMinutes !== undefined && mark !== undefined && mark > now)
+                keepMark = mark;
+        }
+        this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - now));
+        this.heartbeatTimer = clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS);
+        this.spawnRun({ rearmed: resume !== undefined && keepMark === undefined, mark: keepMark });
+        if (resume)
             this.scheduleFlush();
     }
+    get pid() {
+        return this.child?.pid;
+    }
+    snapshot() {
+        return {
+            seq: this.seq,
+            restartCount: this.restartCount,
+            aliveAt: this.deps.clock.now(),
+            ...(this.lastRearmAt === undefined ? {} : { lastRearmAt: this.lastRearmAt }),
+            ...(this.nextRearmAt === undefined ? {} : { nextRearmAt: this.nextRearmAt }),
+        };
+    }
+    save() {
+        return this.deps.saveState(this, this.snapshot()).catch((error) => this.deps.log(`${this.def.id} (${this.def.name}): could not save state: ${String(error)}`));
+    }
+    heartbeat() {
+        if (this.closing)
+            return;
+        void this.save();
+        this.heartbeatTimer = this.deps.clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS);
+    }
     nextRunAt() {
-        return this.state === "waiting" && this.def.rearmMinutes !== undefined ? this.cycleStart + this.def.rearmMinutes * 60_000 : undefined;
+        return this.state === "waiting" ? this.nextRearmAt : undefined;
     }
     /** Ends the monitor on request or because its session went away. No wake. */
     async stop(reason) {
@@ -67,10 +109,13 @@ export class Monitor {
         await this.terminate();
         this.state = "ended";
         await this.chain;
+        await this.save(); // last-alive time for the downtime window of the next start
     }
-    spawnRun() {
+    spawnRun(how = { rearmed: false }) {
         const { clock, spawn, log } = this.deps;
-        this.cycleStart = clock.now();
+        const now = clock.now();
+        if (how.rearmed)
+            this.lastRearmAt = now;
         this.splitter = new LineSplitter(this.deps.options.maxLineChars);
         this.state = "running";
         let release;
@@ -95,8 +140,10 @@ export class Monitor {
         });
         this.child = child;
         if (this.def.rearmMinutes !== undefined) {
-            this.cycleTimer = clock.setTimeout(() => this.cycle(), this.def.rearmMinutes * 60_000);
+            this.nextRearmAt = how.mark ?? now + this.def.rearmMinutes * 60_000;
+            this.cycleTimer = clock.setTimeout(() => this.cycle(), this.nextRearmAt - now);
         }
+        void this.save();
     }
     onExit(code, signal) {
         if (this.closing)
@@ -104,7 +151,7 @@ export class Monitor {
         const how = signal ? `was killed by ${signal}` : `exited with code ${code}`;
         if (this.cycling) {
             this.cycling = false;
-            this.spawnRun();
+            this.spawnRun({ rearmed: true });
             return;
         }
         if (this.def.rearmMinutes === undefined) {
@@ -125,7 +172,7 @@ export class Monitor {
             this.signalChild();
         }
         else {
-            this.spawnRun();
+            this.spawnRun({ rearmed: true });
         }
     }
     accept(line) {
@@ -180,7 +227,10 @@ export class Monitor {
             return;
         this.seq += 1;
         const seq = this.seq;
-        const text = renderWake({ name: this.def.name, id: this.def.id, seq, lines: this.pending, dropped: this.dropped, notes });
+        const restart = this.restartNotice;
+        this.restartNotice = undefined;
+        const text = renderWake({ name: this.def.name, id: this.def.id, seq, lines: this.pending, dropped: this.dropped, notes, restart });
+        void this.save();
         this.deps.log(`${this.def.id} (${this.def.name}): wake ${seq}: ${this.pending.length} line(s), ${this.dropped} dropped`);
         this.pending = [];
         this.pendingBytes = 0;
@@ -216,10 +266,10 @@ export class Monitor {
     }
     clearTimers() {
         const { clock } = this.deps;
-        for (const handle of [this.batchTimer, this.cycleTimer, this.ttlTimer])
+        for (const handle of [this.batchTimer, this.cycleTimer, this.ttlTimer, this.heartbeatTimer])
             if (handle !== undefined)
                 clock.clearTimeout(handle);
-        this.batchTimer = this.cycleTimer = this.ttlTimer = undefined;
+        this.batchTimer = this.cycleTimer = this.ttlTimer = this.heartbeatTimer = undefined;
     }
     signalChild() {
         const child = this.child;

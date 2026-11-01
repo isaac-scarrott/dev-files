@@ -18,6 +18,8 @@ export interface Wake {
   readonly dropped: number
   /** Plain sentences from the plugin: pause notices, restart notices, how the monitor ended. */
   readonly notes: readonly string[]
+  /** Restart counter, shown on the notice that announces a service restart. */
+  readonly restart?: number
 }
 
 /** Output lines arrive escaped, so a line containing the closing tag cannot end the block early. */
@@ -30,7 +32,7 @@ export function renderWake(wake: Wake): string {
     parts.push(`${open}\n${body.join("\n")}\n</monitor-event>`)
   }
   if (wake.notes.length > 0) {
-    parts.push(`<monitor-notice name="${attribute(wake.name)}" id="${attribute(wake.id)}" seq="${wake.seq}">\n${wake.notes.map(escape).join("\n")}\n</monitor-notice>`)
+    parts.push(`<monitor-notice name="${attribute(wake.name)}" id="${attribute(wake.id)}" seq="${wake.seq}"${wake.restart === undefined ? "" : ` restart="${wake.restart}"`}>\n${wake.notes.map(escape).join("\n")}\n</monitor-notice>`)
   }
   parts.push(TRAILER)
   return parts.join("\n")

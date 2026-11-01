@@ -12,6 +12,7 @@ export interface ChildEvents {
 export interface Child {
     /** Signals the whole process group, so grandchildren die too. */
     kill(signal: "SIGTERM" | "SIGKILL"): void;
+    readonly pid?: number;
 }
 export type Spawn = (spec: {
     command: string;

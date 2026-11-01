@@ -1,5 +1,6 @@
 import type { Options } from "./options.js";
 import type { Clock, Spawn } from "./process.js";
+import type { RunState } from "./state.js";
 /** What is stored: the definition of a monitor, never its output. */
 export interface Definition {
     readonly id: string;
@@ -26,10 +27,17 @@ export interface Deps {
         seq: number;
     }) => Promise<void>;
     readonly log: (message: string) => void;
+    /** Persists the run state (re-arm clock, seq, last-alive time). Failures are the caller's to swallow. */
+    readonly saveState: (monitor: Monitor, state: RunState) => Promise<void>;
     /** The monitor is over for good; the manager forgets it. */
     readonly finished: (monitor: Monitor, reason: string) => void;
 }
 export type State = "running" | "waiting" | "ended";
+/** A restore: the previous run state (restartCount already counting this restart) and the note for the first wake. */
+export interface Resume {
+    readonly state: RunState;
+    readonly note: string;
+}
 export declare class Monitor {
     readonly def: Definition;
     private readonly deps;
@@ -38,7 +46,12 @@ export declare class Monitor {
     events: number;
     lastEventAt: number | undefined;
     paused: boolean;
+    restartCount: number;
+    lastRearmAt: number | undefined;
+    nextRearmAt: number | undefined;
     private seq;
+    private restartNotice;
+    private heartbeatTimer;
     private child;
     private exited;
     private splitter;
@@ -50,15 +63,23 @@ export declare class Monitor {
     private batchTimer;
     private cycleTimer;
     private ttlTimer;
-    private cycleStart;
     private cycling;
     private closing;
     private chain;
     private failures;
     private readonly matcher;
     constructor(def: Definition, deps: Deps);
-    /** `note` goes into the first wake, for example that the monitor came back after a restart. */
-    start(note?: string): void;
+    /**
+     * A fresh start, or (with `resume`) a restore after a service restart. The process is always new; what is kept is the
+     * re-arm clock: a mark still ahead keeps its remaining time, a mark that passed while the service was down counts as
+     * satisfied by this fresh start and the next one is set from now. The ttl is the stored absolute `expiresAt`, so
+     * neither a re-arm nor a restart extends it.
+     */
+    start(resume?: Resume): void;
+    get pid(): number | undefined;
+    private snapshot;
+    private save;
+    private heartbeat;
     nextRunAt(): number | undefined;
     /** Ends the monitor on request or because its session went away. No wake. */
     stop(reason: string): Promise<void>;

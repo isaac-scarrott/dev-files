@@ -2,6 +2,7 @@ import { Monitor, type Definition } from "./monitor.js"
 import type { Options } from "./options.js"
 import type { Clock, Spawn } from "./process.js"
 import { oneLine } from "./diag.js"
+import { downtimeWindow, parseRunState, type RunState } from "./state.js"
 import { renderWake } from "./wrap.js"
 
 export interface Store {
@@ -54,15 +55,25 @@ export interface MonitorInfo {
   readonly expiresAt: string
   readonly rearmMinutes?: number
   readonly nextRunAt?: string
+  /** When the schedule last started a fresh run (a re-arm, or the restart that satisfied a due one); absent until it has. */
+  readonly lastRearm?: string
+  readonly nextRearm?: string
+  /** Service restarts this monitor has been through. */
+  readonly restartCount: number
+  readonly pid?: number
   readonly paused?: boolean
 }
 
 const PREFIX = "monitor/def/"
+const STATE_PREFIX = "monitor/state/"
 
 const randomID = () => `mon_${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`
 
 export class Monitors {
   private readonly running = new Map<string, Monitor>()
+  /** Writes of one monitor's state, in order, so a late heartbeat cannot land after the removal. */
+  private readonly writes = new Map<string, Promise<unknown>>()
+  private readonly finishedIDs = new Set<string>()
 
   constructor(private readonly deps: ManagerDeps) {}
 
@@ -126,12 +137,14 @@ export class Monitors {
     for (const { key, value } of await store.scan(PREFIX)) {
       const def = value as Definition
       if (def.origin !== this.deps.origin) continue
+      const previous = parseRunState(await store.get(STATE_PREFIX + def.id))
       const active = (await sessions.state(def.sessionID)) === "active"
       const forget = async (why: string, notify: boolean) => {
         log(`${def.id} (${def.name}): not restored: ${why}`)
         // Removed before the wake, so a failed or repeated restart cannot announce it twice.
         await store.remove(key)
-        if (notify && active) await this.announceLost(def)
+        await store.remove(STATE_PREFIX + def.id)
+        if (notify && active) await this.announceLost(def, previous)
       }
       if (def.rearmMinutes === undefined) {
         await forget("no re-arm schedule, so it does not survive a restart", true)
@@ -143,23 +156,32 @@ export class Monitors {
         await forget(`maxMonitors ${options.maxMonitors} reached`, true)
       } else {
         const monitor = this.create(def)
-        log(`${def.id} (${def.name}): restored after a restart`)
-        monitor.start("This monitor was restarted automatically after OpenCode restarted. Output produced while it was down was not seen.")
+        const restartCount = (previous?.restartCount ?? 0) + 1
+        log(`${def.id} (${def.name}): restored after a restart (restart ${restartCount})`)
+        monitor.start({
+          state: { ...previous, seq: previous?.seq ?? 0, restartCount, aliveAt: now },
+          note: `This monitor was restarted automatically after OpenCode restarted (restart ${restartCount}). ${downtimeWindow(previous?.aliveAt, now)} Output produced while it was down was not seen.`,
+        })
       }
     }
   }
 
-  private async announceLost(def: Definition): Promise<void> {
+  private async announceLost(def: Definition, previous: RunState | undefined): Promise<void> {
+    const now = this.deps.clock.now()
+    // Continues the monitor's own seq, so this notice is never confused with an earlier wake.
+    const seq = (previous?.seq ?? 0) + 1
+    const restart = (previous?.restartCount ?? 0) + 1
     const text = renderWake({
       name: def.name,
       id: def.id,
-      seq: 1,
+      seq,
       lines: [],
       dropped: 0,
-      notes: [`Monitor gone: OpenCode restarted and this monitor was lost with it. It is no longer running and will not send anything more. Start it again with monitor.start if you still need it.`],
+      restart,
+      notes: [`Monitor gone: OpenCode restarted (restart ${restart}) and this monitor was lost with it. ${downtimeWindow(previous?.aliveAt, now)} It is no longer running and will not send anything more. Start it again with monitor.start if you still need it.`],
     })
     try {
-      await this.deps.sessions.prompt(def.sessionID, text, { monitorID: def.id, seq: 1 })
+      await this.deps.sessions.prompt(def.sessionID, text, { monitorID: def.id, seq })
     } catch (error) {
       this.deps.log(`${def.id} (${def.name}): could not tell ${def.sessionID} it is gone: ${String(error)}`)
     }
@@ -177,14 +199,24 @@ export class Monitors {
       clock,
       spawn,
       log,
+      saveState: (done, state) => this.write(done.def.id, () => store.set(STATE_PREFIX + done.def.id, JSON.parse(JSON.stringify(state)))),
       deliver: (sessionID, text, meta) => sessions.prompt(sessionID, text, meta),
       finished: (done) => {
         if (this.running.get(done.def.id) === done) this.running.delete(done.def.id)
+        this.finishedIDs.add(done.def.id)
+        void this.write(done.def.id, () => store.remove(STATE_PREFIX + done.def.id), true).catch(() => {})
         void store.remove(PREFIX + done.def.id).catch(() => {})
       },
     })
     this.running.set(def.id, monitor)
     return monitor
+  }
+
+  private write(id: string, task: () => Promise<unknown>, force = false): Promise<void> {
+    if (this.finishedIDs.has(id) && !force) return Promise.resolve()
+    const next = (this.writes.get(id) ?? Promise.resolve()).then(task).then(() => undefined)
+    this.writes.set(id, next.catch(() => {}))
+    return next
   }
 
   private describe(monitor: Monitor): MonitorInfo {
@@ -204,6 +236,10 @@ export class Monitors {
       expiresAt: iso(def.expiresAt),
       ...(def.rearmMinutes === undefined ? {} : { rearmMinutes: def.rearmMinutes }),
       ...(next === undefined ? {} : { nextRunAt: iso(next) }),
+      ...(monitor.lastRearmAt === undefined ? {} : { lastRearm: iso(monitor.lastRearmAt) }),
+      ...(def.rearmMinutes === undefined || monitor.nextRearmAt === undefined ? {} : { nextRearm: iso(monitor.nextRearmAt) }),
+      restartCount: monitor.restartCount,
+      ...(monitor.pid === undefined ? {} : { pid: monitor.pid }),
       ...(monitor.paused ? { paused: true } : {}),
     }
   }
