@@ -3,7 +3,7 @@
 // shows the same rows in a different order: provider sections only (Favorites above them), with the models the host
 // moved into Recent back under their provider. Rows are clones of the host's rows (re-cloned when a host row changes);
 // the pointer and the arrow keys drive the host's real rows, so highlight, flyout and selection stay the host's.
-import { layout, presses, providerOf, step, type HostModel } from "./layout"
+import { layout, presses, providerOf, step, type HostModel, type Rank } from "./layout"
 
 const RESULTS = '[data-slot="search-list-results"]'
 const SECTION = '[data-slot="search-list-section"]'
@@ -11,11 +11,14 @@ const HEADER = '[data-slot="search-list-header"]'
 const ROW = '[data-slot="search-list-row"]'
 const INPUT = '[data-slot="text-input-v2-input"]'
 const NAME = '[data-slot="model-dialog-name"]'
+const EMPTY = '[data-slot="search-list-empty"]'
 const FAINT = "span.text-v2-text-text-faint"
 
 export interface PaneEnv {
   /** USD per million output tokens by `providerID:modelID`; read on every layout. */
   price(): ReadonlyMap<string, number>
+  /** Stand-in prices for models the catalog leaves unpriced. */
+  rank?: Rank
 }
 
 export interface Pane {
@@ -40,6 +43,7 @@ const text = (el: Element | null | undefined) => el?.textContent?.trim() ?? ""
 function snapshot(hostBody: HTMLElement): Snapshot | undefined {
   const results = hostBody.querySelector<HTMLElement>(RESULTS)
   if (!results) return undefined
+  const listed = results.querySelectorAll(ROW).length
   const prefix = `${results.id}-section-`
   const snap: Snapshot = { rows: new Map(), order: [], headers: new Map(), models: [], labels: new Map(), results }
   for (const section of results.querySelectorAll<HTMLElement>(SECTION)) {
@@ -57,6 +61,9 @@ function snapshot(hostBody: HTMLElement): Snapshot | undefined {
       if (label && !snap.labels.has(providerOf(key))) snap.labels.set(providerOf(key), text(label))
     }
   }
+  // The structure is the one this pane reads only if every row the host lists was read, and an empty list is
+  // either empty or says so. Anything else is markup this code does not know: the caller steps aside.
+  if (snap.rows.size === 0 ? listed > 0 || (results.childElementCount > 0 && !hostBody.querySelector(EMPTY)) : snap.rows.size < listed) return undefined
   return snap
 }
 
@@ -130,8 +137,6 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
   results.setAttribute("role", "listbox")
   scroll.append(fade, results)
   body.append(scroll)
-  host.body.before(body)
-  host.body.setAttribute("data-mp-hidden", "")
 
   let snap: Snapshot | undefined
   const sections = new Map<string, HTMLElement>()
@@ -165,13 +170,41 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
 
   const providerName = (id: string) => text(snap?.headers.get(id)?.querySelector('[data-slot="model-dialog-header-label"]')) || snap?.labels.get(id) || id
 
+  // The host's list is hidden only while this pane shows a list built from a snapshot of it. A host list the
+  // snapshot cannot read (markup changed) is never hidden, or is shown again, and the pane waits for a readable one.
+  let engaged = false
+  const engage = () => {
+    if (engaged) return
+    engaged = true
+    host.body.before(body)
+    host.body.setAttribute("data-mp-hidden", "")
+  }
+  const disengage = () => {
+    engaged = false
+    body.remove()
+    host.body.removeAttribute("data-mp-hidden")
+    for (const el of patched) delete (el as { getBoundingClientRect?: unknown }).getBoundingClientRect
+    patched.clear()
+    pendingFirst = true
+    pendingScroll = undefined
+  }
+
   const sync = () => {
     if (disposed) return
     if (!dialog.isConnected) return dispose()
+    try {
+      render()
+    } catch (error) {
+      console.error("model-picker: stepping aside", error)
+      disengage()
+    }
+  }
+
+  const render = () => {
     snap = snapshot(host.body)
-    if (!snap) return
+    if (!snap) return disengage()
     const model = snap
-    const order = layout({ models: model.models, price: env.price(), providerName })
+    const order = layout({ models: model.models, price: env.price(), providerName, rank: env.rank })
     const sectionNodes: Node[] = []
     const seenRows = new Set<string>()
     for (const section of order) {
@@ -224,7 +257,7 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     for (const key of [...rows.keys()]) if (!seenRows.has(key)) rows.delete(key)
     for (const id of [...sections.keys()]) if (!order.some((section) => section.id === id)) (sections.delete(id), headers.delete(id))
     // The host's empty-search note, when it lists nothing.
-    const empty = host.body.querySelector<HTMLElement>('[data-slot="search-list-empty"]')
+    const empty = host.body.querySelector<HTMLElement>(EMPTY)
     if (order.length === 0 && empty) {
       const copy = empty.cloneNode(true) as HTMLElement
       strip(copy)
@@ -234,6 +267,8 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     place(results, sectionNodes)
 
     const ours = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")].map((row) => row.dataset.optionKey!)
+    if (ours.length < model.rows.size) return disengage()
+    engage()
     if (pendingFirst && ours.length > 0) {
       pendingFirst = false
       pendingScroll = undefined
@@ -317,10 +352,7 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     host.input.removeEventListener("input", onInput)
     clearTimeout(typed)
     if (frame !== undefined) cancelAnimationFrame(frame)
-    for (const el of patched) delete (el as { getBoundingClientRect?: unknown }).getBoundingClientRect
-    patched.clear()
-    body.remove()
-    host.body.removeAttribute("data-mp-hidden")
+    disengage()
   }
 
   return { refresh: schedule, dispose }
