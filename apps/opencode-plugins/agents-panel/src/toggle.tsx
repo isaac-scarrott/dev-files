@@ -1,34 +1,51 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { chatCard, dockState, type Sidebar } from "./dock"
+import { chatCard, dockState } from "./dock"
 import { SubagentsList } from "./panel"
 
-type Ctx = Pick<Context, "ui" | "toast">
+type Ctx = Pick<Context, "ui" | "toast" | "layout">
 type Input = { readonly session: MountedSession; readonly active: boolean }
 export type Dock = {
-  readonly sidebar: () => Sidebar
-  readonly asideWidth: () => number | undefined
   readonly visible: () => boolean
   readonly setVisible: (value: boolean) => void
 }
 
 const DOCK_ID = "agents-dock"
+// Below this window width the chat has no room beside a 320px window (the host narrows its own panels there too).
+const NARROW_BELOW = 900
 // The window's exit transition (transform 250ms) plus a frame.
 const DOCK_EXIT_MS = 270
 
 const GAP = 8
 
 /**
- * The header toggle for a session's subagents. With the left sidebar open it shows or hides the persistent floating
- * window (the dock, whose choice is stored); otherwise it opens a transient popover under the button that closes on
+ * The header toggle for a session's subagents. With the right side panel closed it shows or hides the persistent floating
+ * window (the dock, whose choice is stored); with it open it opens a transient popover under the button that closes on
  * outside click, Esc, or leaving the session.
  */
 export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   const { ctx } = props
   const session = () => props.input.session
   const [open, setOpen] = createSignal(false)
-  const state = () => dockState({ enabled: true, sidebar: props.dock.sidebar(), visible: props.dock.visible() })
+  // The host's own reactive answer for this session's right region, and a window too narrow for chat plus window.
+  const sideOpen = () => props.ctx.layout.side.opened(session())
+  const [narrow, setNarrow] = createSignal(window.innerWidth < NARROW_BELOW)
+  const onResize = () => setNarrow(window.innerWidth < NARROW_BELOW)
+  window.addEventListener("resize", onResize)
+  onCleanup(() => window.removeEventListener("resize", onResize))
+  const state = () => dockState({ enabled: true, sideOpen: sideOpen(), narrow: narrow(), visible: props.dock.visible() })
+
+  // Opening the panel hides the window for good: the stored choice becomes hidden, so closing the panel starts without it.
+  createEffect(() => {
+    if (props.input.active && sideOpen()) props.dock.setVisible(false)
+  })
+  // The chat reserves the window's width through this variable (see the dock rules in panel.tsx), for the session on screen.
+  createEffect(() => {
+    if (!props.input.active) return
+    document.documentElement.style.setProperty("--agents-dock-pad", `${state().inset}px`)
+    onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-pad"))
+  })
 
   // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It opens a frame
   // after mounting so the entrance transitions, except when it is already shown at load.
@@ -125,8 +142,7 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
         <span
           ref={wrap}
           data-agents-toggle
-          data-agents-sidebar={props.dock.sidebar()}
-          data-agents-aside-width={props.dock.asideWidth()}
+          data-agents-side={sideOpen() ? "open" : "closed"}
           data-agents-mode={state().docked ? "window" : "popover"}
           onMouseDown={(event) => event.preventDefault()}>
           <ctx.ui.IconButton

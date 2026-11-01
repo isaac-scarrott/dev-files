@@ -68,12 +68,13 @@ function fixture() {
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
   const [mode, setMode] = createStore({ enabled: true })
+  const [sideOpen, setSide] = createSignal(false)
   const [dockStore, setDockStore] = createStore({ visible: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
     sessions: { current: mounted },
-    layout: { ready: () => true },
+    layout: { ready: () => true, side: { opened: () => sideOpen() } },
     tabs: {
       list: () => tabList(),
       close: (key: string) => { calls.closed.push(key) },
@@ -110,7 +111,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -135,10 +136,11 @@ test("closed by default: only the header toggle is mounted", () => {
   f.stop()
 })
 
-test("the toggle opens one floating popover with the host's menu surface and wears the host's expanded attributes", async () => {
+test("with the right panel open the toggle opens one floating popover with the host's menu surface and wears the host's expanded attributes", async () => {
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   running(f, ["c1"])
   await open(f)
   assert.equal(f.doc.querySelectorAll("[data-agents-popover]").length, 1)
@@ -158,6 +160,7 @@ test("Escape and an outside click close the popover; Escape returns focus to the
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   await open(f)
   f.doc.dispatchEvent(new (f.doc.defaultView as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
   await f.flush()
@@ -174,6 +177,7 @@ test("routing to another session closes the popover", async () => {
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   await open(f)
   f.setCurrent("other")
   await f.flush()
@@ -464,34 +468,21 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
 })
 
-// The left sidebar as the host renders it (app/src/shell/shell.tsx, 2.2.5; values read from the running app): an aside with
-// id and data-slot vertical-tabs-sidebar, data-state open|closed, a --sidebar-peek-width style, an inline width that
-// animates to 0, a data-peek attribute while hover-peeking, other data-state elements around it, and the host's toggle
-// button controlling it. The header resets the body, so the aside is added after.
-const REAL_SIDEBAR = (state: string, extra = "") => `
-  <button type="button" aria-label="Toggle sidebar" aria-controls="vertical-tabs-sidebar" aria-expanded="${state === "open"}" data-component="icon-button-v2"></button>
-  <div data-component="dialog-overlay" data-state="closed"></div>
-  <aside id="vertical-tabs-sidebar" data-slot="vertical-tabs-sidebar" class="relative z-10 h-full min-h-0 shrink-0" data-state="${state}" ${extra} style="--sidebar-peek-width: 276px; width: ${state === "open" ? 276 : 0}px;">
-    <div data-slot="vertical-tabs-panel"><div data-slot="vertical-tabs-peek-surface" aria-hidden="true"></div><div data-slot="vertical-tabs-mount" data-state="visible"></div></div>
-  </aside>`
-const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed", extra = "") => {
-  f.doc.getElementById("real-sidebar")?.remove()
-  const holder = f.doc.createElement("div")
-  holder.id = "real-sidebar"
-  holder.innerHTML = REAL_SIDEBAR(state, extra)
-  f.doc.body.append(holder)
-  return f.flush()
-}
+// The right side region: `ctx.layout.side.opened(session)` is the host's reactive answer (2.2.5: the session's shell tab has
+// a "side" region). The header resets the body, so nothing else is needed in the DOM.
+const side = (f: ReturnType<typeof fixture>, open: boolean) => { f.setSide(open); return f.flush() }
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
 const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-pad")
+const wrapper = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-toggle]") as HTMLElement
 
-test("dock: with the sidebar closed the button shows and hides the window, remembered in the store, and no popover opens", async () => {
+test("dock: right panel closed: the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "closed")
   assert.equal(dockEl(f), null)
   assert.equal(inset(f), "0px")
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  assert.equal(wrapper(f).dataset.agentsSide, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(f.dockStore.visible, true)
@@ -518,31 +509,33 @@ test("dock: the window has no close button; only the header button hides it", as
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 
-test("dock: opening the sidebar hides the window, stores hidden and turns the button into the popover; closing it again does not bring the window back", async () => {
+test("dock: window visible, the right panel opens => window hidden, stored hidden, popover NOT opened; closing the panel does not bring it back", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f).dataset.state, "open")
-  await sidebar(f, "open")
+  await side(f, true)
   assert.equal(f.dockStore.visible, false)
   assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "false")
   assert.equal(inset(f), "0px")
-  assert.equal(f.toggle().hasAttribute("aria-controls"), false)
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  assert.equal(wrapper(f).dataset.agentsSide, "open")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null, "still closed after settling")
   f.toggle().click()
   await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"), "sidebar open: popover mode")
-  assert.equal(f.dockStore.visible, false)
-  await sidebar(f, "closed")
+  assert.ok(f.doc.querySelector("[data-agents-popover]"), "panel open: the button opens the popover")
+  await side(f, false)
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.dockStore.visible, false)
   assert.ok(!dockEl(f) || dockEl(f).dataset.state === "closed")
@@ -550,88 +543,12 @@ test("dock: opening the sidebar hides the window, stores hidden and turns the bu
   f.stop()
 })
 
-test("dock: window visible, sidebar opens => window hidden, popover NOT opened; it opens only on a button click", async () => {
-  const f = fixture()
-  f.start()
-  f.header()
-  await sidebar(f, "closed")
-  f.toggle().click()
-  await f.flush()
-  assert.equal(dockEl(f).dataset.state, "open")
-  await sidebar(f, "open")
-  assert.equal(dockEl(f).dataset.state, "closed")
-  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  assert.equal(f.toggle().getAttribute("aria-expanded"), "false")
-  assert.equal(inset(f), "0px")
-  await f.flush()
-  assert.equal(f.doc.querySelector("[data-agents-popover]"), null, "still closed after settling")
-  f.toggle().click()
-  await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  f.stop()
-})
-
-test("dock: the real closed shape (width 0, peeking, other data-state elements around it) is window mode, closed with the host's own transition from open", async () => {
-  const f = fixture()
-  f.start()
-  f.header()
-  await sidebar(f, "open")
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "popover")
-  // The host flips the same aside's attribute in place (preference -> data-state), never remounting it.
-  const aside = f.doc.getElementById("vertical-tabs-sidebar")!
-  aside.setAttribute("data-state", "closed")
-  aside.setAttribute("style", "--sidebar-peek-width: 276px; width: 0px;")
-  await f.flush()
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-sidebar"), "closed")
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window")
-  f.toggle().click()
-  await f.flush()
-  assert.equal(dockEl(f).dataset.state, "open", "the first click on the real closed shape shows the window")
-  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
-  aside.setAttribute("data-peek", "")
-  await f.flush()
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window", "a hover peek does not change the mode")
-  f.stop()
-})
-
-test("dock: the sidebar flip is read on the next frame, not synchronously, and a burst is one read", async () => {
-  const f = fixture()
-  f.start()
-  f.header()
-  await sidebar(f, "open")
-  const queue: (() => void)[] = []
-  Object.defineProperty(globalThis, "requestAnimationFrame", { value: (fn: () => void) => (queue.push(fn), queue.length), configurable: true, writable: true })
-  const aside = f.doc.getElementById("vertical-tabs-sidebar")!
-  aside.setAttribute("data-state", "closed")
-  aside.setAttribute("data-peek", "")
-  aside.setAttribute("data-state", "closed")
-  await f.flush()
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "popover", "not read before the frame")
-  assert.equal(queue.length, 1, "one frame for the burst")
-  queue.shift()!()
-  await f.flush()
-  assert.equal(f.doc.querySelector("[data-agents-toggle]")!.getAttribute("data-agents-mode"), "window")
-  f.stop()
-})
-
-test("dock: no sidebar in the document (top tabs) is popover mode, never the window", async () => {
-  const f = fixture()
-  f.start()
-  f.header()
-  f.toggle().click()
-  await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  assert.equal(dockEl(f), null)
-  assert.equal(inset(f), "0px")
-  f.stop()
-})
-
-test("dock: sidebar open is popover mode exactly: no window, no inset, rows in the popover", async () => {
+test("dock: right panel open is popover mode exactly: no window, no inset, rows in the popover", async () => {
   const f = fixture()
   f.start()
   running(f, ["c1"])
   f.header()
-  await sidebar(f, "open")
+  await side(f, true)
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f), null)
@@ -641,13 +558,42 @@ test("dock: sidebar open is popover mode exactly: no window, no inset, rows in t
   f.stop()
 })
 
+test("dock: a window too narrow for chat plus window is popover mode", async () => {
+  const win = (globalThis as any).window
+  const before = win.innerWidth
+  win.innerWidth = 700
+  const f = fixture()
+  f.start()
+  f.header()
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  assert.equal(dockEl(f), null)
+  win.innerWidth = before
+  win.dispatchEvent(new win.Event("resize"))
+  await f.flush()
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  f.stop()
+})
+
+test("dock: another session's panel state decides for that session's button", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await side(f, true)
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  await side(f, false)
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  f.stop()
+})
+
 test("dock: rows in the window keep the popover's behaviour", async () => {
   const f = fixture()
   f.start()
   running(f, ["c1"])
   f.header()
-  await sidebar(f, "closed")
-  f.toggle().click()
+    f.toggle().click()
   await f.flush()
   assert.equal(f.rows().length, 1)
   assert.equal(dockEl(f).contains(f.rows()[0]), true)
@@ -660,8 +606,7 @@ test("dock: heading count and rows change together as data arrives late", async 
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "closed")
-  f.toggle().click() // the window is mounted before any child data has synced
+    f.toggle().click() // the window is mounted before any child data has synced
   await f.flush()
   const agree = (n: number, why: string) => {
     const heading = dockEl(f).querySelector("[data-agents-heading]")!.textContent!
