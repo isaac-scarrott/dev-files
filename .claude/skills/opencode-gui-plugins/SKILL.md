@@ -18,7 +18,7 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 - Proving a UI change matches its native sibling, writing or reading a parity spec or report → [reference/native-parity.md](reference/native-parity.md)
 - Touching the app's real DOM or CSS (sidebar tabs, timeline, status marks) → [reference/dom-map.md](reference/dom-map.md)
 - An icon the catalog lacks, or which catalog icon to use → [reference/icons.md](reference/icons.md)
-- Any transition, fade or accordion → [reference/animation.md](reference/animation.md)
+- Any transition, fade, accordion or expand (match the host's motion; recommend it over novelty) → [reference/animation.md](reference/animation.md)
 - Running a plugin in the real UI (harness, screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
 - Worst-case data, narrow or zoomed layouts, empty/one/huge states → [reference/stress.md](reference/stress.md)
 - Plugin cost: profiling, overhead budgets, hill-climbing a slow plugin → [reference/performance.md](reference/performance.md)
