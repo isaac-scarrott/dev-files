@@ -13,7 +13,7 @@ Upstream files are unchanged, except these local adaptations:
 
 ## Using this copy
 
-`README.md` is the upstream file, fetched by `vendor.manifest`, so edits to it are overwritten on the next vendor run. Local notes live here.
+`README.upstream.md` is the upstream README, fetched by `vendor.manifest`, so edits to it are overwritten on the next vendor run. `README.md` is ours and carries the credit. Local notes live here.
 
 - Kind: server, TUI and GUI in one package.
 - Register this checkout by absolute path instead of the npm name the README shows: in `~/.config/opencode/opencode.json` (server and Desktop) and `~/.config/opencode/cli.json` (TUI). Restart the app; GUI plugins reload with Cmd+R.
