@@ -1,5 +1,5 @@
 /** The window's width, and its inset from the chat card's end edge (the card reserves both, so the chat ends where the window starts). */
-export const DOCK_WIDTH = 320
+export const DOCK_WIDTH = 288
 export const DOCK_INSET = 8
 
 const CARD = "[data-slot=session-chat-panel]"

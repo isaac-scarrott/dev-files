@@ -7,7 +7,7 @@ A Subagents button in the session header that lists what is running under the se
 ## What it does
 - The header button (right after the session-context button) opens "Subagents · N running" for the viewed session: its subagents and background shell tasks. Rows show the description and elapsed time; the X stops one.
 - Clicking a row opens the child session in the current tab, with the same ancestor trail and "Main session" return as the native rows. It never opens a sidebar tab.
-- With the right side panel closed the button shows and hides a 320px window inside the chat card. Messages and composer re-centre in the free width, animated. With the right panel open, or in a window narrower than 900px, it is a popover and the chat does not move. The left tab sidebar makes no difference.
+- With the right side panel closed the button shows and hides a 288px window inside the chat card. Messages and composer re-centre in the free width, animated. With the right panel open, or in a window narrower than 900px, it is a popover and the chat does not move. The left tab sidebar makes no difference.
 - Off until chosen: Settings → Timeline → Background activity gains a fifth option, **Panel**. It selects the native Hidden (no row above the composer) and turns the button on. Picking any native option turns it off.
 - Command "Close subagent tabs" (also run once per window load) closes leftover child-session tabs except the viewed one. They stay in Recently closed.
 

@@ -34,7 +34,7 @@ export default {
       prepare: openNativeMenu,
       cleanup: closeNativeMenu,
       allow: {
-        "width": "the window is a fixed 320px card beside the chat; the menu sizes to its items",
+        "width": "the window is a fixed 288px card beside the chat; the menu sizes to its items",
         "height": "list length differs from the menu's three items",
         "overflow": "the window scrolls its list past its max height",
         "icon": "the window holds row icons; the tab menu's items carry none",
@@ -52,7 +52,7 @@ export default {
       allow: {
         "aria.role": "a row opens a session and stops it with its X: role=button, not menuitem",
         "aria.tabindex": "rows are always tab stops (Enter opens, Delete stops); menu items roam",
-        "width": "the row fills its container: a 320px window against the tab menu's 156px",
+        "width": "the row fills its container: a 288px window against the tab menu's 156px",
         "box.width": "same",
         "icon": "a row leads with the spinner or a console icon; the tab menu's items carry none",
         "hover.changed-props": "the host highlights an item from Kobalte's pointer handler before the first sampled frame; both declare no transition (decl rows) and the hover style state matches",

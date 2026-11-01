@@ -194,7 +194,7 @@ export const styles = `
   /* Height fits the content up to the card minus the header row and a bottom inset; the menu surface scrolls inside
      the flex column, so the heading and rows are never clipped by a percentage max-height resolved against itself. */
   [data-agents-dock] {
-    position: absolute; z-index: 60; top: 56px; right: 8px; width: 320px;
+    position: absolute; z-index: 60; top: 56px; right: 8px; width: 288px;
     max-height: min(420px, calc(100% - 64px)); display: flex; flex-direction: column; outline: none; user-select: auto;
     transform: translateX(16px); opacity: 0; visibility: hidden; pointer-events: none;
     transition: transform 250ms var(--agents-dock-ease), opacity 150ms var(--agents-dock-ease), visibility 0s 250ms;

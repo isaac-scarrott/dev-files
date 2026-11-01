@@ -12,7 +12,7 @@ export type Dock = {
 }
 
 const DOCK_ID = "agents-dock"
-// Below this window width the chat has no room beside a 320px window (the host narrows its own panels there too).
+// Below this window width the chat has no room beside a 288px window (the host narrows its own panels there too).
 const NARROW_BELOW = 900
 // The window's exit transition (transform 250ms) plus a frame.
 const DOCK_EXIT_MS = 270
