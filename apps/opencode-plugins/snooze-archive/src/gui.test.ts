@@ -11,7 +11,7 @@ type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = []) {
   const window = new Window()
   const doc = window.document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></aside>`
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></div></aside>`
   const globals = { window, document: doc, Node: window.Node, HTMLElement: window.HTMLElement, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
@@ -560,7 +560,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
 })
 
 // A native vertical tab: marks live in `tab-close > tab-status`, which the host marks aria-hidden.
-const nativeTab = `<div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div>`
+const nativeTab = `<div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div></div>`
 const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-sa-woke-mark]")
 const dueSnooze = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now() - 2_000, until: Date.now() - 1_000, busy: 0, updated: 1 })
 

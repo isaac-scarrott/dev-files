@@ -32,7 +32,8 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
   assert.equal(doc.querySelector('[data-slot="tab-title"]')?.textContent, "Rename me")
   assert.equal(buttons[1].textContent, "Archived—")
-  assert.match(css, /max-height: min\(24vh, 220px\)/)
+  assert.doesNotMatch(css, /max-height|overflow-y/)
+  assert.match(css, /\[data-sa-host\] \{ flex: 1 1 auto; \}/)
   sidebar.dispose()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
   assert.equal(doc.querySelector("[data-sa-host]"), null)
@@ -49,16 +50,16 @@ test("attachment survives cold startup, sidebar replacement and cleanup/reload",
   const start = () => createSidebar(doc, fakeHost(doc), schedule, (id) => { frames.delete(id) })
   let sidebar = start()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
-  doc.body.innerHTML = `<div><div data-slot="vertical-tabs"></div></div>`
+  doc.body.innerHTML = `<div><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></div>`
   await window.happyDOM.whenAsyncComplete()
   for (const fn of frames.values()) fn()
   frames.clear()
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
-  doc.body.innerHTML = `<main><div data-slot="vertical-tabs"></div></main>`
+  doc.body.innerHTML = `<main><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></main>`
   await window.happyDOM.whenAsyncComplete()
   for (const fn of frames.values()) fn()
   frames.clear()
-  assert.ok(doc.querySelector("main > [data-snooze-archive]"))
+  assert.ok(doc.querySelector("main [data-slot=vertical-tabs] > [data-slot=vertical-tabs-scroll][data-sa-host] > [data-snooze-archive]"))
   await window.happyDOM.whenAsyncComplete()
   assert.equal(frames.size, 0, "own attachment must not schedule observer loops")
   const strip = doc.querySelector('[data-slot="vertical-tabs"]')!
@@ -82,7 +83,7 @@ test("attachment survives cold startup, sidebar replacement and cleanup/reload",
 
 test("group toggle sets aria-expanded, data-open and inert together; collapsed content is inert", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   const toggle = doc.querySelector<HTMLButtonElement>("[data-sa-toggle] button")!
   const panel = doc.querySelector<HTMLElement>("[data-sa-panel]")!
@@ -101,7 +102,7 @@ test("group toggle sets aria-expanded, data-open and inert together; collapsed c
 
 test("rows animate only when open after first content; leaving rows are interruptible and cleared", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   const timers = new Map<number, () => void>()
   let n = 0
   const frames: (() => void)[] = []
@@ -133,7 +134,7 @@ test("rows animate only when open after first content; leaving rows are interrup
 
 test("rows reuse the session tab markup so the app styles them, without acting as live tabs", async () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   let deleted = 0
@@ -172,7 +173,7 @@ test("rows reuse the session tab markup so the app styles them, without acting a
 
 test("snoozed second line keeps the time whole: project truncates, time is its own flex:none part; archived rows are unsplit", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
   const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   const long = "a-very-long-repository-name · feature/an-extremely-long-branch-name-that-cannot-fit"
