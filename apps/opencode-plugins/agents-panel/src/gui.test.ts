@@ -544,6 +544,27 @@ test("dock: opening the sidebar hides the window, stores hidden and turns the bu
   f.stop()
 })
 
+test("dock: window visible, sidebar opens => window hidden, popover NOT opened; it opens only on a button click", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "closed")
+  f.toggle().click()
+  await f.flush()
+  assert.equal(dockEl(f).dataset.state, "open")
+  await sidebar(f, "open")
+  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "false")
+  assert.equal(inset(f), "0px")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null, "still closed after settling")
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  f.stop()
+})
+
 test("dock: no sidebar in the document (top tabs) is popover mode, never the window", async () => {
   const f = fixture()
   f.start()
