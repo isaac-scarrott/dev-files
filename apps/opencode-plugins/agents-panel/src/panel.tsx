@@ -3,7 +3,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import { formatElapsed, runningSubagents, type SubagentRow } from "./agents"
 import { openInCurrentTab } from "./open-child"
 import { DOCK_INSET, DOCK_WIDTH } from "./dock"
-import { SessionProgressIndicator } from "./spinner"
+import { ProgressSpinner } from "../../native-ui/src"
 
 type Ctx = Pick<Context, "ui" | "toast">
 
@@ -92,7 +92,7 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }
               <span data-slot="menu-v2-item-content">
                 <Show
                   when={row.type === "shell"}
-                  fallback={<SessionProgressIndicator class="shrink-0 text-v2-icon-icon-muted" />}
+                  fallback={<ProgressSpinner class="shrink-0 text-v2-icon-icon-muted" />}
                 >
                   <props.ctx.ui.Icon name="console" class="shrink-0 text-v2-icon-icon-muted" />
                 </Show>
@@ -179,7 +179,7 @@ export const styles = `
   }
   /* The host lays the header actions out as a flex row, and slot content renders before the host's own items. The
      context button moves ahead of the toggle so the toggle sits directly after it. */
-  .session-header-actions > :has(> button[data-component="button-v2"]) { order: -1 }
+  .session-header-actions:has([data-agents-toggle]) > :has(> button[data-component="button-v2"]) { order: -1 }
   /* The popover reuses the host's menu surface; the host positions menu-v2-content itself, so it is made static here. */
   [data-agents-popover] { position: fixed; z-index: 60; width: 320px; max-width: calc(100vw - 32px); outline: none; }
   [data-agents-popover] > [data-component=menu-v2-content] {

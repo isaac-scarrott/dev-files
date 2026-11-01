@@ -7,6 +7,7 @@ import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
 import { styles } from "./panel"
+import { spinnerCss } from "../../native-ui/src"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 type Info = { id: string; parentID?: string; agent?: string; title?: string; time: { created: number; busy?: number } }
@@ -349,31 +350,15 @@ test("close subagent tabs: closes child-session tabs, never the active or routed
   f.stop()
 })
 
-test("automatic cleanup runs once per load, after every tab's session is known", async () => {
+test("loading the plugin closes no tab; only the command does", async () => {
   const f = fixture()
   fixtureServer = () => f.server
   f.start()
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
   f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c1", "c1")])
   await f.flush()
   assert.deepEqual(f.calls.closed, [])
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c9", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  assert.equal(f.calls.toasts.length, 1)
-  f.stop()
-})
-
-test("automatic cleanup waits until a tab is on screen, so the viewed tab is never judged blind", async () => {
-  const f = fixture()
-  fixtureServer = () => f.server
-  f.start()
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  f.setTabList([tab("t-parent", "parent"), tab("t-c1", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, [])
+  assert.equal(f.calls.toasts.length, 0)
   f.stop()
 })
 
@@ -492,6 +477,26 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   f.stop()
   assert.equal(option(f), null)
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
+})
+
+test("setting: listeners live on the listbox, none on the document", async () => {
+  const f = fixture()
+  f.start()
+  const doc = f.doc as unknown as Document
+  const added: string[] = []
+  const original = doc.addEventListener.bind(doc)
+  doc.addEventListener = ((type: string, ...rest: unknown[]) => { added.push(type); return (original as any)(type, ...rest) }) as never
+  f.doc.body.innerHTML = HOST_LIST("off")
+  await settle()
+  assert.ok(option(f))
+  assert.deepEqual(added, [])
+  f.stop()
+})
+
+test("styles: the header reorder applies only beside our toggle; spinner keyframes ship with the stylesheet", () => {
+  assert.ok(!styles.includes(".session-header-actions > :has("))
+  assert.match(styles, /\.session-header-actions:has\(\[data-agents-toggle\]\) > :has\(/)
+  assert.match(spinnerCss, /@keyframes spinner-radar-/)
 })
 
 // The right side region: `ctx.layout.side.opened(session)` is the host's reactive answer (2.2.5: the session's shell tab has

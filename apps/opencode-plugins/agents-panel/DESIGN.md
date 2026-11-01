@@ -117,14 +117,24 @@ Reason for each DOM hook, against the "no extension point" list in [host-archite
 
 ## Performance
 
-Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). The full seeded-session trace (bare vs plugin, three runs) was not run; this change removes standing costs, measured with a happy-dom script on the Settings option installer (old `setting.ts` from master against the new one, mode off, Settings never opened): 1000 `<p>` appends under the app root in batches of 10, count of `MutationObserver` callbacks.
 
-Standing cost, read from the source (not measured):
-- A body-wide `childList` observer with rAF and a `querySelector` per mutation, plus four document-capture listeners, for the Settings option (`src/setting.ts`), running even when the mode is off.
-- Module-level `ResizeObserver` and `IntersectionObserver` for the spinner phase (`src/spin-phase.ts`), created at import and never disconnected.
+| Standing cost (mode off, Settings closed) | Before | After |
+| --- | --- | --- |
+| Settings `MutationObserver` observing | `<body>` `childList`, **subtree** | `<body>` `childList` only (portals) |
+| Observer callbacks for 1000 app-root mutations | 100 (+ an rAF and a `querySelector` each) | 1 |
+| Document-level listeners | 5 (capture `pointerup`, `keydown` x2, `pointermove`, `focusin`) | 0 (listeners sit on the Settings listbox and go with it) |
+| Module-level observers at import (spinner phase) | `ResizeObserver` + `IntersectionObserver`, never disconnected | none; created per spinner, disconnected with it |
+| Hand-made `<style>` in `<head>` | one, never removed, again on every Reload | none (`ctx.add(Style)`) |
+| Header reorder rule | applies to every session header | only beside our toggle (`:has([data-agents-toggle])`) |
 
-| Scenario | Bare | With plugin | Delta | Bar | Result |
-| --- | --- | --- | --- | --- | --- |
-| idle | | | | zero callbacks | not measured |
-| streaming reply | | | | within 3% scripting | not measured |
-| 10 session switches | | | | within 3% scripting | not measured |
+Not measured: idle main-thread time, streaming scripting delta and switch cost in the real app (the 3% bars) were not run.
+
+## Changes from the owner pass
+
+- **Spinner from native-ui.** `spinner.tsx`, `spin-phase.ts`, `spinner-radar.ts` were byte copies; they are deleted and `ProgressSpinner` is imported from `../../native-ui/src`. To make that safe, native-ui got a backward-compatible change: `spinnerCss` (the keyframes, also in `nativeUiCss`) replaces the spinner's own `<style>` injection, and `syncSpinPhase` creates its observers per spinner inside the owner and disconnects them on cleanup. A consumer of `ProgressSpinner` must now register `spinnerCss` (or `nativeUiCss`) with `ctx.add(Style, ...)`; only this plugin and the demo use the spinner today.
+- **Settings option scoped.** Idle, one observer on `<body>`'s direct children (portals) wakes the installer. Once the select or its listbox is found, only those subtrees are observed, and the keyboard and pointer listeners sit on that listbox. The option is still offered when the mode is off, since that is the only way to turn it on.
+- **Header rule scoped** so the host header is not re-ordered when the mode is off.
+- **Dropped the load-time `cleanupOnce`.** It closed child-session tabs once per load as a migration for tabs "an older version of this plugin opened per subagent" (added in 78bbd26, 2026-10-31, one day before this change), and could close tabs the user opened on purpose. The command "Close subagent tabs" stays. The `ctx.storage.memory` once-flag went with it.
+- **`openInCurrentTab`** (AP-9) is kept: no API navigates the current tab; recorded in Decisions above. Re-check each release.
+- Effects in `toggle.tsx`, `gui.tsx` and `panel.tsx` are untouched on purpose; the keyed rewrite is a later pass.
