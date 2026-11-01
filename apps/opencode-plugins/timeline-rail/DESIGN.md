@@ -172,11 +172,12 @@ missing instead, it probes again from where it is, at most three attempts. Then 
 scrolling to the top is not the same as reaching it. The jump never loads history: every prompt with a tick is already in
 `message.list`.
 
-**Glide**: the final screen is tweened by the plugin (`tween.ts`): one `scrollTop` write per frame along
-`1 - (1 - t)^4` (a strong ease-out, the host's `--ease-out` shape), 180ms plus 0.12ms per px, capped at 420ms. A wheel,
-touch, pointer-down or key on the scroller stops it where the user put it; so does abort. The browser's
-`behavior: "smooth"` has no ease-out to match and cannot be interrupted by a new jump, which is why it is not used.
-Reduced motion writes the target once with `behavior: "auto"`.
+**Glide**: the final screen scrolls with the browser's own `scrollTo({ top, behavior: "smooth" })`, with no plugin tween.
+That is the host's: `use-session-hash-scroll.ts` `scrollToElement` (the host's jump to a message) and the virtualizer's
+jump-to-latest (`scrollToEnd({ behavior })`, `virtualizer.tsx:594-604`) both call `scrollTo` with `"smooth"`, and the host
+has no tween, duration or easing of its own. The plugin then waits until the scroll offset holds still for three frames and
+corrects any drift. A wheel, touch or key during the glide takes over natively. Reduced motion writes the target once with
+`behavior: "auto"` (the host's jump-to-latest does the same).
 
 ## Telling the host the user scrolled
 
@@ -217,6 +218,10 @@ sibling. No `parity.spec.mjs` exists for this plugin.
 - Listeners (`scroll`, `ResizeObserver`, media query, timers, the jump controller) live in the slot's Solid owner
   and are removed by `onCleanup`; plugin reload disposes them with the plugin root, so a reload leaves one rail.
 
+## Decisions
+
+- **Jump scroll = the host's (decided by the user).** The jump glides with native `behavior: "smooth"`, as the host's own jump to a message and jump to latest do (source: OpenCode 2.2.5 `use-session-hash-scroll.ts` `scrollToElement`, `virtualizer.tsx` `scrollToEnd`; neither has a custom tween). An earlier plugin tween (`1 - (1 - t)^4`, 180ms + 0.12ms/px, max 420ms) was removed. The tick, card and chevron hover motion stays t3-code's (decided by the user: keep t3-code's behaviour); the host has no sibling for it.
+
 ## Rejected
 
 - **Background history loading so the rail covers the whole conversation** (the previous design, `history.ts`): the
@@ -234,7 +239,7 @@ sibling. No `parity.spec.mjs` exists for this plugin.
 - **`location.hash = "#message-<id>"`**: desktop uses a memory router; the hash never changes the host's `useLocation`.
 - **Aiming the host's `message.previous` / `message.next`**: back-to-back host navigations collide in
   `use-session-hash-scroll.ts` and land the wrong prompt.
-- **Browser smooth scrolling for the glide**: no ease-out, not interruptible by a second jump.
+- **A plugin scroll tween (ease-out, 180-420ms)**: replaced by the browser's smooth scroll, which is what the host uses (see Decisions).
 
 ## Open questions (OpenCode's data model differs from t3-code's)
 
@@ -253,7 +258,7 @@ sibling. No `parity.spec.mjs` exists for this plugin.
 Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`, 55) cover the window (first 10, growth by
 page capped at 20 and gated on user input, revert edge, thread swap), prompts and the final-assistant snippet, labels,
 markdown stripping, rail height, index from pointer (every index of 5,000 reachable), in-view and current prompt, the
-probe direction, the glide plan, the scroll tween, and the slot (geometry, hit width and persistence by gutter, the
+probe direction, the glide plan, and the slot (geometry, hit width and persistence by gutter, the
 card's timing, position and content, fisheye, pass-through, wheel forwarding, keyboard, chevrons, window limits with
 5,000 messages, zero `loadMore` calls, hide conditions). Live verification runs against a second, isolated desktop app
 driven over CDP (`.claude/skills/opencode-gui-plugins/reference/browser-testing.md`); GUI plugins do not load on the

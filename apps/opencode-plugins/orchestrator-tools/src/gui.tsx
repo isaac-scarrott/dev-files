@@ -61,7 +61,8 @@ const css = `
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-arrow"] { opacity: 1; }
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-arrow"] svg { transform: rotate(0); }
 [${CARD_ATTR}]:not([data-expandable="true"]) [data-slot="peer-arrow"] { visibility: hidden; }
-[${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; }
+/* Instant, as the host's basic-tool-action is; the host icon button has its own opacity .15s transition, which would fade this reveal. */
+[${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; transition: none; }
 [${CARD_ATTR}]:is(:hover, :focus-within) .peer-open, [${CARD_ATTR}][data-open="true"] .peer-open { opacity: 1; }
 @media (hover: none) { [${CARD_ATTR}] .peer-open, [${CARD_ATTR}] [data-slot="peer-arrow"] { opacity: 1; } }
 `

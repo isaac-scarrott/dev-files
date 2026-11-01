@@ -9,8 +9,6 @@ export type Host = {
   reducedMotion(): boolean
   /** Resolves on the next animation frame. */
   frame(): Promise<void>
-  /** Scrolls to `to` along the host's own ease-out; absent, the browser's smooth scroll is used. */
-  tween?(to: number, signal: AbortSignal): Promise<boolean>
 }
 
 export type Outcome = "done" | "none" | "aborted"
@@ -197,7 +195,7 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
     scroller.scrollTo({ top: plan.start, behavior: "auto" })
     await host.frame()
   }
-  // The host's curve when it supplies one; otherwise the browser's own smooth scroll, which has no ease-out to match.
+  // The browser's own smooth scroll, as the host's jump-to-message and jump-to-latest use (`scrollTo({ behavior: "smooth" })`).
   const move = async (to: number) => {
     if (plan.behavior === "auto") {
       scroller.scrollTo({ top: to, behavior: "auto" })
@@ -205,7 +203,6 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
       return true
     }
 
-    if (host.tween) return host.tween(to, signal)
     scroller.scrollTo({ top: to, behavior: plan.behavior })
     let last = Number.NaN
     let still = 0

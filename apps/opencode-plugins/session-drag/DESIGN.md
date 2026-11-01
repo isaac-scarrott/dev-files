@@ -9,7 +9,7 @@ extracted from `app.asar` (`src/renderer/...`) and at `gui-plugins/src/...`.
 - Press a sidebar session row (a live tab, or a snooze-archive Snoozed/Archived row) and move sideways: a chip with
   the session's title follows the pointer and the host's own drop overlay (worded "Drop to attach session") rises over the session
   panel. Release inside the panel: a native "Session" chip (title, speech-bubble icon) joins the composer's context
-  row and the prompt takes focus. Release anywhere else, or press Esc: the chip fades out and nothing changes.
+  row and the prompt takes focus. Release anywhere else, or press Esc: the chip disappears and nothing changes.
 - A vertical move is the host's reorder, untouched. A plain click still switches sessions.
 - The chip is a `ComposerNote`: it persists in the session's draft, has the host's remove control, and clicking it
   opens the referenced session (`LinkHandler` → `ctx.tabs.open`).
@@ -84,10 +84,15 @@ route and the explicit id in the prompt.
   rgba(0,0,0,.1), radius 6px, background rgb(243,243,243), colour rgb(23,23,23), gap 8px, height 29.5px; icon 14×14
   rgb(128,128,128)).
 - Overlay and chip are the host's own: the overlay is triggered, not reproduced; the chip is the host's note tile.
-- Motion: enter `opacity 0→1`, `scale .97→1`, 120ms `cubic-bezier(0.23, 1, 0.32, 1)` from a painted first frame
-  (`data-state` enter → active on the next frame); cancel fades opacity out (removed on `transitionend`, 200ms
-  fallback); a drop removes the ghost at once, as the host's file drop and dnd-kit's no-drop-animation do. Only
-  `transform`, `opacity` and `scale` animate. `prefers-reduced-motion: reduce`: scale dropped, opacity kept (CSS only).
+- Motion: none. The ghost appears on the first frame of the drag and is removed in one frame on drop, cancel and Esc.
+  Only its `transform` is written (the pointer position).
+
+## Decisions
+
+- **No enter or exit animation on the ghost = the host's (decided by the user).** The host's file-row drag image is an OS
+  drag image (`setDragImage(image, 0, 12)`): the system draws it at once and removes it at once, with no enter or exit
+  animation. The earlier 120ms `opacity`/`scale .97→1` entrance and the cancel fade were removed. The host's drop overlay
+  does fade (200ms, `transition-opacity duration-200`); the plugin only triggers it and does not restyle it.
 
 ## Rejected
 
@@ -116,10 +121,10 @@ seeded sessions, side-tabs layout):
 | Plain click on titled inactive row | no switch during a 400ms hold; switch 7ms after release (native: on press) |
 | Plain click on draft row (no session) | switch on press, 9ms (untouched) |
 | Release over sidebar | ghost + overlay during, nothing attached after |
-| Esc mid-drag | ghost `leave` at 30ms, gone by 330ms, following release attaches nothing |
+| Esc mid-drag | ghost removed at once (earlier design: `leave` fade, measured live before the change), following release attaches nothing |
 | Archived row (snooze-archive) | ghost, overlay, chip count +1; plain click still reopens the session |
 | Palette "Reference session…" | select dialog lists the other session with its directory; Enter attaches the chip |
-| Reduced motion (emulated) | scale stays 1, opacity fades over 120ms; Esc removal was instant under the earlier JS branch, now the same fade as unreduced (CSS-only, unit/CSS verified after the change, not re-run live) |
+| Reduced motion | nothing animates, so no branch |
 
 ## Known deltas from native
 

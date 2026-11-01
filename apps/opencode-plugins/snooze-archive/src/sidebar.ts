@@ -7,14 +7,12 @@ import { openMenu, type MenuLine } from "./menu"
 
 // activeAt: last activity, shown by sidebar-repos at the row's end (Archived rows); project: the second line (the repo name); until: the trailing detail on it (time until wake); detail: the hover title.
 export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
-export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
-const LEAVE_MS = 160
 const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
 // more: the button below the rows; busy while its page loads.
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number | string; more?: { label: string; busy?: boolean; run(): void } }
 export interface Hooks { toggled?(kind: "snoozed" | "archived", open: boolean): void }
 
-function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers, toggled: (open: boolean) => void) {
+function group(doc: Document, host: Host, name: string, toggled: (open: boolean) => void) {
   const section = doc.createElement("section")
   const header = doc.createElement("div")
   header.dataset.saToggle = ""
@@ -25,8 +23,6 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   count.dataset.saCount = ""
   const panel = doc.createElement("div")
   panel.dataset.saPanel = ""
-  const clip = doc.createElement("div")
-  clip.dataset.saClip = ""
   const content = doc.createElement("div")
   content.dataset.saContents = ""
   content.id = `snooze-archive-${name.toLowerCase()}`
@@ -58,12 +54,10 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
       expand(event.key === "ArrowRight")
     }
   }
-  clip.append(content)
-  panel.append(clip)
+  panel.append(content)
   section.append(header, panel)
-  type Row = { el: HTMLElement; link: HTMLElement; set(item: GroupRow): void; dispose(): void; leaving?: number }
+  type Row = { el: HTMLElement; link: HTMLElement; set(item: GroupRow): void; dispose(): void; }
   const rows = new Map<string, Row>()
-  let populated = false
   const status = doc.createElement("p")
   status.setAttribute("role", "status")
   content.append(status)
@@ -128,7 +122,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
     dispose() {
       disposeHeader()
       disposeMoreIcon()
-      for (const row of rows.values()) { if (row.leaving !== undefined) timers.clear(row.leaving); row.dispose() }
+      for (const row of rows.values()) row.dispose()
     },
     update(state: GroupState) {
       const text = state.count === undefined ? "—" : String(state.count)
@@ -140,33 +134,23 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
       if (status.textContent !== statusText) status.textContent = statusText
       status.hidden = !statusText
       const keys = new Set(state.rows.map((row) => row.key))
-      // Row motion only while the group is open and after its first content; never on startup or count updates.
-      const animate = open && populated
-      const drop = (key: string, row: Row) => { row.dispose(); row.el.remove(); rows.delete(key) }
       for (const [key, row] of rows) {
-        if (keys.has(key) || row.leaving !== undefined) continue
-        if (!animate) { drop(key, row); continue }
-        row.el.toggleAttribute("data-leaving", true)
-        row.leaving = timers.set(() => drop(key, row), LEAVE_MS)
+        if (keys.has(key)) continue
+        row.dispose()
+        row.el.remove()
+        rows.delete(key)
       }
       let cursor: ChildNode | null = status.nextSibling
       state.rows.forEach((item) => {
         let row = rows.get(item.key)
-        if (row?.leaving !== undefined) { timers.clear(row.leaving); row.leaving = undefined; row.el.removeAttribute("data-leaving") }
         if (!row) {
           row = createRow(item)
           rows.set(item.key, row)
-          if (animate) {
-            row.el.toggleAttribute("data-entering", true)
-            const el = row.el
-            schedule(() => el.removeAttribute("data-entering"))
-          }
         }
         row.set(item)
         const active = item.activeAt === undefined ? "" : `\nLast active ${new Date(item.activeAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "long" })}`
         const tip = `${item.title}\n${item.detail}${active}`
         if (row.link.title !== tip) row.link.title = tip
-        while (cursor && [...rows.values()].some((r) => r.el === cursor && r.leaving !== undefined)) cursor = cursor.nextSibling
         if (cursor === row.el) cursor = cursor.nextSibling
         else content.insertBefore(row.el, cursor)
       })
@@ -176,21 +160,17 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
       const moreTextNow = moreBusy ? "Loading…" : state.more?.label ?? ""
       if (moreText.textContent !== moreTextNow) moreText.textContent = moreTextNow
       moreButton.toggleAttribute("aria-busy", moreBusy)
-      populated = populated || state.rows.length > 0 || state.count !== undefined
     },
   }
 }
 
-export function createSidebar(doc: Document, host: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, timers: Timers = {
-  set: (fn, ms) => doc.defaultView!.setTimeout(fn, ms) as unknown as number,
-  clear: (id) => doc.defaultView!.clearTimeout(id),
-}, hooks: Hooks = {}) {
+export function createSidebar(doc: Document, host: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, hooks: Hooks = {}) {
   const root = doc.createElement("div")
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
   let parent: HTMLElement | undefined
-  const snoozed = group(doc, host, "Snoozed", schedule, timers, (open) => hooks.toggled?.("snoozed", open))
-  const archived = group(doc, host, "Archived", schedule, timers, (open) => hooks.toggled?.("archived", open))
+  const snoozed = group(doc, host, "Snoozed", (open) => hooks.toggled?.("snoozed", open))
+  const archived = group(doc, host, "Archived", (open) => hooks.toggled?.("archived", open))
   root.append(snoozed.section, archived.section)
   const attach = () => {
     const next = doc.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
@@ -237,11 +217,10 @@ export const css = `
 .sa-toggle { width: 100%; justify-content: flex-start; padding-inline: 6px; }
 .sa-label { display: inline-flex; align-items: center; gap: 6px; }
 [data-sa-count] { margin-inline-start: auto; font-variant-numeric: tabular-nums; color: var(--v2-text-text-faint); }
-.sa-chevron { transition: transform 200ms cubic-bezier(0.23,1,0.32,1); }
+/* The host's collapsibles show their content in one frame and animate only the arrow: transform .15s (the default ease), so the same here. */
+.sa-chevron { transition: transform .15s; }
 .sa-toggle[aria-expanded="true"] .sa-chevron { transform: rotate(90deg); }
-[data-sa-panel] { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 150ms cubic-bezier(0.23,1,0.32,1), visibility 0s linear 200ms; }
-[data-sa-panel][data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 180ms cubic-bezier(0.23,1,0.32,1), visibility 0s; }
-[data-sa-clip] { min-height: 0; overflow: hidden; }
+[data-sa-panel]:not([data-open]) { display: none; }
 [data-sa-contents] { display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
 [data-sa-more][hidden] { display: none; }
 .sa-more[aria-busy] { cursor: default; opacity: .7; }
@@ -256,13 +235,4 @@ export const css = `
 /* The host sets these per tab by position (first row 0/2px, the rest 2px/0) and its link padding reads them. */
 [data-sa-row] { --tab-hit-before: 2px; --tab-hit-after: 0px; }
 [data-sa-row]:first-of-type { --tab-hit-before: 0px; --tab-hit-after: 2px; }
-[data-sa-row] { transition: opacity 160ms cubic-bezier(0.23,1,0.32,1), transform 160ms cubic-bezier(0.23,1,0.32,1); }
-[data-sa-row][data-entering], [data-sa-row][data-leaving] { opacity: 0; transform: translateY(-4px); }
-[data-sa-row][data-leaving] { pointer-events: none; }
-@media (prefers-reduced-motion: reduce) {
-  .sa-chevron { transition: none; }
-  [data-sa-panel], [data-sa-panel][data-open] { transition: opacity 150ms linear, visibility 0s; }
-  [data-sa-row] { transition: opacity 160ms linear; }
-  [data-sa-row][data-entering], [data-sa-row][data-leaving] { transform: none; }
-}
 `

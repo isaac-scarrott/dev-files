@@ -95,41 +95,25 @@ test("group toggle sets aria-expanded, data-open and inert together; collapsed c
   assert.equal(panel.hasAttribute("inert"), false)
   toggle.click()
   assert.equal(panel.hasAttribute("inert"), true)
-  assert.match(css, /grid-template-rows: 0fr/)
-  assert.match(css, /prefers-reduced-motion/)
+  assert.match(css, /\[data-sa-panel\]:not\(\[data-open\]\) \{ display: none; \}/)
+  assert.doesNotMatch(css, /grid-template-rows|opacity 1[58]0ms|prefers-reduced-motion/)
   sidebar.dispose()
 })
 
-test("rows animate only when open after first content; leaving rows are interruptible and cleared", () => {
+test("rows and groups have no motion: rows come and go in one frame, only the chevron transitions", () => {
   const doc = new Window().document as unknown as Document
   doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
-  const timers = new Map<number, () => void>()
-  let n = 0
-  const frames: (() => void)[] = []
-  const sidebar = createSidebar(doc, fakeHost(doc), (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   const row = (key: string) => ({ key, title: key, detail: "d", project: "d", action: "Wake", avatar, run() {} })
   const empty = { rows: [] }
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
   doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[0].click()
   sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
-  assert.ok(doc.querySelector('[data-sa-row="b"][data-entering]'))
-  assert.equal(doc.querySelector('[data-sa-row="a"]')?.hasAttribute("data-entering"), false)
-  frames.forEach((fn) => fn())
-  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-entering"), false)
+  assert.ok(doc.querySelector('[data-sa-row="b"]'))
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  assert.ok(doc.querySelector('[data-sa-row="b"][data-leaving]'))
-  sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
-  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-leaving"), false)
-  assert.equal(timers.size, 0, "re-adding cancels the pending removal")
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  ;[...timers.values()].forEach((fn) => fn())
-  timers.clear()
-  assert.equal(doc.querySelector('[data-sa-row="b"]'), null)
-  sidebar.update({ rows: [row("a"), row("c")], count: 2 }, empty)
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
+  assert.equal(doc.querySelector('[data-sa-row="b"]'), null, "removed at once, no leaving state")
+  assert.equal(doc.querySelector("[data-entering], [data-leaving]"), null)
+  assert.deepEqual(css.match(/transition:[^;]*;/g), ["transition: transform .15s;"], "the host's arrow transition is the only one")
   sidebar.dispose()
-  assert.equal(timers.size, 0)
 })
 
 test("rows reuse the session tab markup so the app styles them, without acting as live tabs", async () => {

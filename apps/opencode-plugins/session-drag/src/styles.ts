@@ -2,7 +2,6 @@ import { LABEL_ATTR } from "./drag"
 
 export const LABEL = "Drop to attach session"
 
-// The ghost is positioned with `transform`, so its entrance scales with the separate `scale` property.
 export const styles = `
 [data-session-drag-ghost] {
   position: fixed;
@@ -12,14 +11,8 @@ export const styles = `
   max-width: 280px;
   pointer-events: none;
   white-space: nowrap;
-  transform-origin: 0 50%;
-  opacity: 1;
-  scale: 1;
-  will-change: transform, opacity;
-  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1), scale 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
 }
-[data-session-drag-ghost][data-state="enter"] { opacity: 0; scale: 0.97; }
-[data-session-drag-ghost][data-state="leave"] { opacity: 0; }
 html[data-session-drag], html[data-session-drag] * {
   cursor: default !important;
   user-select: none !important;
@@ -32,7 +25,4 @@ html[data-session-drag], html[data-session-drag] * {
  */
 html[${LABEL_ATTR}] [data-slot="session-dropzone-content"] > div:not([data-slot]) { font-size: 0; line-height: 0; }
 html[${LABEL_ATTR}] [data-slot="session-dropzone-content"] > div:not([data-slot])::after { content: "${LABEL}"; display: block; font-size: 15px; line-height: 24px; }
-@media (prefers-reduced-motion: reduce) {
-  [data-session-drag-ghost][data-state="enter"] { scale: 1; }
-}
 `
