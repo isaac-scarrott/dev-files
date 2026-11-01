@@ -29,6 +29,8 @@ export const ITEM_SPACING = 8
 export const MIN_ITEMS = 2
 /** The rail never grows past the window height minus this (t3-code's `calc(100vh - 18rem)`), whatever else is on screen. */
 export const MAX_HEIGHT_CSS = "calc(100vh - 18rem)"
+/** Resting ticks are drawn no closer than this, whatever the count; beyond it they thin out by index. */
+export const MIN_TICK_PITCH = 5
 /** Index distances beyond this from the pointer are drawn at rest. */
 export const FISHEYE_REACH = 2
 export const TITLE_LIMIT = 200
@@ -108,6 +110,17 @@ export function prompts(messages: readonly Message[], revertMessageID?: string):
 /** The rail strip's height: one `ITEM_SPACING` per gap, capped by the window, never negative. Ticks overlap beyond the cap. */
 export function railHeightStyle(count: number): string {
   return `max(0px, min(${Math.max(1, (count - 1) * ITEM_SPACING)}px, ${MAX_HEIGHT_CSS}))`
+}
+
+/**
+ * Draw every `tickStride`-th prompt's resting tick: 1 while the pitch (strip height over gaps) is at least
+ * `MIN_TICK_PITCH`, else the smallest whole stride that restores it. Pointer mapping never uses it.
+ */
+export function tickStride(count: number, height: number): number {
+  if (count < 3 || !(height > 0)) return 1
+  const pitch = height / (count - 1)
+
+  return pitch >= MIN_TICK_PITCH ? 1 : Math.ceil(MIN_TICK_PITCH / pitch)
 }
 
 /** Where prompt `index` sits along the strip, 0 to 100. */
