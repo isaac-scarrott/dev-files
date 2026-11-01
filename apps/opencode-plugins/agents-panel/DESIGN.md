@@ -37,7 +37,7 @@ The dock follows the **right side panel** (the host's side region: review, files
 - **Narrow**: below 900px window width the chat has no room beside a 288px window, so the button is popover mode (listener on `resize`, `NARROW_BELOW` in `toggle.tsx`).
 - **Diagnostics**: the toggle's wrapper carries `data-agents-mode` (`window`|`popover`) and `data-agents-side` (`open`|`closed`).
 - **Window**: an elevated surface (the host's `menu-v2-content`) drawn inside the chat card, 288px, anchored 8px from the card's end edge and 56px below its top (under the header row), clipped by the card's rounded corners. It is `position: absolute` in the card, which is the first child of `[data-slot=session-chat-panel]` and already `relative overflow-hidden`; Portal's wrapper div is `display: contents`, so the card's flex layout, the timeline's scroll and virtualizer, and the other header buttons are untouched. Mounted only while shown or leaving; it opens a frame after mounting so the entrance transitions. The host's Toggle review button sits outside the card at its end corner and stays above the window. When the host's review panel is open it sits beside the card, and the window stays inside the card.
-- **Chat centring**: while shown, the card carries `data-agents-pad`; its rules reserve the window width + its 8px inset (296px, from `DOCK_WIDTH + DOCK_INSET`) as end padding on the timeline's scroll viewport and on the composer's full-width wrapper, so messages and composer re-centre in the free width (card start edge to window start edge) while the scrollbar stays on the card edge. The header sits inside that viewport (`.sticky`), so it is widened by the same amount and does not move (0px delta, also mid-animation). The padding changes **once**, at the click; the movement is the glide described under Dock motion.
+- **Chat centring**: while shown, the card carries `data-agents-pad`; its rules reserve the window width + its 8px inset (296px, from `DOCK_WIDTH + DOCK_INSET`) as end padding on the timeline's scroll viewport and on the composer's full-width wrapper, so messages and composer re-centre in the free width (card start edge to window start edge) while the scrollbar stays on the card edge. The header sits inside that viewport (`.sticky`), so it takes the padding back as a negative end margin (`width: auto; margin-inline-end: -296px`) and does not move (0px delta, also mid-animation). The padding changes **once**, at the click; the movement is the glide described under Dock motion.
 - **Layout**: the window's height fits its content up to `min(420px, card height - 64px)`; the menu surface scrolls inside it. The list panel sets `max-height: none; overflow: visible` because it otherwise inherited a percentage max-height and collapsed to its heading (rows empty while the count read "N running").
 - **Hiding**: the window has no close button. The header Subagents button is the only way to show or hide it, besides the panel rule.
 - **Choice**: `dock.visible`, a global plugin store, default hidden. Opening the right panel (button, `⇧⌘R` or command) while the window is visible hides it (animated out, chat re-centres) and stores hidden, without opening the popover; closing the panel does not bring it back, the user toggles it with the button.
@@ -81,3 +81,24 @@ The compositor-frame rows come from a separate traced pass (tracing itself slows
 The curve was sampled per frame on the message column (progress against time since the click, native / ours): open 17ms 15/5, 50ms 36/27, 100ms 65/62, 133ms 79/76, 200ms 93/92, 300ms 99/99; close 17ms 11/10, 50ms 31/36, 100ms 64/66, 200ms 93/93. Within 3 points from 100ms on; on open the first frames trail by up to 10 points (one frame of start latency: the click task is heavier than the host's). Centring after the change: message column and composer centres 0px from the free-space centre, header edges 0px delta at rest and in every sampled frame, composer back at its exact start after a close.
 
 Reproduce: `test/motion-profile.mjs <native|ours> <runs> <out.json> [notrace]` (metrics, traced layout/style/frame counts per toggle) and `test/motion-curve.mjs <native|ours> <open|close> <out.json>` (per-frame centres). Both need `playwright-core` and a harness window.
+
+## Horizontal scroll
+
+**Bug.** With the window shown, the timeline scrolled sideways by exactly 296px (the pad), by trackpad too. Hidden, closed again, right panel open and popover mode were all fine.
+
+**Cause.** The pad rule widened the sticky header (and the `.session-header-fade`, which also carries `sticky`) with `width: calc(100% + 296px)`. The percentage resolves against the viewport's content box, so that box starts at the content edge and ends 296px past it, over the padding. A scroll container that has content overflowing its content box also counts its end padding after it, so `scrollWidth` became `clientWidth + 296`. Only the offending element and its rule were involved; the translate glide leaves nothing behind (`fill: backwards`, no fill at rest) and the window is absolutely positioned inside the card's `overflow-hidden`, so neither reaches the scroller.
+
+**Fix.** `width: auto; margin-inline-end: -296px` on the same elements: the border box still reaches the viewport edge (header does not move), but it does not extend past the padding box, so nothing overflows. Rule: never widen a child of the padded viewport past `100%`; use a negative margin.
+
+**Measured** (harness, user's plugin set minus blindfold/claude-proxy; thread of 12 turns with a 7000px code line, 8-column table, 400-char unbroken string and a long URL; the same on a plain 40-turn thread; `scrollWidth - clientWidth` of `[data-slot=session-timeline-scroll] > .scroll-view__viewport`, and the maximum seen on every frame for 700ms after the click):
+
+| window | window hidden | shown, at rest | shown, during open | hidden again, at rest / during close | right panel open / + popover |
+|---|---|---|---|---|---|
+| 1400 before | 0 | **296** | **296** | 0 / 0 | 0 / 0 |
+| 1153 before | 0 | **296** | **296** | 0 / 0 | 0 / 0 |
+| 900 before | 0 | **296** | **296** | 0 / 0 | 0 / 0 |
+| 760 (popover only) before | 0 | n/a | n/a | n/a | 0 / 0 |
+| 1400, 1153, 900 after | 0 | 0 | 0 | 0 / 0 | 0 / 0 |
+| 760 after | 0 | n/a | n/a | n/a | 0 / 0 |
+
+`documentElement` never overflowed. After the fix at 1400: header, fade and viewport are all 8-1392 hidden and shown, header icons at the same x, message column 8-1096 against the window at 1096-1384.
