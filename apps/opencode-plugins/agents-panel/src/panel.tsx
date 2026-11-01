@@ -186,7 +186,7 @@ export const styles = `
      inside that viewport, so it is widened back by the same amount and does not move. The padding changes once;
      dock-motion.ts glides the content from where it was on the host panel's own spring, so nothing is laid out per frame. */
   [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport { padding-inline-end: ${PAD}px; }
-  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: calc(100% + ${PAD}px); }
+  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: auto; margin-inline-end: -${PAD}px; }
   [data-agents-pad] > div:has(form) > div.shrink-0.items-center { padding-inline-end: ${PAD}px; }
   /* Portal's wrapper div must not take part in the card's flex layout. */
   div:has(> [data-agents-dock]:only-child) { display: contents; }

@@ -659,3 +659,17 @@ test("dock: every selector the chat re-centring depends on is valid", () => {
     assert.doesNotThrow(() => doc.querySelector(selector), selector)
   }
 })
+
+// Regression: the sticky header was widened with `width: calc(100% + 296px)` inside a viewport that carries 296px of end
+// padding. That box ends 296px past the content box and the scroller then also counted its padding, so the timeline
+// scrolled sideways by exactly 296px while the window was shown. The header now takes the padding back as a negative
+// end margin, which ends at the viewport edge. Layout is not computed here; the measured table is in DESIGN.md.
+test("dock: nothing in the timeline scroller is widened past its content box (no horizontal scroll)", () => {
+  const viewport = "[data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport"
+  assert.match(dockRule(viewport), /padding-inline-end:\s*296px/)
+  const header = dockRule(`${viewport} > .sticky`)
+  assert.match(header, /width:\s*auto/)
+  assert.match(header, /margin-inline-end:\s*-296px/)
+  const rules = styles.split("\n").filter((l) => l.includes("data-agents-pad") && l.includes("{"))
+  for (const rule of rules) assert.doesNotMatch(rule, /(?:^|[^-])width:\s*calc\(/, rule)
+})
