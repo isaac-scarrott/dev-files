@@ -2,6 +2,8 @@
 
 Tools that let an agent start other sessions, message them, wait on them and read their results.
 
+> **Credit:** the tool set is inspired by [t3-code](https://github.com/pingdotgg/t3code)'s (MIT) orchestrator MCP server and the message wrapper by Claude Code's cross-session format (Anthropic); the peer row is styled after [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) subagent row. No code was copied from the first two.
+
 ## What it does
 - `orchestrate_delegate_task`: create a child session, send one prompt, wait a bounded time and return its final reply. The usual entry point.
 - `orchestrate_create_session`: create one or more sessions, each with its own prompt, as children of the caller (default) or as independent top-level sessions.
@@ -33,12 +35,18 @@ The host works out a plugin's parts (server, GUI) once, when the service starts.
 | `maxDepth` | `3` | nesting depth of created sessions |
 | `maxConcurrent` | `4` | sessions running at once |
 | `models` | any | restricts `model` to a list of `provider/model` ids |
-| `scope` | children, siblings, created | `"project"` reaches any session in the caller's project, `"all"` any session on the server |
+| `defaultWaitMs` | `120000` | how long delegate and wait calls wait when the call gives no timeout |
+| `maxWaitMs` | `600000` | longest wait one call may ask for |
+| `maxWaitSessions` | `16` | sessions one `orchestrate_wait_for_sessions` call may wait on |
+| `maxReadChars` | `20000` | message characters `orchestrate_read_session` returns in one call |
+| `messageLimit` | `5` | most recent messages `orchestrate_read_session` returns when the call gives no `limit` |
+| `scope` | `"tree"` | `"tree"`: sessions the caller is an ancestor of, ones it created through these tools, and its siblings; `"project"`: any session in the caller's project; `"all"`: any session on the server |
 | `assertSubagentPermission` | `true` | `false` skips the `subagent` permission check before creating |
 
 ## Credits
 - t3-code (MIT, pingdotgg/t3code): inspired by the tool set of its orchestrator MCP server (create, message, wait, read, stop). Nothing is copied.
 - Claude Code: inspired by its cross-session message format, the `<cross-session-message from="…">` wrapper with a reply-by-sender flow, so models trained on it use it as is. The implementation is this plugin's own.
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the peer-message row's classes and layout follow the host's subagent row, from the desktop app's renderer source (2.2.5).
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Tests run against a fake plugin context. For a live check, start a standalone server with throwaway XDG dirs whose `opencode.json` lists this package. Design notes: [DESIGN.md](DESIGN.md).

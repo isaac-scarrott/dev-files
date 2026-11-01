@@ -2,6 +2,8 @@
 
 When a Claude usage limit stops a session you opted in, it waits for your accounts to recover and then continues the session for you.
 
+> **Credit:** the usage-limit message text it detects is Claude Code's (Anthropic). Knowledge only, no code.
+
 ## What it does
 - **Off by default.** A refresh-arrow toggle in the composer, right after the model picker, turns it on per session. Settings > Preferences > "Auto-resume after usage limit" sets whether new sessions start with it on; a session's own toggle always wins.
 - Detects the Claude Agent provider's "usage limit reached" failure and stops OpenCode's useless short retries.
@@ -24,7 +26,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
   "options": { "prompt": "Continue." }
 }]
 ```
-Kind: server and GUI. Restart the app.
+Kind: server and GUI. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
 
 ## Options
 Durations are seconds.
@@ -42,6 +44,9 @@ Durations are seconds.
 | `sampleDir` | `~/.local/share/opencode/usage-resume` | log file and error samples |
 | `authDir` | `~/.cli-proxy-api` | cliproxy auth files (read-only) |
 | `snapshotPath` | notch app cache | its readings are reused to avoid double polling; `""` disables |
+
+## Credits
+- Claude Code (Anthropic): the "usage limit reached" message text the detector matches. Knowledge only; no code was taken.
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Tests use a fake host, clock and fetch. Design notes: [DESIGN.md](DESIGN.md).

@@ -89,3 +89,23 @@ warning and skips cleanup. Deletions are logged (`no-project: deleted scratch fo
   "No project" (basename of the project's canonical directory).
 - Observation: a `MutationObserver` on the body (childList) finds the dialog; a second on the dialog re-syncs the row after
   every host re-render. The host's `<For>` may clear the group, so every sync is idempotent.
+
+## Decisions
+
+- **The command** (`/no-project`, palette) uses public APIs (`Command`, `slash`) and covers the whole job.
+- **The picker row**: project-picker rows have no extension point ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)), so the row is DOM injected into the picker dialog and removed on cleanup. It costs a body observer and a few document listeners for one dialog; dropping it and keeping the command is a standing option.
+- **The server sweep** is path-safe by design: `lstat`, `realpath`, a UUID check, a base-directory check and a refusal of symlinks before anything is deleted.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A body-wide observer and four document listeners for the picker row (`src/picker.ts`), alive for the whole window although the row shows in one dialog.
+- The server sweep runs on an interval (`src/server.ts`); it touches only the scratch base directory.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

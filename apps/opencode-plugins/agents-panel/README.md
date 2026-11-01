@@ -2,6 +2,8 @@
 
 A Subagents button in the session header that lists what is running under the session: a floating window beside the chat when the right side panel is closed, a popover when it is open.
 
+> **Credit:** the panel's spring, the progress spinner, the menu and row markup and classes are adapted from [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) desktop renderer (2.2.5).
+
 ![The Subagents window beside the chat, opening and closing](media/demo.gif)
 
 [Full-quality video](media/demo.mp4)
@@ -25,6 +27,9 @@ Kind: GUI (`gui-experimental`). Cmd+R for GUI.
 
 ## Options
 None. The mode and the window's shown state are stored per app.
+
+## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the panel's spring formula, the progress spinner's markup and keyframes, the menu markup and the row classes, adapted from the desktop app's renderer source (2.2.5).
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

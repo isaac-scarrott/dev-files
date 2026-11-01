@@ -228,3 +228,25 @@ when the child went idle after that time, so the queued prompt is not mistaken f
 - Nothing is logged. Prompts travel only to the target session.
 - Recursion is bounded by `maxDepth`; fan-out by `maxChildren` and `maxConcurrent`; waits by `maxWaitMs` and the
   abort signal.
+
+## Decisions
+
+- **Tools and instructions** use public server APIs (`ctx.tool.transform`, `ctx.session.hook`). The tools overlap the host's subagent and task concept; "API gaps in 2.2.5" says why a separate set is needed.
+- **The peer-message row** is DOM on timeline rows: message parts have no extension point ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)), and the host's team rules out timeline-row work, so the row is decorated in place by observing the timeline.
+- **Motion**: the row expands instantly, like the host's collapsibles. The arrow and open-button reveal use `opacity`/`transform` 150ms `ease`; whether that matches the host's subagent row chevron is not verified, and `ease` is not on the animation reference's curve list. Open question for the user.
+- **Scope default** is `tree`; `all` lets any agent message or interrupt any session (see "Safety properties").
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A `MutationObserver` on `document.body` whose callback runs `decorate()` synchronously for any record with added nodes: `sweep()`, `peers()` and a document-wide `querySelectorAll` per streamed node (`src/gui.tsx`).
+- A `peers` memo that walks every message of every open session on any message-store change.
+- One `ResizeObserver` and `MutationObserver` per expanded row.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

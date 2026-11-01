@@ -2,6 +2,8 @@
 
 Two-line sidebar rows: the project name above the session title, a status icon for pending approvals and the time of the last activity on idle rows.
 
+> **Credit:** the trailing-edge fade mask follows the shape of [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) own sidebar row mask (2.2.5).
+
 ![Sidebar rows with project name, title and last-active time](media/demo.png)
 
 ## What it does
@@ -24,5 +26,8 @@ Kind: GUI (`gui-experimental`). Cmd+R for GUI.
 ## Options
 None.
 
+## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the shape of the trailing-edge `mask-image` rule (16px ramp over the link), from the desktop app's sidebar row (2.2.5).
+
 ## Development
-`pnpm typecheck && pnpm test && pnpm build` (dist is tracked).
+`pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

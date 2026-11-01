@@ -66,3 +66,23 @@ Tests cover mocked API calls/errors, page math, the count's + rule, event handli
 `MenuItem` registers only in `session.panel`, `server.add` and `server.row`, and `ctx.ui.Menu` is a button-triggered menu with no way to open at a point, so neither can extend or replace a tab context menu. The app's menu (Kobalte, `Menu.Context` in `tab-nav.tsx`) is a portal of `[role=menu][data-component=menu-v2-content]` labelled by the tab link. `src/tabmenu.ts` watches `<body>` for that node, resolves the tab through `aria-labelledby` → `closest([data-tab-key])` (so only session tabs), and `extendNative` in `src/menu.ts` inserts `menu-v2-item` nodes (same attributes, `data-slot`s, `data-variant=critical`) before the app's separator. It is idempotent (`data-sa-menu` marks our nodes), removed on cleanup, and does not touch the app's items. Kobalte keeps a collection of its own items, so arrow/Home/End presses that would step onto or off our items are handled by us (highlight moved to a single item, as Kobalte does); every other key still reaches the app. Choosing an item dispatches Escape on the menu to close it through the app's own path, then runs the action. Tradeoff: this depends on the 2.2.5 DOM, and highlight state for a native item is cleared by us when focus moves onto ours. Snoozed/Archived rows have no native menu, so they use `openMenu` (fixed popup, same markup, arrows/Home/End/Enter/Escape, outside-click and blur close, focus restored).
 
 The Snooze submenu is a `menu-v2-content` element appended inside the native menu element (position absolute, `left: calc(100% + 2px)`, flipping left when there is no room), so Kobalte's outside-click and focus-out checks see it as part of the menu. Its items copy the host's item markup and computed styles match the native items exactly (height 28, padding 0 6px 0 12px, 13px/24px 440, radius 4, hint 11px 530 `rgb(128,128,128)`, menu radius 6, same shadow).
+
+## Decisions: DOM hooks
+
+- **Sidebar groups, tab-row actions and the session-menu items** are DOM: tab rows and the session menus have no extension point ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)). The palette commands and the stored snoozes use public APIs (`Command`, `Store.global`).
+- **Menu markup** is the host's, adapted; it is why the plugin tracks 2.2.5 markup.
+- **Motion deviation, awaiting the user's yes**: the Snoozed and Archived groups animate (`grid-template-rows` 200ms, `opacity`, chevron `rotate`, `cubic-bezier(.23,1,.32,1)`) while the host's collapsibles open in one frame. It follows the animation reference, not the host.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- Five body-wide observers (guard, session menu, tab rows, woke marks, sidebar), each with its own rAF or queue; the session-menu observer inspects every added subtree (`src/guard.ts`, `sessionmenu.ts`, `tabrows.ts`, `woke.ts`, `sidebar.ts`).
+- A 30 second `recheck` that reconciles every snooze with the server on each tick, focus and visibility change (`src/gui.ts`).
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

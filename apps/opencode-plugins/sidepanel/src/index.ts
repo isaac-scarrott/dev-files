@@ -1,1 +1,0 @@
-// No server part — GUI-only experiment. Plugin id falls back to package name.

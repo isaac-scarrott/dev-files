@@ -26,7 +26,7 @@ So the host's dialog runs untouched on its own state and only its results list i
 
 ## Cost of this approach
 
-- It depends on the dialog's markup (data-slots, `search-list-row`, header ids `<list>-section-<id>`) and on the host's delegated mouse/keyboard handlers. A host update that renames them stops the pane from attaching; the host's own list then shows, unchanged.
+- It depends on the dialog's markup (data-slots, `search-list-row`, header ids `<list>-section-<id>`) and on the host's delegated mouse/keyboard handlers. A host update that renames them stops the pane from rendering. Known gap: `attach` sets `data-mp-hidden` on the host's list before the first successful snapshot of its results, so if the results selector is renamed the host's list stays hidden and the pane is empty (the dialog shows no models). It is not fail-safe yet; the fix is to hide the host's list only after the first successful snapshot.
 - The host's list is rendered but hidden, so the dialog does the work twice.
 - Sorting by price needs a loaded model list for the chosen `ref`; until it loads (or for a model it lacks) price counts as 0 and the order falls back to name.
 - Console workspace providers (`console-*`, grouped under one header in the host) are laid out as plain providers.
@@ -34,3 +34,17 @@ So the host's dialog runs untouched on its own state and only its results list i
 ## Verified and measured
 
 Unit tests (`pnpm test`): ordering, tie-break, recent/favorite handling, arrow stepping, and the pane against a fixture in the host's markup. Live (harness, seeded stub providers with prices): all four entry points, arrows with wrap, hover flyout geometry, favorite toggle by flyout and `mod+f`, search, Enter and click selection through the host, hot reload with the dialog open, Escape, and no frame in which the host's list was visible. `parity.spec.mjs` compares the clones with the host's rows in the same dialog.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A body-wide `childList` observer watching for the dialog (`src/gui.tsx`): per added node a `closest` and a `querySelectorAll`.
+- One observer per open dialog (`src/pane.ts`); the host's list is rendered but hidden, so the dialog does the work twice.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

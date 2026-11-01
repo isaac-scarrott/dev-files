@@ -282,3 +282,22 @@ fenced code and lists):
 
 Not verified live: touch and `pointer: coarse`, reduced motion, a gutter under 48px (unit tests only), light theme, the
 768px breakpoint, subagent sessions (no desktop route).
+
+## Decisions
+
+- **Placement**: `Slot session.header`, the only timeline surface the host offers a plugin. The scroller's geometry is read from the host's DOM (`[data-slot='session-timeline-visible']`, `[data-timeline-row]`); there is no API for it.
+- **Motion**: ticks, reveal and chevrons use `transform`/`opacity` 150ms `cubic-bezier(.4,0,.2,1)` after `data-armed`, copied from t3-code. The host has no sibling, and hover-driven motion is not on the animation reference's allow list. Open question for the user: the curve and the hover frequency.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A `ResizeObserver` on the host's scroller plus scroll and resize listeners, owner-bound (`src/gui.tsx`).
+- Three raw `createEffect`s attach them.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

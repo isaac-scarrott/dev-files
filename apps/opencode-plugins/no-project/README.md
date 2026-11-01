@@ -2,6 +2,8 @@
 
 A "No project" row in the new-session project picker that opens a draft in its own empty scratch folder.
 
+> **Credit:** inspired by [t3-code](https://github.com/pingdotgg/t3code)'s (MIT) "No project" scratch grouping for projectless threads. The folder-per-session model and the sweep are this plugin's own.
+
 ![The project picker with a No project row above Add project](media/demo.png)
 
 ## What it does
@@ -17,7 +19,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/no-project"]
 ```
-Kind: GUI (`gui-experimental`) plus a server entry loaded from the same path. Cmd+R for GUI, restart the app for the server entry.
+Kind: GUI (`gui-experimental`) plus a server entry loaded from the same path. Cmd+R for GUI, restart the background service for the server entry (quit the app, then `opencode service restart`).
 
 ## Options
 | Option | Default | |
