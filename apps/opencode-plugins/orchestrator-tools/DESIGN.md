@@ -65,7 +65,7 @@ Sessions message each other in the shape Claude Code uses, so models trained on 
 - **Not built: `notify_when_idle`.** A one-shot idle notice needs a background subscription that outlives the tool
   call and a way to prompt the sender later; `wait_for_sessions` already covers the need.
 
-### Peer row (`src/gui.tsx`, `src/card.ts`, `src/anchor.ts`)
+### Peer row (`src/gui.tsx`, `src/card.ts`)
 
 The wrapper text is for the model. `send_message` also sets `metadata.peerMessage = { sessionID, title, ref, text }` on
 the prompt (`peers.ts` `peerMetadata`); the desktop reads it back from the message in the session store (`card.ts`
@@ -116,18 +116,18 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   row toggles it, except the Open-session button, links and the expanded text: open text is a selection zone, so a click
   there does not close the row. Expandability is measured when clamped (`scrollHeight` of the first block, or more than
   one block) and re-measured as the host's Markdown finishes rendering.
-- **Motion.** `height` 20px → `auto` over 200ms `cubic-bezier(.23, 1, .32, 1)` (`interpolate-size: allow-keywords`, Chrome
-  129+; the app is Chrome 152). The host does not animate this: its collapsibles (Used N Execute, Questions, user
-  message Show more) swap content in one frame and animate only the arrow, so the 200ms grow is a plugin convention
-  (animation skill: accordion, 150-250ms, interruptible, reduced motion = none). The clamp lifts before the grow and returns
-  after the shrink so the first line never changes. **Open question for the owner:** match the host exactly (instant,
-  no anchoring)? Measured below; the change is one line (`GROW_MS` to 0) plus removing `anchor.ts`.
-- **Anchoring.** The timeline sticks to the bottom: with the timeline pinned, growing a row above the bottom scrolled the
-  content (measured: header Δy 217px for a 217px row on open, 0 once held). `holdTop` (`anchor.ts`) records the header's
-  screen y, and for the animation's duration a `ResizeObserver` on the row (runs after layout, before paint) plus an rAF
-  loop writes the scroll position to cancel any drift, so the header and first line stay put (Δy 0.00) and only content
-  below moves. The host does not do this for its own collapsibles: opening Execute with the timeline at the bottom moves its header by
-  180px, Questions by 70px (`hostshift` run in the harness). Unit-tested with a stubbed layout (`anchor.test.ts`).
+- **Motion: the host's, instant (decided by the user: consistency and feel, not taste).** Expand and collapse swap the
+  clamp and the height in one frame; no height animation, no scroller anchoring. Evidence from 2.2.5 in the harness:
+  the host's collapsibles (Used N Execute, Questions, user message Show more) show and hide content in a single frame and
+  animate only the arrow (150ms ease rotate), and `[data-slot=collapsible-content]` has no height transition. The host
+  also does not compensate the scroll position: with the timeline at the bottom, opening Execute moved its header 180px
+  and opening Questions 70px; in the harness session it re-pins to the bottom even from 450-800px above it (Execute
+  header 352 → -106px). The row copies that exactly: one frame changes (row height 36 → 203px), and the host then
+  scrolls to the bottom, so the header moves just as a host row's does (167px pinned, up to 425px from higher up). There is no
+  state where the header stays put, and none is added. The row's own layout is stable in that frame: x of header and
+  first line and the row width change by 0.00. The triangle rotates 150ms ease and the arrow and Open-session button reveal over 150ms opacity, as
+  the host's. Reduced motion needs no branch. An earlier design grew the height over 200ms and held the header against
+  the scroller; both were removed.
 - **Sender side: not done.** The call runs through Code Mode `execute`; the host has no tool-part renderer registry and
   the only route to a "Sent to X" row is rewriting the DOM of the tool row. Skipped.
 - **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; the timeline rail

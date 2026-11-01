@@ -1,13 +1,11 @@
 import { Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js"
 import { render } from "solid-js/web"
-import { holdTop, scrollerOf } from "./anchor.js"
 import { escapeMarkup, peerOf, type PeerMessage } from "./card.js"
 
 const ROW = "[data-timeline-row='UserMessage'][data-message-id]"
 const ROW_ATTR = "data-peer-row"
 const CARD_ATTR = "data-peer-card"
-const GROW_MS = 200
 
 // A peer message is a left-aligned grey row in the style of the host's subagent row (`task-tool-surface`: 8px 12px
 // padding, 8px radius, bg-layer-02, 13px/20px type, title 530). The host has no message-renderer registry, so the host's
@@ -34,10 +32,9 @@ const css = `
   position: relative; flex: 0 1 auto; min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-weight: 530; pointer-events: none;
 }
-/* One text element for both states: it is the first line in both, so it cannot move. Only its height changes. */
+/* One text element for both states: it is the first line in both, so it cannot move. Only its height changes, in one frame, as the host's collapsibles do. */
 [${CARD_ATTR}] [data-slot="peer-text"] {
-  position: relative; flex: 1 1 0%; min-width: 0; height: 20px; overflow: hidden; interpolate-size: allow-keywords;
-  transition: height ${GROW_MS}ms cubic-bezier(0.23, 1, 0.32, 1); pointer-events: none; user-select: none; overflow-wrap: anywhere;
+  position: relative; flex: 1 1 0%; min-width: 0; height: 20px; overflow: hidden; pointer-events: none; user-select: none; overflow-wrap: anywhere;
 }
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-text"] { height: auto; pointer-events: auto; user-select: text; }
 [${CARD_ATTR}] [data-slot="peer-text"] [data-markdown-block] > * { margin: 0; }
@@ -49,8 +46,8 @@ const css = `
 [${CARD_ATTR}] [data-slot="peer-text"] li > p { margin: 0; }
 /* A code block has no vertical padding here: its first line sits where the clamped line sits, so opening cannot move it. */
 [${CARD_ATTR}] [data-slot="peer-text"] pre { margin: 0; padding: 0 8px; border-radius: 4px; line-height: 20px; white-space: pre-wrap; }
-[${CARD_ATTR}][data-clamped="true"] [data-slot="peer-text"] [data-slot="markdown-copy-button"] { display: none; }
-[${CARD_ATTR}][data-clamped="true"] [data-slot="peer-text"] [data-markdown-block]:first-child > :first-child {
+[${CARD_ATTR}]:not([data-open="true"]) [data-slot="peer-text"] [data-slot="markdown-copy-button"] { display: none; }
+[${CARD_ATTR}]:not([data-open="true"]) [data-slot="peer-text"] [data-markdown-block]:first-child > :first-child {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden;
 }
 /* The trailing slot has a fixed width, so revealing its buttons never re-wraps the text. */
@@ -67,7 +64,6 @@ const css = `
 [${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; }
 [${CARD_ATTR}]:is(:hover, :focus-within) .peer-open, [${CARD_ATTR}][data-open="true"] .peer-open { opacity: 1; }
 @media (hover: none) { [${CARD_ATTR}] .peer-open, [${CARD_ATTR}] [data-slot="peer-arrow"] { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { [${CARD_ATTR}] [data-slot="peer-text"], [${CARD_ATTR}] [data-slot="peer-arrow"] svg { transition: none; } }
 `
 
 type Located = { readonly peer: PeerMessage; readonly server: string }
@@ -103,17 +99,14 @@ export default Plugin.define({
       const peer = () => props.located.peer
       const id = `peer-text-${++serial}`
       const [expanded, setExpanded] = createSignal(false)
-      const [clamped, setClamped] = createSignal(true)
       const [expandable, setExpandable] = createSignal(false)
       let root!: HTMLDivElement
       let text!: HTMLDivElement
-      let release: (() => void) | undefined
-      let settle: ReturnType<typeof setTimeout> | undefined
 
       // Something to reveal: a second block, or a first line the clamp cuts off.
       const measure = () => {
-        // Only the clamped state tells whether the first line is cut off; skip while opening or closing.
-        if (expanded() || !clamped()) return
+        // Only the clamped (collapsed) state tells whether the first line is cut off.
+        if (expanded()) return
         const parts = text.querySelectorAll("[data-markdown-block] > *")
         const first = parts[0]
         if (!first) return
@@ -125,8 +118,6 @@ export default Plugin.define({
       onCleanup(() => {
         observer.disconnect()
         rendered.disconnect()
-        release?.()
-        clearTimeout(settle)
       })
       queueMicrotask(() => {
         observer.observe(text)
@@ -135,18 +126,7 @@ export default Plugin.define({
         void document.fonts?.ready.then(measure)
       })
 
-      const toggle = () => {
-        const next = !expanded()
-        const scroller = scrollerOf(root)
-        const name = root.querySelector("[data-slot='peer-name']")
-        release?.()
-        clearTimeout(settle)
-        // The clamp lifts before the height grows and returns after it has shrunk, so the first line keeps its place.
-        if (next) setClamped(false)
-        else settle = setTimeout(() => setClamped(true), GROW_MS + 20)
-        setExpanded(next)
-        if (scroller && name) release = holdTop(scroller, name, root, GROW_MS + 60)
-      }
+      const toggle = () => setExpanded(!expanded())
       const onClick = (event: MouseEvent) => {
         if (!expandable()) return
         const target = event.target as Element
@@ -161,7 +141,6 @@ export default Plugin.define({
           ref={root}
           {...{ [CARD_ATTR]: "" }}
           data-open={expanded()}
-          data-clamped={clamped()}
           data-expandable={expandable()}
           onClick={onClick}
         >
