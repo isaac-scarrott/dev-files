@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { activePrompt, correction, glidePlan, seekTop, probeDirection, type Row } from "./target"
+import { activePrompt, heldPrompt, correction, glidePlan, seekTop, probeDirection, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -168,4 +168,24 @@ test("correction: index gap to the middle of the turns in view times the measure
   assert.equal(correction({ rows: [row("m40", 100, 60, true), row("m40", 160, 900)], indexOf, target: 50, fallback: 300, box }), 3000)
   assert.equal(correction({ rows: [row("m40", 900, 60, true)], indexOf, target: 50, fallback: 300, box }), undefined, "nothing in view")
   assert.equal(correction({ rows: [row("zzz", 100, 60)], indexOf, target: 50, fallback: 300, box }), undefined, "unlisted owner")
+})
+
+test("held prompt: previous from the last prompt at the scroll end stays on the chosen prompt, the one before the last", () => {
+  const end = { top: 5000, max: 5000 }
+  // The previous prompt's row is within the final screen: the jump is clamped, the reading rule still says last.
+  const rows = [...turn("m3", 4500, 60, 100), ...turn("m4", 4660, 60, 280)]
+  const computed = activePrompt(ids, rows, LINE, end)
+
+  assert.equal(computed, 3)
+  assert.equal(heldPrompt({ chosen: 2, computed, count: 4, scroll: end }), 2, "previous from index 3 is index 2")
+  assert.equal(heldPrompt({ chosen: 0, computed, count: 4, scroll: { top: 1, max: 1 } }), 0, "a chat that fits holds it too")
+})
+
+test("held prompt: released once the scroller leaves the end, with nothing chosen, or an index the list no longer has", () => {
+  const end = { top: 5000, max: 5000 }
+
+  assert.equal(heldPrompt({ chosen: 2, computed: 3, count: 4, scroll: { top: 4990, max: 5000 } }), 3, "ten pixels from the end")
+  assert.equal(heldPrompt({ chosen: undefined, computed: 3, count: 4, scroll: end }), 3)
+  assert.equal(heldPrompt({ chosen: 9, computed: 3, count: 4, scroll: end }), 3, "list shrank")
+  assert.equal(heldPrompt({ chosen: -1, computed: 3, count: 4, scroll: end }), 3)
 })

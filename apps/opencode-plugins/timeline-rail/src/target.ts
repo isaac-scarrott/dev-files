@@ -9,6 +9,23 @@ const END_SLACK = 2
 /** The scroller's offset state: `top` is `scrollTop`, `max` is `scrollHeight - clientHeight`. */
 export type Scroll = { readonly top: number; readonly max: number }
 
+/** Whether the scroller is within the slack of its very end (a chat that fits counts). */
+export function atEnd(scroll: Scroll): boolean {
+  return scroll.max <= END_SLACK || scroll.max - scroll.top <= END_SLACK
+}
+
+/**
+ * The prompt a jump chose, held while the scroller sits at its very end. At the end the reading rule names the last
+ * prompt, but a jump to an earlier one cannot move there when its row is already within the final screen (the scroll
+ * maximum clamps it): the chosen prompt stays lit until the user scrolls or the scroller leaves the end. `chosen` is
+ * undefined when nothing is held; `computed` is the reading rule's answer.
+ */
+export function heldPrompt(input: { readonly chosen: number | undefined; readonly computed: number; readonly count: number; readonly scroll: Scroll }): number {
+  const { chosen } = input
+
+  return chosen !== undefined && chosen >= 0 && chosen < input.count && atEnd(input.scroll) ? chosen : input.computed
+}
+
 /**
  * The one active prompt: the turn being read, as an index in `ids` (-1 only when `ids` is empty). It is the owner of the
  * last mounted row that starts at or above the reading line, so a long reply keeps its prompt active though the prompt's
@@ -24,7 +41,7 @@ export function activePrompt(ids: readonly string[], rows: readonly Row[], line:
 
   if (last < 0) return -1
 
-  if (scroll.max <= END_SLACK || scroll.max - scroll.top <= END_SLACK) return last
+  if (atEnd(scroll)) return last
   let at: Row | undefined
 
   for (const row of rows) {

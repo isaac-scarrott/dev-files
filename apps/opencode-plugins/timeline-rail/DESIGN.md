@@ -288,6 +288,18 @@ sibling. No `parity.spec.mjs` exists for this plugin.
   (`packages/desktop/src/renderer/styles.css`: `.cursor-pointer:not(a):not([role=link])` is forced to the default cursor).
   The strip's `cursor: pointer` is removed; the card keeps `cursor: text`.
 - **Placement**: `Slot session.header`, the only timeline surface the host offers a plugin. The scroller's geometry is read from the host's DOM (`[data-slot='session-timeline-visible']`, `[data-timeline-row]`); there is no API for it.
+- **Previous from the last prompt works at the scroll end (bug, fixed; decided by the user).** Previous always goes to the
+  prompt before the active one; next at the last and previous at the first stay disabled. Cause: the chevron stepped
+  correctly (`current() - 1`), but when the previous prompt's row already sits in the final screen the jump's target
+  offset lies past the scroll maximum, so the scroller did not move, and at the very end the reading rule says last
+  prompt, so the lit tick stayed (seeded 12-prompt chat, short last turns: 9 to 9 on every click). The reading line
+  cannot reach a prompt that is above the bottom-pinned viewport's line, so the geometry cannot be changed. Nearest
+  correct behaviour: the jump leaves the prompt it chose held (`heldPrompt` in `target.ts`, the `chosen` hold in
+  `gui.tsx`) while the scroller is still within 2px of its end; the next chevron step starts from it. The hold ends on the
+  user's wheel, touch, pointer or key in the timeline (not the jump's own unpin), when the scroller leaves the end, or when
+  the prompt list changes (a new turn is active at the bottom, as before). Land rounds stop at the end instead of
+  re-gliding four times. Checked in the private harness (below): previous clicked down from the last prompt to the first
+  and next back up, lit tick followed every click.
 - **Chevron tooltip sits beside the chevron, not on it (bug, fixed).** The prompt card never overlapped the chevrons: it
   starts 32px right of the strip's left edge and the chevrons end 14px right of it (measured per index 0, 4, 9 at widths down to
   800px; the card is removed the moment the pointer leaves the strip for a chevron, as in t3-code). The cover was the host's
@@ -419,3 +431,9 @@ functions, and the three runs differ more with each other (2.5 to 7.7ms) than be
 before and after this change; no single cause to remove was found. Open: keep the observers alive across a switch (the
 cached timeline is hidden, so they idle) instead of tearing them down, at the price of "reads nothing while inactive".
 
+
+Previous/next from the end (`plugins/timeline-prev`), private harness (window on AeroSpace workspace Z, own ports): a
+seeded 12-prompt chat (10 ticks; short last turns, bottom-pinned) and a longer 10-prompt chat. Before: previous at the end
+stayed on tick 9 for every click (scroll 1801/1801). After: 9, 8, 7, 6, ... 0 with previous disabled at 0, then 0 to 9
+with next, the lit tick moving by exactly one each click, scroll positions 1801 (held), 1801 (held), 1700, 1329 ... in the
+short chat and unchanged behaviour in the long chat.
