@@ -288,6 +288,15 @@ sibling. No `parity.spec.mjs` exists for this plugin.
   (`packages/desktop/src/renderer/styles.css`: `.cursor-pointer:not(a):not([role=link])` is forced to the default cursor).
   The strip's `cursor: pointer` is removed; the card keeps `cursor: text`.
 - **Placement**: `Slot session.header`, the only timeline surface the host offers a plugin. The scroller's geometry is read from the host's DOM (`[data-slot='session-timeline-visible']`, `[data-timeline-row]`); there is no API for it.
+- **Chevron tooltip sits beside the chevron, not on it (bug, fixed).** The prompt card never overlapped the chevrons: it
+  starts 32px right of the strip's left edge and the chevrons end 14px right of it (measured per index 0, 4, 9 at widths down to
+  800px; the card is removed the moment the pointer leaves the strip for a chevron, as in t3-code). The cover was the host's
+  own "Previous turn / Next turn" tooltip: `ctx.ui.Tooltip` wraps its child in a block `div` (`tooltip-v2-trigger`) that
+  anchors the popper, and around the absolutely positioned chevron that div collapsed to 0 height at the strip's corner, so
+  the tooltip opened at 495-517px over the chevron (499-519) for previous and inside the strip for next, with
+  `pointer-events: auto`. The positioned `span` now wraps the Tooltip, so the trigger takes the chevron's size and the tooltip
+  opens 4px above (previous) or below (next): checked per frame, the chevron is the hit target throughout. Chosen over
+  hiding the card or `pointer-events: none` because nothing of the card needed to change and it keeps the host's tooltip.
 - **Motion**: ticks, reveal and chevrons use `transform`/`opacity` 150ms `cubic-bezier(.4,0,.2,1)` after `data-armed`, copied from t3-code. The host has no sibling, and hover-driven motion is not on the animation reference's allow list. Open question for the user: the curve and the hover frequency.
 
 ## Rejected

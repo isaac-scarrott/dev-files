@@ -329,8 +329,11 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const label = previous ? "Previous turn" : "Next turn"
 
     return (
-      <props.ui.Tooltip value={label} placement={previous ? "top" : "bottom"}>
-        <span data-timeline-rail-turn={direction}>
+      // The positioned box is outside the Tooltip: the host's trigger is a block div that takes the size of its content, and
+      // around an absolutely positioned child it collapses to nothing at the strip's corner, which put the tooltip over the
+      // chevron (previous) or inside the strip (next).
+      <span data-timeline-rail-turn={direction}>
+        <props.ui.Tooltip value={label} placement={previous ? "top" : "bottom"}>
           <props.ui.IconButton
             icon="chevron-down"
             label={label}
@@ -339,8 +342,8 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
             disabled={previous ? current() <= 0 : current() < 0 || current() >= count() - 1}
             onClick={() => step(previous ? -1 : 1)}
           />
-        </span>
-      </props.ui.Tooltip>
+        </props.ui.Tooltip>
+      </span>
     )
   }
 
