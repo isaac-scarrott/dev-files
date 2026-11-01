@@ -22,7 +22,9 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
   "options": { "maxChildren": 8, "maxDepth": 3, "maxConcurrent": 4 }
 }]
 ```
-Kind: server and GUI. Restart the app.
+Kind: server and GUI. Restart the background service (quit the app, then `opencode-cli service restart`, or `opencode service restart`).
+
+The host works out a plugin's parts (server, GUI) once, when the service starts. A service that started before this package had its `./gui-experimental` export keeps loading only the server half after an update: messages still arrive, but as the user's own gray bubble with the raw `<cross-session-message>` tag and the reply trailer, and the Extensions → Plugins row has no Reload/switch. Rebuilding, editing the config or the app's Reload does not fix it; restarting the service does. Object-style (`{ "package": …, "options": … }`) and plain-path registrations load the GUI half the same way.
 
 ## Options
 | Option | Default | |

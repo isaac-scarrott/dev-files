@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { peerOf, PEER_KEY } from "./card.js"
@@ -26,4 +27,14 @@ test("the card text is the plain body: the trailer is never in it", () => {
   assert.equal(shown?.text, "hello")
   assert.ok(deliver(from, "hello").includes(TRAILER))
   assert.ok(!shown?.text.includes(TRAILER))
+})
+
+// The host reads a package's `features` (server, gui) once when its service starts and never re-detects them, so the
+// card only reaches a window if this export and bundle already existed at that start. Keep both in the package.
+test("the package exports a built GUI bundle that carries the card", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { exports: Record<string, string> }
+  const entry = pkg.exports["./gui-experimental"]
+  assert.equal(entry, "./dist/gui-experimental.cjs")
+  const bundle = readFileSync(new URL(`../${entry}`, import.meta.url), "utf8")
+  assert.ok(bundle.includes("data-peer-card"))
 })

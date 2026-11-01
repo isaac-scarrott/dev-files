@@ -72,6 +72,13 @@ the prompt (`peers.ts` `peerMetadata`); the desktop reads it back from the messa
 `peerOf`). Only a message carrying it becomes a card, so a user who types the tag stays a user bubble. The wire format
 of the wrapper is unchanged.
 
+- **Loading.** The host decides a plugin's `features` (`server`, `gui`) when its service starts and never re-detects them: in
+  2.2.5 an in-place update that adds `./gui-experimental` reloads the server half (`loading plugin`) while `/api/plugin`
+  keeps `features: {server: true}`, and a config re-save or `POST /api/location/reload` does not change it. A service
+  started before the GUI export existed therefore shows the wrapper and trailer as a user bubble and gives the Plugins row
+  no Reload/switch until `opencode service restart`. Object-style and string registrations both get `gui: true` on a fresh
+  start (checked in an isolated app with the full plugin set, `steer` delivery, metadata persisted on the message). A test
+  keeps the export and the built bundle in the package.
 - **Where.** The host has no message-renderer registry, so the GUI entry decorates mounted `[data-timeline-row=UserMessage]`
   rows whose id is a peer message. The row, its id and its footer slot stay the host's (virtualization, copy, retry,
   timeline-rail ids); only the host's `[data-component=user-message]` inside it is `display: none` and ours is appended
