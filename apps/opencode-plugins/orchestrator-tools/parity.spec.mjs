@@ -42,6 +42,30 @@ const probe = (headerOnly) => `
 // that share a baseline and the row's centre, 8px between them, content starting at the 12px padding edge.
 const HOST_HEADER = { padding: "8px 12px 8px 12px", radius: "8px", contentLeft: 12, gapTitleText: 8, titleCentreDy: 0, textCentreDy: 0, iconCentreDy: 0, baselineDelta: 0, title: "13px/530/20px/-0.04px", text: "13px/440/20px/-0.04px" }
 
+// Per-frame hover-in, run on the host row and ours: samples the row width, the chevron's distance from the row's right edge and the
+// action's opacity every frame while the pointer enters, then checks each against the host's easing (width, margin, opacity and transform
+// all 150ms `ease`, cubic-bezier(.25,.1,.25,1)), allowing the sampler's one-frame start offset.
+const HOVER_START = `
+  window.__hf = [];
+  const s = el.closest("[data-peer-card], [data-component=task-tool-surface]"), ours = s.hasAttribute("data-peer-card");
+  const chev = ours ? s.querySelector(".peer-open svg") : s.querySelector("[data-component=task-tool-action] svg");
+  const slot = ours ? s.querySelector("[data-slot=peer-tail]") : s.querySelector("[data-component=task-tool-action]");
+  const t0 = performance.now();
+  const tick = () => { const o = s.getBoundingClientRect(), c = chev.getBoundingClientRect(); window.__hf.push({ t: performance.now() - t0, w: o.width, x: o.right - c.right, op: +getComputedStyle(slot).opacity }); if (performance.now() - t0 < 800) requestAnimationFrame(tick); };
+  tick();`
+const HOVER_PROBE = `
+  const f = window.__hf, f0 = f[0], end = f.at(-1);
+  const ease = (x) => { if (x <= 0) return 0; if (x >= 1) return 1; let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2, bx = 3 * (1 - m) * (1 - m) * m * 0.25 + 3 * (1 - m) * m * m * 0.25 + m * m * m; if (bx < x) lo = m; else hi = m; } const m = (lo + hi) / 2; return 3 * (1 - m) * (1 - m) * m * 0.1 + 3 * (1 - m) * m * m * 1 + m * m * m; };
+  const first = f.findIndex((x, i) => i && (x.w !== f0.w || x.op !== f0.op));
+  const g = end.w - f0.w, gx = end.x - f0.x, r = (n) => Math.round(n * 10) / 10;
+  let best = { w: 9, o: 9, x: 9 };
+  for (let shift = -16; shift <= 16; shift += 2) {
+    const start = f[first - 1].t + shift; let w = 0, o = 0, x = 0;
+    for (const p of f) { const u = ease((p.t - start) / 150); w = Math.max(w, Math.abs((p.w - f0.w) / g - u)); o = Math.max(o, Math.abs(p.op - u)); x = Math.max(x, Math.abs((p.x - f0.x) / gx - u)); }
+    if (w + o + x < best.w + best.o + best.x) best = { w, o, x };
+  }
+  return { growth: r(g), chevronFromRight: r(end.x), settledOpacity: end.op, widthFollowsEase: best.w < 0.1, opacityFollowsEase: best.o < 0.1, chevronFollowsEase: best.x < 0.1 };`
+
 export default {
   name: "orchestrator-tools-peer-row",
   viewport: "1300x1500",
@@ -61,7 +85,7 @@ export default {
         ...both("ours truncates a long sender title with an ellipsis (host titles are short fixed words)", "title.overflow", "title.text-overflow"),
         ...both("the ellipsis of ours is on the first paragraph (line-clamp), so Markdown blocks below stay clipped; the host's subtitle is plain text", "text.text-overflow"),
         ...both("the host row has no leading icon; ours is measured against the host chevron beside it (16px, rgb 128 = text-faint), which passes", "icon"),
-        ...both("ours is a button-backed row whose pointer is shown only when there is something to expand", "cursor"),
+        ...both("the user asked for no pointer cursor on the peer row (the host row shows one)", "cursor"),
       },
     },
     {
@@ -95,13 +119,46 @@ export default {
       }],
     },
     {
-      name: "peer-arrow",
-      ours: `${ROW} [data-slot=peer-arrow]`,
-      native: "[data-slot=collapsible-arrow]",
-      row: "[data-peer-card], [data-slot=collapsible-trigger]",
+      // The trailing slot is the host's `task-tool-action`, copied: collapsed it takes no room, on hover it grows, fades in and slides in
+      // over 150ms ease, so the fit-content row gets wider as the host row does. Measured on a row with no expand triangle (the host row
+      // has none), every frame must match; the triangle's 18px extra is checked separately below.
+      name: "tail-reveal",
+      ours: "[data-peer-card]:not([data-expandable=true]) [data-slot=peer-tail]",
+      native: "[data-component=task-tool-action]",
+      row: "[data-peer-card], [data-component=task-tool-surface]",
+      style: { states: ["rest", "row"], props: ["width", "opacity", "transform", "margin", "transition", "overflow"] },
+      allow: {
+        "rest.box.height": "ours' slot is the 20px line (its 24px button centres on it); the host's holds a 16px icon on the same centre",
+        "row.box.height": "same",
+        "rest.icon.width": "the first svg in ours' slot is the 14px expand triangle, not the chevron (compared in open-session-icon)",
+        "row.icon.width": "same",
+        "rest.icon.height": "same",
+        "row.icon.height": "same",
+        "curve.transform": "the slide is 4px, so a one-frame sampling phase difference between the two runs reads as up to 0.5px; the per-frame easing fit in tail-hover-in-per-frame covers the same motion with the phase removed",
+        "rest.overflow": "ours clips with overflow-clip-margin so the button's 4px side padding stays visible; the host's slot holds a bare 16px icon",
+        "row.overflow": "same",
+        "rest.margin": "ours cancels the row's 8px flex gap with a negative margin (the host's surface has no gap): the net space is 0 at rest and 2px when open on both",
+        "row.margin": "same",
+      },
+      motion: [{ name: "tail-reveal", from: "rest", to: "row", props: ["opacity", "transform", "width"], duration: 400, tolerance: 0.12 }],
+      behaviour: [
+        { name: "tail-hover-in-per-frame", check: "scenario", steps: [`js:${HOVER_START}`, "hover", "wait:800"], probe: HOVER_PROBE },
+      ],
+    },
+    {
+      // With the expand triangle in front the slot is 18px wider than a bare chevron (16 triangle + 2 gap): the same motion, a larger distance.
+      name: "tail-reveal-with-triangle",
+      ours: { selector: "[data-peer-card][data-expandable=true]", index: 0 },
+      native: "[data-component=task-tool-surface]",
       style: false,
-      motion: [{ name: "arrow-reveal", from: "rest", to: "row", props: ["opacity"], duration: 400 }],
-      behaviour: [{ name: "arrow-reveal-on-hover", check: "hover-reveal" }],
+      behaviour: [{
+        name: "tail-hover-in-per-frame",
+        check: "scenario",
+        only: "ours",
+        steps: [`js:${HOVER_START}`, "hover", "wait:800"],
+        probe: HOVER_PROBE,
+        expect: { result: { growth: 36, chevronFromRight: 12, settledOpacity: 1, widthFollowsEase: true, opacityFollowsEase: true, chevronFollowsEase: true } },
+      }],
     },
     {
       // The go-to-session affordance: the host's row shows a bare 16px chevron-right (`task-tool-action`, rgb 128 = text-faint)
@@ -115,11 +172,18 @@ export default {
       allow: {
         ...Object.fromEntries(["row", "hover"].flatMap((state) => [[`${state}.row.inset-end`, "ours sits in a 24px button after the triangle; the icon's centre is 20px from the row's right edge on both sides (checked in alignment-open-icon)"], [`${state}.row.centre-dy`, "checked in alignment-open-icon"]])),
       },
+    },
+    {
+      // Where the chevron ends up once the row is hovered: the same catalog icon at the same size, distance from the right edge and height.
+      name: "open-session-icon-position",
+      ours: "[data-peer-card]:not([data-expandable=true])",
+      native: "[data-component=task-tool-surface]",
+      style: false,
       behaviour: [{
         name: "icon-source-and-centre",
         check: "scenario",
         steps: ["hover", "wait:400"],
-        probe: `const s = el.closest("[data-peer-card], [data-component=task-tool-surface]"), o = s.getBoundingClientRect(), r = el.getBoundingClientRect(); return { href: el.querySelector("use").getAttribute("href"), size: [r.width, r.height], fromRight: Math.round((o.right - (r.left + r.width / 2)) * 10) / 10, cy: Math.round((r.top + r.height / 2 - o.top) * 10) / 10, color: getComputedStyle(el).color }`,
+        probe: `const ours = el.hasAttribute("data-peer-card"), v = el.querySelector(ours ? ".peer-open svg" : "[data-component=task-tool-action] svg"), o = el.getBoundingClientRect(), r = v.getBoundingClientRect(); return { href: v.querySelector("use").getAttribute("href"), size: [r.width, r.height], fromRight: Math.round((o.right - (r.left + r.width / 2)) * 10) / 10, cy: Math.round((r.top + r.height / 2 - o.top) * 10) / 10, color: getComputedStyle(v).color }`,
       }],
     },
     {

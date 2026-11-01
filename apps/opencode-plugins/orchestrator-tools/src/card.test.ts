@@ -65,3 +65,11 @@ test("the row keeps the host's spacing and type, and the go-to-session chevron",
   assert.ok(source.includes('icon="chevron-right"'))
   assert.ok(source.includes('[data-component="markdown"] { margin: 0; padding: 0; font: inherit;'))
 })
+
+// Decisions in DESIGN.md: no pointer cursor, the host's trailing-slot reveal, and the header held under the pointer on toggle.
+test("the row has no pointer cursor, reveals its slot like the host and holds its header on toggle", () => {
+  const source = readFileSync(new URL("./gui.tsx", import.meta.url), "utf8")
+  assert.ok(!source.includes("cursor: pointer"))
+  assert.ok(source.includes("transition: width 150ms, margin-inline-start 150ms, opacity 150ms, color 150ms, transform 150ms"))
+  assert.ok(source.includes("holdTop(scroller, header, root"))
+})
