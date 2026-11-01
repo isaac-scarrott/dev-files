@@ -110,5 +110,11 @@ export default {
       native: "[data-slot=session-chat-panel]",
       na: "the same chat panel moves for both siblings (the dock and the host's review panel), so the spec's open/close hook cannot tell the sides apart; the shift is sampled per frame against the review panel and the sidebar in the hand-off instead",
     },
+    {
+      name: "header-badge",
+      ours: "[data-agents-badge]",
+      native: "[data-component=tag][data-variant=accent]",
+      na: "no accent tag exists in the harness to measure: the host shows one only as the sidebar toggle's unread dot (needs an unread session) and its Badge only neutral in Settings; the badge is the host's own tag markup (data-component=tag, data-variant=accent) so badge.css styles it, and the harness check read 16px height, 4px padding, 2px radius, 11px/530 tabular, bg-accent on text-contrast, light and dark",
+    },
   ],
 }

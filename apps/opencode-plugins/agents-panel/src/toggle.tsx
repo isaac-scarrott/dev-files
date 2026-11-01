@@ -1,8 +1,9 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
-import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { chatCard, claimPad, dockState } from "./dock"
 import { glide, present } from "./dock-motion"
+import { runningSubagents } from "./agents"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast" | "layout">
@@ -17,6 +18,8 @@ const DOCK_ID = "agents-dock"
 const NARROW_BELOW = 900
 
 const GAP = 8
+// The badge shows at most this many; "99+" keeps it two glyphs wide.
+const MAX_BADGE = 99
 
 /**
  * The header toggle for a session's subagents. With the right side panel closed it shows or hides the persistent floating
@@ -27,6 +30,9 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   const { ctx } = props
   const session = () => props.input.session
   const [open, setOpen] = createSignal(false)
+  // Running subagents and background shells of the viewed session; a tab that is not on screen shows none.
+  const count = createMemo(() => (props.input.active ? runningSubagents(session(), () => 0).length : 0))
+  const label = () => (count() > 0 ? `Subagents · ${count()}` : "Subagents")
   // The host's own reactive answer for this session's right region, and a window too narrow for chat plus window.
   const sideOpen = () => props.ctx.layout.side.opened(session())
   const [narrow, setNarrow] = createSignal(window.innerWidth < NARROW_BELOW)
@@ -176,7 +182,7 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
 
   return (
     <>
-      <ctx.ui.Tooltip value="Subagents">
+      <ctx.ui.Tooltip value={label()}>
         <span
           ref={wrap}
           data-agents-toggle
@@ -186,10 +192,15 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
           <ctx.ui.IconButton
             icon="bullet-list"
             size="large"
-            label="Subagents"
+            label={label()}
             pressed={state().docked ? state().shown : open()}
             onClick={() => (state().docked ? props.dock.setVisible(!props.dock.visible()) : setOpen((value) => !value))}
           />
+          <Show when={count() > 0}>
+            <span data-component="tag" data-variant="accent" data-appearance="compact" data-agents-badge aria-hidden="true">
+              {count() > MAX_BADGE ? `${MAX_BADGE}+` : count()}
+            </span>
+          </Show>
         </span>
       </ctx.ui.Tooltip>
       <Show when={props.input.active && mounted() ? card() : undefined}>

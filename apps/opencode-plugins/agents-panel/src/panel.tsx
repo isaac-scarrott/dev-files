@@ -170,6 +170,13 @@ export const styles = `
     [data-slot=spinner-dots] rect { animation: none !important; opacity: var(--still); }
   }
   [data-agents-toggle] { position: relative; display: inline-flex; }
+  /* The host's own tag (accent variant: data-component="tag" in @opencode/ui badge.css) placed as the sidebar toggle's unread
+     dot is: out of flow at the button's top end corner (4px up, 6px out: a 16px tag would cover the 16px icon at the dot's -2px), ringed in the page base so it reads against the button.
+     Out of flow, so showing or hiding it never moves the header's icons; it appears and goes instantly, as the host's does. */
+  [data-agents-badge] {
+    position: absolute; top: -4px; inset-inline-end: -6px; pointer-events: none;
+    box-shadow: 0 0 0 1.5px var(--v2-background-bg-base);
+  }
   /* The host lays the header actions out as a flex row, and slot content renders before the host's own items. The
      context button moves ahead of the toggle so the toggle sits directly after it. */
   .session-header-actions > :has(> button[data-component="button-v2"]) { order: -1 }
