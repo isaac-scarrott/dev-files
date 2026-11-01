@@ -1,0 +1,11 @@
+import type { Plugin } from "@opencode/plugin";
+import type { Host } from "./host.js";
+import type { Hub } from "./hub.js";
+import type { Options } from "./options.js";
+export declare const NAMESPACE = "scheduler";
+type Editor = Parameters<Parameters<Plugin.Context["tool"]["transform"]>[0]>[0];
+export declare const SCHEDULE_DESCRIPTION: string;
+export declare const LIST_DESCRIPTION = "List scheduled tasks with their id, name, kind, next run, last run and target session, plus recently ended ones and why they ended.";
+export declare const CANCEL_DESCRIPTION = "Cancel a scheduled task by id (from schedule_task or list_schedules). It will not run again.";
+export declare function registerTools(editor: Editor, host: Host, hub: Hub, options: Options): void;
+export {};
