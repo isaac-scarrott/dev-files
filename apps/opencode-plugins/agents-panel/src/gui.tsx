@@ -3,7 +3,6 @@ import { Schema } from "effect"
 import { createEffect, onCleanup, Show } from "solid-js"
 import { cleanupOnce, closeSubagentTabs } from "./cleanup"
 import { styles } from "./panel"
-import { createSidebar, dockState } from "./dock"
 import { installBackgroundOption } from "./setting"
 import { SubagentsToggle } from "./toggle"
 
@@ -13,7 +12,7 @@ export default Plugin.define({
   // Off until the user picks "Panel" in Settings > Timeline > Background activity.
   stores: {
     mode: Store.global(Schema.Struct({ enabled: Schema.Boolean }), { enabled: false }),
-    // The user's choice for the floating window, kept while the left sidebar is open or closed.
+    // The user's choice for the floating window, hidden whenever the right panel opens.
     dock: Store.global(Schema.Struct({ visible: Schema.Boolean }), { visible: false }),
   },
   setup(ctx) {
@@ -32,26 +31,13 @@ export default Plugin.define({
       background.refresh()
     })
 
-    const { sidebar, width: asideWidth } = createSidebar()
     const visible = () => ctx.stores.dock.value.visible
     const dock = {
-      sidebar,
-      asideWidth,
       visible,
       setVisible: (value: boolean) => {
         if (value !== visible()) ctx.stores.dock.update((draft) => { draft.visible = value })
       },
     }
-    // Opening the sidebar hides the window for good: the stored choice becomes hidden, so closing the sidebar later starts without it.
-    createEffect(() => {
-      if (sidebar() === "open") dock.setVisible(false)
-    })
-    // The chat row reserves the window's width through this variable (see the dock rules in panel.tsx).
-    createEffect(() => {
-      const inset = dockState({ enabled: enabled(), sidebar: sidebar(), visible: visible() }).inset
-      document.documentElement.style.setProperty("--agents-dock-pad", `${inset}px`)
-      onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-pad"))
-    })
 
     ctx.add(Command, {
       id: "close-tabs",
