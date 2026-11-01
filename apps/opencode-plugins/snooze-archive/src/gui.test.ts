@@ -22,7 +22,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [connected, setConnected] = createSignal(true)
   const listeners = new Map<string, Set<(e: any) => void>>()
   const commands = new Map<string, { run(): Promise<void> | void }>()
-  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[] }
+  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, listInputs: [] as any[], requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[] }
   let permissions: unknown[] | undefined = []
   let forms: unknown[] | undefined = []
   let family: string[] | undefined = []
@@ -30,6 +30,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   let metadata: "ready" | "missing" | "no-time" = "ready"
   let sync = async () => {}
   let archiveError = false
+  let listImpl: ((input: any) => any) | undefined
+  let getImpl: ((input: any) => any) | undefined
   let select = ""
   let confirmResult = true
   let removeError = false
@@ -40,8 +42,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const server = {
     id: "server", name: "Local", compatible: true, get connected() { return connected() },
     client: { session: {
-      list: async () => { calls.list++; if (archiveError) throw new Error("offline"); return { data: archived ? [info()] : [], cursor: {} } },
-      get: async () => info(),
+      list: async (input: any) => { calls.list++; calls.listInputs.push(input); if (archiveError) throw new Error("offline"); if (listImpl) return listImpl(input); return { data: archived ? [info()] : [], cursor: {} } },
+      get: async (input: any) => getImpl ? getImpl(input) : info(),
       remove: async (input: unknown) => { calls.removed.push(input); if (removeError) throw new Error("server refused") },
       update: async (input: { archived: boolean }) => { calls.updates.push(input); if (archiveError) throw new Error("denied"); archived = input.archived },
     } },
@@ -95,6 +97,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     slots, confirm: (value: boolean) => { confirmResult = value }, removeError: (value: boolean) => { removeError = value },
     fail: (value: boolean) => { archiveError = value },
     select: (value: string) => { select = value },
+    listWith: (fn: (input: any) => any) => { listImpl = fn }, getWith: (fn: (input: any) => any) => { getImpl = fn },
+    openArchive: () => { const toggle = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[1]; if (toggle.getAttribute("aria-expanded") !== "true") toggle.click() },
     reopen: () => setTabs([{ key: "tab", session }]),
     emit: (name: string, sessionID = "s") => listeners.get(name)?.forEach((fn) => fn({ created: Date.now() + 1, data: { sessionID } })),
     async close() {
@@ -110,6 +114,9 @@ test("setup cold-starts, hydrates server inventory, tears down and reloads witho
     f.start(); await f.flush()
     assert.match(f.doc.body.textContent, /Archived—/)
     f.setServers(["server"]); await f.flush()
+    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.equal(f.calls.list, 0, "nothing is fetched until Archived is expanded")
+    f.openArchive(); await f.flush()
     assert.match(f.doc.body.textContent, /Archived0/)
     assert.equal(f.calls.list, 1)
     assert.ok([...f.listeners.values()].every((handlers) => handlers.size === 1))
@@ -158,7 +165,7 @@ test("new events wake only matching snoozed server/session; archived events do n
 test("archive failure keeps tabs; confirmed archive count and restore use native API", async () => {
   const f = fixture()
   try {
-    f.start(); f.setServers(["server"]); await f.flush()
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
     f.fail(true); await f.commands.get("archive")!.run()
     assert.equal(f.calls.closed.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /denied/)
@@ -199,6 +206,7 @@ test("expired snooze is retained offline, wakes on reconnect; archive failures n
     f.fail(true); f.setConnected(true); await f.flush()
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
+    f.openArchive(); await f.flush()
     assert.match(f.doc.body.textContent, /Archived—/)
     assert.match(f.doc.body.textContent, /offline/)
   } finally { await f.close() }
@@ -475,6 +483,7 @@ test("archived rows: one hover action (Restore); right-click offers Restore and 
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
     assert.deepEqual([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")), ["Restore Session"])
     row.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
@@ -513,6 +522,7 @@ test("clicking an Archived row opens it without unarchiving; refresh and events 
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     assert.deepEqual(f.calls.closed, [], "refresh must not close a tab the user opened")
     const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
     const link = row.querySelector<HTMLElement>("a")!
@@ -533,6 +543,7 @@ test("archiving closes the tab at that moment; Restore is the only unarchive and
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     await f.commands.get("archive")!.run(); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     assert.deepEqual(f.calls.closed, ["tab"])
@@ -546,6 +557,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     const rightClick = () => (f.doc.querySelector("[data-sa-row]") as HTMLElement).dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
     f.removeError(true); rightClick()
     click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
@@ -723,5 +735,112 @@ test("Home row menu: the row's session gets the pair, from a contextmenu or the 
     row.querySelector("button")!.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }))
     const again = mount(f, HOST_MENU("", HEADER)); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.equal(again.querySelectorAll("[data-sa-menu]").length, 2)
+  } finally { await f.close() }
+})
+
+// A server of `total` archived top-level sessions, newest first, paged by index cursors; `mutable` lets a test restore or add some.
+function archiveServer(f: ReturnType<typeof fixture>, total: number) {
+  const infos = new Map<string, any>()
+  const order: string[] = []
+  const make = (id: string, updated: number, archived = true) => ({ id, title: `T ${id}`, time: { created: 1, updated, ...(archived ? { archived: updated } : {}) }, location: { directory: "/repo" } })
+  for (let i = 0; i < total; i++) { const id = `r${i}`; infos.set(id, make(id, 1000 - i)); order.push(id) }
+  f.listWith((input) => {
+    // Keyset cursor: the id of the last row returned, so a restore elsewhere shifts nothing.
+    const start = input.cursor ? order.indexOf(input.cursor) + 1 : 0
+    const live = order.slice(start).filter((id) => infos.get(id).time.archived !== undefined)
+    const data = live.slice(0, input.limit).map((id) => infos.get(id))
+    return { data, cursor: live.length > input.limit ? { next: data.at(-1).id } : {} }
+  })
+  f.getWith((input) => infos.get(input.sessionID))
+  return {
+    restore: (id: string) => { infos.set(id, make(id, infos.get(id).time.updated, false)); f.emit("session.unarchived", id) },
+    archiveNew: (id: string, updated: number) => { infos.set(id, make(id, updated)); order.unshift(id); f.emit("session.archived", id) },
+  }
+}
+const archivedIds = (f: { doc: Document }) => [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="archived"] [data-sa-row]:not([data-leaving])')].map((row) => row.dataset.saRow!.split("\n")[1])
+const moreButton = (f: { doc: Document }, kind: string) => f.doc.querySelector<HTMLButtonElement>(`[data-sa-kind="${kind}"] [data-sa-more]:not([hidden]) button`)
+
+test("Archived loads page by page: 10 first, then 25 per press, count carries + until the last page", async () => {
+  const f = fixture()
+  try {
+    archiveServer(f, 40)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(f.calls.listInputs.length, 0)
+    f.openArchive(); await f.flush()
+    assert.deepEqual(f.calls.listInputs, [{ archived: true, parentID: null, limit: 10, cursor: undefined }])
+    assert.equal(archivedIds(f).length, 10)
+    assert.match(f.doc.body.textContent, /Archived10\+/)
+    assert.equal(moreButton(f, "archived")!.textContent, "Show 25 more")
+    click(moreButton(f, "archived")); await f.flush()
+    assert.deepEqual(f.calls.listInputs.at(-1), { archived: true, parentID: null, limit: 25, cursor: "r9" })
+    assert.equal(archivedIds(f).length, 35)
+    assert.match(f.doc.body.textContent, /Archived35\+/)
+    click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 40)
+    assert.match(f.doc.body.textContent, /Archived40(?!\+)/)
+    assert.equal(moreButton(f, "archived"), null, "nothing left: no button")
+    assert.equal(new Set(archivedIds(f)).size, 40)
+    assert.equal(f.calls.listInputs.length, 3, "no fetch beyond what was asked for")
+  } finally { await f.close() }
+})
+
+test("restore on page 2 loses and duplicates nothing; a new archive lands first; collapse keeps loaded pages", async () => {
+  const f = fixture()
+  try {
+    const server = archiveServer(f, 60)
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
+    click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 35)
+    const calls = f.calls.listInputs.length
+    server.restore("r12"); await f.flush()
+    const ids = archivedIds(f)
+    assert.equal(ids.includes("r12"), false)
+    assert.equal(new Set(ids).size, ids.length, "no duplicate rows")
+    assert.equal(ids.length, 35, "window refilled from the next page")
+    assert.deepEqual(ids, [...Array(36).keys()].filter((i) => i !== 12).map((i) => `r${i}`))
+    assert.equal(f.calls.listInputs.length, calls + 1)
+    // The refill fetched a whole page (25): all 59 are loaded, so the count is exact and the button names what is left.
+    assert.match(f.doc.body.textContent, /Archived59(?!\+)/)
+    assert.equal(moreButton(f, "archived")!.textContent, "Show 24 more")
+    server.archiveNew("fresh", 2000); await f.flush()
+    assert.equal(archivedIds(f)[0], "fresh")
+    assert.equal(f.calls.listInputs.length, calls + 1, "an event never refetches the archive")
+    const toggle = f.doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[1]
+    toggle.click(); toggle.click(); await f.flush()
+    assert.equal(f.calls.listInputs.length, calls + 1, "re-expanding keeps what was loaded")
+    assert.equal(new Set(archivedIds(f)).size, archivedIds(f).length)
+  } finally { await f.close() }
+})
+
+test("an archived group never opened ignores archive events; refresh reloads the pages shown", async () => {
+  const f = fixture()
+  try {
+    const server = archiveServer(f, 30)
+    f.start(); f.setServers(["server"]); await f.flush()
+    server.archiveNew("fresh", 2000); await f.flush()
+    f.commands.get("refresh")!.run(); await f.flush()
+    assert.equal(f.calls.listInputs.length, 0)
+    f.openArchive(); await f.flush(); click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 31)
+    assert.equal(archivedIds(f)[0], "fresh")
+    f.calls.listInputs.length = 0
+    await f.commands.get("refresh")!.run(); await f.flush()
+    assert.deepEqual(f.calls.listInputs.map((i) => [i.limit, i.cursor]), [[10, undefined], [25, "r8"]])
+    assert.equal(archivedIds(f).length, 31)
+  } finally { await f.close() }
+})
+
+test("Snoozed paginates rendering only: 10 rows, label shows what remains, count is exact", async () => {
+  const now = Date.now()
+  const entries: Snooze[] = Array.from({ length: 12 }, (_, i) => ({ server: "server", id: `z${i}`, title: `Z${i}`, at: now, until: now + 3_600_000 + i, busy: 0, updated: 1 }))
+  const f = fixture(entries)
+  try {
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-kind="snoozed"] [data-sa-row]').length, 10)
+    assert.match(f.doc.body.textContent, /Snoozed12/)
+    assert.equal(moreButton(f, "snoozed")!.textContent, "Show 2 more")
+    click(moreButton(f, "snoozed")); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-kind="snoozed"] [data-sa-row]').length, 12)
+    assert.equal(moreButton(f, "snoozed"), null)
   } finally { await f.close() }
 })
