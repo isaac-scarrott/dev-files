@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
 import { jumpTo, type Host } from "./jump"
+import { seekTop } from "./target"
 
 const INSET = 48
 const VIEWPORT = 600
@@ -292,6 +293,81 @@ test("an aborted jump stops after the load and scrolls nothing", async () => {
   try {
     assert.equal(await jumpTo(f.host, "m2", controller.signal), "aborted")
     assert.deepEqual(f.scrolls, [])
+  } finally {
+    await f.close()
+  }
+})
+
+/** `count` turns whose height grows with the index, so the share-of-height estimate misses and needs correcting. */
+function longThread(count: number) {
+  const layout: Spec[] = []
+  const ids: string[] = []
+  let y = INSET
+  for (let index = 0; index < count; index += 1) {
+    const owner = `m${String(index).padStart(5, "0")}`
+    ids.push(owner)
+    layout.push({ owner, y, height: 60, prompt: true })
+    layout.push({ owner, y: y + 60, height: 300 + index * 0.4 })
+    y += 360 + index * 0.4
+  }
+  return { layout, ids, total: y }
+}
+
+test("a far prompt is reached by one seek write and a few corrections, not a viewport per frame", async () => {
+  const { layout, ids, total } = longThread(5000)
+  const target = 2500
+  const tail = layout.slice(-2)
+  const f = await fixture({ ids, scrollTop: total - VIEWPORT, total, rows: tail })
+  virtualize(f, layout, { overscan: 300, lag: 1 })
+  try {
+    assert.equal(await jumpTo(f.host, ids[target]!, new AbortController().signal), "done")
+    const want = layout[target * 2]!.y - INSET
+    assert.ok(Math.abs(f.state.scrollTop - want) <= 1, `landed ${f.state.scrollTop}, wanted ${want}`)
+    const writes = f.scrolls.filter((scroll) => scroll.behavior === "auto").length
+    assert.ok(writes <= 14, `seek + corrections + probe stayed small, got ${writes} writes`)
+    assert.ok(f.calls.frames < 80, `frames ${f.calls.frames}`)
+    assert.equal(f.scrolls.at(-1)?.behavior, "smooth", "the final screen glides")
+    const jumps = f.scrolls.filter((scroll) => scroll.behavior === "auto")
+    assert.ok(Math.abs(jumps[0]!.top - seekTop({ index: target, count: ids.length, scrollHeight: total, clientHeight: VIEWPORT })) <= 1, "the first write is the estimate")
+  } finally {
+    await f.close()
+  }
+})
+
+test("a user wheel during the seek stops the jump where it is", async () => {
+  const { layout, ids, total } = longThread(3000)
+  const f = await fixture({ ids, scrollTop: total - VIEWPORT, total, rows: layout.slice(-2) })
+  virtualize(f, layout, { overscan: 300, lag: 1 })
+  const original = f.host.frame
+  let frames = 0
+  f.host.frame = async () => {
+    await original()
+    frames += 1
+    if (frames === 3) f.scroller.dispatchEvent(new globalThis.window.Event("wheel", { bubbles: true }))
+  }
+  try {
+    assert.equal(await jumpTo(f.host, ids[1500]!, new AbortController().signal), "aborted")
+    const writes = f.scrolls.length
+    assert.ok(writes >= 1 && writes <= 3, `stopped after ${writes} writes`)
+  } finally {
+    await f.close()
+  }
+})
+
+test("a new click (abort) during the seek stops it", async () => {
+  const { layout, ids, total } = longThread(3000)
+  const f = await fixture({ ids, scrollTop: total - VIEWPORT, total, rows: layout.slice(-2) })
+  virtualize(f, layout, { overscan: 300, lag: 1 })
+  const controller = new AbortController()
+  const original = f.host.frame
+  let frames = 0
+  f.host.frame = async () => {
+    await original()
+    if (++frames === 3) controller.abort()
+  }
+  try {
+    assert.equal(await jumpTo(f.host, ids[1500]!, controller.signal), "aborted")
+    assert.ok(f.scrolls.length <= 3)
   } finally {
     await f.close()
   }

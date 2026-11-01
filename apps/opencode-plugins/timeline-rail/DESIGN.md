@@ -247,6 +247,14 @@ bucket's first prompt only. Now there are 400 / 1,000 / 5,000 ticks and the poin
   gradient plus band: p50 8.4ms at 400, 1,000 and 5,000 alike.
 - The pointermove handler runs 0.5ms (400) to 2.6ms (5,000) of script in a tight loop of synthetic events including
   the forced layout of the strip rect.
-- Not changed: a jump to a far prompt still probes one viewport per frame (`jump.ts`). At 5,000 prompts a jump from the
-  end to the middle took about 10s and an interrupting click stops it early; it lands within a few prompts of the
-  pointer (one pixel of strip is ~7 prompts at 5,000).
+- **Far jumps** (`jump.ts` `seek`, `target.ts` `seekTop` / `correction`): when the prompt is 20+ viewports away, one
+  write goes to its share of the content height, then up to 24 corrections move by (index gap to the middle of the
+  turns in view) x (measured height between two mounted prompt rows, else content height / count), two frames each
+  for the virtualizer to render, until the prompt's turn is in view. The old one-viewport-per-frame probe then mounts
+  it and the final screen glides. The jump also ends on the user's own wheel, touch, pointer-down or key, and on abort,
+  and repeats reveal-and-glide up to 4 rounds because rows above a far prompt are estimates until they mount.
+  Harness, 5,000 prompts, click from the end, time to the prompt resting under the header (fold within 14px, scroll
+  still 12 frames): middle (question 2501) 2.6s before, 0.27s after; questions 501, 4500 and 151 did not land within
+  40s before and took 0.22 / 0.36 / 0.29s after. While seeking, 1-3 unrelated prompts pass the top for a frame or two.
+- A click now jumps to the prompt the card shows (`pointed()`), not a re-derived one: a click's whole-pixel `clientY`
+  is several prompts off the pointermove position at 5,000 prompts (found when click 501 landed on 496).

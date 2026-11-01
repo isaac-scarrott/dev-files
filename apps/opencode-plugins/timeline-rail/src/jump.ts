@@ -1,4 +1,4 @@
-import { currentPrompt, glidePlan, probeDirection, revealPlan, type Row } from "./target"
+import { correction, currentPrompt, glidePlan, probeDirection, revealPlan, seekTop, type Row } from "./target"
 
 /** What a jump needs from the timeline it runs in. */
 export type Host = {
@@ -26,6 +26,13 @@ const GLIDE_LIMIT = 120
 const PROBE_LIMIT = 200
 const PROBE_ATTEMPTS = 3
 const PAGE_LIMIT = 5
+/** A pre-seek pays off when probing would take this many viewports of one-per-frame paging or more. */
+const SEEK_VIEWPORTS = 20
+/** Correction rounds after the seek, each waiting for the virtualizer to render the new position. */
+const SEEK_ROUNDS = 24
+const RENDER_FRAMES = 2
+/** Reveal-and-glide rounds before a jump settles for where it is. */
+const LAND_ROUNDS = 4
 
 /** Mounted rows in document order, as the host's cursor reads them. */
 export function readRows(scroller: HTMLElement): Row[] {
@@ -138,6 +145,46 @@ async function probe(host: Host, id: string, signal: AbortSignal, search: { step
   }
 }
 
+/**
+ * Far anchors: one write to the estimated offset of the prompt (its share of the content height), then a few
+ * corrections that move by the index gap times the measured prompt height until the prompt's turn is in view. The probe
+ * then mounts and settles it with small steps. Skipped when the prompt is near enough for the probe to reach it quickly.
+ */
+async function seek(host: Host, id: string, signal: AbortSignal) {
+  const { scroller } = host
+  const ids = host.ids()
+  const target = ids.indexOf(id)
+  const to = seekTop({ index: target, count: ids.length, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight })
+
+  if (Math.abs(to - scroller.scrollTop) < SEEK_VIEWPORTS * scroller.clientHeight) return
+  const indexOf = new Map(ids.map((owner, index) => [owner, index] as const))
+  const fallback = scroller.scrollHeight / Math.max(1, ids.length)
+  const max = () => Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+  const render = async () => {
+    for (let frame = 0; frame < RENDER_FRAMES && !signal.aborted; frame += 1) await host.frame()
+  }
+
+  scroller.scrollTo({ top: to, behavior: "auto" })
+  await render()
+
+  for (let round = 0; round < SEEK_ROUNDS && !signal.aborted; round += 1) {
+    if (anchorOf(scroller, id)) return
+    const delta = correction({ rows: readRows(scroller), indexOf, target, fallback, box: scroller.getBoundingClientRect() })
+
+    if (delta === 0) return
+
+    if (delta === undefined) {
+      await render()
+      continue
+    }
+    const next = Math.min(max(), Math.max(0, scroller.scrollTop + delta))
+
+    if (next === scroller.scrollTop) return
+    scroller.scrollTo({ top: next, behavior: "auto" })
+    await render()
+  }
+}
+
 async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0): Promise<void> {
   const { scroller } = host
   const plan = revealPlan({ ids: host.ids(), target: id, more: host.more() })
@@ -156,6 +203,8 @@ async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0)
 
     return settle(host, id, signal)
   }
+
+  await seek(host, id, signal)
 
   // The step and direction carry across attempts, so a retry after an overshoot keeps the halved step.
   const search = { step: scroller.clientHeight, direction: 0 as -1 | 0 | 1 }
@@ -224,18 +273,40 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
   return true
 }
 
+/** Events that mean the user took the wheel: the jump stops where their input put the scroller. */
+const TAKEOVER = ["wheel", "touchstart", "pointerdown", "keydown"] as const
+
 /** Takes the timeline to the prompt `id`, landing it right under the sticky header. */
-export async function jumpTo(host: Host, id: string, signal: AbortSignal): Promise<Outcome> {
+export async function jumpTo(host: Host, id: string, outer: AbortSignal): Promise<Outcome> {
   if (!host.ids().includes(id)) return "none"
   unpin(host.scroller)
+  // The user's own wheel, touch or key ends the jump, whichever phase it is in; the plugin's own unpin ran before this.
+  const own = new AbortController()
+  const stop = () => own.abort()
+  const signal = AbortSignal.any([outer, own.signal])
 
-  if (!anchorOf(host.scroller, id)) {
-    await revealFar(host, id, signal)
+  for (const type of TAKEOVER) host.scroller.addEventListener(type, stop, { passive: true })
 
-    if (signal.aborted) return "aborted"
+  try {
+    // Rows above a far prompt are estimated until they mount, so the offset a glide aimed at can be off once they are
+    // measured, and the prompt can unmount again: reveal and glide once more from where it landed, a few times at most.
+    for (let round = 0; round < LAND_ROUNDS; round += 1) {
+      if (!anchorOf(host.scroller, id)) {
+        await revealFar(host, id, signal)
+
+        if (signal.aborted) return "aborted"
+      }
+
+      if (!(await glide(host, id, signal))) return "none"
+
+      if (signal.aborted) return "aborted"
+      const landed = anchorOf(host.scroller, id)
+
+      if (landed && Math.abs(offsetOf(host.scroller, landed) - host.scroller.scrollTop) <= 2) break
+    }
+
+    return signal.aborted ? "aborted" : "done"
+  } finally {
+    for (const type of TAKEOVER) host.scroller.removeEventListener(type, stop)
   }
-
-  if (!(await glide(host, id, signal))) return "none"
-
-  return signal.aborted ? "aborted" : "done"
 }

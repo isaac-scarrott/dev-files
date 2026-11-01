@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { currentPrompt, glidePlan, probeDirection, revealPlan, type Row } from "./target"
+import { correction, currentPrompt, glidePlan, seekTop, probeDirection, revealPlan, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -91,4 +91,27 @@ test("glide plan glides short distances, jumps to one screen away for long ones,
     to: 5000,
     behavior: "auto",
   })
+})
+
+test("seek estimate: the prompt's share of the content height, clamped to the scrollable range", () => {
+  const base = { count: 1000, scrollHeight: 400000, clientHeight: 800 }
+  assert.equal(seekTop({ ...base, index: 0 }), 0)
+  assert.equal(seekTop({ ...base, index: 500 }), 200000)
+  assert.equal(seekTop({ ...base, index: 999 }), 399200)
+  assert.equal(seekTop({ ...base, index: 1000 }), 399200, "clamped to the end")
+  assert.equal(seekTop({ count: 0, scrollHeight: 0, clientHeight: 800, index: 0 }), 0)
+})
+
+test("correction: index gap to the middle of the turns in view times the measured prompt height", () => {
+  const indexOf = new Map(Array.from({ length: 100 }, (_, index) => [`m${index}`, index] as const))
+  const box = { top: 0, bottom: 800 }
+  // Prompts 40 and 41 are mounted 500px apart, so a prompt is 500px: the target 10 turns below the middle (40.5).
+  const rows = [row("m40", 100, 60, true), row("m40", 160, 440), row("m41", 600, 60, true), row("m41", 660, 440)]
+  assert.equal(correction({ rows, indexOf, target: 51, fallback: 300, box }), 5250)
+  assert.equal(correction({ rows, indexOf, target: 30, fallback: 300, box }), -5250)
+  assert.equal(correction({ rows, indexOf, target: 41, fallback: 300, box }), 0, "in view: the row is about to mount")
+  // One prompt row mounted: the content-height average stands in.
+  assert.equal(correction({ rows: [row("m40", 100, 60, true), row("m40", 160, 900)], indexOf, target: 50, fallback: 300, box }), 3000)
+  assert.equal(correction({ rows: [row("m40", 900, 60, true)], indexOf, target: 50, fallback: 300, box }), undefined, "nothing in view")
+  assert.equal(correction({ rows: [row("zzz", 100, 60)], indexOf, target: 50, fallback: 300, box }), undefined, "unlisted owner")
 })

@@ -523,7 +523,9 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
                   }}
                   onClick={(event) => {
                     if (event.detail === 0) return
-                    select(fromPointer(event) ?? undefined)
+                    // The prompt the card shows: a click event's clientY is a whole pixel, which at thousands of prompts
+                    // is several prompts away from the fractional pointermove position the card was opened at.
+                    select(pointed() ?? fromPointer(event) ?? undefined)
                     event.currentTarget.blur()
                   }}
                   onFocus={(event) => {

@@ -81,3 +81,59 @@ export function glidePlan(input: {
 
   return { to, start, behavior: "smooth" }
 }
+
+/**
+ * Where prompt `index` of `count` probably sits: its share of the content height. The virtualizer's total is an
+ * estimate that sharpens as rows are measured, so this lands near the prompt, not on it; `correction` does the rest.
+ */
+export function seekTop(input: {
+  readonly index: number
+  readonly count: number
+  readonly scrollHeight: number
+  readonly clientHeight: number
+}): number {
+  const max = Math.max(0, input.scrollHeight - input.clientHeight)
+
+  return Math.min(max, Math.max(0, Math.round((input.index / Math.max(1, input.count)) * input.scrollHeight)))
+}
+
+/**
+ * How far to scroll from where the rows in view are, to bring prompt `target` to them: the index gap to the middle of
+ * the turns shown, times the pixels a prompt takes. That height is measured between mounted prompt rows when two or more
+ * are mounted, else `fallback` (content height over prompt count). 0 when the target's turn is already in view (its row
+ * is about to mount), undefined when no listed row is in view.
+ */
+export function correction(input: {
+  readonly rows: readonly Row[]
+  readonly indexOf: ReadonlyMap<string, number>
+  readonly target: number
+  readonly fallback: number
+  readonly box: { readonly top: number; readonly bottom: number }
+}): number | undefined {
+  let lo = Number.POSITIVE_INFINITY
+  let hi = -1
+
+  for (const row of input.rows) {
+    if (row.bottom <= input.box.top || row.top >= input.box.bottom) continue
+    const index = input.indexOf.get(row.owner)
+
+    if (index === undefined) continue
+    lo = Math.min(lo, index)
+    hi = Math.max(hi, index)
+  }
+
+  if (hi === -1) return undefined
+
+  if (input.target >= lo && input.target <= hi) return 0
+  const prompts = input.rows.flatMap((row) => {
+    const index = row.prompt ? input.indexOf.get(row.owner) : undefined
+
+    return index === undefined ? [] : [{ index, top: row.top }]
+  })
+  const first = prompts[0]
+  const last = prompts.at(-1)
+  const measured = first && last && last.index > first.index ? (last.top - first.top) / (last.index - first.index) : 0
+  const pixels = measured > 0 ? measured : input.fallback
+
+  return Math.round((input.target - (lo + hi) / 2) * pixels)
+}
