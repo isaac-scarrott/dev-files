@@ -130,6 +130,12 @@ open delay, glide between ticks, "Working...", a separate loading mark, bucketin
 - **First paint**: ticks and the in-view layer animate only from two frames after the rail exists (`data-armed`), so
   nothing fades or slides in when the thread opens. t3-code has no such guard and fades the in-view layer on first load.
 
+## Peer messages
+
+A user message with `metadata.peerMessage` (set by orchestrator-tools' `send_message`) is not the user's prompt: no tick,
+not in `loadedIds`, not a jump target, not counted for `MIN_ITEMS` or the window. It still ends the previous turn, so
+the previous tick's snippet is the reply before it.
+
 ## Current prompt
 
 Recomputed on every scroll (rAF-throttled), resize (`ResizeObserver` on the view and the visible area), list change and

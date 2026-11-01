@@ -2,7 +2,7 @@ import { Error as ToolError } from "@opencode/plugin/promise/tool"
 import type { Host, SessionInfo } from "./host.js"
 import type { Options } from "./options.js"
 import { METADATA_KEY, ancestors, describe, marker, reachable, running, type SessionSummary } from "./scope.js"
-import { label, matches, refOf, relation, wrap, type Relation } from "./peers.js"
+import { deliver, label, matches, peerMetadata, refOf, relation, wrap, type Relation } from "./peers.js"
 import { clip, finalText, summarize, type MessageSummary } from "./messages.js"
 import { waitForSessions, type WaitResult } from "./wait.js"
 
@@ -158,7 +158,7 @@ export class Orchestrator {
         return { ...sent, messageID: stored.messageID }
       }
     }
-    const message = await this.host.session.prompt({ sessionID: target.id, text: wrap(me, text), delivery })
+    const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery, metadata: peerMetadata(me, text) })
     if (key) await this.host.storage.set(key, { messageID: message.id, sessionID: target.id })
     return { ...sent, messageID: message.id }
   }

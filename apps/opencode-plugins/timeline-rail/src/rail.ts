@@ -70,12 +70,17 @@ export function stripMarkdown(text: string): string {
   )
 }
 
-/** The user messages the host lists: user messages, and only those before a pending revert. */
+/** The metadata key orchestrator-tools sets on a message another session sent: such a message is not the user's prompt. */
+export const PEER_KEY = "peerMessage"
+
+const isPrompt = (message: Message) => message.type === "user" && message.metadata?.[PEER_KEY] === undefined
+
+/** The user's own prompts the host lists, and only those before a pending revert. Peer messages are not prompts. */
 export function loadedIds(messages: readonly Message[], revertMessageID?: string): string[] {
   const out: string[] = []
 
   for (const message of messages) {
-    if (message.type === "user" && !(revertMessageID && message.id >= revertMessageID)) out.push(message.id)
+    if (isPrompt(message) && !(revertMessageID && message.id >= revertMessageID)) out.push(message.id)
   }
 
   return out
@@ -91,7 +96,7 @@ export function prompts(messages: readonly Message[], revertMessageID?: string, 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!
 
-    if (message.type !== "user" || (revertMessageID && message.id >= revertMessageID)) continue
+    if (!isPrompt(message) || (revertMessageID && message.id >= revertMessageID)) continue
 
     if (since && message.id < since) continue
     let last: Message | undefined
