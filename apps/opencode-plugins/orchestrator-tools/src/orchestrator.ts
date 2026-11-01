@@ -36,7 +36,6 @@ export interface SendInput {
   /** Older spelling of `to`. */
   readonly sessionID?: string
   readonly text: string
-  readonly delivery?: "queue" | "steer"
   readonly clientRequestId?: string
 }
 
@@ -137,20 +136,14 @@ export class Orchestrator {
   async sendMessage(
     caller: Caller,
     input: SendInput,
-  ): Promise<{ sessionID: string; to: string; messageID: string; delivery: "queue" | "steer"; delivered: "now" | "queued"; notice: string }> {
+  ): Promise<{ sessionID: string; to: string; messageID: string; delivered: "now"; notice: string }> {
     const me = await this.self(caller)
     const target = await this.resolve(me, input.to ?? input.sessionID)
     if (target.id === caller.sessionID) throw fail("send_message targets other sessions; reply normally in this one")
     const text = input.text?.trim()
     if (!text) throw fail("text must not be empty")
-    const delivery = input.delivery ?? "queue"
-    const busy = running(target)
-    const delivered = busy && delivery === "queue" ? "queued" : "now"
-    const notice =
-      delivered === "queued"
-        ? `${label(target)} is busy; the message is queued and arrives when its current work ends. A reply comes only if it chooses to send one: silence is not agreement.`
-        : `Delivered to ${label(target)}${busy ? " (current step interrupted)" : ""}. A reply comes only if it chooses to send one: silence is not agreement.`
-    const sent = { sessionID: target.id, to: label(target), delivery, delivered, notice } as const
+    const notice = `Delivered to ${label(target)}. A reply comes only if it chooses to send one: silence is not agreement.`
+    const sent = { sessionID: target.id, to: label(target), delivered: "now", notice } as const
     const key = input.clientRequestId ? requestKey(caller.sessionID, input.clientRequestId) : undefined
     if (key) {
       const stored = await this.host.storage.get(key)
@@ -158,7 +151,7 @@ export class Orchestrator {
         return { ...sent, messageID: stored.messageID }
       }
     }
-    const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery, metadata: peerMetadata(me, text) })
+    const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery: "steer", metadata: peerMetadata(me, text) })
     if (key) await this.host.storage.set(key, { messageID: message.id, sessionID: target.id })
     return { ...sent, messageID: message.id }
   }

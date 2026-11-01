@@ -32,7 +32,6 @@ export interface SendInput {
     /** Older spelling of `to`. */
     readonly sessionID?: string;
     readonly text: string;
-    readonly delivery?: "queue" | "steer";
     readonly clientRequestId?: string;
 }
 export interface Peer extends SessionSummary {
@@ -75,8 +74,7 @@ export declare class Orchestrator {
         sessionID: string;
         to: string;
         messageID: string;
-        delivery: "queue" | "steer";
-        delivered: "now" | "queued";
+        delivered: "now";
         notice: string;
     }>;
     listPeers(caller: Caller, input?: {

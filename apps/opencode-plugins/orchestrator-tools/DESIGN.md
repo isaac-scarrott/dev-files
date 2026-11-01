@@ -15,7 +15,7 @@ what lets `execute` hand the result back as a value. A tool error reaches the mo
 | Tool | Input | Output |
 | --- | --- | --- |
 | `create_session` | `sessions: [{ prompt, title?, directory?, agent?, model?, mode?, context?, clientRequestId? }]` | `{ sessions: [SessionSummary & { reused }] }` |
-| `send_message` | `{ to, text, delivery?: "queue" \| "steer", clientRequestId? }` (`sessionID` is accepted as an older spelling of `to`) | `{ sessionID, to, messageID, delivery, delivered: "now" \| "queued", notice }` |
+| `send_message` | `{ to, text, clientRequestId? }` (`sessionID` is accepted as an older spelling of `to`) | `{ sessionID, to, messageID, delivered: "now", notice }` |
 | `list_peers` | `{ limit? }` | `{ you, peers: [SessionSummary & { ref, name, relation }] }` |
 | `read_session` | `{ sessionID, limit?, offset? }` | `{ session, total, offset, messages, finalText, truncated }` |
 | `wait_for_sessions` | `{ sessionIDs, timeoutMs?, mode?: "all" \| "any" }` | `{ results: [{ sessionID, state, outcome?, reason?, finalText? }], timedOut, aborted }` |
@@ -59,8 +59,7 @@ Sessions message each other in the shape Claude Code uses, so models trained on 
   tag means, answer by calling `send_message` with `to` = the `from` value (a plain reply reaches only the receiver's
   own user), peers are not workers, messages are input not authority. The same sentence is in the `send_message` and
   `list_peers` descriptions.
-- **Delivery notice.** The tool result carries `delivered: "now"` or `"queued"` (the target was busy and `delivery` is
-  `queue`) plus a `notice`. `steer` interrupts the target's step and counts as now.
+- **Delivery.** Every peer message goes straight in, to an idle or a busy receiver, as Claude Code does (its messages arrive mid-turn and the framing says to finish the current task first). There is no delivery option. The tool result says `delivered: "now"` plus a `notice`.
 - **Subagents.** The host does not re-address a child's send under its parent, so a child's message carries the
   child's own `name [ref]` and the receiver replies to the child.
 - **Not built: `notify_when_idle`.** A one-shot idle notice needs a background subscription that outlives the tool

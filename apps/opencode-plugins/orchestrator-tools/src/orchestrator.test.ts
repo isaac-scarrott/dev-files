@@ -252,8 +252,8 @@ test("clientRequestId reuses the session, and forgets it once the session is gon
 test("send_message is idempotent per clientRequestId and refuses the caller itself", async () => {
   const f = fake([idle("ses_p"), idle("ses_c", { parentID: "ses_p" as any })])
   const o = make(f)
-  const a = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", delivery: "steer", clientRequestId: "m1" })
-  const b = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", delivery: "steer", clientRequestId: "m1" })
+  const a = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", clientRequestId: "m1" })
+  const b = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", clientRequestId: "m1" })
   assert.equal(a.messageID, b.messageID)
   assert.equal(f.calls.filter((c) => c.name === "prompt").length, 1)
   assert.equal((f.calls[0]?.input as any).delivery, "steer")
@@ -460,16 +460,16 @@ test("a session outside the tree is not a peer until the scope widens", async ()
   await make(f, { scope: "all" }).sendMessage(caller("ses_00childaaa"), { to: "Else", text: "x" })
 })
 
-test("the result says delivered now or queued, and steer delivers now to a busy session", async () => {
+test("every peer message goes straight in, to an idle or a busy session, and says so", async () => {
   const f = tree()
   const o = make(f)
-  const now = await o.sendMessage(caller("ses_00childaaa"), { to: "Lead", text: "x" })
-  assert.equal(now.delivered, "now")
-  const queued = await o.sendMessage(caller("ses_00childaaa"), { to: "Worker B", text: "x" })
-  assert.equal(queued.delivered, "queued")
-  assert.match(queued.notice, /busy.*queued/)
-  const steered = await o.sendMessage(caller("ses_00childaaa"), { to: "Worker B", text: "x", delivery: "steer" })
-  assert.equal(steered.delivered, "now")
+  for (const to of ["Lead", "Worker B"]) {
+    const sent = await o.sendMessage(caller("ses_00childaaa"), { to, text: "x" })
+    assert.equal(sent.delivered, "now")
+    assert.match(sent.notice, /^Delivered to /)
+    assert.equal((f.calls[f.calls.length - 1]?.input as any).delivery, "steer")
+    assert.equal("delivery" in sent, false)
+  }
 })
 
 test("tool descriptions state the peer rules", () => {

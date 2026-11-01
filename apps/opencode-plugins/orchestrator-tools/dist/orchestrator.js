@@ -72,13 +72,8 @@ export class Orchestrator {
         const text = input.text?.trim();
         if (!text)
             throw fail("text must not be empty");
-        const delivery = input.delivery ?? "queue";
-        const busy = running(target);
-        const delivered = busy && delivery === "queue" ? "queued" : "now";
-        const notice = delivered === "queued"
-            ? `${label(target)} is busy; the message is queued and arrives when its current work ends. A reply comes only if it chooses to send one: silence is not agreement.`
-            : `Delivered to ${label(target)}${busy ? " (current step interrupted)" : ""}. A reply comes only if it chooses to send one: silence is not agreement.`;
-        const sent = { sessionID: target.id, to: label(target), delivery, delivered, notice };
+        const notice = `Delivered to ${label(target)}. A reply comes only if it chooses to send one: silence is not agreement.`;
+        const sent = { sessionID: target.id, to: label(target), delivered: "now", notice };
         const key = input.clientRequestId ? requestKey(caller.sessionID, input.clientRequestId) : undefined;
         if (key) {
             const stored = await this.host.storage.get(key);
@@ -86,7 +81,7 @@ export class Orchestrator {
                 return { ...sent, messageID: stored.messageID };
             }
         }
-        const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery, metadata: peerMetadata(me, text) });
+        const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery: "steer", metadata: peerMetadata(me, text) });
         if (key)
             await this.host.storage.set(key, { messageID: message.id, sessionID: target.id });
         return { ...sent, messageID: message.id };
