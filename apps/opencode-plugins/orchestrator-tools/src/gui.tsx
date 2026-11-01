@@ -1,12 +1,15 @@
 import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
 import { createMemo, createSignal, createUniqueId, getOwner, onCleanup, runWithOwner } from "solid-js"
 import { render } from "solid-js/web"
+import { holdTop, scrollerOf } from "./anchor.js"
 import { escapeMarkup, peerOf, type PeerMessage } from "./card.js"
 
 const ROW = "[data-timeline-row='UserMessage'][data-message-id]"
 const TIMELINE = "[data-slot='session-timeline-scroll']"
 const ROW_ATTR = "data-peer-row"
 const CARD_ATTR = "data-peer-card"
+// Height of the header line: the row's 8px padding plus the 20px title line.
+const HEADER = 28
 
 // A peer message is a left-aligned grey row in the style of the host's subagent row (`task-tool-surface`: 8px 12px
 // padding, 8px radius, bg-layer-02, 13px/20px type, title 530). The host has no message-renderer registry, so the host's
@@ -20,10 +23,9 @@ const css = `
   font: 440 13px/20px var(--v2-font-family-sans, inherit); letter-spacing: -0.04px; color: var(--v2-text-text-base);
 }
 [${CARD_ATTR}] [data-slot="peer-trigger"] {
-  position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer;
+  position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent;
 }
 [${CARD_ATTR}]:not([data-expandable="true"]) [data-slot="peer-trigger"] { display: none; }
-[${CARD_ATTR}][data-expandable="true"] { cursor: pointer; }
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-text"] { cursor: text; }
 [${CARD_ATTR}]:has([data-slot="peer-trigger"]:focus-visible) { outline: 1px solid var(--v2-text-text-accent); outline-offset: 2px; }
 [${CARD_ATTR}] [data-slot="peer-trigger"]:focus-visible { outline: none; }
@@ -55,24 +57,29 @@ const css = `
 [${CARD_ATTR}]:not([data-open="true"]) [data-slot="peer-text"] [data-markdown-block]:first-child > :first-child {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden;
 }
-/* The trailing slot has a fixed width, so revealing its buttons never re-wraps the text. */
-[${CARD_ATTR}] [data-slot="peer-tail"] { position: relative; flex: none; display: flex; align-items: center; gap: 2px; height: 20px; margin-right: -4px; }
-[${CARD_ATTR}] [data-slot="peer-arrow"] {
-  display: flex; align-items: center; justify-content: center; width: 16px; height: 20px; color: var(--v2-text-text-faint);
-  pointer-events: none; opacity: 0; transition: opacity 150ms ease;
+/* The trailing slot is the host task-tool-action, copied: collapsed it takes no room (width 0, and a negative margin cancels
+   the row's 8px gap), and on hover or focus it grows, fades in and slides from 4px left over 150ms ease, so the row's width grows
+   the way the host row's does (+18px for a bare chevron). The 24px button's 4px side padding hangs outside the 16px slot (overflow-clip-margin), so its chevron sits exactly where
+   the host's does. With the expand triangle in front the slot is 34px (16 triangle + 2 + 16 chevron). */
+[${CARD_ATTR}] [data-slot="peer-tail"] {
+  position: relative; flex: none; display: flex; align-items: center; gap: 2px; box-sizing: border-box; height: 20px;
+  width: 0; margin-inline: -8px 0; opacity: 0; color: var(--v2-text-text-faint); transform: translate(-4px); overflow: clip; overflow-clip-margin: 4px;
+  transition: width 150ms, margin-inline-start 150ms, opacity 150ms, color 150ms, transform 150ms;
 }
+:root[data-motion="reduce"] [${CARD_ATTR}] [data-slot="peer-tail"], :root[data-motion="reduce"] [${CARD_ATTR}] [data-slot="peer-arrow"] svg { transition: none; }
+[${CARD_ATTR}]:is(:hover, :focus-within, :has([data-slot="peer-trigger"]:focus-visible)) [data-slot="peer-tail"],
+[${CARD_ATTR}][data-open="true"] [data-slot="peer-tail"] { opacity: 1; transform: none; width: 16px; margin-inline: -6px 0; }
+[${CARD_ATTR}][data-expandable="true"]:is(:hover, :focus-within, :has([data-slot="peer-trigger"]:focus-visible)) [data-slot="peer-tail"],
+[${CARD_ATTR}][data-open="true"] [data-slot="peer-tail"] { width: 34px; margin-inline: -6px 0; }
+[${CARD_ATTR}] [data-slot="peer-arrow"] { display: flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 20px; color: var(--v2-text-text-faint); pointer-events: none; }
 [${CARD_ATTR}] [data-slot="peer-arrow"] svg { transform: rotate(-90deg); transition: transform 150ms ease; }
-[${CARD_ATTR}][data-expandable="true"]:is(:hover, :has([data-slot="peer-trigger"]:focus-visible)) [data-slot="peer-arrow"],
-[${CARD_ATTR}][data-open="true"] [data-slot="peer-arrow"] { opacity: 1; }
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-arrow"] svg { transform: rotate(0); }
-[${CARD_ATTR}]:not([data-expandable="true"]) [data-slot="peer-arrow"] { visibility: hidden; }
-/* Instant, as the host's basic-tool-action is; the host icon button has its own opacity .15s transition, which would fade this reveal. */
-[${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; transition: none; color: var(--v2-text-text-faint); }
-[${CARD_ATTR}]:is(:hover, :focus-within) .peer-open, [${CARD_ATTR}][data-open="true"] .peer-open { opacity: 1; }
-@media (hover: none) { [${CARD_ATTR}] .peer-open, [${CARD_ATTR}] [data-slot="peer-arrow"] { opacity: 1; } }
+[${CARD_ATTR}]:not([data-expandable="true"]) [data-slot="peer-arrow"] { display: none; }
+[${CARD_ATTR}] .peer-open { position: relative; flex: none; z-index: 1; margin: -2px -4px; transition: none; color: var(--v2-text-text-faint); }
+@media (hover: none) { [${CARD_ATTR}] [data-slot="peer-tail"] { opacity: 1; transform: none; width: 16px; margin-inline: -6px 0; } [${CARD_ATTR}][data-expandable="true"] [data-slot="peer-tail"] { width: 34px; } }
 `
 
-type Located = { readonly peer: PeerMessage; readonly server: string }
+type Located = { readonly id: string; readonly peer: PeerMessage; readonly server: string }
 
 export default Plugin.define({
   i18n: {
@@ -91,18 +98,21 @@ export default Plugin.define({
       for (const session of ctx.sessions.list()) {
         for (const message of session.server.data.session.message.list(session.id)) {
           const peer = peerOf(message as Parameters<typeof peerOf>[0])
-          if (peer) found.set(message.id, { peer, server: session.server.id })
+          if (peer) found.set(message.id, { id: message.id, peer, server: session.server.id })
         }
       }
       return found
     })
 
+    // The host re-creates a timeline row when it re-renders (a new message arrives, a virtualised row scrolls back in), which would
+    // collapse a row the user opened; the open ones are remembered here, per window.
+    const opened = new Set<string>()
     const open = (located: Located) => ctx.tabs.open({ server: located.server, id: located.peer.sessionID }, { focus: true })
 
     const Row = (props: { located: Located }) => {
       const peer = () => props.located.peer
       const id = `peer-text-${createUniqueId()}`
-      const [expanded, setExpanded] = createSignal(false)
+      const [expanded, setExpanded] = createSignal(opened.has(props.located.id))
       const [expandable, setExpandable] = createSignal(false)
       let root!: HTMLDivElement
       let text!: HTMLDivElement
@@ -130,13 +140,31 @@ export default Plugin.define({
         void document.fonts?.ready.then(measure)
       })
 
-      const toggle = () => setExpanded(!expanded())
+      // The host scrolls to the bottom whenever a row resizes, which would carry the clicked header out from under the pointer, so
+      // the second click could not land on it. Hold the header at its screen position through the change (the user's decision;
+      // the host does not do this for its own collapsibles). Only toggles made here are held.
+      let release: (() => void) | undefined
+      onCleanup(() => release?.())
+      const toggle = () => {
+        const scroller = scrollerOf(root)
+        const header = root.querySelector("[data-slot='peer-name']")
+        release?.()
+        if (scroller && header) release = holdTop(scroller, header, root, 400)
+        const next = !expanded()
+        if (next) opened.add(props.located.id)
+        else opened.delete(props.located.id)
+        setExpanded(next)
+      }
       const onClick = (event: MouseEvent) => {
         if (!expandable()) return
         const target = event.target as Element
         if (target.closest(".peer-open, a, button:not([data-slot='peer-trigger'])")) return
-        // Open text is for selecting and following links: a click there does not close the row, the rest of it does.
-        if (expanded() && target.closest("[data-slot='peer-text']")) return
+        // The header (the title line, which carries the first line of the message) toggles both ways. The rest of the open text is
+        // for selecting and following links, so a click there, or one that ends a selection, does not close the row.
+        if (expanded() && target.closest("[data-slot='peer-text']")) {
+          const header = root.getBoundingClientRect().top + HEADER
+          if (event.clientY > header || getSelection()?.toString()) return
+        }
         toggle()
       }
 

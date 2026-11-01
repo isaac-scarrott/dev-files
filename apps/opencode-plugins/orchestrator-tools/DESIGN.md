@@ -98,12 +98,8 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
 - **Header.** A 16px direction icon, drawn (an inline SVG, as `ctx.ui.Icon` only takes catalog names): the catalog's `arrow-up-right` path turned to down-left
   (`M5 6.44V11H9.56M5 11L11 5`, 1px stroke, `currentColor`, `text-faint`). Title weight 530, one line, ellipsis at 280px.
   Only received messages exist today (see "Sender side"), so there is no outgoing arrow.
-- **Trailing slot.** Fixed 42px wide in both states, so revealing it never re-wraps the text: a 16px triangle (host
-  Questions look: 14px `fill-triangle-down` via `ctx.ui.Icon`, opacity 0 at rest, 1 on hover, focus or open, rotates
-  with 150ms ease) and the Open-session button: `ctx.ui.IconButton` (`chevron-right`, ghost, normal = 24px, radius 6px)
-  inside `ctx.ui.Tooltip` "Open session", `aria-label` "Open session <title>", its own tab stop, revealed like
-  `basic-tool-action`. It opens the sender with `ctx.tabs.open({ server, id }, { focus: true })`. Hidden when the
-  message fits on one line and has one block (nothing to expand). The icon is the host's own go-to-session affordance: the subagent row's `task-tool-action` is a bare 16px `chevron-right` (viewBox 20, `text-faint`, centre 20px from the row's right edge). Ours is the same catalog icon, same size, colour and centre-from-edge (measured 20 / 20, both at y 18), inside the 24px button; the triangle sits 3px before the button, 14px filled against the chevron's stroke, so they read as two different things. The outgoing direction icon (a future sent row) stays `arrow-up-right`.
+- **Trailing slot (the host's `task-tool-action`, copied).** Measured in 2.2.5 (stylesheet and per-frame at rAF): the surface is fit-content and its action slot is `width: 0; margin-inline-start: 0; opacity: 0; transform: translateX(-4px)` at rest; on `task-tool-card:hover` / `:focus-visible` it becomes `width: 16px; margin-inline-start: 2px; opacity: 1; transform: none`, with `transition: width, margin-inline-start, opacity, color, transform .15s` (timing `ease`, cubic-bezier(.25,.1,.25,1)); under `:root[data-motion=reduce]` `transition: none`. So the host row's WIDTH grows by 18px (326.22 → 344.22) as the chevron fades and slides in; the surface background does not change on hover. Ours is the same: the slot takes no room at rest (a -8px margin cancels the row's 8px gap) and the same properties, duration and easing animate it on `:hover`, `:focus-within`, keyboard focus or open. Bare chevron (no triangle): growth +18px, every frame within 0.15px of the host's (frame table below). With the expand triangle in front the slot is 34px (16 triangle + 2 gap + 16 chevron), so the row grows 36px, by the same motion; the 24px button's 4px side padding hangs outside the 16px slot (`overflow-clip-margin`) so the chevron lands where the host's does. The earlier fixed 42px reserved slot is gone: it made ours wider than the host row at rest and did not animate. The triangle (14px `fill-triangle-down` via `ctx.ui.Icon`, host Questions look) rotates with 150ms ease; it is hidden when the message fits on one line. The button is `ctx.ui.IconButton` (`chevron-right`, ghost, normal = 24px, radius 6px)
+  inside `ctx.ui.Tooltip` "Open session", `aria-label` "Open session <title>", its own tab stop; it opens the sender with `ctx.tabs.open({ server, id }, { focus: true })`. The icon is the host's own go-to-session affordance: the subagent row's `task-tool-action` is a bare 16px `chevron-right` (viewBox 20, `text-faint`, centre 20px from the row's right edge). Ours is the same catalog icon, same size, colour and centre-from-edge (measured 20 / 20, both at y 18), inside the 24px button; the triangle sits 3px before the button, 14px filled against the chevron's stroke, so they read as two different things. The outgoing direction icon (a future sent row) stays `arrow-up-right`.
 - **Alignment (matches the host row exactly).** Measured against `task-tool-surface` with the same probe on both (`parity.spec.mjs`, `alignment-*`): height 36, padding `8px 12px`, radius 8px, 8px between title and text, title 13px/530/20px/-0.04px and text 13px/440/20px/-0.04px on one baseline and one centre line, content starting at the 12px padding edge. Two defects were found and fixed: (1) the host's Markdown renders at 14px/22.4px, so the message sat 1.5px below the title's baseline and its type was larger; the text slot now resets the Markdown wrapper to the row's own type (`font: inherit`) and zeroes block margins by element, not by host wrapper class, so a different Markdown wrapper cannot add margin or height; (2) the arrow's ink starts 5px inside its 16px box, so it read as inset 17px against the host's 12px: the box now sits at -5px so the ink starts at 12px, and it stays centred on the line (centre 18px). Before/after: contentLeft 17 → 12, baselineDelta 1.5 → 0, text 14px/22.4 → 13px/20. A 72px-tall row, as seen in the live app, could not be reproduced here (36px in light/dark, live-arriving messages, 560-1300px wide); the unconstrained Markdown block margins above are the likely cause and are now neutralised.
 - **Expand.** One text element holds the message in both states, rendered with `ctx.ui.Markdown` (the timeline's
   renderer: lists, code, links). Collapsed, its height is 20px and the first Markdown block is line-clamped to one line with a
@@ -113,28 +109,40 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   outside code are entities and show as typed; code is untouched. Code blocks lose their vertical padding so a message
   that starts with one keeps its first line in place. The row is `fit-content`; its width does not change on expand.
 - **Input.** The row has a native `<button data-slot=peer-trigger>` over it (`aria-expanded`, `aria-controls`, Enter and
-  Space), focus ring `1px solid text-accent, offset 2px` on the row (the host's fold-toggle ring). A click anywhere on the
-  row toggles it, except the Open-session button, links and the expanded text: open text is a selection zone, so a click
-  there does not close the row. Expandability is measured when clamped (`scrollHeight` of the first block, or more than
-  one block) and re-measured as the host's Markdown finishes rendering.
+  Space), focus ring `1px solid text-accent, offset 2px` on the row (the host's fold-toggle ring). No pointer cursor (the user's
+  decision; the host row shows one). The HEADER, the title line, which also carries the first line of the message, toggles both
+  ways with the same click area: a second click at the same pointer position collapses what the first expanded. The rest of
+  the open text (second line onward), links and the Open-session button do not toggle, and neither does a click that ends a
+  text selection, so text stays selectable and links work. Expandability is measured when clamped (`scrollHeight` of the first
+  block, or more than one block) and re-measured as the host's Markdown finishes rendering. Rows the user opened are remembered
+  per window by message id: the host re-creates a timeline row on re-render (a new message below, a virtualised row scrolling
+  back), which used to collapse an open row.
 - **Motion: the host's, instant (decided by the user: consistency and feel, not taste).** Expand and collapse swap the
   clamp and the height in one frame; no height animation, no scroller anchoring. Evidence from 2.2.5 in the harness:
   the host's collapsibles (Used N Execute, Questions, user message Show more) show and hide content in a single frame and
   animate only the arrow (150ms ease rotate), and `[data-slot=collapsible-content]` has no height transition. The host
   also does not compensate the scroll position: with the timeline at the bottom, opening Execute moved its header 180px
   and opening Questions 70px; in the harness session it re-pins to the bottom even from 450-800px above it (Execute
-  header 352 → -106px). The row copies that exactly: one frame changes (row height 36 → 203px), and the host then
-  scrolls to the bottom, so the header moves just as a host row's does (167px pinned, up to 425px from higher up). There is no
-  state where the header stays put, and none is added. The row's own layout is stable in that frame: x of header and
-  first line and the row width change by 0.00. The triangle rotates `transform 150ms ease` and its opacity reveals `150ms ease`, copied from the host's collapsible arrow (`.15s` with no timing function is `ease`; re-measured in 2.2.5 `main-*.css`). The Open-session button reveals instantly (`transition: none` on it: the host icon button carries its own `opacity .15s`, which would fade it), as `basic-tool-action` does. Reduced motion needs no branch. An earlier design grew the height over 200ms and held the header against
-  the scroller; both were removed.
+  header 352 → -106px). The row's own layout is stable in that frame (header and first-line x, row width: 0.00). The triangle
+  rotates `transform 150ms ease` (copied from the host's collapsible arrow; `.15s` with no timing function is `ease`).
+  The trailing slot reveal is in "Trailing slot".
+- **Header hold (the user's accepted deviation from the host).** Because the host scrolls to the bottom on any collapsible
+  resize, the host's header jumps away on toggle (measured: 167px pinned, up to 425px from higher up; Execute 180px, Questions
+  70px), so a second click at the same pointer position would land elsewhere. On a toggle made by the row, `holdTop`
+  (`anchor.ts`) records the title's screen y and, for 400ms, a `ResizeObserver` on the row (after layout, before paint, so
+  the correction lands in the frame the size changed) plus an rAF loop write `scrollTop` to cancel any drift, whatever the
+  host does with the scroller (pinned to the bottom, scrolled up, rows virtualised). Only toggles made here are held; the
+  host's own collapsibles are untouched. Measured with real mouse events: expand and collapse with the pointer never
+  moving, header Δy 0.00 over every frame, pinned and scrolled 200-250px up, clicking on the title or on the message's first
+  line; a message arriving below keeps the row open (the host then follows the new content as it does for any row).
+  Unit-tested with a stubbed layout (`anchor.test.ts`).
 - **Sender side: not done.** The call runs through Code Mode `execute`; the host has no tool-part renderer registry and
   the only route to a "Sent to X" row is rewriting the DOM of the tool row. Skipped.
 - **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; the timeline rail
   ignores peer messages (its own tests).
 - **Parity.** `parity.spec.mjs` runs the row against the host's subagent row, the arrow against the Questions arrow
   (opacity curve, declarations, reduced motion), and records the host action button as N/A (it only exists inside an
-  opened Execute part), the alignment probes (height, padding, baselines, centres, content edge, run on both rows and on the open row) and the go-to-session chevron against the host's: 131 PASS, 0 FAIL, 33 N/A, each N/A with its reason in the spec.
+  opened Execute part), the alignment probes (height, padding, baselines, centres, content edge, run on both rows and on the open row) and the go-to-session chevron against the host's: 148 PASS, 0 FAIL, 47 N/A, including per-frame hover-in checks (row width, chevron distance from the right edge, slot opacity against the host's easing), each N/A with its reason in the spec.
 
 ## What a child sees
 
@@ -235,7 +243,9 @@ when the child went idle after that time, so the queued prompt is not mistaken f
 - **The peer-message row** is DOM on timeline rows: message parts have no extension point ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)), and the host's team rules out timeline-row work, so the row is decorated in place by observing the timeline.
 - **Observer scope**: only the timeline scroll regions are observed, not `document.body`, and nothing runs while no open session holds a peer message. A row the host adds is swapped inside the mutation callback, before paint, by searching only the added nodes; a row whose content slot is not mounted yet is retried on the next frame. Measured in "Performance". There is no extension point that replaces the observer.
 - **Options table (OT-4)** in the README already lists `defaultWaitMs`, `maxWaitMs`, `maxWaitSessions`, `maxReadChars`, `messageLimit` and the `"tree"` scope; checked against `src/options.ts`, nothing to add.
-- **Motion**: the row expands instantly, like the host's collapsibles. The arrow and open-button reveal use `opacity`/`transform` 150ms `ease`; whether that matches the host's subagent row chevron is not verified, and `ease` is not on the animation reference's curve list. Open question for the user.
+- **Motion**: the row expands instantly, like the host's collapsibles. The trailing slot reveal is the host subagent row's own (width, margin, opacity, transform, 150ms `ease`), copied after measuring it per frame, so `ease` is the host's, not ours.
+- **Header hold (user decision, deviates from the host)**: the toggled header stays under the pointer through expand and collapse, so the same click area collapses what it expanded; the host does not do this for its own collapsibles. Measured host behaviour is in "Peer row", "Header hold".
+- **Trailing slot parity (user decision)**: the row copies the host subagent row's hover exactly, including its width growth; no reserved slot.
 - **Scope default** is `tree`; `all` lets any agent message or interrupt any session (see "Safety properties").
 
 ## Performance
