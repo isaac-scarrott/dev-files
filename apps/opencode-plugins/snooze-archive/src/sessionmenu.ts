@@ -1,5 +1,7 @@
+import { onCleanup } from "solid-js"
 import type { ActionName, Handlers, Target } from "./actions"
 import { hasNativeArchive } from "./guard"
+import type { DomHub } from "./hub"
 import { extendNative, isSeparator, type MenuEntry, type MenuLine } from "./menu"
 
 export interface MenuSession { target: Target; disabled: boolean; archived: boolean; subagent: boolean }
@@ -35,15 +37,19 @@ export function resolveSession(content: HTMLElement, opener: Element | undefined
 // Adds Snooze… and Archive to every native session menu that has a Delete…, once per open menu, directly above it.
 // `archive` says whether our Archive item is wanted; `native` hears, for each session menu looked at, whether the host's own has an Archive item.
 export interface MenuHooks { archive?(): boolean; native?(has: boolean): void }
-export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: Handlers, labels: Record<ActionName, string>, snoozeLines: (target: Target) => MenuLine[], hooks: MenuHooks = {}) {
+export function createSessionMenus(doc: Document, hub: DomHub, surfaces: Surfaces, handlers: Handlers, labels: Record<ActionName, string>, snoozeLines: (target: Target) => MenuLine[], hooks: MenuHooks = {}) {
   const undo = new Map<HTMLElement, () => void>()
+  onCleanup(() => { for (const off of undo.values()) off(); undo.clear() })
   let opener: { el?: Element; at: number } | undefined
   const remember = (event: Event) => { opener = { el: event.target as Element, at: Date.now() } }
   // The Home row also opens its menu from the keyboard (ContextMenu, Shift+F10), which fires no contextmenu event here.
   const keyed = (event: KeyboardEvent) => { if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) remember(event) }
   doc.addEventListener("contextmenu", remember, true)
+  onCleanup(() => doc.removeEventListener("contextmenu", remember, true))
   doc.addEventListener("pointerdown", remember, true)
+  onCleanup(() => doc.removeEventListener("pointerdown", remember, true))
   doc.addEventListener("keydown", keyed, true)
+  onCleanup(() => doc.removeEventListener("keydown", keyed, true))
   const inspect = (content: HTMLElement) => {
     if (content.closest("[data-sa-popup]") || !hasDelete(content)) return
     // A re-render that drops our nodes gets them back; otherwise one open menu is extended once.
@@ -60,7 +66,7 @@ export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: 
     if (lines.length) undo.set(content, extendNative(content, lines))
   }
   const scan = (root: ParentNode) => root.querySelectorAll<HTMLElement>(MENU).forEach(inspect)
-  const observer = new doc.defaultView!.MutationObserver((records) => {
+  hub.overlay((records) => {
     for (const record of records) for (const node of record.addedNodes) {
       if (node.nodeType !== 1) continue
       const el = node as HTMLElement
@@ -71,16 +77,5 @@ export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: 
     for (const record of records) { const menu = (record.target as Element).closest?.<HTMLElement>(MENU); if (menu) inspect(menu) }
     for (const content of undo.keys()) if (!content.isConnected) undo.delete(content)
   })
-  observer.observe(doc.body, { childList: true, subtree: true })
   scan(doc)
-  return {
-    dispose() {
-      doc.removeEventListener("contextmenu", remember, true)
-      doc.removeEventListener("pointerdown", remember, true)
-      doc.removeEventListener("keydown", keyed, true)
-      observer.disconnect()
-      for (const off of undo.values()) off()
-      undo.clear()
-    },
-  }
 }

@@ -1,4 +1,6 @@
+import { onCleanup } from "solid-js"
 import type { Target } from "./actions"
+import { elementsChanged, type DomHub } from "./hub"
 
 export const WOKE_LABEL = "Woke from snooze"
 // Entries are only inert keys; the cap bounds a store that a deleted-while-closed session can never prune.
@@ -33,8 +35,9 @@ function markNode(doc: Document) {
   return mark
 }
 
-export function createWokeMarks(doc: Document, schedule: (fn: () => void) => number, cancel: (id: number) => void, target: (key: string) => Target | undefined, woke: (target: Target) => boolean) {
+export function createWokeMarks(doc: Document, hub: DomHub, target: (key: string) => Target | undefined, woke: (target: Target) => boolean) {
   const marked = new Set<HTMLElement>()
+  onCleanup(() => { for (const tab of [...marked]) clear(tab) })
   const clear = (tab: HTMLElement) => {
     tab.removeAttribute("data-sa-woke")
     tab.querySelector("[data-sa-woke-mark]")?.remove()
@@ -42,7 +45,7 @@ export function createWokeMarks(doc: Document, schedule: (fn: () => void) => num
   }
   const sync = () => {
     const live = new Set<HTMLElement>()
-    for (const host of doc.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]')) {
+    for (const host of hub.sidebar()?.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]') ?? []) {
       const key = host.dataset.tabKey
       const session = key ? target(key) : undefined
       const tab = host.querySelector<HTMLElement>("[data-titlebar-tab]")
@@ -55,21 +58,9 @@ export function createWokeMarks(doc: Document, schedule: (fn: () => void) => num
     }
     for (const tab of marked) if (!live.has(tab)) clear(tab)
   }
-  let frame: number | undefined
-  const queue = () => { if (frame === undefined) frame = schedule(() => { frame = undefined; sync() }) }
-  const observer = new doc.defaultView!.MutationObserver((records) => {
-    if (records.some((r) => !(r.target as Element).closest?.("[data-sa-woke-mark]") && (r.type === "attributes" || [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1 && !(n as Element).matches("[data-sa-woke-mark]"))))) queue()
-  })
-  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tab-key"] })
+  hub.watch((record) => record.type === "attributes" ? record.attributeName === "data-tab-key" : elementsChanged(record), sync)
   sync()
-  return {
-    sync,
-    dispose() {
-      observer.disconnect()
-      if (frame !== undefined) cancel(frame)
-      for (const tab of [...marked]) clear(tab)
-    },
-  }
+  return { sync }
 }
 
 export const wokeCss = `

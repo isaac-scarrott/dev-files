@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { createRoot, createSignal } from "solid-js"
+import { createSignal } from "solid-js"
 import { Window } from "happy-dom"
+import { withHub } from "./testui"
 import { createGuard, hasNativeArchive, parseArchiveOption, probeHome, probeSidebar, reasonsOf, standsDown, type Signals } from "./guard"
 
 const doc = (html: string) => { const w = new Window(); w.document.body.innerHTML = html; return w.document as unknown as Document }
@@ -62,7 +63,8 @@ const guard = (html: string, option: "auto" | "ours" | "theirs", bound: string[]
   const d = doc(html)
   const [keys, setKeys] = createSignal(bound)
   const [path, setPath] = createSignal("/")
-  const g = createRoot((dispose) => Object.assign(createGuard({ doc: d, option, keybound: (id) => keys().includes(id), path, schedule: function (this: unknown, fn) { assert.equal(this, undefined, "called bare, as the browser's requestAnimationFrame needs"); queueMicrotask(fn); return 1 }, cancel() {} }), { dispose }))
+  const rig = withHub(d, (hub) => createGuard({ doc: d, option, keybound: (id) => keys().includes(id), path, hub }), function (this: unknown, fn) { assert.equal(this, undefined, "called bare, as the browser's requestAnimationFrame needs"); queueMicrotask(fn); return 1 })
+  const g = Object.assign(rig.value, { dispose: rig.stop })
   return { g, d, setKeys, setPath }
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
