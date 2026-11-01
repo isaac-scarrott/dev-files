@@ -1,6 +1,6 @@
 import { Error as ToolError } from "@opencode/plugin/promise/tool";
 import { METADATA_KEY, ancestors, describe, marker, reachable, running } from "./scope.js";
-import { label, matches, peerMetadata, refOf, relation, wrap } from "./peers.js";
+import { deliver, label, matches, peerMetadata, refOf, relation } from "./peers.js";
 import { clip, finalText, summarize } from "./messages.js";
 import { waitForSessions } from "./wait.js";
 const MAX_MESSAGES = 50;
@@ -86,7 +86,7 @@ export class Orchestrator {
                 return { ...sent, messageID: stored.messageID };
             }
         }
-        const message = await this.host.session.prompt({ sessionID: target.id, text: wrap(me, text), delivery, metadata: peerMetadata(me, text) });
+        const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery, metadata: peerMetadata(me, text) });
         if (key)
             await this.host.storage.set(key, { messageID: message.id, sessionID: target.id });
         return { ...sent, messageID: message.id };
