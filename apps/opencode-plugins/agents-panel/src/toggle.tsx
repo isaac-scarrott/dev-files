@@ -1,7 +1,7 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { chatCard, dockState } from "./dock"
+import { chatCard, claimPad, dockState } from "./dock"
 import { glide, present } from "./dock-motion"
 import { SubagentsList } from "./panel"
 
@@ -15,7 +15,6 @@ export type Dock = {
 const DOCK_ID = "agents-dock"
 // Below this window width the chat has no room beside a 288px window (the host narrows its own panels there too).
 const NARROW_BELOW = 900
-const PAD = "data-agents-pad"
 
 const GAP = 8
 
@@ -50,20 +49,23 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   // The chat reserves the window's width while the card carries this attribute (see the dock rules in panel.tsx). An
   // attribute restyles only the few elements its rules name; a custom property would restyle the whole card subtree. It
   // changes once: the content glides to its new place with a Web Animation (see dock-motion.ts).
-  let applied: { card: Element; inset: number } | undefined
+  // The card is shared by every session's toggle (see claimPad), so this toggle only holds and drops its own claim.
+  const owner = {}
+  let held: Element | undefined
   const release = () => {
-    applied?.card.removeAttribute(PAD)
-    applied = undefined
+    if (held) claimPad(held, owner, 0).write()
+    held = undefined
   }
   onCleanup(release)
   createEffect(() => {
     const target = props.input.active ? card() : undefined
     const next = state().inset
     if (!target) return release()
-    if (applied && applied.card !== target) release()
-    const play = applied ? glide(target, next - applied.inset) : undefined
-    target.toggleAttribute(PAD, next > 0)
-    applied = { card: target, inset: next }
+    if (held && held !== target) release()
+    const claim = claimPad(target, owner, next)
+    const play = held ? glide(target, claim.after - claim.before) : undefined
+    claim.write()
+    held = target
     play?.()
   })
 

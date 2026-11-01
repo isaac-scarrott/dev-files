@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
-import { createEffect, createRoot, createSignal } from "solid-js"
+import { batch, createEffect, createRoot, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
@@ -673,3 +673,46 @@ test("dock: nothing in the timeline scroller is widened past its content box (no
   const rules = styles.split("\n").filter((l) => l.includes("data-agents-pad") && l.includes("{"))
   for (const rule of rules) assert.doesNotMatch(rule, /(?:^|[^-])width:\s*calc\(/, rule)
 })
+
+// The host keeps ONE chat card and swaps sessions in it, so on a tab switch the entering and the leaving toggle both
+// resolve that same element. Whichever order their effects run in, the card must keep the attribute while the window is shown.
+for (const order of ["entering effect first", "leaving effect first"] as const) {
+  test(`dock: switching tabs with the window shown keeps the pad on the shared card (${order})`, async () => {
+    const f = fixture()
+    f.start()
+    f.doc.body.innerHTML = `<div data-slot="session-chat-panel"><div id="card"><div data-slot="session-dropzone-blur"></div><div id="headerA"></div><div id="headerB"></div></div></div>`
+    const [enteringActive, setEntering] = createSignal(false)
+    const [leavingActive, setLeaving] = createSignal(true)
+    const mountToggle = (id: string, active: () => boolean) =>
+      createRoot((stop) => {
+        const view = f.registered("slot")[0].render({ get active() { return active() }, get session() { return f.session } })
+        insert(f.doc.getElementById(id)!, view)
+        return stop
+      })
+    // Effects of one batch run in creation order: the toggle created first acts first.
+    const entering = { id: "headerA", active: enteringActive }
+    const leaving = { id: "headerB", active: leavingActive }
+    const [first, second] = order === "entering effect first" ? [entering, leaving] : [leaving, entering]
+    const stops = [mountToggle(first.id, first.active), mountToggle(second.id, second.active)]
+    await f.flush()
+    const card = f.doc.getElementById("card")!
+    f.dockStore.visible = false
+    f.toggle().click()
+    await f.flush()
+    assert.equal(card.hasAttribute("data-agents-pad"), true, "the window is shown and the card is padded")
+    for (let i = 0; i < 6; i++) {
+      batch(() => {
+        setEntering((value) => !value)
+        setLeaving((value) => !value)
+      })
+      await f.flush()
+      assert.equal(f.dockStore.visible, true)
+      assert.equal(card.hasAttribute("data-agents-pad"), true, `after switch ${i + 1} the active toggle's window has its pad`)
+    }
+    f.toggle().click()
+    await f.flush()
+    assert.equal(card.hasAttribute("data-agents-pad"), false, "hiding the window drops the pad")
+    stops.forEach((s) => s())
+    f.stop()
+  })
+}
