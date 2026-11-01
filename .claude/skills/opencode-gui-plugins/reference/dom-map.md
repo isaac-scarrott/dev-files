@@ -1,6 +1,8 @@
 # App DOM map (OpenCode Desktop 2.2.5)
 
-These are internal implementation details, not stable SDK contracts. Verify selectors after an app update. The installed app's source maps supplied the evidence below.
+Use this page only for a job the decision guide in [host-architecture.md §9](host-architecture.md#9-decision-guide) lists under "no extension point": sidebar/titlebar tab rows, session menus, timeline rows, the model and project pickers, the Extensions page. The core team's own plugins query host DOM only in one debug tool, and the team rules out work on timeline rows ([§7](host-architecture.md#7-idioms-of-the-core-teams-own-plugins)); each selector below is a liability that needs a reason in the plugin's `DESIGN.md`.
+
+These are internal implementation details, not stable SDK contracts. Verify selectors after an app update. The installed app's source maps supplied the evidence below (they equal the `v2.2.5` tag, so the source is also on GitHub).
 
 ## Sidebar tabs
 
