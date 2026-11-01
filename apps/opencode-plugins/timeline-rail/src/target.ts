@@ -1,23 +1,46 @@
 /** A mounted timeline row: its owning prompt, whether it is that prompt's own row, and its viewport box. */
 export type Row = { readonly owner: string; readonly prompt: boolean; readonly top: number; readonly bottom: number }
 
+/** How far below the sticky header's bottom edge the reading line sits: a prompt landed under the header is at or above it. */
+export const READING_OFFSET = 8
+/** Pixels of scroll slack that still count as the very bottom (fractional scroll offsets, rounding). */
+const END_SLACK = 2
+
+/** The scroller's offset state: `top` is `scrollTop`, `max` is `scrollHeight - clientHeight`. */
+export type Scroll = { readonly top: number; readonly max: number }
+
 /**
- * The index in `ids` of the current prompt, as t3-code's `resolveTimelineMinimapCurrentIndex`: the first prompt row
- * inside `box`, else the prompt whose turn the first row inside `box` belongs to (the one before the visible range).
- * A row whose owner the host does not list resolves to the last listed prompt before it, so a turn older than `ids`
- * gives -1. -1 when nothing is mounted in `box`.
+ * The one active prompt: the turn being read, as an index in `ids` (-1 only when `ids` is empty). It is the owner of the
+ * last mounted row that starts at or above the reading line, so a long reply keeps its prompt active though the prompt's
+ * own row is scrolled far above (and may be unmounted). Rows are in document order and each carries its turn's prompt id.
+ *
+ * Edges: a chat that fits, or scrolled to its very end, is on the last prompt; above every row, or on a turn older than
+ * `ids`, the first. An owner the list does not hold (a peer message, a reverted prompt) is the listed prompt before it.
+ * When every mounted row starts below the line, a prompt row there means the line is inside the turn before it, and any
+ * other row means its prompt is above: the prompt itself.
  */
-export function currentPrompt(ids: readonly string[], rows: readonly Row[], box: { readonly top: number; readonly bottom: number }): number {
-  const shown = rows.filter((row) => row.bottom > box.top && row.top < box.bottom)
-  const first = shown.find((row) => row.prompt && ids.includes(row.owner)) ?? shown[0]
+export function activePrompt(ids: readonly string[], rows: readonly Row[], line: number, scroll: Scroll): number {
+  const last = ids.length - 1
 
-  if (!first) return -1
-  const index = ids.indexOf(first.owner)
+  if (last < 0) return -1
 
-  if (index !== -1) return index
-  const next = ids.findIndex((id) => id > first.owner)
+  if (scroll.max <= END_SLACK || scroll.max - scroll.top <= END_SLACK) return last
+  let at: Row | undefined
 
-  return next === -1 ? ids.length - 1 : next - 1
+  for (const row of rows) {
+    if (row.top > line) break
+    at = row
+  }
+  const row = at ?? rows[0]
+
+  if (!row) return 0
+  const exact = ids.indexOf(row.owner)
+  // The listed prompt before an owner the list does not hold; -1 when the owner predates the list.
+  const before = exact !== -1 ? exact : ids.findIndex((id) => id > row.owner)
+  const index = exact !== -1 ? exact : before === -1 ? last : before - 1
+
+  // Every row starts below the line and the first is a prompt: the line is inside the turn before it.
+  return Math.min(last, Math.max(0, !at && row.prompt && exact !== -1 ? exact - 1 : index))
 }
 
 /**

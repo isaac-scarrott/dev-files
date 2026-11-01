@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { jumpTo, type Host } from "./jump"
+import { jumpTo, readRows, type Host } from "./jump"
 import { seekTop } from "./target"
 
 const INSET = 48
@@ -334,4 +334,38 @@ test("a new click (abort) during the seek stops it", async () => {
   } finally {
     await f.close()
   }
+})
+
+test("rows are read through the virtualizer's keyed wrappers, or by scanning when there are none", () => {
+  const doc = globalThis.document
+  const scroller = doc.createElement("div")
+  const rect = (top: number) => () => ({ top, bottom: top + 10 }) as DOMRect
+  const make = (owner: string, top: number, prompt: boolean) => {
+    const row = doc.createElement("div")
+
+    row.setAttribute("data-message-id", owner)
+    row.setAttribute("data-timeline-row", prompt ? "UserMessage" : "AssistantPart")
+    row.getBoundingClientRect = rect(top)
+
+    return row
+  }
+  const header = doc.createElement("div")
+  const list = doc.createElement("div")
+
+  header.setAttribute("data-session-title", "")
+  scroller.append(header, list)
+  for (const [owner, top, prompt] of [["m1", 0, true], ["m1", 10, false], ["m2", 20, true]] as const) {
+    const wrapper = doc.createElement("div")
+    const inner = doc.createElement("div")
+
+    wrapper.setAttribute("data-timeline-key", owner)
+    inner.append(make(owner, top, prompt))
+    wrapper.append(inner)
+    list.append(wrapper)
+  }
+  const keyed = readRows(scroller)
+
+  assert.deepEqual(keyed.map((row) => [row.owner, row.prompt, row.top]), [["m1", true, 0], ["m1", false, 10], ["m2", true, 20]])
+  list.querySelectorAll("[data-timeline-key]").forEach((wrapper) => wrapper.removeAttribute("data-timeline-key"))
+  assert.deepEqual(readRows(scroller), keyed, "without wrappers the whole scroller is scanned, with the same result")
 })

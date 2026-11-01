@@ -80,8 +80,7 @@ open delay, glide between ticks, "Working...", a separate loading mark, bucketin
 | No loading by the minimap | The plugin has no way to request history: `Host` in `jump.ts` has no `loadMore`; `message.loadMore` and `message.more` are never called. The bundle does not mention them |
 | Item with no tick past the window | No tick, so no click, key, chevron or card can name a prompt older than the window; the host's own scrolling still reaches it, and when the host has loaded it after the user scrolled, it gets a tick |
 | `scrollToIndex(rowIndex, viewOffset 24)` | No API scrolls the host's virtualizer to an index, so `jump.ts` probes and glides (below); the landing is the sticky header's inset, not 24px |
-| Current index (first visible user row, else the turn before the visible range) | `currentPrompt` in `target.ts`, the same rule on the mounted rows inside the area under the sticky header |
-| In view = the prompt's own user row intersects the viewport | `visibleRange`, same rule, from the mounted `UserMessage` rows |
+| Current index (first visible user row, else the turn before the visible range) and the in-view marks | Replaced by the user's decision: one active prompt, by conversation context (`activePrompt` in `target.ts`, see Active prompt). Deliberately not t3-code's |
 | Final assistant message's text | The last assistant message of the turn, its `text` parts joined, first 1,500 characters, markdown stripped by `stripMarkdown` (regexes; t3-code parses with remark, which is not in a plugin bundle) |
 | Gutter from `[data-timeline-root]` width | Gutter from the first mounted row's left edge (follows the host's panel motion), else the `--container-session` token |
 | Rail inside the timeline viewport, which ends above the composer | The composer overlays the timeline here, so the rail spans from under the sticky header to the view's bottom and is centred in that box, so a composer or form appearing does not move it |
@@ -108,10 +107,11 @@ open delay, glide between ticks, "Working...", a separate loading mark, bucketin
   (8px). No thinning, no bucketing: past the cap, ticks overlap.
 - **One hit target**: a single `<button aria-label="Jump to message: <title of the pointed prompt, or 'User message'>">`
   over the strip. The pointer maps linearly to `round(progress * (n - 1))`. Click jumps to the prompt the card shows.
-- **Fisheye**: scale-x by index distance from the pointed prompt, 1 / .667 / .417 / .333 at distance 0 / 1 / 2 / more.
-  `transform` 150ms on Tailwind's default curve. The pointed tick is the stronger colour.
-- **In view**: a second layer fades in (opacity 150ms) over ticks whose own prompt row is on screen. There is no
-  current-prompt tick.
+- **Fisheye**: scale-x by index distance from the centre, 1 / .667 / .417 / .333 at distance 0 / 1 / 2 / more.
+  `transform` 150ms on Tailwind's default curve. The centre is the active prompt at rest and the pointed (or
+  keyboard) prompt while the strip has one.
+- **Active tick**: exactly one tick is lit, by a layer that fades in (opacity 150ms) over it, in the host's text colour at 60%.
+  Nothing marks the prompts on screen.
 - **Card**: inside the button at 32px, 320px wide, 12px padding and radius, 14/20 type: the title on one line and the reply
   at three lines of muted text. Mounted while a prompt is pointed or focused, removed when not: no delay, no animation, no
   glide. It hangs off the tick (`top: <percent>%`, `translateY(-50%)`, `0%` for the first, `-100%` for the last). The
@@ -120,14 +120,14 @@ open delay, glide between ticks, "Working...", a separate loading mark, bucketin
   (`--v2-background-bg-layer-01`, `--v2-elevation-floating`).
 - **Chevrons**: `ctx.ui.IconButton` (`ghost-muted`, `small`, `chevron-down`, rotated for previous) in `ctx.ui.Tooltip`,
   centred on the strip's left edge 2px above and below it, invisible until the chevron itself is hovered or focused.
-  They step from the current prompt and disable at the ends.
-- **Keyboard** (t3-code's): focus opens the card on the current prompt; ArrowUp/ArrowDown move by one (clamped), Home and
+  They step from the active prompt and disable at the ends.
+- **Keyboard** (t3-code's): focus opens the card on the active prompt; ArrowUp/ArrowDown move by one (clamped), Home and
   End go to the ends, Enter or Space jump. The card goes when the strip loses focus.
 - **Pass-through**: a press that starts on the strip scrubs; a button-down pointer that arrives from elsewhere (a text
   selection drag, a scrollbar) flips the strip to `pointer-events: none` until release. A release outside the window skips
   `pointerup`, so the next button-free move counts. The wheel on the rail scrolls the timeline (`scrollBy`, preceded by the
   host's unpin nudge), ignoring Ctrl and zero-`deltaY` wheels.
-- **First paint**: ticks and the in-view layer animate only from two frames after the rail exists (`data-armed`), so
+- **First paint**: ticks and the active layer animate only from two frames after the rail exists (`data-armed`), so
   nothing fades or slides in when the thread opens. t3-code has no such guard and fades the in-view layer on first load.
 
 ## Peer messages
@@ -136,13 +136,30 @@ A user message with `metadata.peerMessage` (set by orchestrator-tools' `send_mes
 not in `loadedIds`, not a jump target, not counted for `MIN_ITEMS` or the window. It still ends the previous turn, so
 the previous tick's snippet is the reply before it.
 
-## Current prompt
+## Active prompt
 
-Recomputed on every scroll (rAF-throttled), resize (`ResizeObserver` on the view and the visible area), list change and
-after each jump. The viewport for the rule is the scroller below the sticky header's `offsetHeight`
-(`[data-session-title]`, the inset `use-session-hash-scroll.ts` `scrollToElement` uses). Every mounted row carries
-`data-message-id` = its owning prompt (`session-timeline-row.tsx:585`) and the prompt's own row has
-`data-timeline-row="UserMessage"`.
+Exactly one tick is lit: the prompt whose turn is being read, `activePrompt(ids, rows, line, scroll)` in `target.ts`
+(pure). `line` is the reading line, `READING_OFFSET` (8px) under the sticky header's bottom edge (`[data-session-title]`
+`offsetHeight`, the inset `use-session-hash-scroll.ts` `scrollToElement` uses), so a prompt a jump has landed under the
+header is at or above it. Rows are the mounted `[data-message-id]` rows in document order; each carries its turn's
+prompt id (`session-timeline-row.tsx:585`) and a prompt's own row has `data-timeline-row="UserMessage"`.
+
+- Active = the owner of the last mounted row whose top is at or above the line. A long reply keeps its prompt active
+  though the prompt's own row is far above and unmounted.
+- A chat that fits (`scrollHeight - clientHeight <= 2`) and a chat scrolled to its very end (within 2px) are on the
+  **last** prompt, even when its row is far above the line. A new streamed turn is therefore active at the bottom, and
+  when scrolled up as soon as its row reaches the line.
+- Above every row (the very top), or on a turn older than the rail's window: the **first** prompt. When every mounted row
+  starts below the line, a prompt row means the line is in the turn before it, any other row means its prompt is above.
+- One prompt is that prompt. There is no state without an active tick while there is a prompt (the rail needs two).
+- An owner the rail does not list resolves to the listed prompt before it: a peer message (never a tick), a prompt past a
+  pending revert (not listed, as before).
+
+Recomputed in one rAF per frame of scrolling (`scroll` is passive, the rAF coalesces), and after a list change, a
+resize (`ResizeObserver` on the view and the visible area) and each jump. A scroll frame reads rows, the scroller's
+offsets and the header height and nothing else; the rail's place (`measure`: view box, gutter, `getComputedStyle`) is
+measured on resize and list changes only. `readRows` walks the virtualizer's keyed wrappers (`[data-timeline-key]`'s
+parent) rather than querying every `[data-message-id]` in the scroller, which scans thousands of nodes under long replies.
 
 ## Reveal (`jump.ts`)
 
@@ -190,15 +207,15 @@ user-scroll mark and unpins. Nothing else in the wheel handler acts on a zero-di
 ## Look and motion
 
 Motion is t3-code's, nothing added: `transform` on the ticks (150ms, Tailwind's default `cubic-bezier(.4, 0, .2, 1)`),
-`opacity` on the in-view layer (150ms), on the chevrons' reveal (150ms) and, when the gutter is under 48px, on the rail's
+`opacity` on the active tick's layer (150ms), on the chevrons' reveal (150ms) and, when the gutter is under 48px, on the rail's
 own (150ms). Only `transform` and `opacity`; nothing runs until `data-armed`. The card and its removal are instant.
 
-- Ticks use the host's text scale: `--v2-text-text-faint` at 45% at rest, `--v2-text-text-base` at 60% for the pointed
-  one and in full for in-view ticks (t3-code: `muted-foreground` 25% / 60% and `foreground` 55%). `:focus-visible` outlines with
-  `--v2-border-border-focus`.
+- Ticks use the host's text scale: `--v2-text-text-faint` at 45% at rest and `--v2-text-text-base` at 60% for the active
+  one (t3-code: `muted-foreground` 25% / 60%). `:focus-visible` outlines with `--v2-border-border-focus`. The strip keeps
+  the default cursor: the host reserves the pointer cursor for links.
 - The jump itself is the plugin's: the final screen is tweened by `tween.ts`, one `scrollTop` write per frame along
   `1 - (1 - t)^4`, 180ms plus 0.12ms per px, capped at 420ms; a wheel, touch, pointer-down or key on the scroller stops
-  it. Reduced motion writes the target once with `behavior: "auto"`, drops the tick transitions and fades the in-view
+  it. Reduced motion writes the target once with `behavior: "auto"`, drops the tick transitions and fades the active
   layer in 120ms linear.
 
 ### Native parity
@@ -216,11 +233,30 @@ sibling. No `parity.spec.mjs` exists for this plugin.
   reads nothing. The scroller is found from the slot's own element, never by a global query, so a hidden timeline
   cannot act on the visible one.
 - Listeners (`scroll`, `ResizeObserver`, media query, timers, the jump controller) live in the slot's Solid owner
-  and are removed by `onCleanup`; plugin reload disposes them with the plugin root, so a reload leaves one rail.
+  and are removed by `onCleanup`; plugin reload disposes them with the plugin root, so a reload leaves one rail. The
+  three that were raw effects are `createKeyed` runs (the scroller's input marks, the scroll and resize listeners, the
+  re-read on a list change); the scroller and view root are one signal, so a run never sees one without the other.
+- The prompt window is one memo that folds its previous value (`{ id, window }`) with the host's list and whether this
+  session saw user input (a signal); a different session id starts it over. It holds no closure state. `ids` keeps its
+  array identity while the prompts are the same, so a streaming reply does not wake the re-read.
 
 ## Decisions
 
 - **Jump scroll = the host's (decided by the user).** The jump glides with native `behavior: "smooth"`, as the host's own jump to a message and jump to latest do (source: OpenCode 2.2.5 `use-session-hash-scroll.ts` `scrollToElement`, `virtualizer.tsx` `scrollToEnd`; neither has a custom tween). An earlier plugin tween (`1 - (1 - t)^4`, 180ms + 0.12ms/px, max 420ms) was removed. The tick, card and chevron hover motion stays t3-code's (decided by the user: keep t3-code's behaviour); the host has no sibling for it.
+
+- **One active tick, by conversation context (decided by the user; deliberately not t3-code).** t3-code lights every
+  prompt whose own row is on screen and has no current-prompt tick. Here exactly one tick is lit: the last prompt at or
+  above a reading line just under the sticky header, i.e. the turn whose content is being read, even when a long reply has
+  scrolled its prompt row far above (see Active prompt). Edges: short chat and the very bottom = last prompt, very top =
+  first, one prompt = that one, never no-active while there is a prompt. The multi in-view marks are gone. The fisheye
+  scale is centred on the active prompt (and follows the pointer while the strip has one); chevrons step from the active
+  prompt. The hover card, pointer mapping and keyboard stay t3-code's. The lit colour is the host's text token at 60%
+  (t3-code's active style). While the strip is pointed only the active tick is lit; the pointed tick gets the scale, not a colour.
+- **Default cursor on the strip (match the host).** The host's desktop stylesheet reserves the pointer cursor for links
+  (`packages/desktop/src/renderer/styles.css`: `.cursor-pointer:not(a):not([role=link])` is forced to the default cursor).
+  The strip's `cursor: pointer` is removed; the card keeps `cursor: text`.
+- **Placement**: `Slot session.header`, the only timeline surface the host offers a plugin. The scroller's geometry is read from the host's DOM (`[data-slot='session-timeline-visible']`, `[data-timeline-row]`); there is no API for it.
+- **Motion**: ticks, reveal and chevrons use `transform`/`opacity` 150ms `cubic-bezier(.4,0,.2,1)` after `data-armed`, copied from t3-code. The host has no sibling, and hover-driven motion is not on the animation reference's allow list. Open question for the user: the curve and the hover frequency.
 
 ## Rejected
 
@@ -231,7 +267,7 @@ sibling. No `parity.spec.mjs` exists for this plugin.
   makes unreachable by anything but the user scrolling up through that many pages. t3-code draws one span per prompt at
   any count and so do we; measured below.
 - **Card open delay (400ms), enter/exit animation and glide between prompts, "n of N", "Working...", `[image]` /
-  `@agent` labels, PageUp/PageDown, Escape, the current-prompt tick colour, the hover brightening of the whole strip,
+  `@agent` labels, PageUp/PageDown, Escape, the hover brightening of the whole strip,
   the history breathe mark, the appear/disappear fade, chevrons shown on strip hover, the 28px column at 6px from the
   edge**: not in t3-code, removed.
 - **Header button + palette command** (the original `message-jump`): one target at a time, no overview.
@@ -255,9 +291,9 @@ sibling. No `parity.spec.mjs` exists for this plugin.
 
 ## Verification
 
-Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`, 55) cover the window (first 10, growth by
+Unit tests (`pnpm test`, `node:test` on happy-dom with `--conditions=browser`, 57) cover the window (first 10, growth by
 page capped at 20 and gated on user input, revert edge, thread swap), prompts and the final-assistant snippet, labels,
-markdown stripping, rail height, index from pointer (every index of 5,000 reachable), in-view and current prompt, the
+markdown stripping, rail height, index from pointer (every index of 5,000 reachable), the active prompt (every edge: fits, top, bottom, one prompt, long reply, on the line, streaming, reverts), the
 probe direction, the glide plan, and the slot (geometry, hit width and persistence by gutter, the
 card's timing, position and content, fisheye, pass-through, wheel forwarding, keyboard, chevrons, window limits with
 5,000 messages, zero `loadMore` calls, hide conditions). Live verification runs against a second, isolated desktop app
@@ -285,24 +321,36 @@ fenced code and lists):
   flush with its bottom for the last; the strip widens to 22rem while it shows; chevrons at opacity 0 while the pointer
   is on the strip and 1 on their own hover.
 
+Active prompt, same harness, 500-turn session with long replies: a 1,800-frame scroll (900 frames of 40px up, 900 down)
+compared the lit tick, one frame behind the scroll write, against an oracle computed in the page from the rows' own text
+("question N") and positions: 0 mismatches, exactly one lit tick in every frame, and the very bottom lights the last prompt.
+The wrapper walk in `readRows` found the same rows as the whole-scroller query in every frame (0 differences).
+
 Not verified live: touch and `pointer: coarse`, reduced motion, a gutter under 48px (unit tests only), light theme, the
 768px breakpoint, subagent sessions (no desktop route).
 
-## Decisions
-
-- **Placement**: `Slot session.header`, the only timeline surface the host offers a plugin. The scroller's geometry is read from the host's DOM (`[data-slot='session-timeline-visible']`, `[data-timeline-row]`); there is no API for it.
-- **Motion**: ticks, reveal and chevrons use `transform`/`opacity` 150ms `cubic-bezier(.4,0,.2,1)` after `data-armed`, copied from t3-code. The host has no sibling, and hover-driven motion is not on the animation reference's allow list. Open question for the user: the curve and the hover frequency.
-
 ## Performance
 
-Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated desktop app (OpenCode
+2.2.5, own root, 1708x1044 window, 120Hz), a seeded 500-turn session (every 7th reply 8 code blocks, every 25th 60: taller
+than the viewport; about 22,000 DOM nodes mounted), `desktop-harness.sh`, CDP `Performance.getMetrics` and the `Profiler`
+(100us). Scroll scenario: wheel-unpinned `scrollTop` writes, 500 frames of 150px up then 500 down, three runs, median.
+Plugin cost = time inside the plugin's functions (unminified build of the same source, profiler call tree, callees included,
+so forced layout the host would do at the frame's end is counted too). Machine load varies between runs (other harnesses
+ran), so the bare script total moves by +-10%; the plugin figure is the one to compare.
 
-Standing cost, read from the source (not measured):
-- A `ResizeObserver` on the host's scroller plus scroll and resize listeners, owner-bound (`src/gui.tsx`).
-- Three raw `createEffect`s attach them.
-
-| Scenario | Bare | With plugin | Delta | Bar | Result |
+| Scenario | Bare | Before (master) | After | Bar | Result |
 | --- | --- | --- | --- | --- | --- |
-| idle | | | | zero callbacks | not measured |
-| streaming reply | | | | within 3% scripting | not measured |
-| 10 session switches | | | | within 3% scripting | not measured |
+| idle, 10s | 0.55ms script | 0.56ms | 0.60ms | zero callbacks | PASS on script time; callbacks not counted (source: no timers, the observer fires on size changes) |
+| scroll: plugin time in 3 runs (median) | 0 | 43.1ms (8% of 545ms host script) | 18.2ms (3.4% of 535ms) | within 3% of bare script | NEAR: 0.4 points over; profiler overhead inflates small functions |
+| scroll: frames over 16ms / long tasks | 4 / 2 | 4 / 3 | 4 / 4 | no new | same as bare within noise (the host's own page loads) |
+| scroll: p95 frame | 10.1ms | 10.1ms | 10.1ms | | PASS |
+| lit ticks per frame | 0 | 0 to 2 (in-view marks) | 1 in all 3 x 1,000 frames | exactly one | PASS |
+| 10 session switches | not measured | not measured | not measured | within 3% | not measured |
+| streaming reply | not measured | not measured | not measured | within 3% | not measured (no model in the harness) |
+
+What moved the number (each kept only because it did): the rail's place (`measure`, with `getComputedStyle` and four rect
+reads) no longer runs on every scroll frame, only on resize and list changes; `readRows` walks the container's children
+instead of querying every `[data-message-id]` under the scroller; the header is cached; `ids` keeps its identity while the
+prompts do not change, so a streaming update does not schedule a re-read. Before: 43ms; after the first two: 23ms; after the
+last two: 18ms.

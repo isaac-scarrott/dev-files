@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { indexFromPointer, INITIAL_PROMPTS, loadedIds, PAGE_PROMPTS, promptLabel, promptWindow, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
+import { indexFromPointer, INITIAL_PROMPTS, loadedIds, PAGE_PROMPTS, promptLabel, promptWindow, prompts, railHeightStyle, stripMarkdown, topPercent, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -123,17 +123,6 @@ test("index from pointer: linear to the nearest prompt, clamped, every index rea
   const reached = new Set<number>()
   for (let y = 100; y <= 300; y += 0.01) reached.add(at(5000, y)!)
   assert.equal(reached.size, 5000)
-})
-
-test("visible range: prompts whose own row intersects the box; their replies, off-screen rows and unlisted owners are ignored", () => {
-  const indexOf = new Map([["a", 0], ["b", 1], ["c", 2], ["d", 3]])
-  const row = (owner: string, top: number, bottom: number, prompt = true) => ({ owner, prompt, top, bottom })
-  const box = { top: 50, bottom: 650 }
-  assert.deepEqual(visibleRange(indexOf, [row("a", -300, 40), row("b", 40, 400), row("c", 400, 700), row("d", 700, 900)], box), [1, 2])
-  assert.deepEqual(visibleRange(indexOf, [row("b", 100, 200), row("x", 200, 300)], box), [1, 1])
-  assert.equal(visibleRange(indexOf, [row("b", 100, 200, false)], box), undefined, "a reply row is not its prompt")
-  assert.equal(visibleRange(indexOf, [row("d", 900, 1000)], box), undefined)
-  assert.equal(visibleRange(indexOf, [], box), undefined)
 })
 
 test("every index of 5,000 stays reachable from the pointer", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { correction, currentPrompt, glidePlan, seekTop, probeDirection, type Row } from "./target"
+import { activePrompt, correction, glidePlan, seekTop, probeDirection, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -13,31 +13,96 @@ const row = (owner: string, top: number, height: number, prompt = false): Row =>
 
 const box = { top: 48, bottom: 700 }
 
-test("the current prompt is the first prompt row in view, as t3-code's minimap", () => {
-  const rows = [row("m2", -300, 60, true), row("m2", -240, 900), row("m3", 660, 60, true)]
-  assert.equal(currentPrompt(ids, rows, box), 2, "m3's row is the first prompt row in view, while the viewport top is inside m2's answer")
-  assert.equal(currentPrompt(ids, [row("m2", 60, 60, true), row("m2", 120, 400), row("m3", 520, 60, true)], box), 1)
+// A thread as the host mounts it: each turn is its prompt row, then reply parts, all owned by the prompt's id.
+const turn = (owner: string, top: number, ...heights: number[]): Row[] => {
+  let y = top
+
+  return heights.map((height, index) => {
+    const made = row(owner, y, height, index === 0)
+
+    y += height
+
+    return made
+  })
+}
+const LINE = 56
+const mid = { top: 4000, max: 9000 }
+
+test("active: the owner of the last row that starts at or above the reading line", () => {
+  const rows = [...turn("m1", -700, 60, 500), ...turn("m2", -140, 60, 300), ...turn("m3", 220, 60, 400)]
+
+  assert.equal(activePrompt(ids, rows, LINE, mid), 1, "m2's reply is under the line; m3's prompt is still below it")
 })
 
-test("with no prompt row in view, the turn being read is current", () => {
-  const rows = [row("m3", -100, 400), row("m3", 300, 400), row("m4", 720, 60, true)]
-  assert.equal(currentPrompt(ids, rows, box), 2)
+test("active: a long reply taller than the viewport keeps its prompt, though the prompt row is far above and unmounted", () => {
+  assert.equal(activePrompt(ids, [row("m2", -2400, 1800), row("m2", -600, 2000), ...turn("m3", 1400, 60, 200)], LINE, mid), 1)
+  assert.equal(activePrompt(ids, [row("m2", -900, 2400), ...turn("m3", 1500, 60)], LINE, mid), 1)
 })
 
-test("rows out of view do not decide", () => {
-  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m1", -400, 300)], box), -1)
-  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m2", 60, 300)], box), 1)
+test("active: a prompt exactly on the line is active; one pixel below is not", () => {
+  const above = turn("m2", -400, 60, 300)
+
+  assert.equal(activePrompt(ids, [...above, ...turn("m3", LINE, 60, 300)], LINE, mid), 2)
+  assert.equal(activePrompt(ids, [...above, ...turn("m3", LINE + 1, 60, 300)], LINE, mid), 1)
 })
 
-test("a row the host does not list resolves to the listed prompt before it; older than the list gives -1", () => {
-  assert.equal(currentPrompt(ids, [row("m2x", 60, 300)], box), 1)
-  assert.equal(currentPrompt(ids, [row("m0", 60, 300)], box), -1)
-  assert.equal(currentPrompt(ids, [row("m9", 60, 300)], box), 3)
+test("active: switches exactly when a prompt crosses the line, one tick at every offset", () => {
+  const seen: number[] = []
+
+  for (let scroll = 0; scroll <= 1200; scroll += 1) {
+    const rows = [...turn("m1", 100 - scroll, 60, 540), ...turn("m2", 700 - scroll, 60, 540)]
+
+    seen.push(activePrompt(ids, rows, LINE, { top: 2000 + scroll, max: 9000 }))
+  }
+  const switchAt = seen.indexOf(1)
+
+  assert.equal(switchAt, 700 - LINE, "m2's row top reaches the line")
+  assert.ok(seen.slice(0, switchAt).every((index) => index === 0) && seen.slice(switchAt).every((index) => index === 1))
 })
 
-test("no prompts or no rows give no current prompt", () => {
-  assert.equal(currentPrompt([], [row("m1", 60, 10)], box), -1)
-  assert.equal(currentPrompt(ids, [], box), -1)
+test("active: a chat that fits is on its last prompt, scrolled to the end too, however far above its row is", () => {
+  const rows = [...turn("m1", 80, 60, 100), ...turn("m2", 240, 60, 100), ...turn("m3", 400, 60, 100)]
+
+  assert.equal(activePrompt(ids, rows, LINE, { top: 0, max: 0 }), 3)
+  assert.equal(activePrompt(ids, [row("m4", -3000, 60), row("m4", -2900, 3200)], LINE, { top: 5000, max: 5000 }), 3, "bottom: the last prompt's reply is long")
+  assert.equal(activePrompt(ids, [row("m3", -300, 400)], LINE, { top: 4999, max: 5000 }), 3, "within the slack of the end")
+  assert.equal(activePrompt(ids, [row("m3", -300, 400)], LINE, { top: 4990, max: 5000 }), 2, "ten pixels from the end is not the bottom")
+})
+
+test("active: the very top and the space above the first prompt are the first prompt", () => {
+  assert.equal(activePrompt(ids, [...turn("m1", 300, 60, 300), ...turn("m2", 700, 60)], LINE, { top: 0, max: 9000 }), 0, "first prompt row still below the line")
+  assert.equal(activePrompt(ids, [...turn("m1", 20, 60, 300), ...turn("m2", 380, 60)], LINE, { top: 0, max: 9000 }), 0)
+  assert.equal(activePrompt(ids, [row("m0", 0, 400), ...turn("m1", 400, 60)], LINE, { top: 0, max: 9000 }), 0, "older history the rail does not list sits above")
+})
+
+test("active: every mounted row below the line puts the line inside the turn before the first prompt row, else in that prompt's turn", () => {
+  assert.equal(activePrompt(ids, turn("m3", 120, 60, 300), LINE, mid), 1)
+  assert.equal(activePrompt(ids, [row("m3", 120, 300)], LINE, mid), 2)
+  assert.equal(activePrompt(ids, turn("m1", 120, 60, 300), LINE, mid), 0, "nothing before the first prompt")
+})
+
+test("active: one prompt is that prompt; no prompts is none; no rows is the first", () => {
+  assert.equal(activePrompt(["m1"], [...turn("m1", -300, 60, 800)], LINE, mid), 0)
+  assert.equal(activePrompt(["m1"], [], LINE, { top: 0, max: 0 }), 0)
+  assert.equal(activePrompt([], turn("m1", 0, 60, 80), LINE, mid), -1)
+  assert.equal(activePrompt(ids, [], LINE, mid), 0)
+})
+
+test("active: streaming a new turn: the new prompt is active at the bottom, and once its row passes the line above it", () => {
+  const five = [...ids, "m5"]
+  const streaming = [...turn("m4", -500, 60, 400), ...turn("m5", 500, 60, 300)]
+
+  assert.equal(activePrompt(five, streaming, LINE, mid), 3, "not pinned: m5's row is still below the line")
+  assert.equal(activePrompt(five, streaming, LINE, { top: 8999, max: 9000 }), 4, "pinned to the end")
+  assert.equal(activePrompt(five, [...turn("m4", -900, 60, 400), ...turn("m5", 20, 60, 600)], LINE, mid), 4, "m5's row passed the line")
+})
+
+test("active: a pending revert drops later prompts from the list; their rows and a peer message resolve to the listed prompt before", () => {
+  const listed = ["m1", "m2"]
+
+  assert.equal(activePrompt(listed, [...turn("m1", -300, 60, 200), ...turn("m1x", -40, 60, 300), ...turn("m2", 400, 60)], LINE, mid), 0, "a peer message after m1")
+  assert.equal(activePrompt(listed, [...turn("m2", -300, 60, 200), ...turn("m2x", -40, 60, 300)], LINE, mid), 1, "a peer message after the last prompt")
+  assert.equal(activePrompt(listed, turn("m3", -300, 60, 800), LINE, mid), 1, "a reverted turn: the last listed prompt")
 })
 
 test("probe direction: rows in view of the target's turn or later mean it is above, earlier turns mean below", () => {

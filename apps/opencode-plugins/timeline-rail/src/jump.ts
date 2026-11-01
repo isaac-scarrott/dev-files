@@ -26,16 +26,37 @@ const RENDER_FRAMES = 2
 /** Reveal-and-glide rounds before a jump settles for where it is. */
 const LAND_ROUNDS = 4
 
-/** Mounted rows in document order, as the host's cursor reads them. */
+/**
+ * Mounted rows in document order, as the host's cursor reads them. The virtualizer mounts each row in a keyed wrapper
+ * (`[data-timeline-key]`) under one container, so the container's children are walked and each wrapper is asked for its
+ * row: a query for every `[data-message-id]` in the scroller scans every node of every mounted row, thousands of them
+ * with long replies, on each scroll frame. A scroller with no keyed wrapper is scanned whole.
+ */
 export function readRows(scroller: HTMLElement): Row[] {
-  return [...scroller.querySelectorAll<HTMLElement>("[data-message-id]")].flatMap((element) => {
+  const container = scroller.querySelector("[data-timeline-key]")?.parentElement
+  const rows: Row[] = []
+  const add = (element: HTMLElement) => {
     const owner = element.dataset.messageId
 
-    if (!owner) return []
+    if (!owner) return
     const rect = element.getBoundingClientRect()
 
-    return [{ owner, prompt: element.dataset.timelineRow === "UserMessage", top: rect.top, bottom: rect.bottom }]
-  })
+    rows.push({ owner, prompt: element.dataset.timelineRow === "UserMessage", top: rect.top, bottom: rect.bottom })
+  }
+
+  if (!container) {
+    for (const element of scroller.querySelectorAll<HTMLElement>("[data-message-id]")) add(element)
+
+    return rows
+  }
+
+  for (const child of container.children) {
+    const row = child.matches("[data-message-id]") ? child : child.querySelector("[data-message-id]")
+
+    if (row) add(row as HTMLElement)
+  }
+
+  return rows
 }
 
 /** The sticky header's height: what the host's `scrollToElement` keeps a revealed prompt below. */
