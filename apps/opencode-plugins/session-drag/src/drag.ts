@@ -43,7 +43,6 @@ export function buildGhost(doc: Document, title: string) {
   const ghost = doc.createElement("div")
   ghost.setAttribute("data-session-drag-ghost", "")
   ghost.setAttribute("aria-hidden", "true")
-  ghost.dataset.state = "enter"
   ghost.className = GHOST_CLASS
   const icon = doc.createElement("span")
   icon.dataset.slot = "session-drag-ghost-icon"
@@ -128,14 +127,10 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     dragging = { target: from.target, pointerId: from.pointerId, ghost, dispose }
     move(x, y)
 
-    // The entrance transitions from a painted first frame; reduced motion keeps the fade and drops the scale (CSS).
-    win.requestAnimationFrame(() => {
-      if (dragging?.ghost === ghost) ghost.dataset.state = "active"
-    })
     signal("dragover", from.target)
   }
 
-  const finish = (kind: "drop" | "cancel") => {
+  const finish = () => {
     const current = dragging
 
     if (!current) return
@@ -143,18 +138,8 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     doc.documentElement.removeAttribute("data-session-drag")
     hideLabel(LABEL_HOLD)
     signal("dragleave")
-    const ghost = current.ghost
-
-    const remove = () => {
-      ghost.remove()
-      current.dispose()
-    }
-
-    // A drop lands at once, as the host's own file drop does; a cancel fades the chip out.
-    if (kind === "drop") return remove()
-    ghost.dataset.state = "leave"
-    ghost.addEventListener("transitionend", remove, { once: true })
-    win.setTimeout(remove, 200)
+    current.ghost.remove()
+    current.dispose()
   }
 
   const onPointerDown = (event: PointerEvent) => {
@@ -227,7 +212,7 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
       if (event.pointerId !== dragging.pointerId) return
       const target = dragging.target
       const inside = host.dropzones().some((zone) => within(zone, event.clientX, event.clientY))
-      finish(inside ? "drop" : "cancel")
+      finish()
       suppressClick = true
 
       if (inside) host.drop(target)
@@ -251,13 +236,13 @@ export function installSessionDrag(host: DragHost, win: Window & typeof globalTh
     if (!dragging || event.key !== "Escape") return
     event.stopPropagation()
     event.preventDefault()
-    finish("cancel")
+    finish()
     suppressClick = true
   }
 
   const cancel = () => {
     pending = undefined
-    finish("cancel")
+    finish()
   }
 
   const capture = { capture: true }

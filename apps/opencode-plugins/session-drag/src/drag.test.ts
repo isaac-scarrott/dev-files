@@ -169,13 +169,11 @@ test("a sideways move starts a reference drag: ghost, host overlay signal, no na
     const ghost = f.ghost()
     assert.ok(ghost)
     assert.equal(ghost.className, GHOST_CLASS)
-    assert.equal(ghost.dataset.state, "enter")
     assert.equal(ghost.querySelector('[data-slot="session-drag-ghost-title"]')?.textContent, "Fix login")
     assert.equal(ghost.querySelector('[data-slot="session-drag-ghost-icon"]')?.textContent, "icon")
     assert.equal(ghost.style.transform, `translate3d(${26 - GHOST_OFFSET.x}px, ${41 - GHOST_OFFSET.y}px, 0)`)
     assert.equal(doc.documentElement.hasAttribute("data-session-drag"), true)
-    f.flush()
-    assert.equal(ghost.dataset.state, "active")
+    assert.equal(ghost.hasAttribute("data-state"), false, "no enter state: the chip is there from the first frame")
     f.pointer("pointermove", doc.body, 400, 300)
     assert.equal(ghost.style.transform, `translate3d(400px, ${300 - GHOST_OFFSET.y}px, 0)`)
   } finally {
@@ -202,7 +200,7 @@ test("release over the session panel drops: host overlay cleared, ghost gone at 
   }
 })
 
-test("release elsewhere does nothing but fade the ghost out", () => {
+test("release elsewhere does nothing and removes the ghost at once", () => {
   const f = fixture()
   try {
     f.press(f.title, 20, 40)
@@ -211,9 +209,6 @@ test("release elsewhere does nothing but fade the ghost out", () => {
     f.pointer("pointermove", doc.body, 100, 300)
     f.release(doc.body, 100, 300)
     assert.equal(f.calls.drop.length, 0)
-    assert.equal(ghost.dataset.state, "leave")
-    assert.equal(ghost.isConnected, true)
-    ghost.dispatchEvent(new win.Event("transitionend"))
     assert.equal(ghost.isConnected, false)
     assert.equal(f.calls.disposed, 1)
     assert.ok(f.seen.includes("dragleave"))
@@ -231,7 +226,7 @@ test("Escape cancels the drag and the release that follows drops nothing", () =>
     doc.body.dispatchEvent(escape)
     assert.equal(escape.defaultPrevented, true)
     assert.equal(f.seen.includes("keydown"), false, "Escape belongs to the drag, as it does to a native one")
-    assert.equal(f.ghost()?.dataset.state, "leave")
+    assert.equal(f.ghost(), null)
     assert.equal(doc.documentElement.hasAttribute("data-session-drag"), false)
     f.release(f.panel, 400, 300)
     assert.equal(f.calls.drop.length, 0)

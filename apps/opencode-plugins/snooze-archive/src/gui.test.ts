@@ -766,7 +766,7 @@ function archiveServer(f: ReturnType<typeof fixture>, total: number) {
     archiveNew: (id: string, updated: number) => { infos.set(id, make(id, updated)); order.unshift(id); f.emit("session.archived", id) },
   }
 }
-const archivedIds = (f: { doc: Document }) => [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="archived"] [data-sa-row]:not([data-leaving])')].map((row) => row.dataset.saRow!.split("\n")[1])
+const archivedIds = (f: { doc: Document }) => [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="archived"] [data-sa-row]')].map((row) => row.dataset.saRow!.split("\n")[1])
 const moreButton = (f: { doc: Document }, kind: string) => f.doc.querySelector<HTMLButtonElement>(`[data-sa-kind="${kind}"] [data-sa-more]:not([hidden]) button`)
 
 test("Archived loads page by page: 10 first, then 25 per press, count carries + until the last page", async () => {

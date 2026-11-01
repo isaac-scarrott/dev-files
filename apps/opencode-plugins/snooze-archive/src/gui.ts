@@ -45,7 +45,7 @@ export default Plugin.define({
     const down = guard.standDown
     // Archived loads on first expand and by page; nothing is fetched while the group has never been opened.
     let archiveOpened = false
-    const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame, undefined, {
+    const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame, {
       toggled: (kind, open) => {
         if (!open || kind !== "archived") return
         archiveOpened = true
@@ -509,6 +509,8 @@ export default Plugin.define({
       window.removeEventListener("focus", recheck)
       subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
       subscriptions.clear()
+      archivedClosing.forEach((id) => window.clearTimeout(id))
+      archivedClosing.clear()
       sidebar.dispose()
       tabActions.dispose()
       wokeMarks.dispose()

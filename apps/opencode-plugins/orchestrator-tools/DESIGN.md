@@ -91,9 +91,9 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
 - **Audit facts (2.2.5, measured in the harness).** Host subagent row: `[data-component=collapsible].tool-collapsible >
   a[data-slot=collapsible-trigger]` holding `task-tool-card > task-tool-surface`; 36px high, padding `8px 12px`, radius
   8px, background `bg-layer-02` (#f2f2f2 light), gap 8px; title `task-tool-title` 13px/530/20px, letter-spacing
-  -0.04px; subtitle weight 440; trailing action slot hidden at rest, opacity 0→1 over 150ms on hover/focus. Basic-tool
-  action buttons (`[data-slot=basic-tool-action]`): 24px ghost icon button, radius 6px, revealed on `:hover` /
-  `:focus-within` / `(hover: none)`. Questions arrow: 14px `fill-triangle-down`, rotates -90°→0 in 150ms ease. The host
+  -0.04px; subtitle weight 440; trailing action slot hidden at rest, revealed on hover/focus by `width`, `margin-inline-start`, `opacity`, `color`, `transform` over `.15s` (default `ease`; none under `data-motion=reduce`). Basic-tool
+  action buttons (`[data-slot=basic-tool-action]`): 24px ghost icon button, radius 6px, `opacity: 0` at rest and `1` on `:hover` /
+  `:focus-within` / `(hover: none)` with **no transition** (instant). Collapsible arrow (the Questions arrow): `[data-slot=collapsible-arrow]` `transition: opacity .15s`, `[data-slot=collapsible-arrow-icon]` `transition: transform .15s` (rotate(-90deg) → 0), i.e. 150ms with the default `ease`. The host
   catalog has `arrow-up-right` but no down-left arrow.
 - **Header.** A 16px direction icon, drawn (an inline SVG, as `ctx.ui.Icon` only takes catalog names): the catalog's `arrow-up-right` path turned to down-left
   (`M5 6.44V11H9.56M5 11L11 5`, 1px stroke, `currentColor`, `text-faint`). Title weight 530, one line, ellipsis at 280px.
@@ -125,8 +125,7 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   header 352 → -106px). The row copies that exactly: one frame changes (row height 36 → 203px), and the host then
   scrolls to the bottom, so the header moves just as a host row's does (167px pinned, up to 425px from higher up). There is no
   state where the header stays put, and none is added. The row's own layout is stable in that frame: x of header and
-  first line and the row width change by 0.00. The triangle rotates 150ms ease and the arrow and Open-session button reveal over 150ms opacity, as
-  the host's. Reduced motion needs no branch. An earlier design grew the height over 200ms and held the header against
+  first line and the row width change by 0.00. The triangle rotates `transform 150ms ease` and its opacity reveals `150ms ease`, copied from the host's collapsible arrow (`.15s` with no timing function is `ease`; re-measured in 2.2.5 `main-*.css`). The Open-session button reveals instantly (`transition: none` on it: the host icon button carries its own `opacity .15s`, which would fade it), as `basic-tool-action` does. Reduced motion needs no branch. An earlier design grew the height over 200ms and held the header against
   the scroller; both were removed.
 - **Sender side: not done.** The call runs through Code Mode `execute`; the host has no tool-part renderer registry and
   the only route to a "Sent to X" row is rewriting the DOM of the tool row. Skipped.

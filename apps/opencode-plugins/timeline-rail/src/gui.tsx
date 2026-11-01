@@ -4,7 +4,6 @@ import { Portal } from "solid-js/web"
 import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
 import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, visibleRange, type Message, type PromptWindow } from "./rail"
 import { currentPrompt } from "./target"
-import { tweenScroll } from "./tween"
 
 /** t3-code's `left-3`: the strip sits this far from the view's left edge. */
 const STRIP_LEFT = 12
@@ -162,7 +161,6 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
       ids: loaded,
       reducedMotion,
       frame,
-      tween: (to, signal) => tweenScroll({ scroller: root, frame, now: () => performance.now() }, to, signal),
     }
   }
 

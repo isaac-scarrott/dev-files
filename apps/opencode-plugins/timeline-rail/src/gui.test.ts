@@ -300,12 +300,8 @@ test("a click jumps to the prompt under the pointer", async () => {
     await f.flush()
     await new Promise((resolve) => setTimeout(resolve, 320))
     await f.flush()
-    // The host's own ease-out, one write per frame: every write is instant, none goes backwards, the last lands.
-    const tops = f.scrolls.map((scroll) => scroll.top)
-    assert.ok(tops.length > 2, `eased over frames, got ${tops.length} writes`)
-    assert.ok(f.scrolls.every((scroll) => scroll.behavior === "auto"))
-    assert.deepEqual(tops, [...tops].sort((a, b) => a - b))
-    assert.equal(tops.at(-1), 1108 - INSET)
+    // The host's own jump: one native smooth scrollTo to the prompt, no per-frame writes by the plugin.
+    assert.deepEqual(f.scrolls, [{ top: 1108 - INSET, behavior: "smooth" }])
     click(0.5)
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
