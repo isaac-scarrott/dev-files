@@ -22,6 +22,7 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 - Running a plugin in the real UI (harness, screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
 - Worst-case data, narrow or zoomed layouts, empty/one/huge states → [reference/stress.md](reference/stress.md)
 - Plugin cost: profiling, overhead budgets, hill-climbing a slow plugin → [reference/performance.md](reference/performance.md)
+- Writing or updating a plugin's README, its demo media, or crediting what inspired it → [reference/readme.md](reference/readme.md)
 - A first build in a new checkout, an install/build failure, or a plugin that does not appear → [reference/build.md](reference/build.md)
 
 ## Workflow
