@@ -56,7 +56,7 @@ While the slot is active and `more(id)` is true, `loadHistory` requests one page
   `(empty prompt)` otherwise; cut at 200 chars) and the start of its reply: the first non-blank `text` part of the
   first assistant message with one, markdown stripped, cut at 240 chars. A reply with no text that is still
   streaming (`time.completed` unset, no error) shows "Working…"; a finished tool-only turn shows the prompt alone.
-- **Layout** (t3-code's model; there is no bucketing and no scale limit): one tick per prompt, always. The strip is
+- **Layout** (t3-code's model; no bucketing; resting ticks thin out past 5px pitch, see Scale): one tick per prompt while the pitch allows. The strip is
   `min((n - 1) * 8px, calc(100vh - 18rem))` tall (never negative), centred in the rail's box, with prompt `i` at
   `i / (n - 1)` of it; past the cap, ticks overlap rather than merge into buckets. The height depends on the count and
   the window only, so the composer or a question or permission form appearing does not move or resize it. Every tick
@@ -233,6 +233,21 @@ at 850px every frame. Clicking 9 ticks across the thread (first, last, buckets, 
 under the header each time, except the very last prompt, which the list's end clamps below the fold like the host's
 own. Jump tween 290–500ms for 1–10k px. Not verified live: the 768px breakpoint (unit tests only), light/dark, touch.
 
+### Thinning (`tickStride`, `strip.ts`)
+
+One tick per prompt at 5,000 prompts is a 0.15px pitch: the gradient's 2px ticks merged into a solid grey bar (the
+"Collections" thread). Resting ticks now thin out by index: while `height / (count - 1)` is at least 5px
+(`MIN_TICK_PITCH`) the rail is exactly as before (stride 1); below it, `--stride = ceil(5 / pitch)` and the gradient's
+period becomes `stride x pitch`, so at most about one tick per 5px is drawn (every `stride`-th prompt, from the first).
+The strip reports its height through a `ResizeObserver`, so a window resize restrides. Only the drawn set changes:
+
+- The last prompt gets a real node while thinned, so the rail always ends on it (it follows the count as history pages in).
+- Pointer, scrub, hover, card, chevrons, keyboard and jump all use every prompt: the pointer maps to the exact nearest
+  index (`indexFromPointer`, unchanged) and the card shows that prompt whether or not a faint tick sits there.
+- The fisheye band, in-view range and current prompt are real nodes at their exact positions, so they are correct for
+  prompts the gradient does not draw. At sub-pixel pitch the band's neighbours overlap into one bump; it is not spread out.
+- DOM stays 18 nodes in the rail at any count (5-9 ticks while hovering at 5,000).
+
 ### Scale (t3-code model, measured on 2.2.5)
 
 The previous layout bucketed prompts once the pitch hit 4px (60% of the height): at the harness window (898px rail box)
@@ -256,5 +271,10 @@ bucket's first prompt only. Now there are 400 / 1,000 / 5,000 ticks and the poin
   Harness, 5,000 prompts, click from the end, time to the prompt resting under the header (fold within 14px, scroll
   still 12 frames): middle (question 2501) 2.6s before, 0.27s after; questions 501, 4500 and 151 did not land within
   40s before and took 0.22 / 0.36 / 0.29s after. While seeking, 1-3 unrelated prompts pass the top for a frame or two.
+- Thinning, harness (strip 726px at the 1000px-high window, 2.2.5): 50 prompts stride 1 (8px pitch, unchanged), 300
+  stride 3 (7.3px period), 800 stride 6, 5,000 stride 35 (every period 5.3-7.3px). Pointer at 8 positions per thread
+  (including both ends) opened the right prompt in all four (card title and "n of N" equal to `round(progress x (n - 1)) + 1`).
+  Frames during a 240-move sweep: p50 8.3ms, p95 9.0-9.3ms, max 9.3-9.4ms (120Hz) at 50 / 300 / 800 / 5,000. Rail DOM 18
+  nodes at every count.
 - A click now jumps to the prompt the card shows (`pointed()`), not a re-derived one: a click's whole-pixel `clientY`
   is several prompts off the pointermove position at 5,000 prompts (found when click 501 landed on 496).

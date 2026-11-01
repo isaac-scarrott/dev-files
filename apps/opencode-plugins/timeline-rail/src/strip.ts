@@ -1,4 +1,4 @@
-import { fisheyeBand } from "./rail"
+import { fisheyeBand, tickStride } from "./rail"
 
 type Range = readonly [number, number]
 
@@ -10,12 +10,15 @@ const RETIRE_AFTER = 220
  * harness: 16ms a frame at 400 ticks, 58 at 1,000, 117 at 2,000, with a fixed main-thread cost), so the faint ticks are
  * one gradient element laid out from `--max`, and only prompts with something to show get a node: the fisheye band
  * around the active index, the prompts in view, the current one. A pointer, scroll or keyboard update touches that
- * band, never the count, and no node has a listener.
+ * band, never the count, and no node has a listener. When the pitch drops under `MIN_TICK_PITCH` the gradient draws
+ * every `--stride`-th prompt (the last one gets a node); the nodes stay at their exact positions.
  */
 export function createStrip(host: HTMLElement) {
   const base = document.createElement("span")
   const pool = new Map<number, HTMLElement>()
   let count = 0
+  let stride = 1
+  let height = 0
   let view: Range | undefined
   let current = -1
   let active: number | undefined
@@ -25,10 +28,23 @@ export function createStrip(host: HTMLElement) {
   base.setAttribute("data-timeline-rail-base", "")
   host.appendChild(base)
 
+  const restride = () => {
+    const next = tickStride(count, height)
+
+    host.style.setProperty("--stride", String(next))
+    if (next === stride) return
+    const before = stride
+
+    stride = next
+    // The last prompt is always drawn; the first is the gradient's first tick. A stride of 1 needs no extra node.
+    if (before === 1 || next === 1) paint(count - 1)
+  }
+
   const stateOf = (index: number) => ({
     d: active === undefined ? undefined : Math.abs(index - active),
     view: view !== undefined && index >= view[0] && index <= view[1],
     current: index === current,
+    last: stride > 1 && index === count - 1 && count > 1,
   })
 
   const node = (index: number) => {
@@ -65,7 +81,7 @@ export function createStrip(host: HTMLElement) {
   const paint = (index: number) => {
     if (index < 0 || index >= count) return
     const state = stateOf(index)
-    const shown = (state.d !== undefined && state.d <= 2) || state.view || state.current
+    const shown = (state.d !== undefined && state.d <= 2) || state.view || state.current || state.last
 
     if (!shown && !pool.has(index)) return
     const el = shown ? node(index) : pool.get(index)!
@@ -99,6 +115,7 @@ export function createStrip(host: HTMLElement) {
 
       count = next
       host.style.setProperty("--max", String(Math.max(1, next - 1)))
+      restride()
       for (const [index, el] of pool) {
         if (index < next) continue
         el.remove()
@@ -110,6 +127,15 @@ export function createStrip(host: HTMLElement) {
       else if (view && view[1] >= next) view = [view[0], next - 1]
       if (active !== undefined && active >= next) active = undefined
       if (next > before) each(view, paint)
+      if (stride > 1) {
+        paint(before - 1)
+        paint(next - 1)
+      }
+    },
+    /** The strip's height in px: when the resting ticks would sit closer than the minimum pitch, they thin out. */
+    height(next: number) {
+      height = next
+      restride()
     },
     /** The prompts in view: only the ends that moved are touched. */
     view(next: Range | undefined) {

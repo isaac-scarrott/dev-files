@@ -342,6 +342,17 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     return host ? createStrip(host) : undefined
   })
 
+  createEffect(() => {
+    const host = stripHost()
+    const set = ticks()
+
+    if (!host || !set || typeof ResizeObserver !== "function") return
+    const observer = new ResizeObserver(() => set.height(host.getBoundingClientRect().height))
+
+    observer.observe(host)
+    set.height(host.getBoundingClientRect().height)
+    onCleanup(() => observer.disconnect())
+  })
   createEffect(() => ticks()?.count(count()))
   createEffect(() => ticks()?.view(range()))
   createEffect(() => ticks()?.current(current()))
@@ -635,7 +646,7 @@ const CSS = `
   background: repeating-linear-gradient(
     to bottom,
     var(--v2-text-text-faint) 0 2px,
-    transparent 2px calc(var(--timeline-rail-height) / var(--max, 1))
+    transparent 2px calc(var(--timeline-rail-height) * var(--stride, 1) / var(--max, 1))
   );
   opacity: 0.45;
   pointer-events: none;

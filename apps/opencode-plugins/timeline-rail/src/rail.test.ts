@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { fisheyeBand, indexFromPointer, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
+import { fisheyeBand, indexFromPointer, MIN_TICK_PITCH, tickStride, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -133,4 +133,32 @@ test("visible range: owners of rows that intersect the box; off-screen rows and 
   assert.deepEqual(visibleRange(indexOf, [row("b", 100, 200), row("x", 200, 300)], box), [1, 1])
   assert.equal(visibleRange(indexOf, [row("d", 900, 1000)], box), undefined)
   assert.equal(visibleRange(indexOf, [], box), undefined)
+})
+
+test("tickStride: 1 while the pitch is at least 5px, else the smallest whole stride that restores it", () => {
+  assert.equal(tickStride(0, 100), 1)
+  assert.equal(tickStride(2, 8), 1)
+  assert.equal(tickStride(50, 392), 1, "8px pitch")
+  assert.equal(tickStride(100, 495), 1, "exactly 5px")
+  assert.equal(tickStride(100, 494), 2)
+  assert.equal(tickStride(300, 898), 2, "3px pitch")
+  assert.equal(tickStride(800, 898), 5)
+  assert.equal(tickStride(5000, 898), 28)
+  assert.equal(tickStride(5000, 0), 1, "unmeasured")
+  for (const n of [3, 10, 60, 100, 101, 300, 800, 5000, 20000]) {
+    for (const h of [100, 400, 898, 1400]) {
+      const k = tickStride(n, h)
+      const drawn = Math.floor((n - 1) / k) + 1
+      assert.ok(k === 1 || (h / (n - 1)) * k >= MIN_TICK_PITCH, `${n}/${h}: pitch of drawn ticks`)
+      assert.ok(k === 1 || (h / (n - 1)) * (k - 1) < MIN_TICK_PITCH, `${n}/${h}: no thinner than needed`)
+      assert.ok(drawn <= h / MIN_TICK_PITCH + 1, `${n}/${h}: at most one tick per 5px`)
+    }
+  }
+})
+
+test("tickStride leaves pointer mapping alone: every index of 5,000 stays reachable", () => {
+  const seen = new Set<number>()
+  for (let y = 0; y <= 8980; y += 1) seen.add(indexFromPointer({ count: 5000, top: 0, height: 898, y: y / 10 })!)
+  assert.equal(seen.size, 5000)
+  assert.equal(indexFromPointer({ count: 800, top: 100, height: 898, y: 100 + 449 }), 400)
 })
