@@ -20,6 +20,7 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 - An icon the catalog lacks, or which catalog icon to use → [reference/icons.md](reference/icons.md)
 - Any transition, fade or accordion → [reference/animation.md](reference/animation.md)
 - Running a plugin in the real UI (harness, screenshots, DOM checks, hot reload, seeded long sessions) → [reference/browser-testing.md](reference/browser-testing.md)
+- Worst-case data, narrow or zoomed layouts, empty/one/huge states → [reference/stress.md](reference/stress.md)
 - Plugin cost: profiling, overhead budgets, hill-climbing a slow plugin → [reference/performance.md](reference/performance.md)
 - A first build in a new checkout, an install/build failure, or a plugin that does not appear → [reference/build.md](reference/build.md)
 
@@ -32,7 +33,8 @@ Plugins are registered by absolute path in `~/.config/opencode/opencode.json`:
 5. Separate pure logic from setup, test it, and run every declared package check. Register the built package through the global config.
 6. Load the plugin in the harness (`scripts/desktop-harness.sh`: an isolated second app driven over CDP; `opencode serve` never loads GUI plugins) and exercise it there: open the element, hot reload, switch sessions, run the cleanup. The hand-off shows a screenshot of the real window for each, listed apart from the package checks.
 7. **Parity** closes the task: run `scripts/parity.mjs` against the native sibling and iterate until the report is all PASS (next section). The hand-off carries the report and its side-by-side screenshot.
-8. **Free** also closes it: profile the plugin against the bare app and hill climb until every scenario is inside the bars in [reference/performance.md](reference/performance.md). The hand-off carries the table.
+8. **Stress**: run the worst realistic data through the element ([reference/stress.md](reference/stress.md)); fix what breaks.
+9. **Free** also closes it: profile the plugin against the bare app and hill climb until every scenario is inside the bars in [reference/performance.md](reference/performance.md). The hand-off carries the table.
 
 ## Parity
 
@@ -112,3 +114,7 @@ export default Plugin.define({
 - **A `MutationObserver` filters.** Observe the smallest attribute set that matters (`attributeFilter: ["data-tab-key", "data-orientation", "data-status"]`) and coalesce work into one `requestAnimationFrame`; an unfiltered observer over `documentElement` re-enters on its own writes.
 - **Animation earns a purpose first.** Gate by frequency, then follow [reference/animation.md](reference/animation.md): ease-out curve, 150-250ms, `transform`/`opacity`, interruptible transitions, reduced-motion branch, accordions via `grid-template-rows`. Override the app's own motion with `!important` only where it is a `mask-image` fade.
 - **Assume the app is hostile to long-lived references.** Elements unmount on session switch; re-resolve your container from the DOM rather than caching an element across renders. A popover or menu of your own portals into `<body>`: a plugin mount point can sit under `contain: strict`, which clips a fixed box out of hit-testing.
+
+## Proportion
+
+Depth scales with the task. A copy tweak needs the unit tests and one screenshot; a new surface, a DOM-injecting plugin, or anything on the hot path (timeline, rows, composer) earns the full parity, stress and performance runs, however many tokens and minutes that takes. Spend where the risk is: a cheap check on a risky change is the waste. State in the hand-off which steps were skipped and why.
