@@ -2,6 +2,8 @@
 
 Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archive next to Delete in every session menu.
 
+> **Credit:** menu markup is adapted from [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) desktop app (2.2.5). The accordion's `grid-template-rows` technique and `cubic-bezier(.23,1,.32,1)` curve are from Emil Kowalski's animation guidance.
+
 ![Expanding Snoozed and Archived, then showing more rows](media/demo.gif)
 
 [Full-quality video](media/demo.mp4)
@@ -51,6 +53,10 @@ Archive and Restore call the client's own `session.archive` / `session.unarchive
 - **Sidebar**: the `data-slot` / `data-component` of an archived group in the Side tabs sidebar (`SIDEBAR_ARCHIVED`). The probe is scoped to `[data-slot="vertical-tabs-sidebar"]`.
 - **Home**: whether `SHOW_HOME_SESSION_ARCHIVE` is on (`home-session-archive`).
 - **Layouts**: whether the Inbox layout's Archived section moves into Side tabs.
+
+## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the menu markup, adapted from the desktop app's renderer source (2.2.5).
+- Emil Kowalski: the `grid-template-rows` accordion and `cubic-bezier(.23,1,.32,1)`, taken verbatim from his animation guidance.
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

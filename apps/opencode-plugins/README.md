@@ -1,7 +1,12 @@
 # OpenCode Desktop plugins
 
 Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
-`../../.config/opencode/opencode.json`.
+`../../.config/opencode/opencode.json`, which `~/.config/opencode/opencode.json` symlinks to. The committed version
+of that file still lists the deleted `sidepanel`, `sidebar-repos` and a non-existent `message-jump`; the set in use
+is only in the working copy until it is committed. Register a plugin by absolute path as its README shows.
+
+Parts that run in the background service (server plugins, a plugin's first load of a GUI export) need the service
+restarted, not just the app: quit the app, then `opencode service restart`. Cmd+R reloads GUI parts.
 
 | Package | What it does | Kind |
 | --- | --- | --- |
@@ -10,13 +15,12 @@ Local plugins for OpenCode Desktop 2.2.5. Global registration lives in
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |
 | [`monitor`](monitor) | `monitor`, `list_monitors`, `stop_monitor`: run a command in the background and wake the session with its output lines (batched, escaped, untrusted-data trailer); optional re-arm | server |
-| [`native-ui`](native-ui) | Components copied from the app's own markup, imported by the other plugins | library |
+| [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive` imports it (`agents-panel` carries copies of the spinner files) | library |
 | [`no-project`](no-project) | "No project" row in the project picker and `/no-project`: a draft in its own scratch folder, swept when unused | GUI + server |
 | [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions | server |
-| [`session-drag`](session-drag) | Drag a sidebar session row into the chat to attach a `@session:<id>` chip | GUI |
 | [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep | server |
+| [`session-drag`](session-drag) | Drag a sidebar session row into the chat to attach a `@session:<id>` chip | GUI |
 | [`sidebar-repos`](sidebar-repos) | Two-line sidebar rows (project name over title), permission and question icons, last-active time on idle rows | GUI |
-| [`sidepanel`](sidepanel) | Original pinned counter-panel experiment | GUI |
 | [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu | GUI |
 | [`timeline-rail`](timeline-rail) | Tick rail in the chat gutter for the newest 10 prompts, after t3-code's minimap: hover card, chevrons, keyboard, click to jump | GUI |
 | [`usage-resume`](usage-resume) | Waits for the earliest Claude account reset after a usage limit, re-checks usage, queues "Continue." once | server |
@@ -32,10 +36,6 @@ npm_config_registry=https://registry.npmjs.org pnpm typecheck
 npm_config_registry=https://registry.npmjs.org pnpm test
 npm_config_registry=https://registry.npmjs.org pnpm build
 ```
-
-`sidepanel` preserves its original manifest and Bun lockfile; a pnpm lockfile and
-public-registry config were added for reproducible installs. Rebuild with
-`pnpm exec vite build`; it has no typecheck/test scripts.
 
 Built `dist/gui-experimental.cjs` files are tracked so registration works on a new
 checkout before installing development dependencies. Rebuild and commit them with source.

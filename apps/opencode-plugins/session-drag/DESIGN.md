@@ -137,3 +137,24 @@ seeded sessions, side-tabs layout):
   upload icon unmoved, 15px/530/24px, same colour and family; removing the attribute restored the exact original
   boxes. The gesture wiring (set/hold/restore across drop, release outside, Esc, pointercancel, blur, uninstall,
   foreign drags) is covered by unit tests; the full pointer gesture was not re-run live (side-tabs layout not set up).
+
+## Decisions
+
+- **Pointer hooks on sidebar rows** are DOM: the host blocks HTML drag and drop from rows and exposes no extension point for tab rows ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)). The attach itself uses public APIs (`composer.attach`, `LinkHandler`, `Command`).
+- **Swallowing the host's mousedown and replaying a synthetic one** keeps a plain click working; it can race a host update, so it is re-verified each release.
+- **`html[data-session-drag] * { cursor: default !important; user-select: none !important }`** is a universal selector, kept because it holds only for the drag's duration.
+- **Motion deviation, awaiting the user's yes**: the ghost fades and scales (`opacity`, `scale .97 to 1`, 120ms, `cubic-bezier(.23,1,.32,1)`). The host's file drag image is an OS drag image with no enter animation; nothing native to copy.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- No observers. Window listeners are removed on cleanup; the label timer is cleared.
+- Four capture listeners on `window` (pointerdown, mousedown, pointermove, pointerup) live for the whole window, not only during a drag.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

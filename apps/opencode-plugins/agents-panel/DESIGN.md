@@ -104,3 +104,26 @@ Reproduce: `test/motion-profile.mjs <native|ours> <runs> <out.json> [notrace]` (
 | 760 after | 0 | n/a | n/a | n/a | 0 / 0 |
 
 `documentElement` never overflowed. After the fix at 1400: header, fade and viewport are all 8-1392 hidden and shown, header icons at the same x, message column 8-1096 against the window at 1096-1384.
+
+## Decisions
+
+Reason for each DOM hook, against the "no extension point" list in [host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary). The header button, the store and the styles use public APIs (`Slot session.header`, `Store.global`, `Style`).
+
+- **Option in the host's "Background activity" select** (`src/setting.ts`): the Settings page has no hook for the options of a host select, so the option is injected when the dropdown opens. See "Why DOM injection".
+- **Chat card padding and glide** (`src/dock.ts`, `src/panel.tsx`): the chat card's width and position have no extension point (the side panel width per tab is an open upstream request), so the dock is made room for by moving the host's own elements.
+- **Opening a child session in the current tab** (`src/open-child.ts`): no API navigates the current tab to a session, so a link click is dispatched; `sessionHref` copies the host's href form. Re-check each OpenCode release.
+- **Motion** matches the host's right panel (spring, content held and translated); the dock's 16px slide has no host sibling and stays by decision.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A body-wide `childList` observer with rAF and a `querySelector` per mutation, plus four document-capture listeners, for the Settings option (`src/setting.ts`), running even when the mode is off.
+- Module-level `ResizeObserver` and `IntersectionObserver` for the spinner phase (`src/spin-phase.ts`), created at import and never disconnected.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

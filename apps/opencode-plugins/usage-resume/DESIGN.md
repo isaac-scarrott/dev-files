@@ -167,3 +167,22 @@ the detector expects.
 - If the app is quit while sessions wait, nothing resumes until it is reopened; then overdue sessions resume on the first tick.
 - The error shape was read from the binary, not observed live. If a bare 429 carries no limit text it is not treated as a
   usage limit (it is usually a short rate limit that OpenCode already retries).
+
+## Decisions: DOM hooks
+
+- **The composer toggle** is DOM injected into the composer row by a body-wide observer (`src/gui.tsx`, `src/composer.ts`). `ComposerPill` is the official capsule near the composer and would replace it, but it sits above the row rather than after the model picker. Which placement wins is the user's call (a `ComposerPill` spike is queued).
+- **Server side** uses public hooks (`SettingsPage`, RPC, session hooks) only.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A body-wide `MutationObserver` plus a `resize` listener and rAF to place the composer button (`src/gui.tsx`).
+- Server: a 30 second deadline check and the usage poll, at the notch app's pace (5 minute floor per account).
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

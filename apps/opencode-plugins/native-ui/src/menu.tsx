@@ -2,7 +2,8 @@ import { createSignal, onCleanup, onMount, Show, type JSX, type ParentProps } fr
 
 // Host source: ui/src/navigation/menu/menu.tsx (Menu.Content, Menu.Item, Menu.Separator) over Kobalte's DropdownMenu.
 // The markup and the attributes Kobalte sets on its items are copied, so the host's menu-v2 CSS styles them; the
-// roving focus Kobalte provides is reimplemented below. ctx.ui offers no menu or menu item component.
+// roving focus Kobalte provides is reimplemented below. ctx.ui.Menu exists but is a trigger-bound dropdown that cannot
+// open at a point, so a point-anchored context menu has to be drawn here.
 
 export interface MenuItemProps {
   onSelect(): void

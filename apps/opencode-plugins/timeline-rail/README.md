@@ -2,6 +2,8 @@
 
 A column of ticks in the chat's left gutter, one per prompt of yours (messages another session sent through orchestrator-tools are not prompts and get no tick), with a card on hover and a click that lands the prompt under the header.
 
+> **Credit:** layout, scale model, fisheye, card, chevrons, keyboard and history window are adapted from [t3-code](https://github.com/pingdotgg/t3code)'s (MIT) `TimelineMinimap`. The copyright notice is in [THIRD-PARTY.md](THIRD-PARTY.md).
+
 ![The timeline rail: hover for a card, click to jump](media/demo.gif)
 
 [Full-quality video](media/demo.mp4)

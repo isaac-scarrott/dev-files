@@ -24,7 +24,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/monitor"]
 ```
-Kind: server. Restart the app.
+Kind: server. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
 
 ## Options
 | Option | Default | |
