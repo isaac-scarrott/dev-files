@@ -32,10 +32,11 @@ export default Plugin.define({
       background.refresh()
     })
 
-    const sidebar = createSidebar()
+    const { sidebar, width: asideWidth } = createSidebar()
     const visible = () => ctx.stores.dock.value.visible
     const dock = {
       sidebar,
+      asideWidth,
       visible,
       setVisible: (value: boolean) => {
         if (value !== visible()) ctx.stores.dock.update((draft) => { draft.visible = value })
