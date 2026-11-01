@@ -200,7 +200,13 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
   const registry: { slots: any[]; styles: string[] } = { slots: [], styles: [] }
   // The host's IconButton and Tooltip, reduced to what the rail asks of them.
   const ui = {
-    Tooltip: (props: { children: unknown }) => props.children,
+    // The host's trigger is a block div around its child.
+    Tooltip: (props: { children: unknown }) => {
+      const trigger = doc.createElement("div")
+      trigger.setAttribute("data-component", "tooltip-v2-trigger")
+      trigger.append(props.children as Node)
+      return trigger
+    },
     IconButton: (props: { label: string; disabled?: boolean; onClick?: (event: MouseEvent) => void }) => {
       const button = doc.createElement("button")
       button.setAttribute("aria-label", props.label)
@@ -679,6 +685,12 @@ test("previous / next turn step from the current prompt and disable at the ends;
     await new Promise((resolve) => setTimeout(resolve, 320))
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
+    for (const name of ["Previous turn", "Next turn"] as const) {
+      const trigger = f.turn(name).closest("[data-component='tooltip-v2-trigger']")!
+      const placed = trigger.closest("[data-timeline-rail-turn]")
+      assert.ok(placed && placed.contains(trigger) && placed !== trigger, `${name}: the tooltip trigger sits inside the positioned box, so it takes the chevron's size and place`)
+      assert.equal(placed.querySelector("[data-timeline-rail-turn]"), null)
+    }
     const style = f.registry.styles[0]!
     assert.ok(style.includes("[data-timeline-rail-turn]:hover"), "revealed by their own hover")
     assert.ok(!style.includes("[data-timeline-rail-body]:hover [data-timeline-rail-turn]"), "not by the strip's")
