@@ -2,7 +2,7 @@
 
 A column of ticks in the chat's left gutter, one per prompt of yours, with a card on hover and a click that lands the prompt under the header.
 
-![The rail with the card open on a prompt](media/rail.png)
+[media/demo.mp4](media/demo.mp4)
 
 ## What it does
 - One tick per prompt, 8px apart (at most the window height minus 18rem, then they overlap). Nothing shows under two prompts.

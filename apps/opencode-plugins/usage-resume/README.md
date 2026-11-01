@@ -1,30 +1,29 @@
-# usage-resume
+# Usage resume
 
-OpenCode 2.2.5 server plugin. When a session stops because Claude usage was reached, it computes when any of your
-cliproxy Claude accounts has the limiting window free again, waits, re-checks real usage, and resumes the session with
-a short queued prompt. See `DESIGN.md` for the evidence and every default.
+When a Claude usage limit stops a session, it waits for your accounts to recover and then continues the session for you.
 
-## Setup
+## What it does
+- Detects the Claude Agent provider's "usage limit reached" failure and stops OpenCode's useless short retries.
+- Works out when any of your cliproxy Claude accounts has the limiting window free again, waits for that reset plus a margin, re-checks real usage, then queues one "Continue." prompt.
+- Adds a timeline notice with the resume time. Survives restarts and sleep: deadlines are checked every 30 seconds.
+- Gives up on a session after 3 resumes without a completed run, and drops stalls older than 8 days. Subagent sessions are skipped unless enabled.
+- Only reads the cliproxy auth files and the usage endpoint, at the notch app's pace (5 minute floor per account, 30 minute backoff cap). It never enables or spends extra usage.
 
-Register by absolute path in `~/.config/opencode/opencode.json` (not done for you):
+## Context
+Without it a session that hits the 5-hour or weekly limit just fails and waits for you. It needs the Claude Agent provider routed through cliproxy ([claude-proxy](../claude-proxy)) and accounts in `~/.cli-proxy-api/claude-*.json`. A real limit cannot be provoked in tests, so the limit message is the one the 2.2.5 provider builds, fed to the resumer.
 
+## Install
+Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
-{
-  "plugins": [
-    {
-      "package": "/path/to/dev-files/apps/opencode-plugins/usage-resume",
-      "options": { "prompt": "Continue." }
-    }
-  ]
-}
+"plugins": [{
+  "package": "/path/to/apps/opencode-plugins/usage-resume",
+  "options": { "prompt": "Continue." }
+}]
 ```
-
-Needs the Claude Agent provider routed through cliproxy (`claude-proxy` plugin) and the accounts in
-`~/.cli-proxy-api/claude-*.json`. Restart the app after registering.
+Kind: server. Restart the app.
 
 ## Options
-
-All optional. Durations are seconds.
+Durations are seconds.
 
 | Option | Default | |
 |---|---|---|
@@ -40,17 +39,5 @@ All optional. Durations are seconds.
 | `authDir` | `~/.cli-proxy-api` | cliproxy auth files (read-only) |
 | `snapshotPath` | notch app cache | its readings are reused to avoid double polling; `""` disables |
 
-The plugin only reads the auth files and calls `api.anthropic.com/api/oauth/usage` at the notch app's pace (5 minute
-floor per account, 30 minute backoff cap). It never enables or spends extra usage.
-
-## Develop
-
-```sh
-npm_config_registry=https://registry.npmjs.org pnpm install
-pnpm typecheck
-pnpm test
-pnpm build   # emits dist/, which is committed
-```
-
-Tests use a fake host, clock and fetch. A real limit cannot be provoked in the harness, so the limit message is the
-one the 2.2.5 Claude Agent provider builds, fed to `Resumer.onFailed`.
+## Development
+`pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Tests use a fake host, clock and fetch. Design notes: [DESIGN.md](DESIGN.md).

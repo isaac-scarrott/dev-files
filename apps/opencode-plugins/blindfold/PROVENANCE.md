@@ -10,3 +10,11 @@ Upstream files are unchanged, except these local adaptations:
 - `package.json`: local (private, pnpm, `@opencode/plugin` 2.2.5, vite 7, no publish scripts). Upstream is `upstream.package.json`.
 - `tsconfig.json`: extends the local `./tsconfig.base.json` (upstream root file, unchanged) instead of `../../tsconfig.base.json`. Upstream is `upstream.tsconfig.json`.
 - `.npmrc`, `pnpm-workspace.yaml`: copied from sidebar-repos.
+
+## Using this copy
+
+`README.md` is the upstream file, fetched by `vendor.manifest`, so edits to it are overwritten on the next vendor run. Local notes live here.
+
+- Kind: server, TUI and GUI in one package.
+- Register this checkout by absolute path instead of the npm name the README shows: in `~/.config/opencode/opencode.json` (server and Desktop) and `~/.config/opencode/cli.json` (TUI). Restart the app; GUI plugins reload with Cmd+R.
+- Credit: vimtor/opencode-blindfold (MIT), the whole plugin.

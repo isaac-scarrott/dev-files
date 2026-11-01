@@ -36,7 +36,7 @@ Omit the section when nothing was borrowed. Say "inspired by" for an idea, "adap
 ## Media
 
 - Prefer a short video (5 to 15s, under 2 MB, mp4, no audio) of the real feature in the harness; a PNG screenshot (cropped to the feature, under 300 KB) when motion adds nothing. One hero asset, a second only when it shows a different state.
-- Capture in the isolated harness with realistic data ([stress.md](stress.md)), never from the user's own app or threads. No private names, prompts or paths on screen.
+- Capture in the isolated harness with realistic data ([stress.md](stress.md)), never from the user's own app or threads. No private names, prompts or paths on screen. `scripts/seed-demo.mjs` seeds invented projects, a 12-prompt session, 34 archived sessions and subagents (point a provider at a server that never finishes a reply to make them genuinely run). Record by CDP `Page.startScreencast` frames with their timestamps, encode with ffmpeg (`libx264 -crf 30 -an`), draw a cursor dot, and strip `title` attributes so native tooltips do not show.
 - Store in `<plugin>/media/`; reference by relative path.
 
 ## Credit

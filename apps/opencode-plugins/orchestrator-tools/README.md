@@ -1,54 +1,41 @@
-# orchestrator-tools
+# Orchestrator tools
 
-OpenCode 2.2.5 server plugin. Adds `orchestrate_*` tools so an agent can create other sessions, send them prompts,
-wait for them, read their results and stop them. The usual shape is `orchestrate_delegate_task`: one child session,
-one prompt, one bounded wait, the child's final reply back.
+Tools that let an agent start other sessions, message them, wait on them and read their results.
 
-See `DESIGN.md` for the scope rules, limits and the permission model.
+## What it does
+- `orchestrate_delegate_task`: create a child session, send one prompt, wait a bounded time and return its final reply. The usual entry point.
+- `orchestrate_create_session`: create one or more sessions, each with its own prompt, as children of the caller (default) or as independent top-level sessions.
+- `orchestrate_send_message`: message a peer by ref, unique title or session id. The receiver gets `<cross-session-message from="TITLE [REF]">…</cross-session-message>` as a user message and replies by copying `from` as `to`. `delivery: "queue"` runs after its current work, `"steer"` interrupts. The result says whether it was delivered now or queued.
+- `orchestrate_list_peers`: reachable sessions as `name [ref]` with relation (parent, child, sibling, other), state and directory.
+- `orchestrate_read_session`, `orchestrate_wait_for_sessions` (up to 16, all or any), `orchestrate_interrupt_session` and `orchestrate_list_sessions` cover reading, waiting, stopping and listing.
+- A child gets only the prompt and optional `context` text, never the caller's history. `clientRequestId` makes create, delegate and send safe to retry.
 
-## Setup
+## Context
+OpenCode 2.2.5 has subagents but gives an agent no way to drive or talk to other sessions. With Code Mode on (the default) the tools are reached through `execute` as `tools.orchestrate.<name>()`. By default they reach only the caller's children, siblings, parent and sessions it created; `scope` widens that. The permission model and limits are in `DESIGN.md`.
 
+## Install
+Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
-{
-  "plugins": [
-    {
-      "package": "/path/to/dev-files/apps/opencode-plugins/orchestrator-tools",
-      "options": { "maxChildren": 8, "maxDepth": 3, "maxConcurrent": 4 }
-    }
-  ]
-}
+"plugins": [{
+  "package": "/path/to/apps/opencode-plugins/orchestrator-tools",
+  "options": { "maxChildren": 8, "maxDepth": 3, "maxConcurrent": 4 }
+}]
 ```
+Kind: server. Restart the app.
 
-All options are optional. `models` restricts the `model` input to a list of `provider/model` ids. `scope: "project"`
-lets the tools reach any session in the caller's project instead of only the caller's children, siblings and
-sessions it created; `scope: "all"` reaches any session on the server, whatever its project. `assertSubagentPermission: false` skips the `subagent` permission check before creating.
+## Options
+| Option | Default | |
+|---|---|---|
+| `maxChildren` | `8` | children one session may create |
+| `maxDepth` | `3` | nesting depth of created sessions |
+| `maxConcurrent` | `4` | sessions running at once |
+| `models` | any | restricts `model` to a list of `provider/model` ids |
+| `scope` | children, siblings, created | `"project"` reaches any session in the caller's project, `"all"` any session on the server |
+| `assertSubagentPermission` | `true` | `false` skips the `subagent` permission check before creating |
 
-## Tools
+## Credits
+- t3-code (MIT, pingdotgg/t3code): inspired by the tool set of its orchestrator MCP server (create, message, wait, read, stop). Nothing is copied.
+- Claude Code: inspired by its cross-session message format, the `<cross-session-message from="…">` wrapper with a reply-by-sender flow, so models trained on it use it as is. The implementation is this plugin's own.
 
-- `orchestrate_create_session`: create one or more sessions, each with its own prompt. `mode: "child"` (default)
-  makes them children of the caller; `mode: "independent"` makes top-level sessions.
-- `orchestrate_send_message`: message a peer by `to` (ref, unique title or session id). The receiver gets
-  `<cross-session-message from="TITLE [REF]">…</cross-session-message>` as a user message; reply by copying `from` as
-  `to`. `delivery: "queue"` runs after its current work, `"steer"` interrupts. The result says delivered now or queued.
-  Works for a child, the parent, a sibling and, with `scope: "project"` or `"all"`, any other session.
-- `orchestrate_list_peers`: reachable sessions as `name [ref]` with relation (parent, child, sibling, other), state, directory.
-- `orchestrate_read_session`: status plus the last N messages and the final assistant text, size-capped.
-- `orchestrate_wait_for_sessions`: wait for all or any of up to 16 sessions, bounded by a timeout.
-- `orchestrate_interrupt_session`: stop a session's current run.
-- `orchestrate_list_sessions`: the caller's children, siblings, or (with `scope: "project"`) project sessions.
-- `orchestrate_delegate_task`: create a child, send the prompt, wait, return the result.
-
-A child gets only the prompt and the optional `context` text, never the caller's history. `clientRequestId` makes a
-create, delegate or send idempotent across retries.
-
-## Develop
-
-```sh
-npm_config_registry=https://registry.npmjs.org pnpm install
-pnpm typecheck
-pnpm test
-pnpm build   # emits dist/, which is committed
-```
-
-Tests run against a fake plugin context. For a live check, start a standalone server with throwaway XDG dirs whose
-`opencode.json` lists this package, then call the tools from a session there.
+## Development
+`pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Tests run against a fake plugin context. For a live check, start a standalone server with throwaway XDG dirs whose `opencode.json` lists this package. Design notes: [DESIGN.md](DESIGN.md).
