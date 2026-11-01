@@ -44,8 +44,8 @@ export default Plugin.define({
     // The chat row reserves the window's width through this variable (see the dock rules in panel.tsx).
     createEffect(() => {
       const inset = dockState({ enabled: enabled(), sidebarOpen: sidebarOpen(), visible: visible() }).inset
-      document.documentElement.style.setProperty("--agents-dock-inset", `${inset}px`)
-      onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-inset"))
+      document.documentElement.style.setProperty("--agents-dock-pad", `${inset}px`)
+      onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-pad"))
     })
 
     ctx.add(Command, {

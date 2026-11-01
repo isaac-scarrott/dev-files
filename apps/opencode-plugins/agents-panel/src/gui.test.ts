@@ -6,6 +6,7 @@ import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
+import { styles } from "./panel"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 type Info = { id: string; parentID?: string; agent?: string; title?: string; time: { created: number; busy?: number } }
@@ -476,7 +477,7 @@ const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
   return f.flush()
 }
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
-const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-inset")
+const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-pad")
 
 test("dock: with the sidebar open the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
@@ -564,4 +565,27 @@ test("dock: rows in the window keep the popover's behaviour (stop, open child)",
   assert.equal(f.rows().length, 1)
   assert.equal(dockEl(f).contains(f.rows()[0]), true)
   f.stop()
+})
+
+// Regression: inside the dock the list panel inherited a percentage max-height from the window and collapsed to its
+// heading, so "2 running" showed with no rows. Layout is not computed here, so the stylesheet is checked instead.
+const dockRule = (selector: string) => {
+  const match = styles.match(new RegExp(`${selector.replace(/[[\]().*+?^${}|]/g, "\\$&")}\\s*\\{([^}]*)\\}`))
+  return match?.[1] ?? ""
+}
+
+test("dock: the list panel never inherits a clipping max-height from the window, and the window's menu scrolls instead", () => {
+  const panel = dockRule("[data-agents-dock] [data-agents-panel]")
+  assert.match(panel, /max-height:\s*none/)
+  assert.match(panel, /overflow:\s*visible/)
+  assert.match(dockRule("[data-agents-dock] > [data-component=menu-v2-content]"), /overflow-y:\s*auto/)
+})
+
+test("dock: every selector the chat re-centring depends on is valid", () => {
+  const doc = globalThis.document
+  for (const line of styles.split("\n").filter((l) => l.includes("--agents-dock-pad") && l.includes("{") && !l.includes("@property"))) {
+    const selector = line.slice(0, line.indexOf("{")).trim()
+    if (!selector || selector.startsWith(":root") || selector.startsWith("/*")) continue
+    assert.doesNotThrow(() => doc.querySelector(selector), selector)
+  }
 })

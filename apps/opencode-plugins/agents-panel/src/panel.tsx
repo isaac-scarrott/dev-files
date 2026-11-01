@@ -178,28 +178,35 @@ export const styles = `
     overflow-y: auto; box-sizing: border-box; padding: 0;
   }
   /* The dock: an elevated surface inside the chat card, end side, below the header row, on the host's menu surface. The
-     card clips it to its rounded corners. While it is shown the card reserves its width plus its own inset as end
-     padding, so the header, timeline and composer re-centre in the free width; the transition uses the sidebar's own
-     curve (the host drives the sidebar width in JS, 250ms). The card is found by its dropzone child, since the host's
-     utility classes carry no stable hook. */
-  :root { --agents-dock-inset: 0px; --agents-dock-ease: cubic-bezier(0.2, 0.8, 0.2, 1); }
-  :has(> [data-slot=session-dropzone-blur]) { padding-inline-end: var(--agents-dock-inset); transition: padding-inline-end 250ms var(--agents-dock-ease); }
+     card clips it to its rounded corners. While it is shown, --agents-dock-pad (window width plus its inset) is
+     reserved as end padding on the timeline's scroll viewport and on the composer's wrapper, so the messages and the
+     composer re-centre in the free width; the scrollbar stays on the card's edge. The header lives inside that
+     viewport, so it is widened back by the same amount and does not move. The variable itself is registered and
+     transitioned, so the padding and the header's width read one animated value and cancel exactly, however the
+     transition is interrupted. 250ms is the host sidebar's own duration (the host drives its width in JS). */
+  @property --agents-dock-pad { syntax: "<length>"; inherits: true; initial-value: 0px; }
+  :root { --agents-dock-ease: cubic-bezier(0.2, 0.8, 0.2, 1); transition: --agents-dock-pad 250ms var(--agents-dock-ease); }
+  [data-slot=session-timeline-scroll] > .scroll-view__viewport { padding-inline-end: var(--agents-dock-pad); }
+  [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: calc(100% + var(--agents-dock-pad)); }
+  :has(> [data-slot=session-dropzone-blur]) > div:has(form) > div.shrink-0.items-center { padding-inline-end: var(--agents-dock-pad); }
   /* Portal's wrapper div must not take part in the card's flex layout. */
   div:has(> [data-agents-dock]:only-child) { display: contents; }
+  /* Height fits the content up to the card minus the header row and a bottom inset; the menu surface scrolls inside
+     the flex column, so the heading and rows are never clipped by a percentage max-height resolved against itself. */
   [data-agents-dock] {
     position: absolute; z-index: 60; top: 56px; right: 8px; width: 320px;
-    max-height: min(420px, calc(100% - 64px)); display: flex; outline: none; user-select: auto;
+    max-height: min(420px, calc(100% - 64px)); display: flex; flex-direction: column; outline: none; user-select: auto;
     transform: translateX(16px); opacity: 0; visibility: hidden; pointer-events: none;
     transition: transform 250ms var(--agents-dock-ease), opacity 150ms var(--agents-dock-ease), visibility 0s 250ms;
   }
   [data-agents-dock][data-state=open] { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
   [data-agents-dock] > [data-component=menu-v2-content] {
-    position: static; display: flex; flex-direction: column; min-width: 0; width: 100%; max-height: inherit;
+    position: static; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; min-width: 0; max-height: none;
     overflow-y: auto; box-sizing: border-box; padding: 2px;
   }
-  [data-agents-dock] [data-agents-panel] { padding: 2px; }
+  [data-agents-dock] [data-agents-panel] { flex: none; max-height: none; overflow: visible; padding: 2px; }
   @media (prefers-reduced-motion: reduce) {
-    :has(> [data-slot=session-dropzone-blur]) { transition: none; }
+    :root { transition: none; }
     [data-agents-dock] { transform: none; transition: opacity 150ms var(--agents-dock-ease), visibility 0s 150ms; }
   }
   /* Settings > Background activity: with the mode on, the host's value is "Hidden" underneath. Show the mode's name
