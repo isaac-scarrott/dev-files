@@ -23,8 +23,6 @@ export default Plugin.define({
       "expired.rest": "next message re-reads ~{{tokens}} tokens",
       "model.lead": "Cache reset",
       "model.rest": "model changed · next message re-reads ~{{tokens}} tokens",
-      "compacted.lead": "Cache reset",
-      "compacted.rest": "compacted · next message writes a new cache",
     },
   },
   setup(ctx) {

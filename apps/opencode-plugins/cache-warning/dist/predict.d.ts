@@ -51,8 +51,6 @@ export type Notice = {
 } | {
     readonly kind: "model";
     readonly tokens: number;
-} | {
-    readonly kind: "compacted";
 };
 /** The state the next message will meet, and when the warm cache runs out, if it is warm. */
 export interface Forecast {
@@ -80,7 +78,7 @@ export declare function bareId(id: string, providerID: string): string;
  * with usage is the last measure (the host's context ring reads the same step) and the time anchor. A step without
  * usage that has ended (a failed one) made no cache call to count and is passed over; one still running means a
  * request is in flight and silences the warning. A prompt after the measured step also silences it, as does a reply
- * under way, except a completed compaction.
+ * under way or a completed compaction (the measured size is gone and the new one is unknown).
  */
 export declare function forecast(input: {
     messages: ReadonlyArray<Msg>;

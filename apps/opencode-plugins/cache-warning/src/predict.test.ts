@@ -121,8 +121,9 @@ test("expiry outranks a model change: switching back would not help", () => {
   assert.equal(forecast({ messages: [step(t0)], now: t0 + 9 * MIN, config, selection }).notice?.kind, "expired")
 })
 
-test("a completed compaction after the last step says the cache was reset", () => {
-  assert.deepEqual(forecast({ messages: [step(t0), compacted], now: t0 + MIN, config }), { notice: { kind: "compacted" } })
+test("a completed compaction after the last step shows nothing", () => {
+  assert.deepEqual(forecast({ messages: [step(t0), compacted], now: t0 + MIN, config }), {})
+  assert.deepEqual(forecast({ messages: [step(t0), compacted], now: t0 + 20 * MIN, config }), {})
 })
 
 test("a running or failed compaction changes nothing", () => {
@@ -132,7 +133,7 @@ test("a running or failed compaction changes nothing", () => {
   assert.deepEqual(forecast({ messages: [step(t0), failed], now: t0 + MIN, config }), { expiresAt: t0 + 5 * MIN })
 })
 
-test("the compaction notice ends with the next prompt, and a compaction before the last step is history", () => {
+test("a compaction before the last step is history, and one followed by a prompt shows nothing", () => {
   assert.deepEqual(forecast({ messages: [step(t0), compacted, user], now: t0, config }), {})
   const small = step(t0 + 10 * MIN, { tokens: { input: 5, output: 5, reasoning: 0, cache: { read: 100, write: 0 } } })
   assert.deepEqual(forecast({ messages: [step(t0), compacted, small], now: t0 + 20 * MIN, config }), {})

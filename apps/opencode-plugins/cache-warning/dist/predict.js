@@ -46,7 +46,7 @@ export function bareId(id, providerID) {
  * with usage is the last measure (the host's context ring reads the same step) and the time anchor. A step without
  * usage that has ended (a failed one) made no cache call to count and is passed over; one still running means a
  * request is in flight and silences the warning. A prompt after the measured step also silences it, as does a reply
- * under way, except a completed compaction.
+ * under way or a completed compaction (the measured size is gone and the new one is unknown).
  */
 export function forecast(input) {
     const messages = input.messages;
@@ -78,7 +78,7 @@ export function forecast(input) {
     if (size < input.config.minTokens)
         return {};
     if (compacted)
-        return { notice: { kind: "compacted" } };
+        return {};
     // A provider that never reported cache use gives no basis for a claim about its cache.
     if (tokens.cache.read + tokens.cache.write === 0)
         return {};

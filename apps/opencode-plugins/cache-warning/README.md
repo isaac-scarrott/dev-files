@@ -1,6 +1,6 @@
 # Cache warning
 
-A grey tray, the composer's width, above the composer says when your next message will re-read the whole conversation at full price: after the prompt cache has expired, after you switch model, and after a compaction.
+A grey tray, the composer's width, above the composer says when your next message will re-read the whole conversation at full price: after the prompt cache has expired and after you switch model.
 
 > **Credit:** the tray is [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) own `data-dock-surface="tray"` surface from its composer docks, and it opens and closes on the same spring as the queue panel (2.2.5). The cache lifetime comes from Anthropic's [prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching): 5 minutes by default, refreshed on every use.
 
@@ -10,7 +10,6 @@ A grey tray, the composer's width, above the composer says when your next messag
 ## What it does
 - Cache expired: "Cache expired · next message re-reads ~180k tokens". The count is the size of the last measured context, written the way the context ring writes it.
 - Model or variant changed in the composer: "Cache reset · model changed · next message re-reads ~180k tokens".
-- After a compaction: "Cache reset · compacted · next message writes a new cache".
 - Nothing while the cache is warm, nothing once you send, nothing in small contexts (under 20,000 tokens), nothing in a subagent's session, nothing when the provider never reports cache use.
 - No icon, no buttons, no sound, not focusable. It slides out from under the composer and back, like the host's own docks, and never moves the composer.
 
