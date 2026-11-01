@@ -8,7 +8,7 @@ import { delegate, fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
-// `host`: extra markup inside the vertical sidebar; `bound`: command ids the host binds a key to; `dedicated`: the client has archive/unarchive calls.
+// `host`: extra markup inside the vertical sidebar; `bound`: command ids the host's keybind lookup answers for; `dedicated`: the client has archive/unarchive calls.
 interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean; openThrows?: boolean }
 function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = [], extra: Extra = {}) {
   const window = new Window()
@@ -899,9 +899,13 @@ test("archive guard: standing down fetches nothing from the archive", async () =
   } finally { await f.close() }
 })
 
-test("archive guard: a bound host session.archive command stands down; ours forces our UI; theirs forces standing down", async () => {
-  const bound = fixture([], [], { bound: ["session.archive"] })
-  try { bound.setServers(["server"]); bound.start(); await bound.flush(); assert.equal(sidebarRoot(bound).dataset.saArchive, "theirs") } finally { await bound.close() }
+test("archive guard: a keybind for session.archive (a stale entry in the host's persisted command catalog, as on a 2.2.5 install that ran an older build) stands nothing down; ours forces our UI; theirs forces standing down", async () => {
+  const bound = fixture([], [], { bound: ["session.archive", "session.unarchive"] })
+  try {
+    bound.setServers(["server"]); bound.start(); await bound.flush()
+    assert.equal(sidebarRoot(bound).dataset.saArchive, "ours"); assert.equal(sidebarRoot(bound).dataset.saStanddown, undefined)
+    assert.equal(archivedSection(bound).hidden, false); assert.equal((bound.commands.get("archive") as any).enabled, true)
+  } finally { await bound.close() }
   const ours = fixture([], [], { bound: ["session.archive"], host: HOST_ARCHIVED_GROUP, options: { archive: "ours" } })
   try {
     ours.setServers(["server"]); ours.start(); await ours.flush()
@@ -914,18 +918,19 @@ test("archive guard: a bound host session.archive command stands down; ours forc
   } finally { await theirs.close() }
 })
 
-test("archive guard: a native Archive item in a session menu keeps ours out of it and stands the rest down; a later menu without one brings ours back", async () => {
+test("archive guard: a native Archive item in a session menu keeps ours out of it and stands our Archive actions down, but the Archived group stays; a later menu without one brings ours back", async () => {
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
     const native = mount(f, HOST_MENU("session-options-menu", ["Rename", "Archive", "-", "Delete…"])); await f.flush()
     assert.deepEqual([...native.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Archive", "Snooze", "-", "Delete…"])
-    assert.equal(sidebarRoot(f).dataset.saArchive, "theirs")
+    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
+    assert.equal(sidebarRoot(f).dataset.saStanddown, "menu")
+    assert.equal(archivedSection(f).hidden, false, "a host Archive action does not browse archived sessions")
     native.parentElement!.remove()
     const plain = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
     assert.equal(plain.querySelectorAll("[data-sa-menu]").length, 2)
-    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
-    assert.equal(archivedSection(f).hidden, false)
+    assert.equal(sidebarRoot(f).dataset.saStanddown, undefined)
   } finally { await f.close() }
 })
 
@@ -934,6 +939,8 @@ test("archive guard: archived sessions show in tabs while the host owns archive 
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
     assert.equal(f.doc.querySelector("[data-sa-archived-tab]"), null)
+    assert.equal(sidebarRoot(f).dataset.saStanddown, "sidebar")
+    assert.equal((f.commands.get("archive") as any).enabled, false); assert.equal((f.commands.get("refresh") as any).enabled, false)
   } finally { await f.close() }
 })
 

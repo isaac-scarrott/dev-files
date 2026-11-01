@@ -195,9 +195,11 @@ export function createSidebar(doc: Document, host: Host, hub: DomHub, hooks: Hoo
     archived(state: GroupState) { archived.update(state); attach() },
     update(snooze: GroupState, archive: GroupState) { snoozed.update(snooze); archived.update(archive); attach() },
     // The Archived group steps aside (kept mounted, so it returns without a rebuild) while the host has its own archive UI.
-    archiveUi(host: boolean) {
+    // `data-sa-standdown` names the signals that fired (see guard.ts), so "why is Archived gone" is one attribute read.
+    archiveUi(host: boolean, why: readonly string[] = []) {
       archived.section.hidden = host
       root.dataset.saArchive = host ? "theirs" : "ours"
+      if (why.length) root.dataset.saStanddown = why.join(","); else delete root.dataset.saStanddown
     },
     
   }
