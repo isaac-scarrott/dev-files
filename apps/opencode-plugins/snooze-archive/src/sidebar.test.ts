@@ -192,30 +192,23 @@ test("snoozed second line keeps the time whole: project truncates, time is its o
   sidebar.dispose()
 })
 
-test("expanding pins the free space in px and never scrolls; auto returns once every group is closed", async () => {
+test("expanding leaves the free space to margin-top:auto and never scrolls", async () => {
   const window = new Window()
   const doc = window.document as unknown as Document
   doc.body.innerHTML = `<div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-titlebar-tab-list></div></div></div>`
   const scroller = doc.querySelector<HTMLElement>("[data-slot=vertical-tabs-scroll]")!
   let writes = 0
   Object.defineProperty(scroller, "scrollTop", { get: () => 0, set: () => { writes++ } })
-  const pending = new Map<number, () => void>()
-  let next = 0
-  const timers = { set: (fn: () => void) => { pending.set(++next, fn); return next }, clear: (id: number) => { pending.delete(id) } }
-  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {}, timers)
+  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
   sidebar.update({ rows: [], count: 0 }, { rows: [], count: 0 })
   const root = doc.querySelector<HTMLElement>("[data-snooze-archive]")!
   const [snoozed, archived] = [...doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")]
-  assert.equal(root.style.marginTop, "")
   snoozed.click()
-  assert.match(root.style.marginTop, /^\d+px$/)
   archived.click()
   snoozed.click()
-  for (const fn of [...pending.values()]) fn()
-  assert.match(root.style.marginTop, /^\d+px$/, "one group still open")
   archived.click()
-  for (const fn of [...pending.values()]) fn()
   assert.equal(root.style.marginTop, "")
+  assert.match(css, /\[data-snooze-archive\] \{[^}]*margin-top: auto/)
   assert.equal(writes, 0)
   sidebar.dispose()
   await window.happyDOM.close()

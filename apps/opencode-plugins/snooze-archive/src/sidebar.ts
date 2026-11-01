@@ -9,14 +9,10 @@ import { openMenu, type MenuLine } from "./menu"
 export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
-const SETTLE_MS = 220
 const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
 
-// changed(next) runs before the panel's open state flips, so the gap can be pinned in px before the accordion starts.
-interface Hooks { changed(next: boolean): void }
-
-function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers, hooks: Hooks) {
+function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
   const section = doc.createElement("section")
   const header = doc.createElement("div")
   header.dataset.saToggle = ""
@@ -37,7 +33,6 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   content.setAttribute("aria-label", name)
   let open = false
   const expand = (next: boolean) => {
-    if (next !== open) hooks.changed(next)
     open = next
     panel.toggleAttribute("data-open", next)
     panel.toggleAttribute("inert", !next)
@@ -107,7 +102,6 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   }
   return {
     section,
-    get open() { return open },
     dispose() {
       disposeHeader()
       for (const row of rows.values()) { if (row.leaving !== undefined) timers.clear(row.leaving); row.dispose() }
@@ -165,31 +159,8 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
   let parent: HTMLElement | undefined
-  // While a group is open the free space above the groups is a fixed px margin instead of `auto`, so an expanding
-  // group grows downward from its toggle and nothing above it moves. Auto is restored once every group is closed.
-  const groups: { open: boolean }[] = []
-  let settle: number | undefined
-  const freeSpace = () => {
-    const list = root.previousElementSibling as HTMLElement | null
-    if (!parent || !list) return 0
-    const panels = [...root.querySelectorAll<HTMLElement>("[data-sa-panel]")].reduce((sum, panel) => sum + panel.offsetHeight, 0)
-    const listEnd = list.getBoundingClientRect().bottom - parent.getBoundingClientRect().top + parent.scrollTop
-    return Math.max(0, parent.clientHeight - listEnd - (root.offsetHeight - panels))
-  }
-  const pin = () => { root.style.marginTop = `${freeSpace()}px` }
-  const hooks: Hooks = {
-    changed(next) {
-      if (settle !== undefined) { timers.clear(settle); settle = undefined }
-      if (next) { if (root.style.marginTop === "") pin(); return }
-      settle = timers.set(() => {
-        settle = undefined
-        if (!groups.some((g) => g.open)) root.style.marginTop = ""
-      }, SETTLE_MS)
-    },
-  }
-  const snoozed = group(doc, host, "Snoozed", schedule, timers, hooks)
-  const archived = group(doc, host, "Archived", schedule, timers, hooks)
-  groups.push(snoozed, archived)
+  const snoozed = group(doc, host, "Snoozed", schedule, timers)
+  const archived = group(doc, host, "Archived", schedule, timers)
   root.append(snoozed.section, archived.section)
   const attach = () => {
     const next = doc.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
@@ -199,16 +170,8 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
       next.setAttribute("data-sa-host", "")
       if (root.parentElement !== next) next.append(root)
     } else root.remove()
-    watch()
   }
   let frame: number | undefined
-  // Window resize or a live row added/removed while a group is open: re-measure the gap.
-  const Resize = doc.defaultView!.ResizeObserver as typeof ResizeObserver | undefined
-  const watched = new Set<Element>()
-  const sizes = Resize ? new Resize(() => { if (root.style.marginTop !== "" && groups.some((g) => g.open)) pin() }) : undefined
-  const watch = () => {
-    for (const el of [parent, root.previousElementSibling]) if (el && !watched.has(el)) { watched.add(el); sizes?.observe(el) }
-  }
   const observer = new doc.defaultView!.MutationObserver((records) => {
     if (!records.some((r) => {
       if (root.contains(r.target)) return false
@@ -222,7 +185,7 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   attach()
   return {
     update(snooze: GroupState, archive: GroupState) { snoozed.update(snooze); archived.update(archive); attach() },
-    dispose() { snoozed.dispose(); archived.dispose(); observer.disconnect(); sizes?.disconnect(); if (settle !== undefined) timers.clear(settle); if (frame !== undefined) cancel(frame); root.remove(); parent?.removeAttribute("data-sa-host") },
+    dispose() { snoozed.dispose(); archived.dispose(); observer.disconnect(); if (frame !== undefined) cancel(frame); root.remove(); parent?.removeAttribute("data-sa-host") },
   }
 }
 
