@@ -34,5 +34,10 @@ PLIST
 
 pkill -x NotchUsage 2>/dev/null || true
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+# bootout is asynchronous: bootstrapping straight after it can fail with "Input/output error", so retry until the label is gone.
+for _ in 1 2 3 4 5; do
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break
+  sleep 1
+done
+launchctl print "gui/$(id -u)/$LABEL" >/dev/null
 echo "  loaded: $LABEL → $BINARY"
