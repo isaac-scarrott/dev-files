@@ -1,9 +1,9 @@
-import { Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
-import { createEffect, createMemo, createSignal, Index, on, onCleanup, onMount, Show } from "solid-js"
+import { createKeyed, Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
+import { createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
-import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, visibleRange, type Message, type PromptWindow } from "./rail"
-import { currentPrompt } from "./target"
+import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, type Message, type PromptWindow } from "./rail"
+import { activePrompt, READING_OFFSET } from "./target"
 
 /** t3-code's `left-3`: the strip sits this far from the view's left edge. */
 const STRIP_LEFT = 12
@@ -71,11 +71,13 @@ type HostUi = Pick<Ui, "IconButton" | "Tooltip">
 const onCard = (target: EventTarget | null) => (target as Element | null)?.closest?.("[data-timeline-rail-card]") != null
 
 function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
-  const [scroller, setScroller] = createSignal<HTMLElement>()
-  const [view, setView] = createSignal<HTMLElement>()
+  // The scroller and the view root are found together, so a run keyed on them never sees one without the other.
+  const [mount, setMount] = createSignal<{ readonly root: HTMLElement; readonly parent: HTMLElement }>()
+  const scroller = () => mount()?.root
+  const view = () => mount()?.parent
   const [geometry, setGeometry] = createSignal<Geometry>()
+  // The one lit tick: the prompt whose turn is being read (see `activePrompt`). The pointer's index is separate.
   const [current, setCurrent] = createSignal(-1)
-  const [range, setRange] = createSignal<readonly [number, number]>()
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
   const data = () => session().server.data.session
@@ -85,28 +87,24 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   // What the host has loaded. The rail never asks for more: older history reaches it only when the host loads it, as
   // t3-code's minimap only grows when the user presses "Load earlier turns".
   const loaded = createMemo(() => loadedIds(messages(), revert()))
-  // The user has scrolled, touched or typed in the timeline: a page of older history that lands now was asked for.
-  let asked = false
-  let window_: PromptWindow | undefined
-  let windowSession: string | undefined
-  // t3-code's thread window: the newest prompts at first, a page more when the host pages older history in.
-  const covered = createMemo(() => {
-    if (windowSession !== session().id) {
-      windowSession = session().id
-      window_ = undefined
-      asked = false
-    }
-    window_ = promptWindow(window_, loaded(), asked)
+  // The session the user has scrolled, touched or typed in: a page of older history that lands now was asked for.
+  const [askedIn, setAskedIn] = createSignal<string>()
+  // t3-code's thread window: the newest prompts at first, a page more when the host pages older history in. Each run
+  // folds the previous one in, and a different session starts over, so the memo depends on its inputs only.
+  const covered = createMemo<{ readonly id: string; readonly window: PromptWindow | undefined }>((previous) => {
+    const id = session().id
 
-    return window_
+    return { id, window: promptWindow(previous?.id === id ? previous.window : undefined, loaded(), askedIn() === id) }
   })
   const list = createMemo(() => {
-    const from = covered()?.from
+    const from = covered().window?.from
 
     return from ? prompts(messages(), revert(), from) : []
   })
-  const ids = createMemo(() => list().map((prompt) => prompt.id))
-  const indexOf = createMemo(() => new Map(ids().map((id, index) => [id, index] as const)))
+  // The same array while the prompts are the same, so a streaming reply does not wake what follows the ids.
+  const ids = createMemo(() => list().map((prompt) => prompt.id), [], {
+    equals: (previous, next) => previous.length === next.length && previous.every((id, index) => id === next[index]),
+  })
   const count = () => list().length
 
   // The slot's element joins the timeline after it is created; the scroller is its nearest scrollable ancestor.
@@ -117,10 +115,8 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const root = element?.closest<HTMLElement>("[data-scrollable]")
     const parent = root && viewOf(root)
 
-    if (root && parent) {
-      setScroller(root)
-      setView(parent)
-    } else if (left > 0) locating = requestAnimationFrame(() => locate(left - 1))
+    if (root && parent) setMount({ root, parent })
+    else if (left > 0) locating = requestAnimationFrame(() => locate(left - 1))
   }
 
   onMount(() => locate(10))
@@ -137,11 +133,8 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     onCleanup(() => query.removeEventListener("change", update))
   })
 
-  createEffect(() => {
-    const root = scroller()
-
-    if (!root) return
-    const mark = () => void (asked = true)
+  createKeyed(scroller, (root) => {
+    const mark = () => setAskedIn(session().id)
     const types = ["wheel", "touchmove", "pointerdown", "keydown"] as const
 
     for (const type of types) root.addEventListener(type, mark, { passive: true })
@@ -165,9 +158,15 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   }
 
   let pending: number | undefined
+  let measuring = false
+  let header: HTMLElement | null | undefined
 
+  // Scrolling only moves the reading line over the rows, so a scroll frame reads rows and the scroller's offsets and
+  // nothing else; the rail's place changes with the view's size or the prompts, which ask for a measure too.
   const refresh = () => {
     pending = undefined
+    const measure_ = measuring
+    measuring = false
     const root = scroller()
     const parent = view()
 
@@ -175,11 +174,13 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     // Reads only; Solid applies the writes after.
     const rows = readRows(root)
     const edge = root.getBoundingClientRect()
-    const box = { top: edge.top + inset(root), bottom: edge.bottom }
-    const shown = visibleRange(indexOf(), rows, box)
-    const place = measure(root, parent)
-    setCurrent(currentPrompt(ids(), rows, box))
-    setRange((previous) => (previous && shown && previous[0] === shown[0] && previous[1] === shown[1] ? previous : shown))
+    if (!header?.isConnected) header = root.querySelector<HTMLElement>("[data-session-title]")
+    const line = edge.top + (header?.offsetHeight ?? 0) + READING_OFFSET
+    const place = measure_ || !geometry() ? measure(root, parent) : undefined
+
+    setCurrent(activePrompt(ids(), rows, line, { top: root.scrollTop, max: root.scrollHeight - root.clientHeight }))
+
+    if (!place) return
     setGeometry((previous) =>
       previous && previous.top === place.top && previous.height === place.height && previous.hit === place.hit && previous.persistent === place.persistent
         ? previous
@@ -187,34 +188,37 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     )
   }
 
-  const schedule = () => {
+  const schedule = (measureToo: boolean) => {
+    measuring ||= measureToo
     if (pending !== undefined) return
     pending = requestAnimationFrame(refresh)
   }
+  const onScroll = () => schedule(false)
 
   onCleanup(() => {
     if (pending !== undefined) cancelAnimationFrame(pending)
   })
 
-  createEffect(() => {
-    const root = scroller()
-    const parent = view()
-
-    if (!root || !parent) return
-    root.addEventListener("scroll", schedule, { passive: true })
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : undefined
+  createKeyed(mount, ({ root, parent }) => {
+    root.addEventListener("scroll", onScroll, { passive: true })
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => schedule(true)) : undefined
     observer?.observe(parent)
     const visible = parent.querySelector("[data-slot='session-timeline-visible']")
 
     if (visible) observer?.observe(visible)
-    schedule()
+    schedule(true)
     onCleanup(() => {
-      root.removeEventListener("scroll", schedule)
+      root.removeEventListener("scroll", onScroll)
       observer?.disconnect()
     })
   })
 
-  createEffect(on([ids, () => props.input.active, desktop], schedule, { defer: true }))
+  // New or changed prompts, the timeline becoming (in)active, the breakpoint: read again. `ids` keeps its identity while
+  // the prompts are the same, so a streaming reply does not come through here.
+  createKeyed(
+    () => (props.input.active && desktop() ? ids() : undefined),
+    () => schedule(true),
+  )
 
   let inflight: AbortController | undefined
 
@@ -228,7 +232,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     inflight = controller
     void jumpTo(target, id, controller.signal).finally(() => {
       if (inflight === controller) inflight = undefined
-      schedule()
+      schedule(false)
     })
   }
 
@@ -239,12 +243,14 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const [pointed, setPointed] = createSignal<number>()
   const [armed, setArmed] = createSignal(false)
   const [passThrough, setPassThrough] = createSignal(false)
-  const activePrompt = () => {
+  const pointedPrompt = () => {
     const index = pointed()
 
     return index === undefined || index >= count() ? undefined : list()[index]
   }
-  const label = () => activePrompt()?.title ?? EMPTY_TITLE
+  // The fisheye is centred on the active prompt, and follows the pointer or keyboard while one is on the strip.
+  const centre = () => pointed() ?? current()
+  const label = () => pointedPrompt()?.title ?? EMPTY_TITLE
 
   let strip: HTMLButtonElement | undefined
 
@@ -362,7 +368,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
                 data-pass={passThrough() ? "" : undefined}
                 style={{
                   "--timeline-rail-height": railHeightStyle(count()),
-                  width: activePrompt() ? "22rem" : `${geometry()?.hit ?? 0}px`,
+                  width: pointedPrompt() ? "22rem" : `${geometry()?.hit ?? 0}px`,
                 }}
                 onPointerDown={() => {
                   if (pressedOnStrip) return
@@ -408,14 +414,14 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
                       <span
                         data-timeline-rail-tick
                         data-index={index}
-                        data-d={pointed() !== undefined && Math.abs(index - pointed()!) <= 2 ? Math.abs(index - pointed()!) : undefined}
-                        data-view={range() && index >= range()![0] && index <= range()![1] ? "" : undefined}
+                        data-d={Math.abs(index - centre()) <= 2 ? Math.abs(index - centre()) : undefined}
+                        data-active={index === current() ? "" : undefined}
                         aria-hidden="true"
                         style={{ top: `${topPercent(index, count())}%` }}
                       />
                     )}
                   </Index>
-                  <Show when={activePrompt()}>
+                  <Show when={pointedPrompt()}>
                     {(item) => (
                       <span
                         data-timeline-rail-card
@@ -448,7 +454,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
 
 // The structure is t3-code's TimelineMinimap. The card uses the host's menu surface for colour and shadow
 // (`menu-v2-content`: layer-01, floating elevation) at t3-code's geometry. The only motion is t3-code's: `transform`
-// on the ticks (150ms, Tailwind's default curve) and `opacity` on the in-view overlay and the hover reveal, none of it
+// on the ticks (150ms, Tailwind's default curve) and `opacity` on the active tick's overlay and the hover reveal, none of it
 // until `data-armed` (two frames after the rail exists, so nothing animates on first paint).
 const CSS = `
 [data-timeline-rail] {
@@ -489,13 +495,12 @@ const CSS = `
   background: none;
   font: inherit;
   text-align: left;
-  cursor: pointer;
   outline: none;
   user-select: none;
 }
 [data-timeline-rail-strip]:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-border-border-focus); }
 /* One span per prompt: 24px wide, drawn at a third of that at rest, scaled by index distance from the pointer.
-   The colour is a node background, so only transform and the overlay's opacity ever change. */
+   The colour is a node background, so only transform and the lit overlay's opacity ever change. */
 [data-timeline-rail-tick] {
   position: absolute;
   left: 0;
@@ -508,7 +513,7 @@ const CSS = `
   transform: scaleX(0.3333);
   pointer-events: none;
 }
-[data-timeline-rail-tick][data-d="0"] { transform: scaleX(1); background: color-mix(in srgb, var(--v2-text-text-base) 60%, transparent); }
+[data-timeline-rail-tick][data-d="0"] { transform: scaleX(1); }
 [data-timeline-rail-tick][data-d="1"] { transform: scaleX(0.667); }
 [data-timeline-rail-tick][data-d="2"] { transform: scaleX(0.417); }
 [data-timeline-rail-tick]::after {
@@ -516,10 +521,10 @@ const CSS = `
   position: absolute;
   inset: 0;
   border-radius: 1px;
-  background: var(--v2-text-text-base);
+  background: color-mix(in srgb, var(--v2-text-text-base) 60%, transparent);
   opacity: 0;
 }
-[data-timeline-rail-tick][data-view]::after { opacity: 1; }
+[data-timeline-rail-tick][data-active]::after { opacity: 1; }
 [data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: transform 150ms var(--timeline-rail-curve); }
 [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 150ms var(--timeline-rail-curve); }
 [data-timeline-rail-turn] {

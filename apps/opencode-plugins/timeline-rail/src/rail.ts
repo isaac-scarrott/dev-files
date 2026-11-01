@@ -1,5 +1,3 @@
-import type { Row } from "./target"
-
 /** What a tick needs to know about its prompt and the reply that followed it. */
 export type Prompt = {
   readonly id: string
@@ -158,29 +156,4 @@ export function indexFromPointer(input: { count: number; top: number; height: nu
   const progress = Math.min(1, Math.max(0, (input.y - input.top) / input.height))
 
   return Math.round(progress * (input.count - 1))
-}
-
-/**
- * The prompts on screen, as an inclusive index range: t3-code marks a prompt in view when its own row is in view
- * (`isTimelineMinimapRowVisible`). A prompt row counts when it intersects `box`. Rows the host keeps mounted off screen
- * (overscan, the last turn's final row) are ignored.
- */
-export function visibleRange(
-  indexOf: ReadonlyMap<string, number>,
-  rows: readonly Row[],
-  box: { readonly top: number; readonly bottom: number },
-): readonly [number, number] | undefined {
-  let first = Number.POSITIVE_INFINITY
-  let last = -1
-
-  for (const row of rows) {
-    if (!row.prompt || row.bottom <= box.top || row.top >= box.bottom) continue
-    const index = indexOf.get(row.owner)
-
-    if (index === undefined) continue
-    first = Math.min(first, index)
-    last = Math.max(last, index)
-  }
-
-  return last === -1 ? undefined : [first, last]
 }

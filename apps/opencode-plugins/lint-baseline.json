@@ -16,7 +16,6 @@
   "sidebar-repos/src/gui.ts|no-effect": 3,
   "snooze-archive/src/gui.ts|no-effect": 6,
   "snooze-archive/src/testui.ts|no-effect": 2,
-  "timeline-rail/src/gui.tsx|no-effect": 3,
   "usage-resume/src/gui.tsx|no-effect": 1,
   "usage-resume/src/hub.ts|no-module-state": 1
 }

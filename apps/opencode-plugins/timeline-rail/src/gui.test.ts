@@ -231,7 +231,7 @@ const move = (target: Element, y: number, init: PointerEventInit = {}) =>
   target.dispatchEvent(new (Pointer())("pointermove", { clientY: y, pointerType: "mouse", bubbles: true, ...init }))
 const key = (target: Element, name: string) =>
   target.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
-const inView = (f: ReturnType<typeof fixture>) => f.marked("data-view")
+const lit = (f: ReturnType<typeof fixture>) => f.marked("data-active")
 const scrollTo = async (f: ReturnType<typeof fixture>, top: number) => {
   f.state.scrollTop = top
   f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
@@ -269,19 +269,46 @@ test("nothing under two prompts; then one tick per prompt, one labelled strip, t
   }
 })
 
-test("in view is a prompt whose own row is on screen; the reply of a prompt scrolled away does not count", async () => {
+test("exactly one tick is lit: the prompt whose turn is under the reading line, switching when the next prompt's row reaches it", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
     await f.flush()
-    assert.deepEqual(inView(f), [0])
+    assert.deepEqual(lit(f), [0])
     await scrollTo(f, 800)
-    assert.deepEqual(inView(f), [1], "m1's reply fills the screen from 800 to 1108, but only m2's prompt row is in view")
+    assert.deepEqual(lit(f), [0], "inside m1's reply: m1 stays lit")
+    // The line is 8px under the 48px header; m2's row is at 1108 - scrollTop.
+    await scrollTo(f, 1108 - 48 - 8 - 1)
+    assert.deepEqual(lit(f), [0], "m2's row is one pixel under the line")
+    await scrollTo(f, 1108 - 48 - 8)
+    assert.deepEqual(lit(f), [1], "m2's row is on the line")
     await scrollTo(f, 2000)
-    assert.deepEqual(inView(f), [2])
-    await scrollTo(f, 1200)
-    assert.deepEqual(inView(f), [], "inside m2's reply no prompt row is on screen")
+    assert.deepEqual(lit(f), [1], "m2's long reply keeps m2 lit; its prompt row is far above")
+    await scrollTo(f, 19400)
+    assert.deepEqual(lit(f), [2], "the very bottom is the last prompt")
+    await scrollTo(f, 0)
+    assert.deepEqual(lit(f), [0])
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a chat that fits has its last prompt lit; a prompt that streams in is lit at the bottom", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.state.total = VIEWPORT
+    threeTurns(f)
+    await f.flush()
+    assert.deepEqual(lit(f), [2])
+    f.state.total = 20000
+    await scrollTo(f, 19400)
+    f.setMessages([f.prompt("m1", "first question"), f.reply("a1", "first answer"), f.prompt("m2", "second question"), f.prompt("m3", "third"), f.prompt("m4", "fourth")])
+    f.mount([{ owner: "m3", y: 19000, height: 60, prompt: true }, { owner: "m4", y: 19900, height: 60, prompt: true }])
+    await f.flush()
+    assert.deepEqual(lit(f), [3], "at the bottom: the new prompt, though its row is below the line")
   } finally {
     dispose()
     f.close()
@@ -387,7 +414,7 @@ test("the fisheye is by index distance from the pointer's prompt and clears on l
     assert.deepEqual([...d()], [[3, "2"], [4, "1"], [5, "0"], [6, "1"], [7, "2"]])
     f.strip().dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
     await f.flush()
-    assert.equal(d().size, 0)
+    assert.deepEqual([...d()], [[0, "0"], [1, "1"], [2, "2"]], "back to the lit prompt, row m0000 under the line")
   } finally {
     dispose()
     f.close()
