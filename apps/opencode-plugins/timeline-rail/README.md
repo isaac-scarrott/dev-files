@@ -1,6 +1,6 @@
 # Timeline rail
 
-A column of ticks in the chat's left gutter, one per prompt of yours, with a card on hover and a click that lands the prompt under the header.
+A column of ticks in the chat's left gutter, one per prompt of yours (messages another session sent through orchestrator-tools are not prompts and get no tick), with a card on hover and a click that lands the prompt under the header.
 
 [media/demo.mp4](media/demo.mp4)
 

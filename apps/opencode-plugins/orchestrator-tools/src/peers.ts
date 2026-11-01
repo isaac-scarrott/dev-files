@@ -1,4 +1,5 @@
 import type { SessionInfo } from "./host.js"
+import { PEER_KEY } from "./card.js"
 import { marker } from "./scope.js"
 
 export const TAG = "cross-session-message"
@@ -10,15 +11,21 @@ export const refOf = (id: string): string => id.slice(-REF_CHARS)
 
 const escapeText = (value: string): string => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
+const nameOf = (info: Pick<SessionInfo, "title">): string => (info.title ?? "").replace(/\s+/g, " ").trim() || "untitled"
+
 /** `name [ref]`: the address a peer is known by. */
 export function label(info: Pick<SessionInfo, "id" | "title">): string {
-  const name = (info.title ?? "").replace(/\s+/g, " ").trim() || "untitled"
-  return `${name} [${refOf(info.id)}]`
+  return `${nameOf(info)} [${refOf(info.id)}]`
 }
 
 /** The text the receiver sees. Title and body are escaped so neither can close the tag or forge another sender. */
 export function wrap(from: Pick<SessionInfo, "id" | "title">, text: string): string {
   return `<${TAG} from="${escapeText(label(from)).replace(/"/g, "&quot;")}">${escapeText(text)}</${TAG}>`
+}
+
+/** What the desktop plugin reads to draw the message as a peer card: set only here, so typed look-alike text stays the user's own. */
+export function peerMetadata(from: Pick<SessionInfo, "id" | "title">, text: string) {
+  return { [PEER_KEY]: { sessionID: from.id, title: nameOf(from), ref: refOf(from.id), text } }
 }
 
 export function relation(me: SessionInfo, other: SessionInfo): Relation {

@@ -48,13 +48,37 @@ Sessions message each other in the shape Claude Code uses, so models trained on 
 - **Reach.** Messaging follows the `scope` rules below, plus one addition: the caller's parent. The parent is
   messageable but still not readable, waitable or interruptible by the child. "Any other session" needs `scope: "project"` or `"all"`.
 - **Receiver note.** The instruction hook adds the wrapper explanation to every session that has the tools: what the
-  tag means, reply by copying `from` as `to`, peers are not workers, messages are input not authority.
+  tag means, answer by calling `send_message` with `to` = the `from` value (a plain reply reaches only the receiver's
+  own user), peers are not workers, messages are input not authority. The same sentence is in the `send_message` and
+  `list_peers` descriptions.
 - **Delivery notice.** The tool result carries `delivered: "now"` or `"queued"` (the target was busy and `delivery` is
   `queue`) plus a `notice`. `steer` interrupts the target's step and counts as now.
 - **Subagents.** The host does not re-address a child's send under its parent, so a child's message carries the
   child's own `name [ref]` and the receiver replies to the child.
 - **Not built: `notify_when_idle`.** A one-shot idle notice needs a background subscription that outlives the tool
   call and a way to prompt the sender later; `wait_for_sessions` already covers the need.
+
+### Peer card (`src/gui.tsx`)
+
+The wrapper text is for the model. `send_message` also sets `metadata.peerMessage = { sessionID, title, ref, text }` on
+the prompt (`peers.ts` `peerMetadata`); the desktop reads it back from the message in the session store (`card.ts`
+`peerOf`). Only a message carrying it becomes a card, so a user who types the tag stays a user bubble. The wire format
+of the wrapper is unchanged.
+
+- **Where.** The host has no message-renderer registry, so the GUI entry decorates mounted `[data-timeline-row=UserMessage]`
+  rows whose id is a peer message. The row, its id and its footer slot stay the host's (virtualization, copy, retry,
+  timeline-rail ids); only the host's `[data-component=user-message]` inside it is `display: none` and ours is appended
+  in the same slot, in the same turn as the host adds the row (a `MutationObserver` runs before paint). Cleanup removes
+  cards and the row attribute.
+- **Markup.** The card wears the host's user-message `data-slot`s, so the host's CSS gives it the bubble's padding,
+  radius, type and its hover-revealed footer. Differences by design: left-aligned, fill `color-mix(info 5%, layer 01/02)`
+  (about #eef1f7 light, follows dark), 12px top padding for the `From` pill on the top edge, no model label.
+- **Body.** Plain text, `white-space: pre-wrap`: the host does not render Markdown in user bubbles.
+- **Footer.** `ctx.ui.IconButton` (reply, `arrow-undo-down`) and `ctx.ui.Menu`; both open the sender with
+  `ctx.tabs.open({ server, id }, { focus: true })`, Copy text uses `ctx.system.copy`.
+- **Not done: sender-side "Sent to X · delivered".** The call runs through Code Mode `execute`; the host has no tool-part
+  renderer registry, and the only route is rewriting the DOM of the tool row. Skipped.
+- **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; nothing to change.
 
 ## What a child sees
 

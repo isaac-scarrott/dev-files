@@ -5,7 +5,8 @@ Tools that let an agent start other sessions, message them, wait on them and rea
 ## What it does
 - `orchestrate_delegate_task`: create a child session, send one prompt, wait a bounded time and return its final reply. The usual entry point.
 - `orchestrate_create_session`: create one or more sessions, each with its own prompt, as children of the caller (default) or as independent top-level sessions.
-- `orchestrate_send_message`: message a peer by ref, unique title or session id. The receiver gets `<cross-session-message from="TITLE [REF]">…</cross-session-message>` as a user message and replies by copying `from` as `to`. `delivery: "queue"` runs after its current work, `"steer"` interrupts. The result says whether it was delivered now or queued.
+- `orchestrate_send_message`: message a peer by ref, unique title or session id. The receiver gets `<cross-session-message from="TITLE [REF]">…</cross-session-message>` as a user message and answers by calling `send_message` with `to` = the `from` value: the receiver's normal reply is shown only to its own user, never to the sender. `delivery: "queue"` runs after its current work, `"steer"` interrupts. The result says whether it was delivered now or queued.
+- A message from a peer is drawn as its own card in the receiving chat, not as the user's gray bubble: a left-aligned soft blue-gray bubble with a `From <title>` pill on its top edge and a footer (reply arrow to open the sender's session, a `…` menu with Open session and Copy text). The user's own messages are untouched, including text that merely looks like the tag: only a message the plugin sent carries the `peerMessage` metadata the card needs. The timeline rail does not count peer messages as prompts.
 - `orchestrate_list_peers`: reachable sessions as `name [ref]` with relation (parent, child, sibling, other), state and directory.
 - `orchestrate_read_session`, `orchestrate_wait_for_sessions` (up to 16, all or any), `orchestrate_interrupt_session` and `orchestrate_list_sessions` cover reading, waiting, stopping and listing.
 - A child gets only the prompt and optional `context` text, never the caller's history. `clientRequestId` makes create, delegate and send safe to retry.
@@ -21,7 +22,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
   "options": { "maxChildren": 8, "maxDepth": 3, "maxConcurrent": 4 }
 }]
 ```
-Kind: server. Restart the app.
+Kind: server and GUI. Restart the app.
 
 ## Options
 | Option | Default | |

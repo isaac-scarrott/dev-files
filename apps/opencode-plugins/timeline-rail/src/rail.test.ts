@@ -189,3 +189,16 @@ test("window: a reverted edge hands over to the next prompt still listed; a lost
   assert.equal(promptWindow(first, without)!.from, "m0021")
   assert.equal(promptWindow(first, names(5, 100))!.from, "m0100")
 })
+
+test("peer messages are not prompts: no tick, not loaded, whatever their number", () => {
+  const peer = (id: string) => user(id, `<cross-session-message from="W [abc]">hi</cross-session-message>`, { metadata: { peerMessage: { sessionID: "s", title: "W", ref: "abc", text: "hi" } } })
+  const messages = [user("m1", "first"), reply("a1", "one"), peer("p1"), reply("pa", "ack"), peer("p2"), user("m2", "second"), reply("a2", "two")]
+  assert.deepEqual(prompts(messages).map((prompt) => prompt.id), ["m1", "m2"])
+  assert.deepEqual(loadedIds(messages), ["m1", "m2"])
+  assert.deepEqual(prompts(messages, "m2").map((prompt) => prompt.id), ["m1"])
+  assert.deepEqual(prompts([user("m1", "only"), peer("p1"), peer("p2")]).map((prompt) => prompt.id), ["m1"])
+})
+
+test("a typed look-alike without the metadata stays a prompt", () => {
+  assert.deepEqual(prompts([user("m1", `<cross-session-message from="X [1]">t</cross-session-message>`)]).map((prompt) => prompt.id), ["m1"])
+})
