@@ -2,6 +2,7 @@ import { Plugin, Style, createKeyed } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { render } from "solid-js/web"
 import { attach } from "./lane"
+import { afterExit } from "./leave"
 import { readConfig } from "./options"
 import { forecast, humanize, type Notice, type Selection } from "./predict"
 import { SETTLE } from "./spring"
@@ -109,11 +110,14 @@ export default Plugin.define({
           requestAnimationFrame(() => host.getAttribute("data-state") === "closed" && host.setAttribute("data-state", "open"))
         })
 
-        let timer: ReturnType<typeof setTimeout> | undefined
+        let stop = () => {}
+        let finished = false
 
         const finish = () => {
+          if (finished) return
+          finished = true
           leaving.delete(finish)
-          clearTimeout(timer)
+          stop()
           detach()
           dispose()
         }
@@ -123,7 +127,7 @@ export default Plugin.define({
 
           host.setAttribute("data-state", "closing")
           leaving.add(finish)
-          timer = setTimeout(finish, SETTLE * 1000 + 50)
+          stop = afterExit(host, finish, SETTLE * 1000 + 50)
         })
       },
     )

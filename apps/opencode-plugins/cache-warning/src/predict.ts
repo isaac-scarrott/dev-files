@@ -55,15 +55,32 @@ export function contextSize(tokens: NonNullable<Msg["tokens"]>) {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
 }
 
-/** The cache was last touched when that step's response ended; creation is the fallback for an unfinished one. */
+/**
+ * The cache is touched when a step's request starts, not when its reply ends, so the step's creation is the anchor;
+ * the first streamed and the completed timestamps are the fallbacks for a message that lacks it.
+ */
 export function touched(message: Msg) {
-  return millis(message.time?.completed) ?? millis(message.time?.streamed) ?? millis(message.time?.created)
+  return millis(message.time?.created) ?? millis(message.time?.streamed) ?? millis(message.time?.completed)
+}
+
+/**
+ * The composer reports the model's default variant as undefined, a stored message as "default" (or empty): one choice.
+ */
+export function variantOf(variant: string | undefined) {
+  return variant && variant !== "default" ? variant : ""
+}
+
+/** A model id without a leading `provider/`, which some sources write and others leave out. */
+export function bareId(id: string, providerID: string) {
+  return id.startsWith(`${providerID}/`) ? id.slice(providerID.length + 1) : id
 }
 
 /**
  * What the next prompt will cost in cache terms, read from the tail of the conversation: the latest assistant step
- * with usage is the last measure (the host's context ring reads the same step). Anything after it, a prompt or a
- * reply under way, means the message went out and silences the warning, except a completed compaction.
+ * with usage is the last measure (the host's context ring reads the same step) and the time anchor. A step without
+ * usage that has ended (a failed one) made no cache call to count and is passed over; one still running means a
+ * request is in flight and silences the warning. A prompt after the measured step also silences it, as does a reply
+ * under way, except a completed compaction.
  */
 export function forecast(input: {
   messages: ReadonlyArray<Msg>
@@ -87,7 +104,10 @@ export function forecast(input: {
 
     if (message.type !== "assistant") continue
 
-    if (!message.tokens) return {}
+    if (!message.tokens) {
+      if (millis(message.time?.completed) === undefined) return {}
+      continue
+    }
     step = message
     break
   }
@@ -118,8 +138,8 @@ export function forecast(input: {
   if (next && model) {
     const changed =
       next.providerID !== model.providerID ||
-      next.modelID !== model.id ||
-      (next.variant ?? "") !== (model.variant ?? "")
+      bareId(next.modelID, next.providerID) !== bareId(model.id, model.providerID) ||
+      variantOf(next.variant) !== variantOf(model.variant)
 
     if (changed) return { notice: { kind: "model", tokens: size } }
   }

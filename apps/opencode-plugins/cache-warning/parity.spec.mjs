@@ -34,7 +34,6 @@ export default {
         partProps: [],
       },
       allow: {
-        "rest.box.width": "hugs its text; the host footer is the composer's full width",
         "rest.box.height": "a text row, not a button row",
         "rest.background-color": "the DockTray contract's --background-base (248) is the surface the user chose; the location footer paints bg-layer-01 (250) over it",
       },

@@ -24,16 +24,28 @@ border `--v2-border-border-base`, radius 12px, `overflow: clip`, `z-index: 0`). 
 corners are squared and the last 14px (`0.875rem`) tuck under the composer, which paints above it (z-70 against 0). The
 border is 0.5px, like the host's location footer and its queue and go-limit trays. Colours and type are tokens
 (`--v2-text-text-base`/`-muted`, `--line-height-compact`), 13px/440 with the lead in 530, as in the go-limit tray; no hex.
-Hugs its text, 14px in from the lane's aligned edge, wraps instead of truncating (a cut-off token count is the one thing
-the tray must not hide). No icon, idle time or actions, as approved (mockup variant A).
+Full width: exactly the composer's (the lane is the composer's box, `inset-x-0`), left and right edges flush with it at
+every window width (checked 1400, 700, 380 and 300 px). This supersedes the first decision, "hug the text, 14px in".
+Text is left aligned, starting where the composer's textarea text starts (16px in, less the 0.5px border), not centred.
+The tray is `flex: 0 0 100%` and, while it is in the lane, the lane wraps in reverse (`:has(> [data-cache-warning])`), so
+the tray is alone on the bottom line and the app's own pills wrap onto the line above it instead of being squeezed (checked
+with a stand-in pill; not with a real Background activity or todo pill). It wraps onto two lines instead of truncating (a
+cut-off token count is the one thing the tray must not hide). No icon, idle time or actions, as approved (mockup variant A).
 
 **Prediction, never a certainty.** Last measured step = the latest assistant message with `tokens` (the step the
 context ring reads). The cache runs out `cacheTtlMinutes` (default 5, Anthropic's default; refreshed on every hit) after
-that step's `time.completed`, falling back to `streamed`, then `created`. Size = input + output + reasoning + cache read
+that step's `time.created` (the request start, which is what touches the cache), falling back to `streamed`, then
+`completed`. This replaces the first anchor, `time.completed`: a backtest of 1738 real message pairs (below) put recall
+at 70.6% with that anchor and 85.3% with `created`, precision unchanged within a point, and it removes the "may warn a
+few seconds late" the first decision accepted. The TTL stays exactly 5 minutes, no margin. A step without usage that has
+ended (a failed one) made no cache call we can count, so the latest step *with* usage supplies both size and anchor; one
+still running silences the tray (a request is in flight and has just touched the cache). Size = input + output + reasoning + cache read
 + write, written with the ring's formatter (`Intl` compact, whole, lower case: "181k"). Shown only when the context is at
 least `minTokens` (20,000), when the step reported cache use (a provider with no cache numbers gives no basis for a claim),
 and only before you send: a user message or any later assistant step silences it. Expiry outranks a model change (switching
-back would not help). Model/variant come from `ctx.screen.current().composer.model()` against the last step's model.
+back would not help). The composer reports the model's default variant as undefined, a stored message writes it
+"default" (or empty): both are one choice, and a `provider/` prefix on a model id is ignored when comparing (found live: a
+false "model changed" on Claude Agent / Sonnet). Model/variant come from `ctx.screen.current().composer.model()` against the last step's model.
 Not covered: **agent** changes (the composer API exposes the model and variant, not the agent), account switches in a
 proxy, early eviction.
 
@@ -63,6 +75,14 @@ Host (queue panel) against the tray, same machine, 120 Hz, opacity by ms since t
 taking its first step a frame early; the shapes agree. Closing (ms since the retract began): host 0.869 at 132, 0.493 at
 182, 0.271 at 232, 0.115 at 298, 0.059 at 348; tray 0.87 at 139, 0.49 at 189, 0.27 at 239, 0.14 at 289, 0.07 at 339.
 
+**Exit: the end is the transition's event, not a timer.** The first version removed the tray on a timer set when the exit
+began. The app can hold the main thread for a few hundred ms right after a send (it renders the new turn); the timer then
+fires with the stall, before the closing state was ever painted, and the tray vanished with no motion. Reproduced in the
+harness by blocking the main thread 450 ms when `data-state` became `closing` (tray gone 20 ms after the stall, no
+intermediate frame). Now `leave.ts` ends it on `transitionend` of the opacity track (or `transitioncancel`); the timers
+are backstops only, one armed after the first painted frame, one hard cap. A session switch and a plugin reload still end
+it at once (the host has replaced the panel).
+
 **Session switch.** The app replaces the whole chat panel on every switch, a few frames after the route changes. The tray
 is therefore placed again whenever it leaves the document: it checks `isConnected` each frame for 45 frames after a
 placement (no document search while connected) and watches the child lists of the lane's parent and the panel's parent.
@@ -71,6 +91,20 @@ left the tray in the old panel after a switch.
 
 **Not done.** No notification or sound. No calibration from observed `cache.read == 0`. No action ("compact now", "switch
 model"): the approved design has none.
+
+## Backtest
+
+1738 real consecutive assistant steps from the author's ten busiest sessions (Claude Agent provider); positive = the step
+really missed the cache (`cache.read == 0` with at least 20k written), predicted = an "expired" notice at the moment of
+the send. Same data, the two anchors, with the current predictor (walk-back past token-less steps included):
+
+| Anchor | TP | FP | FN | Precision | Recall |
+| --- | --- | --- | --- | --- | --- |
+| `time.completed` (first decision) | 25 | 13 | 9 | 65.8% | 73.5% |
+| `time.created` (now) | 30 | 16 | 4 | 65.2% | 88.2% |
+
+Before the walk-back change the same anchors read 24/12/10 (66.7%, 70.6%) and 29/15/5 (65.9%, 85.3%). Small n (34
+positives); the single token-less-step case in the data (an 80 minute gap, a full 244k rewrite) is now caught.
 
 ## Findings
 
@@ -83,13 +117,14 @@ model"): the approved design has none.
 | Small context (8k) | nothing | harness |
 | Prompt already sent | nothing, and a visible tray retracts | typed and sent from an idle session: 470 ms retract |
 | Session switch, Cmd+R, hot rebuild | one tray, one `<style>`, `window` marker survived the rebuild | harness: `[data-cache-warning]` and `style[data-plugin]` counts |
+| Full width | tray left/right edges equal the composer's at 1400, 700, 380 and 300 px; text 16px in, as the composer's | harness `getBoundingClientRect` |
 | No layout shift | composer box identical (340, 792, 720×88) with and without the tray | `getBoundingClientRect` per session |
 | Keyboard | the tray holds no focusable element (`div role="status"`) | markup |
 | Parity with the host DockTray | 9 PASS, 0 FAIL, 3 N/A (width, height, background 248 vs the footer's 250) | `parity.spec.mjs`; the twin stands beside the host's footer tray, the two cannot share a screen |
 
 Stress (`stress.md`): 380 px and 300 px wide windows wrap onto two lines and keep the number (verified); the 1m formatter
-(unit test); light and dark (verified). Not verified live: the Background activity setting at Right/Center (the CSS only
-adds a 14px margin on both sides, so the lane's justification decides), the tray beside a running subagent or todo pill,
+(unit test); light and dark (verified). Not verified live: the Background activity setting at Right/Center (the tray is full
+width, so it should not matter), the tray beside a running subagent or todo pill,
 a subagent session (absent by source: the lane renders only for non-child sessions), a 5,000-message session (the forecast
 reads the tail of the message list only).
 

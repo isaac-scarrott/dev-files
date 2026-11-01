@@ -9,21 +9,28 @@ const seconds = `${SETTLE.toFixed(3)}s`
  * The tray is the host's own `data-dock-surface="tray"` (surface, border, radius, clip), turned upside down: the host
  * hangs its tray under a shell, this one stands on the composer, so the bottom corners are squared and the last 14px
  * (0.875rem, the host's `margin-top: -0.875rem`) tuck under the composer, which paints above it (z-70 against 0).
- * It sits in the host's composer lane, the out-of-flow row the app's pills use, so it never moves the composer.
+ * It sits in the host's composer lane, the out-of-flow row the app's pills use, so it never moves the composer. It is the
+ * lane's full width (the composer's), alone on the bottom line; the app's pills wrap onto the line above it. Its text
+ * starts where the composer's textarea text starts (16px in, less the 0.5px border).
  */
 export const styles = `
+[data-component="session-composer-lane"]:has(> [data-cache-warning]) {
+  flex-wrap: wrap-reverse;
+}
 [data-cache-warning] {
   --cw-tuck: 14px;
   position: relative;
   z-index: 0;
   display: block;
   box-sizing: border-box;
+  flex: 0 0 100%;
+  order: -1;
   min-width: 0;
-  max-width: 100%;
-  margin-inline: 14px;
+  width: 100%;
+  margin-inline: 0;
   border-width: 0.5px;
   margin-bottom: calc(-10px - var(--cw-tuck));
-  padding: 6px 12px calc(var(--cw-tuck) + 4px);
+  padding: 6px calc(16px - 0.5px) calc(var(--cw-tuck) + 4px);
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
   font-size: 13px;
