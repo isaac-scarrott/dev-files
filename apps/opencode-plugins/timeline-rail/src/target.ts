@@ -1,39 +1,23 @@
 /** A mounted timeline row: its owning prompt, whether it is that prompt's own row, and its viewport box. */
 export type Row = { readonly owner: string; readonly prompt: boolean; readonly top: number; readonly bottom: number }
 
-/** Rows this close to the fold count as sitting on it. */
-export const TOLERANCE = 8
-
 /**
- * The index in `ids` of the prompt whose turn contains the fold. Rows are in document order; the first row that
- * extends below the fold owns the current turn. A row whose owner the host does not list resolves to the last listed
- * prompt before it. -1 when nothing is mounted or listed.
+ * The index in `ids` of the current prompt, as t3-code's `resolveTimelineMinimapCurrentIndex`: the first prompt row
+ * inside `box`, else the prompt whose turn the first row inside `box` belongs to (the one before the visible range).
+ * A row whose owner the host does not list resolves to the last listed prompt before it, so a turn older than `ids`
+ * gives -1. -1 when nothing is mounted in `box`.
  */
-export function currentPrompt(ids: readonly string[], rows: readonly Row[], fold: number): number {
-  if (ids.length === 0) return -1
-  const current = rows.find((row) => row.bottom > fold + TOLERANCE) ?? rows.at(-1)
+export function currentPrompt(ids: readonly string[], rows: readonly Row[], box: { readonly top: number; readonly bottom: number }): number {
+  const shown = rows.filter((row) => row.bottom > box.top && row.top < box.bottom)
+  const first = shown.find((row) => row.prompt && ids.includes(row.owner)) ?? shown[0]
 
-  if (!current) return -1
-  const index = ids.indexOf(current.owner)
+  if (!first) return -1
+  const index = ids.indexOf(first.owner)
 
   if (index !== -1) return index
-  const next = ids.findIndex((id) => id > current.owner)
+  const next = ids.findIndex((id) => id > first.owner)
 
-  return next === -1 ? ids.length - 1 : Math.max(0, next - 1)
-}
-
-export type RevealPlan = { readonly kind: "probe" } | { readonly kind: "load" } | { readonly kind: "top" }
-
-/**
- * How to bring an unmounted prompt's row into the DOM: page the scroller towards it, unless it is the first prompt,
- * which either sits at the top or on an unloaded page.
- */
-export function revealPlan(input: { readonly ids: readonly string[]; readonly target: string; readonly more: boolean }): RevealPlan {
-  const to = input.ids.indexOf(input.target)
-
-  if (to >= 1) return { kind: "probe" }
-
-  return input.more ? { kind: "load" } : { kind: "top" }
+  return next === -1 ? ids.length - 1 : next - 1
 }
 
 /**

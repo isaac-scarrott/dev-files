@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { correction, currentPrompt, glidePlan, seekTop, probeDirection, revealPlan, type Row } from "./target"
+import { correction, currentPrompt, glidePlan, seekTop, probeDirection, type Row } from "./target"
 
 const ids = ["m1", "m2", "m3", "m4"]
 
@@ -11,34 +11,33 @@ const row = (owner: string, top: number, height: number, prompt = false): Row =>
   bottom: top + height,
 })
 
-test("the current prompt owns the first row that extends below the fold", () => {
+const box = { top: 48, bottom: 700 }
+
+test("the current prompt is the first prompt row in view, as t3-code's minimap", () => {
   const rows = [row("m2", -300, 60, true), row("m2", -240, 900), row("m3", 660, 60, true)]
-  assert.equal(currentPrompt(ids, rows, 48), 1)
+  assert.equal(currentPrompt(ids, rows, box), 2, "m3's row is the first prompt row in view, while the viewport top is inside m2's answer")
+  assert.equal(currentPrompt(ids, [row("m2", 60, 60, true), row("m2", 120, 400), row("m3", 520, 60, true)], box), 1)
 })
 
-test("a prompt sitting on the fold is current, within tolerance; the turn before it ends there", () => {
-  const rows = [row("m2", -200, 60, true), row("m2", -140, 180), row("m3", 44, 60, true), row("m3", 104, 500)]
-  assert.equal(currentPrompt(ids, rows, 48), 2)
+test("with no prompt row in view, the turn being read is current", () => {
+  const rows = [row("m3", -100, 400), row("m3", 300, 400), row("m4", 720, 60, true)]
+  assert.equal(currentPrompt(ids, rows, box), 2)
 })
 
-test("inside a turn whose prompt row is unmounted, the owning prompt is current", () => {
-  const rows = [row("m3", -100, 400), row("m3", 300, 400), row("m4", 700, 60, true)]
-  assert.equal(currentPrompt(ids, rows, 48), 2)
+test("rows out of view do not decide", () => {
+  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m1", -400, 300)], box), -1)
+  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m2", 60, 300)], box), 1)
 })
 
-test("a row the host does not list resolves to the listed prompt before it", () => {
-  assert.equal(currentPrompt(ids, [row("m2x", 60, 300)], 48), 1)
-  assert.equal(currentPrompt(ids, [row("m0", 60, 300)], 48), 0)
-  assert.equal(currentPrompt(ids, [row("m9", 60, 300)], 48), 3)
-})
-
-test("every row above the fold: the last row's turn is current", () => {
-  assert.equal(currentPrompt(ids, [row("m1", -500, 100, true), row("m1", -400, 300)], 48), 0)
+test("a row the host does not list resolves to the listed prompt before it; older than the list gives -1", () => {
+  assert.equal(currentPrompt(ids, [row("m2x", 60, 300)], box), 1)
+  assert.equal(currentPrompt(ids, [row("m0", 60, 300)], box), -1)
+  assert.equal(currentPrompt(ids, [row("m9", 60, 300)], box), 3)
 })
 
 test("no prompts or no rows give no current prompt", () => {
-  assert.equal(currentPrompt([], [row("m1", 0, 10)], 0), -1)
-  assert.equal(currentPrompt(ids, [], 0), -1)
+  assert.equal(currentPrompt([], [row("m1", 60, 10)], box), -1)
+  assert.equal(currentPrompt(ids, [], box), -1)
 })
 
 test("probe direction: rows in view of the target's turn or later mean it is above, earlier turns mean below", () => {
@@ -56,16 +55,6 @@ test("probe direction ignores rows out of view, like the last turn's row the vir
   assert.equal(probeDirection([row("m3", -200, 900), row("m6", 20000, 300)], "m3", box), -1)
   // Nothing in view yet: the mounted rows decide.
   assert.equal(probeDirection([row("m2", -2000, 900), row("m2", 3000, 300)], "m3", box), 1)
-})
-
-test("reveal plan probes for any prompt but the first", () => {
-  assert.deepEqual(revealPlan({ ids, target: "m2", more: false }), { kind: "probe" })
-  assert.deepEqual(revealPlan({ ids, target: "m4", more: true }), { kind: "probe" })
-})
-
-test("reveal plan for the first prompt loads older history or scrolls to the top", () => {
-  assert.deepEqual(revealPlan({ ids, target: "m1", more: true }), { kind: "load" })
-  assert.deepEqual(revealPlan({ ids, target: "m1", more: false }), { kind: "top" })
 })
 
 test("glide plan glides short distances, jumps to one screen away for long ones, and clamps", () => {
