@@ -8,9 +8,18 @@ let package = Package(
         .package(url: "https://github.com/MrKai77/DynamicNotchKit", from: "1.1.0")
     ],
     targets: [
+        .target(
+            name: "UsageForecast",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .executableTarget(
             name: "NotchUsage",
-            dependencies: ["DynamicNotchKit"],
+            dependencies: ["DynamicNotchKit", "UsageForecast"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "UsageForecastTests",
+            dependencies: ["UsageForecast"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
