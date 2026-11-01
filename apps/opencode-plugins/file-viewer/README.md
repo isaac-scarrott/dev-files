@@ -10,7 +10,7 @@ Click a file path in an assistant message, `~/Movies/demo.mp4` included, and it 
 
 ## What it does
 - Makes `~/...` and `$HOME/...` paths clickable (the app refuses them) when the file exists; the video, image, PDF, Markdown, CSV or JSON opens in the same tab the app uses for any file.
-- Makes names with spaces clickable in inline code (`` `~/Movies/My Video.mp4` ``, `` `docs/My Notes.md` ``), which the app skips.
+- Makes names with spaces clickable in inline code (`` `~/Movies/My Video.mp4` ``, `` `docs/My Notes.md` ``), which the app skips. These turn into a link when the pointer reaches them, so a long session scrolls as fast as without the plugin.
 - Leaves everything else to the app: relative paths without spaces still use its workspace search, missing files and code blocks stay plain.
 - Keeps line selections: `~/notes.md:12` or `#L10-L20`.
 
@@ -23,11 +23,6 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 "plugins": ["/path/to/apps/opencode-plugins/file-viewer"]
 ```
 Kind: GUI plus a small server part (it reports the home directory). **The first install needs a service restart**; later rebuilds hot-reload.
-
-## Options
-| Option | Default | |
-| --- | --- | --- |
-| `spacedCode` | `true` | Mark inline code with spaces as a path. A DOM workaround for a host limit; costs about +14% script time during very fast scroll of a 300-turn session. `false` turns it off. |
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

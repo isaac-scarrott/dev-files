@@ -8,8 +8,6 @@ export type Origin =
   | "href"
   /** A link destination the host already decoded (the `Link.href` a `LinkHandler` receives). */
   | "decoded-href"
-  /** Free text; tokens are found inside it. */
-  | "prose"
 
 export type PathForm =
   | "tilde"
@@ -48,8 +46,6 @@ export interface Candidate {
   readonly anchor?: string
   readonly quoted: boolean
   readonly confidence: Confidence
-  /** Other readings of the same text to try if `path` does not exist (names with spaces, diff `a/` prefix). */
-  readonly alternatives: readonly string[]
   /** The environment variable a `form: "env"` path starts with. */
   readonly envVar?: string
 }
@@ -90,17 +86,6 @@ export type Parsed = { readonly ok: true; readonly candidate: Candidate } | { re
 
 export interface ParseOptions {
   readonly origin?: Origin
-  /** Offset added to start and end, for tokens found inside a larger text. */
-  readonly offset?: number
-  /** Lowest confidence returned. Spans default to "low" (an existence check follows), prose to "medium". */
+  /** Lowest confidence returned; default "low" (an existence check follows). */
   readonly minConfidence?: Confidence
-  /** The text came from inside quotes, backticks or a `<...>` destination, so spaces are part of the name. */
-  readonly quoted?: boolean
-}
-
-export interface DetectOptions {
-  readonly origin?: Origin
-  readonly minConfidence?: Confidence
-  /** Stop after this many candidates (default 500). */
-  readonly maxCandidates?: number
 }

@@ -63,14 +63,12 @@ export default Plugin.define({
       },
     })
 
-    // Optional: it observes DOM additions, which costs a little while a long timeline scrolls (see DESIGN.md).
-    const stop =
-      (ctx.options as { spacedCode?: boolean } | undefined)?.spacedCode === false
-        ? () => {}
-        : watchSpacedCode(document, {
-            target: (href) => links.target(href),
-            peek: (href) => links.peek(href),
-          })
+    // Workaround for names with spaces, which the host never offers to a LinkHandler (see DESIGN.md).
+    const stop = watchSpacedCode(document, {
+      target: (href) => links.target(href),
+      peek: (href) => links.peek(href),
+      open: (href) => void ctx.links.open({ href }),
+    })
 
     return () => {
       stop()
