@@ -291,7 +291,7 @@ test("event rate over the hourly cap pauses with a notice, then resumes", async 
   await t.monitors.dispose()
 })
 
-test("definitions persist; only re-arm monitors come back after a restart, and say so", async () => {
+test("definitions persist; every monitor comes back after a restart, and says so", async () => {
   const t = setup()
   await t.monitors.start(t.input)
   await t.monitors.start({ ...t.input, name: "watch", rearmMinutes: 30 })
@@ -300,12 +300,12 @@ test("definitions persist; only re-arm monitors come back after a restart, and s
   assert.ok(!stored.includes("tick"))
   const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
   await second.restore()
-  assert.equal(second.count, 1)
-  assert.equal(second.list()[0]!.name, "watch")
+  assert.equal(second.count, 2)
+  assert.deepEqual(second.list().map((m) => m.name).sort(), ["cmd", "watch"])
   await t.clock.advance(5000)
   const restored = t.wakes.filter((w) => w.text.includes("restarted automatically"))
-  assert.equal(restored.length, 1)
-  assert.equal(t.defs(), 1)
+  assert.equal(restored.length, 2)
+  assert.equal(t.defs(), 2)
   await second.dispose()
   await t.monitors.dispose()
 })
@@ -350,8 +350,9 @@ test("options reject bad values", () => {
 
 test("a monitor lost at restart wakes its session once, saying it is gone", async () => {
   const t = setup()
-  await t.monitors.start({ ...t.input, name: "plain" })
+  await t.monitors.start({ ...t.input, name: "plain", ttlMinutes: 1 })
   assert.equal(t.defs(), 1)
+  t.clock.t += 120_000
   const second = new Monitors(t.deps)
   await second.restore()
   assert.equal(second.count, 0)
@@ -370,7 +371,8 @@ test("a monitor lost at restart wakes its session once, saying it is gone", asyn
 
 test("a lost monitor does not wake an archived or missing session, and is still forgotten", async () => {
   const t = setup()
-  await t.monitors.start(t.input)
+  await t.monitors.start({ ...t.input, ttlMinutes: 1 })
+  t.clock.t += 120_000
   t.states.set("ses_1", "archived")
   await new Monitors(t.deps).restore()
   assert.equal(t.wakes.length, 0)
@@ -380,7 +382,8 @@ test("a lost monitor does not wake an archived or missing session, and is still 
 
 test("a failed notice wake is logged and not retried", async () => {
   const t = setup()
-  await t.monitors.start(t.input)
+  await t.monitors.start({ ...t.input, ttlMinutes: 1 })
+  t.clock.t += 120_000
   t.deps.sessions.prompt = async () => { throw new Error("busy") }
   await new Monitors(t.deps).restore()
   assert.equal(t.storage.size, 0)
@@ -395,6 +398,66 @@ test("a re-arm monitor past its ttl at restart is reported gone too", async () =
   await new Monitors(t.deps).restore()
   assert.equal(t.wakes.filter((w) => w.text.includes("Monitor gone")).length, 1)
   await t.monitors.dispose()
+})
+
+test("a monitor without rearmMinutes is restored, runs fresh and gets no re-arm clock", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  const next = await restart(t, t.monitors)
+  assert.equal(next.count, 1)
+  assert.equal(t.sp.runs.length, 2)
+  const info = next.list()[0]!
+  assert.equal(info.restartCount, 1)
+  assert.equal(info.lastRearm, undefined)
+  assert.equal(info.nextRearm, undefined)
+  assert.equal(info.nextRunAt, undefined)
+  await t.clock.advance(5000)
+  assert.equal(t.wakes.filter((w) => w.text.includes("restarted automatically")).length, 1)
+  assert.equal(t.wakes.filter((w) => w.text.includes("Monitor gone")).length, 0)
+  await next.dispose()
+})
+
+test("restart count increments on every restart of a monitor without rearmMinutes", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  const second = await restart(t, t.monitors)
+  const third = await restart(t, second)
+  assert.equal(third.list()[0]!.restartCount, 2)
+  await third.dispose()
+})
+
+test("a monitor without rearmMinutes past its ttl is not restored", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, ttlMinutes: 1 })
+  t.clock.t += 120_000
+  const next = new Monitors(t.deps)
+  await next.restore()
+  assert.equal(next.count, 0)
+  assert.equal(t.defs(), 0)
+  assert.equal(t.sp.runs.length, 1)
+  await t.monitors.dispose()
+})
+
+test("a stopped monitor stays stopped across a restart", async () => {
+  const t = setup()
+  await t.monitors.start(t.input)
+  await t.monitors.stop("mon_1")
+  assert.equal(t.storage.size, 0)
+  const next = new Monitors(t.deps)
+  await next.restore()
+  assert.equal(next.count, 0)
+  assert.equal(t.wakes.length, 0)
+})
+
+test("a monitor without rearmMinutes at its event cap is not restored", async () => {
+  const t = setup()
+  t.storage.set("monitor/def/mon_1", { id: "mon_1", name: "cmd", command: "cmd", cwd: "/work", sessionID: "ses_1", batchSeconds: 5, maxEvents: 2, createdAt: 0, origin: "/work", expiresAt: t.clock.t + 1e9 })
+  t.storage.set("monitor/state/mon_1", { seq: 1, restartCount: 0, aliveAt: t.clock.t, events: 2 })
+  const next = new Monitors(t.deps)
+  await next.restore()
+  assert.equal(next.count, 0)
+  assert.equal(t.sp.runs.length, 0)
+  assert.equal(t.wakes.filter((w) => w.text.includes("Monitor gone")).length, 1)
 })
 
 test("a monitor may wake only the caller's own tree", async () => {
@@ -531,7 +594,7 @@ test("the heartbeat records the last time the monitor was alive, for a crash wit
 
 test("a lost monitor's notice continues its seq and carries the restart counter and window", async () => {
   const t = setup()
-  await t.monitors.start(t.input)
+  await t.monitors.start({ ...t.input, ttlMinutes: 1 })
   t.sp.out(t.sp.runs[0]!, "x\n")
   await t.clock.advance(5000)
   const down = t.clock.t

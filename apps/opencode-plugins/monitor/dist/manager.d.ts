@@ -74,9 +74,8 @@ export declare class Monitors {
     /** The session was archived or deleted: its monitors have no one to wake. */
     removeSession(sessionID: string): Promise<void>;
     /**
-     * Monitors from a previous run. Only those with a re-arm schedule come back, and the first wake says so. The rest are
-     * forgotten, because a command nobody asked for in this run must not start by itself, and their session is told once
-     * that they are gone.
+     * Monitors from a previous run. Every one still within its ttl and event cap comes back (its command starts fresh) and
+     * the first wake says so. The rest are forgotten and their session is told once that they are gone.
      */
     restore(): Promise<void>;
     private announceLost;
