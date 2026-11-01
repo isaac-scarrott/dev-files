@@ -47,7 +47,8 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/claude-proxy",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/scheduler",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/monitor",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/file-viewer"
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/file-viewer",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/cache-warning"
   ],
   "mcp": {
     "paper": {
