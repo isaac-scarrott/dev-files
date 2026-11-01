@@ -5,7 +5,6 @@
   "agents-panel/src/spinner.tsx|no-module-state": 1,
   "agents-panel/src/spinner.tsx|no-style-element": 1,
   "agents-panel/src/toggle.tsx|no-effect": 9,
-  "model-picker/src/gui.tsx|no-effect": 2,
   "native-ui/src/header-icon-button.tsx|no-effect": 1,
   "native-ui/src/header-icon-button.tsx|no-module-state": 1,
   "native-ui/src/popover.tsx|no-effect": 1,

@@ -22,18 +22,27 @@ export interface LayoutInput {
   price: ReadonlyMap<string, number>
   /** Provider display name by provider id. */
   providerName(id: string): string
+  /** Stand-in price by provider and model family for models the catalog leaves unpriced; none by default. */
+  rank?: Rank
 }
+
+/** Rank by provider id, then by a case-insensitive substring of the model key or name: the first match wins. */
+export type Rank = Readonly<Record<string, Readonly<Record<string, number>>>>
 
 // The Claude Agent provider runs through the claude CLI on a subscription, so the catalog gives its models no price at
 // all. Rank the families by their relative output price instead of letting four zeros fall back to alphabetical order.
-const CLAUDE_AGENT_RANK: readonly (readonly [RegExp, number])[] = [
-  [/fable/i, 100],
-  [/opus/i, 75],
-  [/sonnet/i, 15],
-  [/haiku/i, 5],
-]
-const unpriced = (model: HostModel) =>
-  providerOf(model.key) === "claude-agent" ? (CLAUDE_AGENT_RANK.find(([family]) => family.test(model.key) || family.test(model.name))?.[1] ?? 0) : 0
+export const DEFAULT_RANK: Rank = { "claude-agent": { fable: 100, opus: 75, sonnet: 15, haiku: 5 } }
+
+/** The `rank` option: the default, with each provider the user lists replacing the default's entry for it. Invalid entries are ignored. */
+export function parseRank(option: unknown): Rank {
+  if (typeof option !== "object" || option === null || Array.isArray(option)) return DEFAULT_RANK
+  const out: Record<string, Record<string, number>> = { ...DEFAULT_RANK }
+  for (const [provider, families] of Object.entries(option)) {
+    if (typeof families !== "object" || families === null || Array.isArray(families)) continue
+    out[provider] = Object.fromEntries(Object.entries(families).filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1])))
+  }
+  return out
+}
 
 export const providerOf = (key: string) => key.slice(0, key.indexOf(":"))
 
@@ -46,6 +55,13 @@ export function layout(input: LayoutInput): Section[] {
     if (model.section === "favorite") continue
     const id = providerOf(model.key)
     byProvider.set(id, [...(byProvider.get(id) ?? []), model])
+  }
+  const rank = input.rank ?? {}
+  const unpriced = (model: HostModel) => {
+    const families = rank[providerOf(model.key)]
+    if (!families) return 0
+    const text = `${model.key} ${model.name}`.toLowerCase()
+    return Object.entries(families).find(([family]) => text.includes(family.toLowerCase()))?.[1] ?? 0
   }
   const price = (model: HostModel) => input.price.get(model.key) || unpriced(model)
   const providers = [...byProvider.keys()].sort((a, b) => compare(input.providerName(a), input.providerName(b)) || compare(a, b))
