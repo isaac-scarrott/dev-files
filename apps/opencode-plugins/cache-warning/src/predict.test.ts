@@ -6,11 +6,12 @@ const MIN = 60_000
 const config: Config = { ttlMs: 5 * MIN, minTokens: 20_000 }
 const sonnet = { id: "sonnet", providerID: "anthropic" }
 
-const step = (completed: number, over: Partial<Msg> = {}): Msg => ({
+/** A finished assistant step whose request started at `created`. */
+const step = (created: number, over: Partial<Msg> = {}): Msg => ({
   type: "assistant",
   model: sonnet,
   tokens: { input: 200, output: 800, reasoning: 0, cache: { read: 150_000, write: 29_000 } },
-  time: { created: completed - 20_000, streamed: completed - 1_000, completed },
+  time: { created, streamed: created + 19_000, completed: created + 20_000 },
   ...over,
 })
 const user: Msg = { type: "user" }
@@ -28,10 +29,10 @@ test("expired cache names the last measured size", () => {
   assert.deepEqual(result, { notice: { kind: "expired", tokens: 180_000 } })
 })
 
-test("expiry counts from the end of the step, falling back to streamed then created", () => {
+test("expiry counts from the start of the step's request, falling back to streamed then completed", () => {
   assert.equal(touched(step(t0)), t0)
-  assert.equal(touched(step(t0, { time: { created: 1, streamed: 2 } })), 2)
-  assert.equal(touched(step(t0, { time: { created: 1 } })), 1)
+  assert.equal(touched(step(t0, { time: { streamed: 2, completed: 3 } })), 2)
+  assert.equal(touched(step(t0, { time: { completed: 3 } })), 3)
   assert.equal(touched(step(t0, { time: {} })), undefined)
   assert.deepEqual(forecast({ messages: [step(t0, { time: {} })], now: t0 + 99 * MIN, config }), {})
 })
@@ -40,6 +41,26 @@ test("a sent prompt or a running reply silences the warning", () => {
   const late = t0 + 30 * MIN
   assert.deepEqual(forecast({ messages: [step(t0), user], now: late, config }), {})
   assert.deepEqual(forecast({ messages: [step(t0), user, { type: "assistant" }], now: late, config }), {})
+})
+
+test("a reply that runs long does not push the expiry later: the request, not the reply's end, touched the cache", () => {
+  const long = step(t0, { time: { created: t0, streamed: t0 + 6 * MIN, completed: t0 + 7 * MIN } })
+  assert.deepEqual(forecast({ messages: [user, long], now: t0 + 5 * MIN + 1, config }).notice?.kind, "expired")
+  assert.deepEqual(forecast({ messages: [user, long], now: t0 + MIN, config }), { expiresAt: t0 + 5 * MIN })
+})
+
+test("a failed step without usage is passed over: the last step with usage sets size and anchor", () => {
+  const failed: Msg = { type: "assistant", model: sonnet, time: { created: t0 + 70 * MIN, completed: t0 + 70 * MIN + 500 } }
+  const result = forecast({ messages: [user, step(t0), user, failed], now: t0 + 80 * MIN, config })
+  assert.deepEqual(result, {})
+  assert.deepEqual(forecast({ messages: [user, step(t0), failed], now: t0 + 80 * MIN, config }), {
+    notice: { kind: "expired", tokens: 180_000 },
+  })
+})
+
+test("a step still running without usage silences the warning", () => {
+  const running: Msg = { type: "assistant", model: sonnet, time: { created: t0 + 10 * MIN } }
+  assert.deepEqual(forecast({ messages: [user, step(t0), running], now: t0 + 20 * MIN, config }), {})
 })
 
 test("a small context never warns", () => {
@@ -73,6 +94,26 @@ test("an absent variant equals the empty one", () => {
   const messages = [step(t0, { model: { ...sonnet, variant: "" } })]
   const result = forecast({ messages, now: t0, config, selection: { providerID: "anthropic", modelID: "sonnet" } })
   assert.equal(result.notice, undefined)
+})
+
+test("the host's default variant is one choice however it is written", () => {
+  const real = { id: "sonnet", providerID: "claude-agent" }
+  const messages = [step(t0, { model: { ...real, variant: "default" } })]
+  const same = { providerID: "claude-agent", modelID: "sonnet" }
+  const warm = { expiresAt: t0 + 5 * MIN }
+  assert.deepEqual(forecast({ messages, now: t0 + MIN, config, selection: same }), warm)
+  assert.deepEqual(forecast({ messages, now: t0 + MIN, config, selection: { ...same, variant: "" } }), warm)
+  assert.deepEqual(forecast({ messages, now: t0 + MIN, config, selection: { ...same, variant: "default" } }), warm)
+  assert.equal(forecast({ messages, now: t0 + MIN, config, selection: { ...same, variant: "high" } }).notice?.kind, "model")
+  const high = [step(t0, { model: { ...real, variant: "high" } })]
+  assert.equal(forecast({ messages: high, now: t0 + MIN, config, selection: same }).notice?.kind, "model")
+})
+
+test("a model id written with its provider prefix is the same model", () => {
+  const messages = [step(t0, { model: { id: "claude-agent/sonnet", providerID: "claude-agent" } })]
+  const selection = { providerID: "claude-agent", modelID: "sonnet" }
+  assert.equal(forecast({ messages, now: t0 + MIN, config, selection }).notice, undefined)
+  assert.equal(forecast({ messages, now: t0 + MIN, config, selection: { ...selection, modelID: "opus" } }).notice?.kind, "model")
 })
 
 test("expiry outranks a model change: switching back would not help", () => {

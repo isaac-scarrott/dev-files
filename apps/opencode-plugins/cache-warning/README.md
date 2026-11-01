@@ -1,6 +1,6 @@
 # Cache warning
 
-A small grey tray above the composer says when your next message will re-read the whole conversation at full price: after the prompt cache has expired, after you switch model, and after a compaction.
+A grey tray, the composer's width, above the composer says when your next message will re-read the whole conversation at full price: after the prompt cache has expired, after you switch model, and after a compaction.
 
 > **Credit:** the tray is [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) own `data-dock-surface="tray"` surface from its composer docks, and it opens and closes on the same spring as the queue panel (2.2.5). The cache lifetime comes from Anthropic's [prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching): 5 minutes by default, refreshed on every use.
 
@@ -15,9 +15,9 @@ A small grey tray above the composer says when your next message will re-read th
 - No icon, no buttons, no sound, not focusable. It slides out from under the composer and back, like the host's own docks, and never moves the composer.
 
 ## Context
-OpenCode has no slot above the composer. `ComposerPill` is a focusable capsule in the pill row, so the tray goes into the composer lane the app's own pills float in (a DOM injection, see `DESIGN.md`). It follows the Background activity placement setting and sits 14px in from that edge.
+OpenCode has no slot above the composer. `ComposerPill` is a focusable capsule in the pill row, so the tray goes into the composer lane the app's own pills float in (a DOM injection, see `DESIGN.md`). It is exactly the composer's width, text aligned with the composer's own, and the app's pills sit on the line above it.
 
-The warning is a prediction, not a measurement. It assumes the provider's cache lives `cacheTtlMinutes` after the last reply ended, and it cannot see account switches, proxies that rewrite cache headers, or a provider that evicts early. A tray that shows is a probable full re-read; no tray is not a promise of a cache hit.
+The cache is counted from when the last request started, not when its reply ended. The warning is a prediction, not a measurement. It assumes the provider's cache lives `cacheTtlMinutes` after the last reply ended, and it cannot see account switches, proxies that rewrite cache headers, or a provider that evicts early. A tray that shows is a probable full re-read; no tray is not a promise of a cache hit.
 
 ## Install
 Register by absolute path in `~/.config/opencode/opencode.json`:
