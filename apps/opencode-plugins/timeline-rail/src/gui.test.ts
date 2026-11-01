@@ -28,10 +28,17 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
   const doc = globalThis.document
   doc.body.innerHTML = `<div data-view><div data-slot="session-timeline-scroll"><div data-scrollable><div data-session-title><div data-actions></div></div><div data-rows></div></div></div><div data-slot="session-timeline-visible"></div></div>`
   const frames = new Map<number, FrameRequestCallback>()
+  const bands = new Set<{ deliver(): void }>()
+  const created: string[] = []
+  const ended: string[] = []
+  const watchers = new Set<MutationCallback>()
+  const resizers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element>; fresh: Set<Element> }>()
   let nextFrame = 1
   const gutter = options.gutter ?? 256
   const globals = {
     HTMLElement: globalThis.window.HTMLElement,
+    Element: globalThis.window.Element,
+    getComputedStyle: globalThis.window.getComputedStyle.bind(globalThis.window),
     WheelEvent: globalThis.window.WheelEvent,
     Node: globalThis.window.Node,
     // Solid's Portal checks its mount against HTMLHeadElement.
@@ -42,8 +49,69 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
     },
     cancelAnimationFrame: (id: number) => void frames.delete(id),
     ResizeObserver: class {
-      observe() {}
+      constructor(callback: ResizeObserverCallback) {
+        resizers.add({ callback, targets: this.targets, fresh: this.fresh })
+      }
+      targets = new Set<Element>()
+      // The browser reports a newly observed element once, after layout.
+      fresh = new Set<Element>()
+      observe(target: Element) {
+        this.targets.add(target)
+        this.fresh.add(target)
+      }
       unobserve() {}
+      disconnect() {
+        this.targets.clear()
+        this.fresh.clear()
+      }
+    },
+    // The browser's observers, reduced to what the rail asks: an observer on the reading line, told only
+    // when a target's state against the band changes (`flush` delivers), and a child-list observer told by `mount`.
+    IntersectionObserver: class {
+      constructor(callback: IntersectionObserverCallback, init: IntersectionObserverInit) {
+        this.callback = callback
+        this.margin = init.rootMargin ?? ""
+        this.whole = init.threshold === 1
+        bands.add(this)
+        ;(this.whole ? ended : created).push(this.margin)
+      }
+      callback: IntersectionObserverCallback
+      margin: string
+      // Threshold 1: told when the target comes wholly inside the root (the bottom watch).
+      whole: boolean
+      targets = new Map<Element, string | undefined>()
+      observe(target: Element) {
+        this.targets.set(target, undefined)
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target)
+      }
+      disconnect() {
+        this.targets.clear()
+        bands.delete(this)
+      }
+      deliver() {
+        const [top = 0, , bottom = 0] = this.margin.split(" ").map(parseFloat)
+        const band = { top: -top, bottom: VIEWPORT + bottom }
+        const entries = [] as IntersectionObserverEntry[]
+
+        for (const [target, last] of this.targets) {
+          const box = target.getBoundingClientRect()
+          const isIntersecting = this.whole ? box.top >= band.top && box.bottom <= band.bottom : box.bottom >= band.top && box.top <= band.bottom
+          const state = `${isIntersecting}`
+
+          if (state === last) continue
+          this.targets.set(target, state)
+          entries.push({ target, isIntersecting, boundingClientRect: box, rootBounds: band } as unknown as IntersectionObserverEntry)
+        }
+        if (entries.length) this.callback(entries, this as unknown as IntersectionObserver)
+      }
+    },
+    MutationObserver: class {
+      constructor(callback: MutationCallback) {
+        watchers.add(callback)
+      }
+      observe() {}
       disconnect() {}
     },
   }
@@ -65,10 +133,11 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
   const sticky = scroller.querySelector("[data-session-title]") as HTMLElement
   const actions = scroller.querySelector("[data-actions]") as HTMLElement
   const rowsHost = scroller.querySelector("[data-rows]") as HTMLElement
-  Object.defineProperty(sticky, "offsetHeight", { value: INSET })
   view.getBoundingClientRect = () => rect(0, 0, WIDTH, VIEWPORT)
   visible.getBoundingClientRect = () => rect(0, 0, WIDTH, VIEWPORT)
-  const state = { scrollTop: 0, total: 20000 }
+  const state = { scrollTop: 0, total: 20000, header: INSET }
+  rowsHost.getBoundingClientRect = () => rect(-state.scrollTop, 0, WIDTH, state.total)
+  Object.defineProperty(sticky, "offsetHeight", { get: () => state.header })
   const scrolls: { top: number; behavior: ScrollBehavior }[] = []
   Object.defineProperty(scroller, "scrollTop", { get: () => state.scrollTop, set: (value: number) => void (state.scrollTop = value) })
   Object.defineProperty(scroller, "clientHeight", { get: () => VIEWPORT })
@@ -79,14 +148,30 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
     state.scrollTop = options.top ?? 0
   }) as HTMLElement["scrollTo"]
 
+  // The host's shape: each row in a keyed wrapper under one container.
   const mount = (specs: { owner: string; y: number; height: number; prompt?: boolean }[]) => {
+    const removed = [...rowsHost.children]
     rowsHost.innerHTML = ""
+    const added: HTMLElement[] = []
     for (const spec of specs) {
+      const wrapper = doc.createElement("div")
+      wrapper.setAttribute("data-timeline-key", `${spec.owner}-${spec.y}`)
       const row = doc.createElement("div")
       row.setAttribute("data-message-id", spec.owner)
       row.setAttribute("data-timeline-row", spec.prompt ? "UserMessage" : "AssistantPart")
-      row.getBoundingClientRect = () => rect(spec.y - state.scrollTop, gutter, WIDTH - 2 * gutter, spec.height)
-      rowsHost.appendChild(row)
+      const box = () => rect(spec.y - state.scrollTop, gutter, WIDTH - 2 * gutter, spec.height)
+      row.getBoundingClientRect = box
+      wrapper.getBoundingClientRect = box
+      wrapper.appendChild(row)
+      rowsHost.appendChild(wrapper)
+      added.push(wrapper)
+    }
+    for (const callback of watchers) callback([{ removedNodes: removed, addedNodes: added }] as unknown as MutationRecord[], undefined as never)
+  }
+  // The scroller's content height changed (the host's rows were measured, a reply streamed).
+  const resized = () => {
+    for (const { callback, targets } of resizers) {
+      if (targets.size) callback([...targets].map((target) => ({ target })) as unknown as ResizeObserverEntry[], undefined as never)
     }
   }
 
@@ -140,6 +225,13 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
       const pending = [...frames.entries()]
       frames.clear()
       for (const [, callback] of pending) callback(0)
+      for (const { callback, fresh } of resizers) {
+        if (!fresh.size) continue
+        const entries = [...fresh].map((target) => ({ target })) as unknown as ResizeObserverEntry[]
+        fresh.clear()
+        callback(entries, undefined as never)
+      }
+      for (const band of [...bands]) band.deliver()
       await Promise.resolve()
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
@@ -157,6 +249,9 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
     state,
     scrolls,
     mount,
+    resized,
+    created,
+    ended,
     setMessages,
     setActive,
     active,
@@ -401,7 +496,7 @@ test("a pointer over the card keeps its prompt; the card takes no click", async 
   }
 })
 
-test("the fisheye is by index distance from the pointer's prompt and clears on leave", async () => {
+test("the fisheye is by index distance from the pointer's prompt, only while the strip is pointed; at rest every tick is the same width", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
@@ -409,12 +504,57 @@ test("the fisheye is by index distance from the pointer's prompt and clears on l
     f.mount([{ owner: "m0000", y: 48, height: 60, prompt: true }])
     await f.flush()
     const d = () => new Map(f.marked("data-d").map((index) => [index, f.view.querySelector(`[data-index="${index}"]`)!.getAttribute("data-d")]))
+    assert.deepEqual([...d()], [], "at rest no tick is scaled: all equal, the lit one included")
+    assert.deepEqual(lit(f), [0])
     move(f.strip(), f.at(5 / 9))
     await f.flush()
-    assert.deepEqual([...d()], [[3, "2"], [4, "1"], [5, "0"], [6, "1"], [7, "2"]])
+    assert.deepEqual([...d()], [[3, "2"], [4, "1"], [5, "0"], [6, "1"], [7, "2"]], "centred on the pointer, not on the lit prompt")
     f.strip().dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
     await f.flush()
-    assert.deepEqual([...d()], [[0, "0"], [1, "1"], [2, "2"]], "back to the lit prompt, row m0000 under the line")
+    assert.deepEqual([...d()], [], "back to equal widths on leave")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("at rest no tick is scaled at any scroll position or active prompt", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    for (const top of [0, 800, 1108 - INSET - 8, 2000, 19400]) {
+      await scrollTo(f, top)
+      assert.equal(lit(f).length, 1)
+      assert.deepEqual(f.marked("data-d"), [], `scrollTop ${top}`)
+    }
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("the pointed tick is lit as well as the active one while the strip is pointed; one lit again on leave", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.setMessages(many(f, 10))
+    f.mount([{ owner: "m0000", y: 48, height: 60, prompt: true }])
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
+    move(f.strip(), f.at(5 / 9))
+    await f.flush()
+    assert.deepEqual(lit(f), [0, 5], "the current prompt stays lit; the pointed one joins it")
+    move(f.strip(), f.at(8 / 9))
+    await f.flush()
+    assert.deepEqual(lit(f), [0, 8])
+    move(f.strip(), f.at(0))
+    await f.flush()
+    assert.deepEqual(lit(f), [0], "pointing at the current prompt lights only it")
+    f.strip().dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
   } finally {
     dispose()
     f.close()
@@ -480,9 +620,12 @@ test("keyboard, as t3-code: focus starts on the current prompt; arrows, Home, En
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: second question", "focus starts from the current prompt")
     assert.equal(f.card()?.querySelector("[data-timeline-rail-card-title]")?.textContent, "second question", "the card opens with focus, at once")
+    assert.deepEqual(lit(f), [1], "focus starts on the lit prompt")
+    assert.deepEqual(f.marked("data-d"), [0, 1, 2], "the fisheye is centred on the keyboard's prompt")
     key(strip, "ArrowDown")
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: third")
+    assert.deepEqual(lit(f), [1, 2], "the keyboard's prompt is lit with the current one")
     key(strip, "ArrowDown")
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: third", "clamped at the end")
@@ -507,6 +650,8 @@ test("keyboard, as t3-code: focus starts on the current prompt; arrows, Home, En
     strip.blur()
     await f.flush()
     assert.equal(f.card(), null)
+    assert.equal(lit(f).length, 1, "one lit tick again")
+    assert.deepEqual(f.marked("data-d"), [], "and equal widths")
   } finally {
     dispose()
     f.close()
@@ -646,5 +791,90 @@ test("a gutter under 48px shows the rail only while hovered; under 13px, or a na
   } finally {
     dispose()
     h.close()
+  }
+})
+
+test("a different session id starts the window over, though the new thread holds the old window's first prompt", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.setMessages(many(f, 12))
+    f.mount([{ owner: "m0011", y: 48, height: 60, prompt: true }])
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "the newest 10 of 12")
+    ;(f.session as { id: string }).id = "other"
+    f.setMessages(many(f, 30, 2))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "a new session opens on its newest 10, not on the old window's edge (m0002), which would hold 30")
+    ;(f.session as { id: string }).id = "s"
+    f.setMessages(many(f, 31, 2))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "and back")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("scrolling reads no layout and builds no observer: the browser reports the crossings", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    assert.deepEqual(f.created, ["10000000px 0px -544px 0px"], "one observer, its root everything above the line 8px under the 48px header")
+    let reads = 0
+    const box = f.scroller.getBoundingClientRect
+    f.scroller.getBoundingClientRect = () => (reads++, box())
+    const style = globalThis.getComputedStyle
+    Object.defineProperty(globalThis, "getComputedStyle", { value: (...args: Parameters<typeof style>) => (reads++, style(...args)), configurable: true, writable: true })
+    try {
+      for (let top = 0; top <= 2400; top += 40) await scrollTo(f, top)
+    } finally {
+      Object.defineProperty(globalThis, "getComputedStyle", { value: style, configurable: true, writable: true })
+    }
+    assert.equal(reads, 0, "no rect or style read on the scroll path")
+    assert.equal(f.created.length, 1, "no observer rebuilt by scrolling")
+    assert.deepEqual(f.ended, ["10000000px 0px 2px 0px"], "one bottom watch, its root reaching far above and ending 2px under the viewport's bottom (no spacer here)")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a taller sticky header moves the reading line: the observer is rebuilt with the new band", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    f.state.header = 80
+    f.resized()
+    await f.flush()
+    assert.deepEqual(f.created, ["10000000px 0px -544px 0px", "10000000px 0px -512px 0px"])
+    await scrollTo(f, 1108 - 80 - 8)
+    assert.deepEqual(lit(f), [1], "the next prompt reaches the new line")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a row that jumps across the reading line in one frame (a far jump, a layout shift) still switches the lit tick", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
+    await scrollTo(f, 2400)
+    assert.deepEqual(lit(f), [2], "m2's and m3's prompt rows went from below the line to above it without ever touching it")
+    await scrollTo(f, 0)
+    assert.deepEqual(lit(f), [0])
+    await scrollTo(f, 1500)
+    assert.deepEqual(lit(f), [1])
+  } finally {
+    dispose()
+    f.close()
   }
 })

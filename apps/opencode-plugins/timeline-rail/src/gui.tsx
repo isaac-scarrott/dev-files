@@ -1,9 +1,9 @@
 import { createKeyed, Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
 import { createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
+import { inset, jumpTo, unpin, type Host } from "./jump"
 import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, type Message, type PromptWindow } from "./rail"
-import { activePrompt, READING_OFFSET } from "./target"
+import { readReading, type Reading } from "./reading"
 
 /** t3-code's `left-3`: the strip sits this far from the view's left edge. */
 const STRIP_LEFT = 12
@@ -76,7 +76,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const scroller = () => mount()?.root
   const view = () => mount()?.parent
   const [geometry, setGeometry] = createSignal<Geometry>()
-  // The one lit tick: the prompt whose turn is being read (see `activePrompt`). The pointer's index is separate.
+  // The prompt whose turn is being read (see `activePrompt`), lit at rest. The pointer's index is separate.
   const [current, setCurrent] = createSignal(-1)
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
@@ -158,29 +158,16 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   }
 
   let pending: number | undefined
-  let measuring = false
-  let header: HTMLElement | null | undefined
 
-  // Scrolling only moves the reading line over the rows, so a scroll frame reads rows and the scroller's offsets and
-  // nothing else; the rail's place changes with the view's size or the prompts, which ask for a measure too.
+  // The rail's place changes with the view's size or the prompts, never with scrolling.
   const refresh = () => {
     pending = undefined
-    const measure_ = measuring
-    measuring = false
     const root = scroller()
     const parent = view()
 
     if (!props.input.active || !root || !parent) return
-    // Reads only; Solid applies the writes after.
-    const rows = readRows(root)
-    const edge = root.getBoundingClientRect()
-    if (!header?.isConnected) header = root.querySelector<HTMLElement>("[data-session-title]")
-    const line = edge.top + (header?.offsetHeight ?? 0) + READING_OFFSET
-    const place = measure_ || !geometry() ? measure(root, parent) : undefined
+    const place = measure(root, parent)
 
-    setCurrent(activePrompt(ids(), rows, line, { top: root.scrollTop, max: root.scrollHeight - root.clientHeight }))
-
-    if (!place) return
     setGeometry((previous) =>
       previous && previous.top === place.top && previous.height === place.height && previous.hit === place.hit && previous.persistent === place.persistent
         ? previous
@@ -188,36 +175,54 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     )
   }
 
-  const schedule = (measureToo: boolean) => {
-    measuring ||= measureToo
+  const schedule = () => {
     if (pending !== undefined) return
     pending = requestAnimationFrame(refresh)
   }
-  const onScroll = () => schedule(false)
 
   onCleanup(() => {
     if (pending !== undefined) cancelAnimationFrame(pending)
   })
 
-  createKeyed(mount, ({ root, parent }) => {
-    root.addEventListener("scroll", onScroll, { passive: true })
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => schedule(true)) : undefined
+  createKeyed(mount, ({ parent }) => {
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : undefined
     observer?.observe(parent)
     const visible = parent.querySelector("[data-slot='session-timeline-visible']")
 
     if (visible) observer?.observe(visible)
-    schedule(true)
-    onCleanup(() => {
-      root.removeEventListener("scroll", onScroll)
-      observer?.disconnect()
-    })
+    schedule()
+    onCleanup(() => observer?.disconnect())
   })
 
-  // New or changed prompts, the timeline becoming (in)active, the breakpoint: read again. `ids` keeps its identity while
-  // the prompts are the same, so a streaming reply does not come through here.
+  // Which turn is read comes from observers on the timeline's rows (`readReading`), not from reading layout per frame.
+  let reading: Reading | undefined
+
+  createKeyed(
+    () => (props.input.active && desktop() ? scroller() : undefined),
+    (root) => {
+      let ready = false
+      const watch: Reading = readReading(root, () => {
+        if (ready) setCurrent(watch.active(ids()))
+      })
+      ready = true
+      reading = watch
+      setCurrent(watch.active(ids()))
+      onCleanup(() => {
+        watch.stop()
+        if (reading === watch) reading = undefined
+      })
+    },
+  )
+
+  // New or changed prompts, the timeline becoming (in)active, the breakpoint: measure and resolve again. `ids` keeps its
+  // identity while the prompts are the same, so a streaming reply does not come through here.
   createKeyed(
     () => (props.input.active && desktop() ? ids() : undefined),
-    () => schedule(true),
+    (list) => {
+      schedule()
+      reading?.rescan()
+      setCurrent(reading?.active(list) ?? -1)
+    },
   )
 
   let inflight: AbortController | undefined
@@ -232,7 +237,6 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     inflight = controller
     void jumpTo(target, id, controller.signal).finally(() => {
       if (inflight === controller) inflight = undefined
-      schedule(false)
     })
   }
 
@@ -248,8 +252,6 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
 
     return index === undefined || index >= count() ? undefined : list()[index]
   }
-  // The fisheye is centred on the active prompt, and follows the pointer or keyboard while one is on the strip.
-  const centre = () => pointed() ?? current()
   const label = () => pointedPrompt()?.title ?? EMPTY_TITLE
 
   let strip: HTMLButtonElement | undefined
@@ -414,8 +416,8 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
                       <span
                         data-timeline-rail-tick
                         data-index={index}
-                        data-d={Math.abs(index - centre()) <= 2 ? Math.abs(index - centre()) : undefined}
-                        data-active={index === current() ? "" : undefined}
+                        data-d={pointed() !== undefined && Math.abs(index - pointed()!) <= 2 ? Math.abs(index - pointed()!) : undefined}
+                        data-active={index === current() || index === pointed() ? "" : undefined}
                         aria-hidden="true"
                         style={{ top: `${topPercent(index, count())}%` }}
                       />

@@ -10,8 +10,8 @@ A column of ticks in the chat's left gutter, one per prompt of yours (messages a
 
 ## What it does
 - One tick per prompt, 8px apart (at most the window height minus 18rem, then they overlap). Nothing shows under two prompts.
-- Point at the strip: the tick and two neighbours each side stretch, and a card shows the prompt and the end of the reply, at once. Click, Enter or Space jumps to it.
-- One tick is lit: the prompt whose turn you are reading (the last prompt at or above a line just under the header, so a long reply keeps its prompt lit; the last prompt when everything fits or you are at the bottom, the first at the top). The stretch of ticks is centred on it. Previous / next turn chevrons step from it and appear when you point at them, above and below the strip.
+- At rest every tick is the same width. One is lit: the prompt whose turn you are reading (the last prompt at or above a line just under the header, so a long reply keeps its prompt lit; the last prompt when everything fits or you are at the bottom, the first at the top). Previous / next turn chevrons step from it and appear when you point at them, above and below the strip.
+- Point at the strip: the pointed tick and two neighbours each side stretch, the pointed tick lights up next to the lit one, and a card shows the prompt and the end of the reply, at once. Click, Enter or Space jumps to it. Move away and the ticks return to equal widths.
 - Keyboard on the strip: arrows, Home, End, Enter. The wheel over the rail scrolls the chat.
 - Covers the newest 10 prompts of a conversation and grows only when you scroll up and OpenCode loads older ones. It never asks for history itself.
 

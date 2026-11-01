@@ -84,6 +84,13 @@ export function loadedIds(messages: readonly Message[], revertMessageID?: string
   return out
 }
 
+/** A reply's text as the plain text a card shows: its text parts, the first `SNIPPET_SOURCE` characters, markdown stripped. */
+function snippetOf(reply: Message): string | undefined {
+  const text = (reply.content ?? []).flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
+
+  return (text.trim() ? stripMarkdown(text.slice(0, SNIPPET_SOURCE)) : "") || undefined
+}
+
 /**
  * The prompts the rail shows, in order, from `since` on (the whole list when absent), each with the turn's final
  * assistant text: t3-code's `resolveFinalAssistantTextForTurn`, the last assistant message before the next prompt.
@@ -102,10 +109,19 @@ export function prompts(messages: readonly Message[], revertMessageID?: string, 
     for (let next = index + 1; next < messages.length && messages[next]!.type !== "user"; next += 1) {
       if (messages[next]!.type === "assistant") last = messages[next]
     }
-    const text = last ? (last.content ?? []).flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n") : ""
-    const plain = text.trim() ? stripMarkdown(text.slice(0, SNIPPET_SOURCE)) : ""
+    const reply = last
+    let snippet: string | undefined | null = null
 
-    out.push({ id: message.id, title: promptLabel(message), snippet: plain || undefined })
+    out.push({
+      id: message.id,
+      title: promptLabel(message),
+      // Read only when a card shows it: markdown stripping is the costly part of building a prompt.
+      get snippet() {
+        if (snippet === null) snippet = reply ? snippetOf(reply) : undefined
+
+        return snippet
+      },
+    })
   }
 
   return out
