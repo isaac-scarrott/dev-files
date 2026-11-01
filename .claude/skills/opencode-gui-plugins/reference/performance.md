@@ -6,6 +6,8 @@ A plugin is done when it is **free**: indistinguishable from the app without it.
 
 Run the harness (`scripts/desktop-harness.sh`) on a seeded long session (`scripts/seed-session.mjs`, 500+ prompts) with a private `OC_HARNESS_ROOT`. Take the **bare** reading with no plugins registered, then one reading per plugin alone, then all together. A plugin's cost is its reading minus bare, on the same session and script, three runs, median.
 
+Seed realistic data ([stress.md](stress.md)): rich threads and a populated sidebar, not text messages.
+
 ## Scenarios (identical script each run)
 
 | Scenario | What runs |

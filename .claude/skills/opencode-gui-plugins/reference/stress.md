@@ -11,6 +11,8 @@ Plugin UI is built against kind data: short repo names, ten prompts, one subagen
 
 ## What to vary
 
+Pick the axes the change touches; the data is realistic, never text-only (see Realistic data).
+
 | Axis | Cases |
 |---|---|
 | Text | long repo/title/branch, emoji or CJK first, RTL, diacritics, no spaces (path, URL), empty |
@@ -18,7 +20,9 @@ Plugin UI is built against kind data: short repo names, ten prompts, one subagen
 | Time | now, seconds, years ago, future, invalid |
 | State | loading, empty, error, offline, every status of the host row (running, waiting, unread, archived) |
 | Layout | narrowest and widest sidebar, 200% zoom, collapsed sidebar, top-tabs layout, review panel open |
+| Live | streaming reply, several running subagents or shell tasks, a permission or question form appearing mid-update, a session switch mid-stream |
 | Environment | dark and light, reduced motion, slow data (rows arriving late), session switch mid-update |
+| Scale | hundreds of live sessions across many projects, 500+ Archived, many Snoozed, mixed statuses |
 | Media | missing or broken avatar, odd aspect ratio |
 
 ## Signatures
@@ -28,3 +32,7 @@ Flex children that squish (`flex-shrink:0` on icons, avatars, times), text that 
 ## Output
 
 One table: axis case, value, what happened, fix. Mark each row verified in the harness or inferred from CSS. A short table for a sturdy plugin is a good result.
+
+## Realistic data
+
+A thread is not messages. Real ones carry tool calls (bash, read, edit, write, grep, task) with large outputs and diffs, reasoning parts, code-heavy markdown, subagent children, images and thousands of parts. Seed these (`scripts/seed-session.mjs --realistic`), sized from the shape of real threads (counts and byte sizes, never their content). The sidebar needs the same: many sessions, projects, Archived and Snoozed entries in mixed states, hydrating late, going offline and back, with deleted or renamed projects.

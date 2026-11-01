@@ -117,4 +117,13 @@ export default Plugin.define({
 
 ## Proportion
 
-Depth scales with the task. A copy tweak needs the unit tests and one screenshot; a new surface, a DOM-injecting plugin, or anything on the hot path (timeline, rows, composer) earns the full parity, stress and performance runs, however many tokens and minutes that takes. Spend where the risk is: a cheap check on a risky change is the waste. State in the hand-off which steps were skipped and why.
+Effort is a dial, never a switch. Pick the tier from the change's size and risk (hot path, DOM injection, data flow, shared library), state it in the hand-off with what was skipped and why, and put it in every worker brief. Within a tier, run only the checks and axes that bear on the change.
+
+| Tier | Change | Runs |
+|---|---|---|
+| T0 | copy, colour, spacing | typecheck, related tests |
+| T1 | small logic | + one harness screenshot |
+| T2 | new or changed UI | + parity, stress on the relevant axes |
+| T3 | hot path or shared lib (timeline, rows, composer, native-ui) | + realistic-data profile on the relevant scenarios |
+
+Spend where the risk is. A cheap check on a risky change is the waste; a full suite on a copy tweak is too.
