@@ -5,10 +5,10 @@ Start a command in the background and wake the session with its output as it hap
 > **Credit:** Idea and tool wording follow Claude Code's Monitor tool (Anthropic); the wrapper and untrusted-data trailer follow the `<cross-session-message>` pattern in [`orchestrator-tools`](../orchestrator-tools). No code was copied.
 
 ## What it does
-- `monitor` runs a shell command in the background. Each stdout/stderr line (optionally filtered by a regex) is an event; lines arriving close together become one message in the session, idle or busy, as `<monitor-event name="…" id="…" seq="N">` with a trailer saying the content is untrusted program output.
+- `monitor.start` runs a shell command in the background. Each stdout/stderr line (optionally filtered by a regex) is an event; lines arriving close together become one message in the session, idle or busy, as `<monitor-event name="…" id="…" seq="N">` with a trailer saying the content is untrusted program output.
 - One more message arrives when the command exits, with its exit code.
 - `rearmMinutes` starts the command again every N minutes, ending a run that is still going (the "storefront watch" pattern).
-- `list_monitors` shows what is running; `stop_monitor` ends a monitor and everything it started (SIGTERM to the process group, SIGKILL after a grace period).
+- `monitor.list` shows what is running; `monitor.stop` ends a monitor and everything it started (SIGTERM to the process group, SIGKILL after a grace period).
 - Monitors end when their session is archived or deleted, after `ttlMinutes` (default 24 h), and when the service shuts down.
 - `session` can name another session to wake, but only the caller's own tree: itself, its parent, its children and descendants, sessions it created through `orchestrator-tools`, and its siblings (the `parent`/`child`/`sibling` relations `list_peers` shows, the `tree` scope of `send_message`). Anything else is rejected with an error.
 - A noisy monitor pauses with a notice after `maxEventsPerHour` lines; extra lines are counted, not shown.

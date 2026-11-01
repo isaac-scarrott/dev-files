@@ -15,7 +15,7 @@ export class Monitors {
     async start(input) {
         const { options, clock } = this.deps;
         if (this.running.size >= options.maxMonitors)
-            throw new Error(`${this.running.size} monitors are running; maxMonitors is ${options.maxMonitors}. Stop one with stop_monitor first.`);
+            throw new Error(`${this.running.size} monitors are running; maxMonitors is ${options.maxMonitors}. Stop one with monitor.stop first.`);
         let id = (this.deps.newID ?? randomID)();
         while (this.running.has(id))
             id = (this.deps.newID ?? randomID)();
@@ -102,7 +102,7 @@ export class Monitors {
             seq: 1,
             lines: [],
             dropped: 0,
-            notes: [`Monitor gone: OpenCode restarted and this monitor was lost with it. It is no longer running and will not send anything more. Start it again with the monitor tool if you still need it.`],
+            notes: [`Monitor gone: OpenCode restarted and this monitor was lost with it. It is no longer running and will not send anything more. Start it again with monitor.start if you still need it.`],
         });
         try {
             await this.deps.sessions.prompt(def.sessionID, text, { monitorID: def.id, seq: 1 });
