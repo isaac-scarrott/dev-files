@@ -10,6 +10,8 @@ export function parseRunState(value) {
         seq: Math.max(0, num(v.seq) ?? 0),
         restartCount: Math.max(0, num(v.restartCount) ?? 0),
         aliveAt,
+        events: Math.max(0, Math.floor(num(v.events) ?? 0)),
+        ...(num(v.lastEventAt) === undefined ? {} : { lastEventAt: num(v.lastEventAt) }),
         ...(num(v.lastRearmAt) === undefined ? {} : { lastRearmAt: num(v.lastRearmAt) }),
         ...(num(v.nextRearmAt) === undefined ? {} : { nextRearmAt: num(v.nextRearmAt) }),
     };

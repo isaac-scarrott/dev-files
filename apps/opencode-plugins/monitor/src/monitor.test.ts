@@ -610,3 +610,81 @@ test("a re-arm kills the whole process group of the previous run (real processes
   await pause(200)
   assert.ok(second.every((pid) => !alive(pid)))
 })
+
+test("maxEvents is a lifetime cap: a restart at 3 of 5 events leaves 2", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30, maxEvents: 5 })
+  t.sp.out(t.sp.runs[0]!, "a\nb\nc\n")
+  await t.clock.advance(5000)
+  assert.equal(t.monitors.list()[0]!.events, 3)
+  const next = await restart(t, t.monitors)
+  const info = next.list()[0]!
+  assert.equal(info.events, 3)
+  assert.notEqual(info.lastEvent, null)
+  t.sp.out(t.sp.runs[1]!, "d\n")
+  await t.clock.advance(5000)
+  assert.equal(next.count, 1)
+  assert.equal(next.list()[0]!.events, 4)
+  t.sp.out(t.sp.runs[1]!, "e\nf\n")
+  await t.clock.advance(5000)
+  assert.equal(next.count, 0) // the 5th event ended it; the 6th was never read
+  assert.match(t.wakes.at(-1)!.text, /limit of 5 events/)
+  assert.equal(t.defs(), 0)
+})
+
+test("events keep accumulating across re-arms", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 10, maxEvents: 4 })
+  t.sp.out(t.sp.runs[0]!, "a\nb\n")
+  await t.clock.advance(10 * MIN)
+  assert.equal(t.monitors.list()[0]!.events, 2)
+  t.sp.out(t.sp.runs[1]!, "c\nd\n")
+  await t.clock.advance(5000)
+  assert.equal(t.monitors.count, 0)
+})
+
+test("a monitor that already hit maxEvents is not restored", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30, maxEvents: 2 })
+  t.sp.out(t.sp.runs[0]!, "a\nb\n")
+  await t.clock.advance(0)
+  assert.equal(t.monitors.count, 0)
+  // a crash left the definition behind with a full counter
+  t.storage.set("monitor/def/mon_1", { id: "mon_1", name: "cmd", command: "cmd", cwd: "/work", sessionID: "ses_1", batchSeconds: 5, maxEvents: 2, rearmMinutes: 30, createdAt: 0, origin: "/work", expiresAt: t.clock.t + 1e9 })
+  t.storage.set("monitor/state/mon_1", { seq: 1, restartCount: 0, aliveAt: t.clock.t, events: 2 })
+  const runs = t.sp.runs.length
+  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await next.restore()
+  assert.equal(next.count, 0)
+  assert.equal(t.sp.runs.length, runs)
+  assert.equal(t.defs(), 0)
+})
+
+test("state without an events field (older entries) restores with a count of 0", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30, maxEvents: 2 })
+  await t.monitors.dispose()
+  const key = "monitor/state/mon_1"
+  const { events: _drop, ...old } = t.storage.get(key) as Record<string, unknown>
+  t.storage.set(key, old)
+  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  await next.restore()
+  assert.equal(next.list()[0]!.events, 0)
+  await next.dispose()
+})
+
+test("the hourly window resets on restart: the lifetime count stays, the rate window starts empty", async () => {
+  const t = setup({ maxEventsPerHour: 3 })
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  t.sp.out(t.sp.runs[0]!, "1\n2\n3\n")
+  await t.clock.advance(5000)
+  const next = await restart(t, t.monitors)
+  assert.equal(next.list()[0]!.events, 3)
+  t.sp.out(t.sp.runs[1]!, "4\n5\n6\n7\n")
+  await t.clock.advance(5000)
+  const wake = t.wakes.at(-1)!.text
+  assert.match(wake, /4\n5\n6\n\[1 more line/)
+  assert.match(wake, /Paused/)
+  assert.equal(next.list()[0]!.events, 6)
+  await next.dispose()
+})

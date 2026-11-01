@@ -150,6 +150,8 @@ export class Monitors {
         await forget("no re-arm schedule, so it does not survive a restart", true)
       } else if (def.expiresAt <= now) {
         await forget("its time limit passed", true)
+      } else if (def.maxEvents !== undefined && (previous?.events ?? 0) >= def.maxEvents) {
+        await forget(`it already reached its limit of ${def.maxEvents} events`, true)
       } else if (!active) {
         await forget(`session ${def.sessionID} is gone or archived`, false)
       } else if (this.running.size >= options.maxMonitors) {
@@ -159,7 +161,7 @@ export class Monitors {
         const restartCount = (previous?.restartCount ?? 0) + 1
         log(`${def.id} (${def.name}): restored after a restart (restart ${restartCount})`)
         monitor.start({
-          state: { ...previous, seq: previous?.seq ?? 0, restartCount, aliveAt: now },
+          state: { ...previous, seq: previous?.seq ?? 0, restartCount, aliveAt: now, events: previous?.events ?? 0 },
           note: `This monitor was restarted automatically after OpenCode restarted (restart ${restartCount}). ${downtimeWindow(previous?.aliveAt, now)} Output produced while it was down was not seen.`,
         })
       }

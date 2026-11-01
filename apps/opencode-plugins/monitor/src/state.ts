@@ -6,6 +6,9 @@ export interface RunState {
   readonly restartCount: number
   /** Last time the monitor was known alive (heartbeat, wake, clean shutdown). */
   readonly aliveAt: number
+  /** Matched lines accepted as events over the monitor's whole life (all re-arms and restarts): what `maxEvents` counts. */
+  readonly events: number
+  readonly lastEventAt?: number
   readonly lastRearmAt?: number
   readonly nextRearmAt?: number
 }
@@ -20,6 +23,8 @@ export function parseRunState(value: unknown): RunState | undefined {
     seq: Math.max(0, num(v.seq) ?? 0),
     restartCount: Math.max(0, num(v.restartCount) ?? 0),
     aliveAt,
+    events: Math.max(0, Math.floor(num(v.events) ?? 0)),
+    ...(num(v.lastEventAt) === undefined ? {} : { lastEventAt: num(v.lastEventAt)! }),
     ...(num(v.lastRearmAt) === undefined ? {} : { lastRearmAt: num(v.lastRearmAt)! }),
     ...(num(v.nextRearmAt) === undefined ? {} : { nextRearmAt: num(v.nextRearmAt)! }),
   }
