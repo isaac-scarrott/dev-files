@@ -1,4 +1,8 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { createKeyed } from "@opencode/plugin/gui"
+import { createMemo, createSignal } from "solid-js"
+import { elementsChanged, SIDEBAR, type DomHub } from "./hub"
+
+export { SIDEBAR }
 
 // Our Archived group and Archive actions step aside once OpenCode ships its own archive UI. Everything that decides it lives
 // here: the option, the signals, and the one place that reads the host's DOM.
@@ -24,7 +28,6 @@ export const HOST_COMMANDS = ["session.archive", "session.unarchive"]
 // Markers read from the 2.2.5 host source. Its vertical sidebar has no archived group, so the sidebar marker is the shape a
 // group would take under the host's own `data-slot` / `data-component` naming, scoped to the vertical sidebar so the
 // experimental Inbox layout (which lists archived rows in `sidebar-inbox`, and has its own Archive menu item) is not a trigger.
-export const SIDEBAR = '[data-slot="vertical-tabs-sidebar"]'
 export const SIDEBAR_ARCHIVED = '[data-slot*="archived" i], [data-component*="archived" i]'
 // Home's row Archive button; 2.2.5 compiles it out (`SHOW_HOME_SESSION_ARCHIVE = false`).
 export const HOME_ARCHIVE = '[data-action="home-session-archive"]'
@@ -62,8 +65,7 @@ export interface GuardDeps {
   keybound(id: string): boolean
   // Reactive: the router path; Home mounting is looked at after it changes.
   path(): string
-  schedule(fn: () => void): number
-  cancel(id: number): void
+  hub: DomHub
 }
 
 // Must run inside the plugin's owner. `standDown()` and `reasons()` are reactive.
@@ -77,26 +79,16 @@ export function createGuard(deps: GuardDeps) {
   let recheck = () => {}
 
   if (deps.option === "auto") {
-    // Called bare: the browser's requestAnimationFrame throws "Illegal invocation" with any other `this`.
-    const { schedule, cancel } = deps
     const probe = () => {
       patch("sidebar", probeSidebar(deps.doc))
       const home = probeHome(deps.doc)
       if (home !== undefined) patch("home", home)
     }
-    let frame: number | undefined
-    const queue = () => { if (frame === undefined) frame = schedule(() => { frame = undefined; probe() }) }
-    // Only a change under the vertical sidebar can add its group (ancestor walk, no subtree query), so a streaming timeline
-    // never wakes this. A sidebar that mounts later is caught by `recheck`, which the sidebar's own update calls.
-    const inSidebar = (el: Element) => !!el.closest(SIDEBAR) && !el.closest(OURS)
-    const observer = new deps.doc.defaultView!.MutationObserver((records) => {
-      if (records.some((r) => r.target.nodeType === 1 && inSidebar(r.target as Element))) queue()
-    })
-    observer.observe(deps.doc.body, { childList: true, subtree: true })
-    createEffect(() => { deps.path(); queue() })
+    // Only a child added or removed under the vertical sidebar can add its group, so a streaming timeline never wakes this.
+    // A sidebar that mounts later is caught by the hub; a route change (Home mounting) and the sidebar's own update poke it.
+    recheck = deps.hub.watch(elementsChanged, probe)
+    createKeyed(deps.path, recheck)
     probe()
-    onCleanup(() => { observer.disconnect(); if (frame !== undefined) cancel(frame) })
-    recheck = queue
   }
 
   return {

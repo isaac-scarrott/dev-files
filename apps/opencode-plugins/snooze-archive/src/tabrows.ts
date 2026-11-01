@@ -1,15 +1,21 @@
+import { onCleanup } from "solid-js"
 import { createActions, labels, type Handlers, type Target } from "./actions"
 import type { Host } from "./host"
+import { elementsChanged, type DomHub } from "./hub"
 
 export interface TabInfo { target: Target; title: string; disabled: boolean; archived: boolean }
 
 // Mounts Archive into each vertical session tab as a native-ui row action, in place of the X; title, rename and status marks are untouched.
-export function createTabActions(doc: Document, shell: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, info: (key: string) => TabInfo | undefined, handlers: Handlers) {
-  const hosts = new Map<HTMLElement, ReturnType<typeof createActions> & { label: string }>()
+export function createTabActions(hub: DomHub, shell: Host, info: (key: string) => TabInfo | undefined, handlers: Handlers) {
   const drop = (actions: ReturnType<typeof createActions>) => { actions.dispose() }
+  const hosts = new Map<HTMLElement, ReturnType<typeof createActions> & { label: string }>()
+  onCleanup(() => {
+    for (const [host, actions] of hosts) { drop(actions); host.removeAttribute("data-sa-tab-host") }
+    hosts.clear()
+  })
   const sync = () => {
     const live = new Set<HTMLElement>()
-    for (const host of doc.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]')) {
+    for (const host of hub.sidebar()?.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]') ?? []) {
       const key = host.dataset.tabKey
       const tab = key ? info(key) : undefined
       let actions = hosts.get(host)
@@ -28,20 +34,8 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
     }
     for (const [host, actions] of hosts) if (!live.has(host)) { drop(actions); host.removeAttribute("data-sa-tab-host"); hosts.delete(host) }
   }
-  let frame: number | undefined
-  const queue = () => { if (frame === undefined) frame = schedule(() => { frame = undefined; sync() }) }
-  const observer = new doc.defaultView!.MutationObserver((records) => {
-    if (records.some((r) => !(r.target as Element).closest?.("[data-sa-actions]") && (r.type === "attributes" || [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1 && !(n as Element).matches("[data-sa-actions]"))))) queue()
-  })
-  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tab-key", "data-slot"] })
+  // A row came, went or changed key (attributes are filtered to `data-tab-key` and `data-slot`).
+  hub.watch((record) => record.type === "attributes" || elementsChanged(record), sync)
   sync()
-  return {
-    sync,
-    dispose() {
-      observer.disconnect()
-      if (frame !== undefined) cancel(frame)
-      for (const [host, actions] of hosts) { drop(actions); host.removeAttribute("data-sa-tab-host") }
-      hosts.clear()
-    },
-  }
+  return { sync }
 }

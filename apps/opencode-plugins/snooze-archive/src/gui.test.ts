@@ -9,7 +9,7 @@ import { delegate, fakeUi } from "./testui"
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
 // `host`: extra markup inside the vertical sidebar; `bound`: command ids the host binds a key to; `dedicated`: the client has archive/unarchive calls.
-interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean }
+interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean; openThrows?: boolean }
 function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = [], extra: Extra = {}) {
   const window = new Window()
   const doc = window.document as unknown as Document
@@ -83,7 +83,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value) },
     servers: { list: servers, get: (id: string) => servers().includes(id) ? server : undefined },
     sessions: { current: () => current() },
-    tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => calls.opened.push(args) },
+    tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => { if (extra.openThrows) throw new Error("open failed"); calls.opened.push(args) } },
     dialogs: { confirm: async (options: unknown) => { calls.confirms.push(options); return confirmResult }, select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
@@ -93,7 +93,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const stop = () => { dispose(); if (typeof cleanup === "function") cleanup() }
   const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
   return {
-    calls, commands, listeners, doc, state, woke: wokeState, addWoke: () => setWokeState({ entries: [{ server: "server", id: "s" }] }), setCurrent: (value: boolean) => setCurrent(value ? session : undefined), start, stop, flush, setServers, setConnected,
+    calls, commands, listeners, doc, state, addSnooze: (entry: Snooze | undefined) => setState({ entries: entry ? [entry] : [] }), woke: wokeState, addWoke: () => setWokeState({ entries: [{ server: "server", id: "s" }] }), setCurrent: (value: boolean) => setCurrent(value ? session : undefined), start, stop, flush, setServers, setConnected,
     permissions: (value: unknown[] | undefined) => { permissions = value },
     forms: (value: unknown[] | undefined) => { forms = value },
     family: (value: string[] | undefined) => { family = value },
@@ -581,7 +581,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
 })
 
 // A native vertical tab: marks live in `tab-close > tab-status`, which the host marks aria-hidden.
-const nativeTab = `<div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div></div>`
+const nativeTab = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div></div></aside>`
 const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-sa-woke-mark]")
 const dueSnooze = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now() - 2_000, until: Date.now() - 1_000, busy: 0, updated: 1 })
 
@@ -944,5 +944,120 @@ test("archive guard: the host's dedicated archive call is used when the client h
     await f.commands.get("archive")!.run(); await f.flush()
     assert.deepEqual(f.calls.dedicated, [["archive", { sessionID: "s" }]])
     assert.deepEqual(f.calls.updates, [])
+  } finally { await f.close() }
+})
+
+// Counts the observers the plugin creates and what reaches them.
+function spyObservers(f: { doc: Document }) {
+  const window = f.doc.defaultView as unknown as { MutationObserver: typeof MutationObserver }
+  const Original = window.MutationObserver
+  const seen = { created: 0, disconnected: 0, callbacks: 0 }
+  window.MutationObserver = class extends Original {
+    constructor(callback: MutationCallback) {
+      seen.created++
+      super((records, observer) => { seen.callbacks++; callback(records, observer) })
+    }
+    disconnect() { seen.disconnected++; super.disconnect() }
+  }
+  return seen
+}
+
+test("one scoped observer serves the guard, tab rows, woke marks, group and session menus; a streaming timeline never reaches it", async () => {
+  const f = fixture([], [{ server: "server", id: "s" }])
+  const seen = spyObservers(f)
+  try {
+    f.doc.body.innerHTML = `<div id="root"><main><section id="timeline"></section></main>${nativeTab}</div>`
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(seen.created, 1, "one MutationObserver for the whole plugin")
+    const timeline = f.doc.getElementById("timeline")!
+    const before = seen.callbacks
+    for (let i = 0; i < 50; i++) { const part = f.doc.createElement("p"); part.textContent = `chunk ${i}`; timeline.append(part); part.setAttribute("data-tab-key", "x") }
+    await new Promise((r) => setTimeout(r, 5))
+    assert.equal(seen.callbacks, before, "mutations outside the sidebar and the body's direct children are not observed")
+    const menu = mount(f, HOST_MENU("session-options-menu", ["Rename", "-", "Delete…"])); await f.flush()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length >= 1, true, "a menu portal is extended")
+    menu.append(f.doc.createElement("i")); await new Promise((r) => setTimeout(r, 5))
+    assert.ok(seen.callbacks > before, "a portal's later changes are seen")
+  } finally { await f.close() }
+  assert.equal(seen.disconnected, seen.created, "disconnected on cleanup")
+})
+
+test("a setup that throws after acquiring its deadline timer and listeners still releases them (the host runs owner cleanups, not a returned one)", async () => {
+  const f = fixture([dueSnooze()], [], { openThrows: true })
+  const seen = spyObservers(f)
+  const win = f.doc.defaultView as unknown as Window
+  const added: string[] = []
+  const removed: string[] = []
+  for (const target of [win, f.doc] as unknown as EventTarget[]) {
+    const add = target.addEventListener.bind(target); const remove = target.removeEventListener.bind(target)
+    target.addEventListener = ((type: string, ...rest: [EventListenerOrEventListenerObject]) => { added.push(type); return add(type, ...rest) }) as never
+    target.removeEventListener = ((type: string, ...rest: [EventListenerOrEventListenerObject]) => { removed.push(type); return remove(type, ...rest) }) as never
+  }
+  const intervals = new Set<unknown>()
+  const setIt = win.setTimeout.bind(win); const clearIt = win.clearTimeout.bind(win)
+  win.setTimeout = ((...args: Parameters<typeof setTimeout>) => { const id = setIt(...args); intervals.add(id); return id }) as never
+  win.clearTimeout = ((id: never) => { intervals.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"])
+    assert.throws(() => f.start(), /open failed/)
+    assert.ok(added.length > 0 && intervals.size === 1, "acquired before the throw")
+    f.stop()
+    assert.equal(intervals.size, 0, "interval cleared")
+    assert.deepEqual([...removed].sort(), [...added].sort(), "every listener removed")
+    assert.equal(seen.disconnected, seen.created)
+  } finally { await f.close() }
+})
+
+test("focus checks deadlines; the server is asked again only after the window was away", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }])
+  const win = f.doc.defaultView as unknown as Window
+  const real = Date.now
+  let skew = 0
+  Date.now = () => real() + skew
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const base = f.calls.requestSync
+    win.dispatchEvent(new (win as any).Event("focus")); await f.flush()
+    assert.equal(f.calls.requestSync, base, "focus without being away does not reconcile")
+    win.dispatchEvent(new (win as any).Event("blur"))
+    skew = 90_000
+    win.dispatchEvent(new (win as any).Event("focus")); await f.flush()
+    assert.ok(f.calls.requestSync > base, "back after a minute away reconciles")
+  } finally { Date.now = real; await f.close() }
+})
+
+test("one timeout waits for the nearest deadline; with nothing snoozed there is none", async () => {
+  const f = fixture()
+  const win = f.doc.defaultView as unknown as Window
+  const live = new Set<unknown>()
+  const setIt = win.setTimeout.bind(win); const clearIt = win.clearTimeout.bind(win)
+  win.setTimeout = ((...args: Parameters<typeof setTimeout>) => { const id = setIt(...args); live.add(id); return id }) as never
+  win.clearTimeout = ((id: never) => { live.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(live.size, 0, "no snoozes: no timer, and no polling")
+    const entry: Snooze = { server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }
+    f.state(); f.addSnooze(entry); await f.flush()
+    assert.equal(live.size, 1, "one timeout waits for the deadline")
+    f.addSnooze(undefined); await f.flush()
+    assert.equal(live.size, 0, "the last snooze clears it")
+  } finally { await f.close() }
+})
+
+test("the remaining-time labels refresh on a 30 s interval only while the Snoozed group is open", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }])
+  const win = f.doc.defaultView as unknown as Window
+  const live = new Set<unknown>()
+  const setIt = win.setInterval.bind(win); const clearIt = win.clearInterval.bind(win)
+  win.setInterval = ((...args: Parameters<typeof setInterval>) => { const id = setIt(...args); live.add(id); return id }) as never
+  win.clearInterval = ((id: never) => { live.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(live.size, 0, "closed group: nothing to refresh")
+    const toggle = f.doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[0]
+    toggle.click(); await f.flush()
+    assert.equal(live.size, 1)
+    toggle.click(); await f.flush()
+    assert.equal(live.size, 0)
   } finally { await f.close() }
 })

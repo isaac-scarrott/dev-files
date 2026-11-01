@@ -1,12 +1,13 @@
-import { createComponent, createSignal } from "solid-js"
+import { createComponent, createSignal, onCleanup } from "solid-js"
 import type { ProjectAvatarStyle } from "../../native-ui/src"
 import { SessionTabRow, TabRowAction, sessionTabRowClass } from "../../native-ui/src"
 import type { Avatar } from "./avatar"
 import type { Host } from "./host"
+import type { DomHub } from "./hub"
 import { openMenu, type MenuLine } from "./menu"
 
 // activeAt: last activity, shown by sidebar-repos at the row's end (Archived rows); project: the second line (the repo name); until: the trailing detail on it (time until wake); detail: the hover title.
-export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
+export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?(): boolean; run(): void; open?(): void; menu?: MenuLine[] }
 const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
 // more: the button below the rows; busy while its page loads.
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number | string; more?: { label: string; busy?: boolean; run(): void } }
@@ -45,6 +46,7 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
     onClick: () => expand(!open),
     get children() { return [label, count, createComponent(host.ui.Icon, { name: "chevron-right", size: "small", class: "sa-chevron" })] },
   }))
+  onCleanup(disposeHeader)
   const toggle = () => header.querySelector("button")
   toggle()?.setAttribute("aria-controls", content.id)
   expand(false)
@@ -56,8 +58,11 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
   }
   panel.append(content)
   section.append(header, panel)
+  // One formatter for the group: building one per row per update is the dearest line of an update.
+  const stamp = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "long" })
   type Row = { el: HTMLElement; link: HTMLElement; set(item: GroupRow): void; dispose(): void; }
   const rows = new Map<string, Row>()
+  onCleanup(() => { for (const row of rows.values()) row.dispose() })
   const status = doc.createElement("p")
   status.setAttribute("role", "status")
   content.append(status)
@@ -76,6 +81,7 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
   moreButton.append(moreIcon, moreText)
   moreSlot.append(moreButton)
   const disposeMoreIcon = host.mount(moreIcon, () => createComponent(host.ui.Icon, { name: "chevron-down", size: "normal" }))
+  onCleanup(disposeMoreIcon)
   let moreRun: (() => void) | undefined
   let moreBusy = false
   moreButton.onclick = () => { if (!moreBusy) moreRun?.() }
@@ -98,7 +104,8 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
       get project() { return current().project },
       get detail() { return current().until },
       get activeAt() { return current().activeAt },
-      get active() { return current().active },
+      // Read here, in the row's own tracking scope: a session switch re-marks one row instead of rebuilding the group.
+      get active() { return current().active?.() },
       get onContextMenu() { return current().menu?.length ? showMenu : undefined },
       onOpen: () => { const row = current(); (row.open ?? row.run)() },
       // Replace: the action sits where the live row's X does, as these rows have no close button.
@@ -119,11 +126,6 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
   }
   return {
     section,
-    dispose() {
-      disposeHeader()
-      disposeMoreIcon()
-      for (const row of rows.values()) row.dispose()
-    },
     update(state: GroupState) {
       const text = state.count === undefined ? "—" : String(state.count)
       if (count.textContent !== text) count.textContent = text
@@ -148,7 +150,7 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
           rows.set(item.key, row)
         }
         row.set(item)
-        const active = item.activeAt === undefined ? "" : `\nLast active ${new Date(item.activeAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "long" })}`
+        const active = item.activeAt === undefined ? "" : `\nLast active ${stamp.format(item.activeAt)}`
         const tip = `${item.title}\n${item.detail}${active}`
         if (row.link.title !== tip) row.link.title = tip
         if (cursor === row.el) cursor = cursor.nextSibling
@@ -164,7 +166,7 @@ function group(doc: Document, host: Host, name: string, toggled: (open: boolean)
   }
 }
 
-export function createSidebar(doc: Document, host: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, hooks: Hooks = {}) {
+export function createSidebar(doc: Document, host: Host, hub: DomHub, hooks: Hooks = {}) {
   const root = doc.createElement("div")
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
@@ -172,8 +174,9 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   const snoozed = group(doc, host, "Snoozed", (open) => hooks.toggled?.("snoozed", open))
   const archived = group(doc, host, "Archived", (open) => hooks.toggled?.("archived", open))
   root.append(snoozed.section, archived.section)
+  onCleanup(() => { root.remove(); parent?.removeAttribute("data-sa-host") })
   const attach = () => {
-    const next = doc.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
+    const next = hub.sidebar()?.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
     if (parent !== next) parent?.removeAttribute("data-sa-host")
     parent = next
     if (next) {
@@ -181,26 +184,22 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
       if (root.parentElement !== next) next.append(root)
     } else root.remove()
   }
-  let frame: number | undefined
-  const observer = new doc.defaultView!.MutationObserver((records) => {
-    if (!records.some((r) => {
-      if (root.contains(r.target)) return false
-      if (r.type === "attributes") return (r.target as Element).matches(`[data-slot="vertical-tabs"], ${SCROLLER}, [data-slot="titlebar-tabs"]`)
-      return [...r.addedNodes, ...r.removedNodes].some((node) =>
-        node.nodeType === 1 && node !== root && ((node as Element).matches(SCROLLER) || (node as Element).querySelector(SCROLLER)))
-    })) return
-    if (frame === undefined) frame = schedule(() => { frame = undefined; attach() })
-  })
-  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-slot"] })
+  // The scroll region came or went, or the strip it sits in changed slot.
+  const strip = `[data-slot="vertical-tabs"], ${SCROLLER}, [data-slot="titlebar-tabs"]`
+  hub.watch((r) => r.type === "attributes"
+    ? (r.target as Element).matches(strip)
+    : [...r.addedNodes, ...r.removedNodes].some((node) => node.nodeType === 1 && node !== root && ((node as Element).matches(SCROLLER) || (node as Element).querySelector(SCROLLER))), attach)
   attach()
   return {
+    snoozed(state: GroupState) { snoozed.update(state); attach() },
+    archived(state: GroupState) { archived.update(state); attach() },
     update(snooze: GroupState, archive: GroupState) { snoozed.update(snooze); archived.update(archive); attach() },
     // The Archived group steps aside (kept mounted, so it returns without a rebuild) while the host has its own archive UI.
     archiveUi(host: boolean) {
       archived.section.hidden = host
       root.dataset.saArchive = host ? "theirs" : "ours"
     },
-    dispose() { snoozed.dispose(); archived.dispose(); observer.disconnect(); if (frame !== undefined) cancel(frame); root.remove(); parent?.removeAttribute("data-sa-host") },
+    
   }
 }
 
