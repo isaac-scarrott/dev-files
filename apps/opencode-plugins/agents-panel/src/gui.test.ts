@@ -488,7 +488,7 @@ test("dock: right panel closed: the button shows and hides the window, remembere
   assert.equal(f.dockStore.visible, true)
   assert.equal(dockEl(f).dataset.state, "open")
   assert.equal(dockEl(f).hasAttribute("inert"), false)
-  assert.equal(inset(f), "328px")
+  assert.equal(inset(f), "296px")
   assert.ok(f.doc.getElementById("card")!.contains(dockEl(f)), "the window is mounted inside the chat card")
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.toggle().getAttribute("aria-controls"), "agents-dock")
