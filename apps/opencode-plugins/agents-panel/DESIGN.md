@@ -14,7 +14,7 @@ The choice lives in the host's own select: Settings → Timeline → Background 
 
 ## How it works (`src/setting.ts`)
 
-- A `MutationObserver` (childList, one `requestAnimationFrame` per burst) finds the Kobalte listbox `<root id>-listbox` when the popup opens and appends a clone of the host's `center` option: same `menu-v2-item` markup, so hover, highlight, check and height come from the host's CSS.
+- While Settings is the route, a `MutationObserver` (childList and subtree on `<body>`, one `requestAnimationFrame` per burst) finds the Kobalte listbox `<root id>-listbox` when the popup opens and appends a clone of the host's `center` option: same `menu-v2-item` markup, so hover, highlight, check and height come from the host's CSS.
 - Picking it commits the host's own **Hidden** (synthetic `pointerup` + `click` on that option, which selects and closes the popup), then sets `mode.enabled`.
 - Picking any host option, Hidden included, sets `mode.enabled = false` (capture-phase `pointerup`/Enter/Space on host options). The host value is then whatever the user picked, so "restoring" the previous value is the user's own pick.
 - While on, the host select still holds `off`. CSS hides its value text and the check on its Hidden option; a sibling value span (cloned from the host's) and our selected option show the mode instead.
@@ -133,13 +133,13 @@ Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/
 | stream script ms/s | 16.4 | 16.9 | 17.0 | 16.7 | 16.9 |
 | stream task ms/s | 170 | 199.8 | 202.7 | 201.6 | 196.8 |
 
-Branch and master are equal within run-to-run spread on every row (idle style and task swing 2x between runs of the same build); the branch's idle MutationObserver callbacks are 0 on every run. The plugin set's cost over bare (switch +7 ms/s script, stream +30 ms/s task) is the same on master and does not change here: the bars (within 3% of bare scripting, no new long task) are **not** met by the set, nor by this plugin alone, and this pass did not try to meet them (the per-plugin split needs one run per plugin). Heap after GC, 100 tab switches: branch 32.9 -> 39.7 MB, master 33.6 -> 39.1 MB (flat after the first 20 switches on both).
+Branch and master are equal within run-to-run spread on every row (idle style and task swing 2x between runs of the same build); the branch's idle MutationObserver callbacks are 0 in five of six runs (0.13/s once). The plugin set's cost over bare (switch +7 ms/s script, stream +30 ms/s task) is the same on master and does not change here: the bars (within 3% of bare scripting, no new long task) are **not** met by the set, nor by this plugin alone, and this pass did not try to meet them (the per-plugin split needs one run per plugin). Heap after GC, 100 tab switches: branch 32.9 -> 39.7 MB, master 33.6 -> 39.1 MB (flat after the first 20 switches on both).
 
 What this change removes, measured in the real window and, for the Settings installer, in happy-dom:
 
 | Standing cost | master | branch |
 | --- | --- | --- |
-| Settings `MutationObserver` (real window, outside Settings) | connected for the whole window life | disconnected; connected only while the route is `/settings` (connected 1 -> 0 on leaving, verified) |
+| Settings `MutationObserver` (real window, outside Settings) | connected for the whole window life (read from source; the harness counter did not identify it) | disconnected; connected only while the route is `/settings` (connected 1 -> 0 on leaving, verified) |
 | Observer callbacks for 1000 app-root mutations (happy-dom, mode off) | 100 | 1 |
 | Document-level listeners the plugin adds | 5 | 0 (58 vs 63 counted for the whole window; the listeners sit on the Settings listbox) |
 | Module-level spinner observers at import | 2, never disconnected | none; per spinner, disconnected with it |
