@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 
-export type Storage = Pick<Plugin.Context["storage"], "get" | "set">
+export type Storage = Pick<Plugin.Context["storage"], "get" | "set" | "remove">
 
 interface DefaultValue {
   enabled: boolean
@@ -40,6 +40,11 @@ export class Toggles {
 
   async set(sessionID: string, enabled: boolean): Promise<void> {
     await this.storage.set(sessionKey(sessionID), { enabled })
+  }
+
+  /** A session was deleted: drop its stored choice. */
+  async forget(sessionID: string): Promise<void> {
+    await this.storage.remove(sessionKey(sessionID))
   }
 
   /** A session was created: it starts with the default as it is now. Keeps an existing choice. */

@@ -29,6 +29,10 @@ export class Toggles {
     async set(sessionID, enabled) {
         await this.storage.set(sessionKey(sessionID), { enabled });
     }
+    /** A session was deleted: drop its stored choice. */
+    async forget(sessionID) {
+        await this.storage.remove(sessionKey(sessionID));
+    }
     /** A session was created: it starts with the default as it is now. Keeps an existing choice. */
     async seed(sessionID) {
         if ((await this.own(sessionID)) !== undefined)

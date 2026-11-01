@@ -7,7 +7,7 @@ const LOG_CHARS = 300
 
 // Order matters: structured forms first so their value is replaced whole.
 const SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/("?(?:access_token|refresh_token|id_token|api[_-]?key|authorization|x-api-key|password|secret)"?\s*[:=]\s*)"?[^",\s}]+"?/gi, "$1[redacted]"],
+  [/("?(?:access_token|refresh_token|id_token|api[_-]?key|authorization|x-api-key|password|secret)"?\s*[:=]\s*)"?(?:Bearer\s+)?[^",\s}]+"?/gi, "$1[redacted]"],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, "Bearer [redacted]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g, "[redacted-jwt]"],
   [/\bsk-[A-Za-z0-9_-]{8,}/g, "[redacted-key]"],
@@ -76,8 +76,9 @@ export function createLog(dir: string, now: () => number): (message: string) => 
     if (size > MAX_LOG_BYTES) await rename(file, `${file}.1`)
   })().catch(() => {})
   return (message) => {
-    const line = `${new Date(now()).toISOString()} ${message}`
-    console.error(`[usage-resume] ${message}`)
+    const safe = redact(message)
+    const line = `${new Date(now()).toISOString()} ${safe}`
+    console.error(`[usage-resume] ${safe}`)
     ready = ready.then(() => appendFile(file, line + "\n")).catch(() => {})
   }
 }

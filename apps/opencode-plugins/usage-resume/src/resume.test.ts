@@ -72,6 +72,7 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
     storage: {
       get: async (key: string) => storage.get(key),
       set: async (key: string, value: unknown) => void storage.set(key, JSON.parse(JSON.stringify(value))),
+      remove: async (key: string) => void storage.delete(key),
     },
   } as unknown as Host
   const sampleDir = path.join(authDir, "samples")
@@ -611,4 +612,41 @@ test("the log file gets every line with a timestamp", async () => {
   log("hello world")
   await new Promise((resolve) => setTimeout(resolve, 150))
   assert.match(await readFile(path.join(dir, "usage-resume.log"), "utf8"), /^2026-10-31T12:00:00.000Z hello world\n$/)
+})
+
+test("createLog redacts every line, including ones that carry a raw error string", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "usage-resume-log-"))
+  const log = createLog(dir, () => T0)
+  const error = console.error
+  console.error = () => {}
+  try {
+    log("event stream ended: Error: 401 Authorization: Bearer abcdefghijklmnop1234")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  } finally {
+    console.error = error
+  }
+  const body = await readFile(path.join(dir, "usage-resume.log"), "utf8")
+  assert.equal(body.includes("abcdefghijklmnop1234"), false)
+  assert.match(body, /event stream ended/)
+})
+
+test("a limit on an opted-out session is recorded for the pill, then waits once the toggle is turned on", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", { type: "x", message: `Claude Code subscription limit reached (five hour). Resets at ${new Date(T0 + 3_600_000).toISOString()}.` }, T0)
+  assert.equal(r.waiting().length, 0)
+  assert.ok(await r.limited("ses_1"))
+  // Another location's instance answers from shared storage.
+  assert.ok(e.storage.get("limited/ses_1"))
+  e.storage.set("toggle/session/ses_1", { enabled: true })
+  await r.reconcile()
+  assert.equal(r.waiting().length, 1)
+  assert.equal(typeof (await r.limited("ses_1"))?.resumesAt, "number")
+  e.storage.set("toggle/session/ses_1", { enabled: false })
+  await r.reconcile()
+  assert.equal(r.waiting().length, 0)
+  await r.onSettled("ses_1")
+  assert.equal(await r.limited("ses_1"), undefined)
+  assert.equal(e.storage.has("limited/ses_1"), false)
 })

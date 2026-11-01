@@ -13,8 +13,12 @@ export const UsageResume = Rpc.define({
                     enabled,
                     /** False for a subagent session: it is never resumed, so the toggle is not offered. */
                     available: enabled,
+                    /** The session's last run stopped at a usage limit and it has not moved on since. */
+                    limited: enabled,
+                    /** Epoch ms of the next check while the session is waiting to resume. */
+                    resumesAt: { type: "number" },
                 },
-                required: ["enabled", "available"],
+                required: ["enabled", "available", "limited"],
                 additionalProperties: false,
             },
         },

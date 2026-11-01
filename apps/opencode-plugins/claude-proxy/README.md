@@ -7,7 +7,7 @@ Makes the Claude Agent provider in OpenCode Desktop use the proxy set in `~/.cla
 - The `claude` process the provider spawns inherits them, so its requests go through your proxy.
 
 ## Context
-The provider launches `claude` with `--setting-sources=`, so the CLI never reads `settings.json` itself and would talk to Anthropic directly. This is a server plugin with no UI. It throws at startup if the file is missing or is not valid JSON. [usage-resume](../usage-resume) expects the Claude provider to be routed through cliproxy this way.
+The provider launches `claude` with `--setting-sources=`, so the CLI never reads `settings.json` itself and would talk to Anthropic directly. This is a server plugin with no UI. If the file is missing or is not valid JSON it logs a warning and leaves the env alone. Keys removed from the file are removed from the env on the next sync. [usage-resume](../usage-resume) expects the Claude provider to be routed through cliproxy this way.
 
 ## Install
 Register by absolute path in `~/.config/opencode/opencode.json`:
@@ -20,4 +20,4 @@ Kind: server. Restart the background service (quit the app, then `opencode servi
 None.
 
 ## Development
-No build, typecheck or tests: `server.js` is loaded as is. Design notes: [DESIGN.md](DESIGN.md).
+No build or typecheck: `server.js` is loaded as is. `node --test` runs `server.test.js` against a temp HOME. Design notes: [DESIGN.md](DESIGN.md).

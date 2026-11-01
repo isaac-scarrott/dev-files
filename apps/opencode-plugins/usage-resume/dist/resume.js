@@ -2,12 +2,13 @@ import { detectUsageLimit } from "./detect.js";
 import { decide } from "./plan.js";
 import { LIMIT_LIKE, oneLine } from "./diag.js";
 import { availability } from "./usage.js";
+const limitedKey = (sessionID) => `limited/${sessionID}`;
 const MAX_ANNOUNCEMENTS = 3;
 const REANNOUNCE_MS = 5 * 60_000;
 // A run that started this long after the failure was recorded was started by someone else.
 const TOUCH_SLACK_MS = 2_000;
 export function emptyState() {
-    return { waiting: {}, attempts: {} };
+    return { waiting: {}, attempts: {}, limited: {} };
 }
 /** One state key per project location: the server runs one plugin instance per location over one shared storage. */
 export function stateKey(directory) {
@@ -35,6 +36,8 @@ export class Resumer {
     key;
     log;
     busy = false;
+    /** Called with a session id when what the GUI shows for it may have changed. */
+    changed = () => { };
     constructor(host, options, clock, usage, state, toggles, samples, directory, key, log) {
         this.host = host;
         this.options = options;
@@ -58,6 +61,54 @@ export class Resumer {
     /** Session IDs currently waiting, for tests and diagnostics. */
     waiting() {
         return Object.values(this.state.waiting);
+    }
+    /**
+     * The usage limit the session is stopped at, while it is stopped: set when a run fails on it, cleared when the session
+     * moves on, and ignored once a stated reset time has passed (nothing would clear it for an opted-out session).
+     * Read from shared storage, not this instance's state: the GUI asks whichever location's instance answers its call, and
+     * only the instance that serves the session's location saw the failure.
+     */
+    async limited(sessionID) {
+        const entry = (await this.host.storage.get(limitedKey(sessionID)).catch(() => undefined));
+        if (!entry)
+            return undefined;
+        if (entry.resetsAt !== undefined && entry.resetsAt <= this.clock.now())
+            return undefined;
+        return { resumesAt: entry.dueAt };
+    }
+    /**
+     * The session is stopped at a usage limit. Called when a run fails on it, and from the retry hook, which sees the limit
+     * long before OpenCode gives up retrying an opted-out session.
+     */
+    async markLimited(sessionID, limit, at) {
+        const known = this.state.limited[sessionID];
+        if (known && known.resetsAt === limit.resetsAt)
+            return;
+        this.state.limited[sessionID] = { at: known?.at ?? at, kind: limit.kind, resetsAt: limit.resetsAt };
+        await this.save();
+        this.changed(sessionID);
+    }
+    /**
+     * Brings waiting in line with the toggles of the sessions this instance saw stop at a limit: turned on while stopped,
+     * start waiting; turned off, stop. The toggle is set through whichever instance answers the GUI, so the owner catches up
+     * here (and on `tick`) instead of being told.
+     */
+    async reconcile(sessionID) {
+        for (const id of sessionID ? [sessionID] : Object.keys(this.state.limited)) {
+            const entry = this.state.limited[id];
+            if (!entry)
+                continue;
+            if (entry.resetsAt !== undefined && entry.resetsAt <= this.clock.now())
+                continue;
+            const info = await this.host.session.get({ sessionID: id }).catch(() => undefined);
+            if (!info || info.parentID !== undefined || info.time.archived !== undefined)
+                continue;
+            const on = (await this.toggles.effective(id, true, info.time.created)).on;
+            if (on && !this.state.waiting[id])
+                await this.register(id, entry, entry.at);
+            else if (!on && this.state.waiting[id])
+                await this.drop(id, "toggled off");
+        }
     }
     attempts(sessionID) {
         return this.state.attempts[sessionID];
@@ -85,7 +136,10 @@ export class Resumer {
             return this.skip(sessionID, "session not found");
         if (info.time.archived !== undefined)
             return this.skip(sessionID, "archived");
-        const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created);
+        if (info.parentID !== undefined)
+            return this.skip(sessionID, "subagent");
+        await this.markLimited(sessionID, limit, at);
+        const toggle = await this.toggles.effective(sessionID, true, info.time.created);
         if (!toggle.on)
             return this.skip(sessionID, toggle.why);
         const attempts = this.state.attempts[sessionID];
@@ -108,12 +162,19 @@ export class Resumer {
             delete this.state.waiting[sessionID];
             changed = true;
         }
+        if (this.state.limited[sessionID]) {
+            delete this.state.limited[sessionID];
+            await this.host.storage.remove(limitedKey(sessionID)).catch(() => { });
+            changed = true;
+        }
         if (completed && this.state.attempts[sessionID]) {
             delete this.state.attempts[sessionID];
             changed = true;
         }
-        if (changed)
+        if (changed) {
             await this.save();
+            this.changed(sessionID);
+        }
     }
     /** Look at every waiting session that is due. Call on an interval; after sleep the first call catches up. */
     async tick() {
@@ -121,6 +182,7 @@ export class Resumer {
             return;
         this.busy = true;
         try {
+            await this.reconcile().catch((error) => this.log(`reconcile: ${String(error)}`));
             const now = this.clock.now();
             const due = Object.values(this.state.waiting)
                 .filter((w) => w.dueAt <= now)
@@ -157,6 +219,7 @@ export class Resumer {
         this.log(`${sessionID}: scheduled first check at ${new Date(waiting.dueAt).toISOString()} (not before ${new Date(notBefore).toISOString()}, attempt ${prior + 1}/${this.options.maxAttempts})`);
         await this.announce(waiting);
         await this.save();
+        this.changed(sessionID);
     }
     async evaluate(waiting) {
         const readings = await this.usage.refresh().catch(() => []);
@@ -215,6 +278,7 @@ export class Resumer {
         this.log(`${sessionID}: not resuming: ${reason}`);
         delete this.state.waiting[sessionID];
         await this.save();
+        this.changed(sessionID);
     }
     async announce(waiting) {
         if (waiting.announcements >= MAX_ANNOUNCEMENTS)
@@ -234,8 +298,11 @@ export class Resumer {
             .synthetic({ sessionID, text, description: text, delivery: "queue", resume: false })
             .catch((error) => this.log(`${sessionID}: notice failed: ${String(error)}`));
     }
-    save() {
-        return this.host.storage.set(this.key, this.state);
+    async save() {
+        await this.host.storage.set(this.key, this.state);
+        for (const [id, entry] of Object.entries(this.state.limited)) {
+            await this.host.storage.set(limitedKey(id), { ...entry, dueAt: this.state.waiting[id]?.dueAt });
+        }
     }
 }
 //# sourceMappingURL=resume.js.map
