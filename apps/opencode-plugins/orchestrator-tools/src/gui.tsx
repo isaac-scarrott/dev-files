@@ -27,7 +27,8 @@ const css = `
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-text"] { cursor: text; }
 [${CARD_ATTR}]:has([data-slot="peer-trigger"]:focus-visible) { outline: 1px solid var(--v2-text-text-accent); outline-offset: 2px; }
 [${CARD_ATTR}] [data-slot="peer-trigger"]:focus-visible { outline: none; }
-[${CARD_ATTR}] [data-slot="peer-dir"] { position: relative; flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--v2-text-text-faint); pointer-events: none; }
+/* 16px catalog box, vertically centred on the 20px line; the arrow's ink starts 5px inside the box, so the box sits 5px left of the 12px content edge and its ink lines up with it. */
+[${CARD_ATTR}] [data-slot="peer-dir"] { position: relative; flex: none; width: 16px; height: 16px; margin: 2px -4px 2px -5px; color: var(--v2-text-text-faint); pointer-events: none; }
 [${CARD_ATTR}] [data-slot="peer-dir"] svg { display: block; width: 16px; height: 16px; }
 [${CARD_ATTR}] [data-slot="peer-name"] {
   position: relative; flex: 0 1 auto; min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -38,8 +39,11 @@ const css = `
   position: relative; flex: 1 1 0%; min-width: 0; height: 20px; overflow: hidden; pointer-events: none; user-select: none; overflow-wrap: anywhere;
 }
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-text"] { height: auto; pointer-events: auto; user-select: text; }
-[${CARD_ATTR}] [data-slot="peer-text"] [data-markdown-block] > * { margin: 0; }
-[${CARD_ATTR}] [data-slot="peer-text"] [data-markdown-block] > * + * { margin-top: 8px; }
+/* The host's Markdown is 14px/22.4px with its own block margins. The row's text is the row's type (13px/20px), so the first line
+   shares the title's baseline, and no block brings margin of its own: spacing between blocks is set here. */
+[${CARD_ATTR}] [data-slot="peer-text"] [data-component="markdown"] { margin: 0; padding: 0; font: inherit; letter-spacing: inherit; }
+[${CARD_ATTR}] [data-slot="peer-text"] :is(p, ul, ol, blockquote, pre, table, hr, h1, h2, h3, h4, h5, h6, [data-component="markdown-code"]) { margin: 0; }
+[${CARD_ATTR}] [data-slot="peer-text"] :is(p, ul, ol, blockquote, pre, table, hr, h1, h2, h3, h4, h5, h6, [data-component="markdown-code"]) + :is(p, ul, ol, blockquote, pre, table, hr, h1, h2, h3, h4, h5, h6, [data-component="markdown-code"]) { margin-top: 8px; }
 [${CARD_ATTR}] [data-slot="peer-text"] :is(p, li, h1, h2, h3, h4, h5, h6) { font: inherit; letter-spacing: inherit; }
 [${CARD_ATTR}] [data-slot="peer-text"] :is(ul, ol) { padding-inline-start: 18px; }
 [${CARD_ATTR}] [data-slot="peer-text"] li { margin: 0; padding: 0; }
@@ -63,7 +67,7 @@ const css = `
 [${CARD_ATTR}][data-open="true"] [data-slot="peer-arrow"] svg { transform: rotate(0); }
 [${CARD_ATTR}]:not([data-expandable="true"]) [data-slot="peer-arrow"] { visibility: hidden; }
 /* Instant, as the host's basic-tool-action is; the host icon button has its own opacity .15s transition, which would fade this reveal. */
-[${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; transition: none; }
+[${CARD_ATTR}] .peer-open { position: relative; z-index: 1; margin-block: -2px; opacity: 0; transition: none; color: var(--v2-text-text-faint); }
 [${CARD_ATTR}]:is(:hover, :focus-within) .peer-open, [${CARD_ATTR}][data-open="true"] .peer-open { opacity: 1; }
 @media (hover: none) { [${CARD_ATTR}] .peer-open, [${CARD_ATTR}] [data-slot="peer-arrow"] { opacity: 1; } }
 `
@@ -157,7 +161,7 @@ export default Plugin.define({
             <ctx.ui.Tooltip value={ctx.t("open")}>
               <ctx.ui.IconButton
                 class="peer-open"
-                icon="arrow-up-right"
+                icon="chevron-right"
                 variant="ghost"
                 label={`${ctx.t("open")} ${peer().title}`}
                 onClick={() => open(props.located)}

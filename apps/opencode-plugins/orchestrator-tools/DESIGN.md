@@ -100,10 +100,11 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   Only received messages exist today (see "Sender side"), so there is no outgoing arrow.
 - **Trailing slot.** Fixed 42px wide in both states, so revealing it never re-wraps the text: a 16px triangle (host
   Questions look: 14px `fill-triangle-down` via `ctx.ui.Icon`, opacity 0 at rest, 1 on hover, focus or open, rotates
-  with 150ms ease) and the Open-session button: `ctx.ui.IconButton` (`arrow-up-right`, ghost, normal = 24px, radius 6px)
+  with 150ms ease) and the Open-session button: `ctx.ui.IconButton` (`chevron-right`, ghost, normal = 24px, radius 6px)
   inside `ctx.ui.Tooltip` "Open session", `aria-label` "Open session <title>", its own tab stop, revealed like
   `basic-tool-action`. It opens the sender with `ctx.tabs.open({ server, id }, { focus: true })`. Hidden when the
-  message fits on one line and has one block (nothing to expand).
+  message fits on one line and has one block (nothing to expand). The icon is the host's own go-to-session affordance: the subagent row's `task-tool-action` is a bare 16px `chevron-right` (viewBox 20, `text-faint`, centre 20px from the row's right edge). Ours is the same catalog icon, same size, colour and centre-from-edge (measured 20 / 20, both at y 18), inside the 24px button; the triangle sits 3px before the button, 14px filled against the chevron's stroke, so they read as two different things. The outgoing direction icon (a future sent row) stays `arrow-up-right`.
+- **Alignment (matches the host row exactly).** Measured against `task-tool-surface` with the same probe on both (`parity.spec.mjs`, `alignment-*`): height 36, padding `8px 12px`, radius 8px, 8px between title and text, title 13px/530/20px/-0.04px and text 13px/440/20px/-0.04px on one baseline and one centre line, content starting at the 12px padding edge. Two defects were found and fixed: (1) the host's Markdown renders at 14px/22.4px, so the message sat 1.5px below the title's baseline and its type was larger; the text slot now resets the Markdown wrapper to the row's own type (`font: inherit`) and zeroes block margins by element, not by host wrapper class, so a different Markdown wrapper cannot add margin or height; (2) the arrow's ink starts 5px inside its 16px box, so it read as inset 17px against the host's 12px: the box now sits at -5px so the ink starts at 12px, and it stays centred on the line (centre 18px). Before/after: contentLeft 17 → 12, baselineDelta 1.5 → 0, text 14px/22.4 → 13px/20. A 72px-tall row, as seen in the live app, could not be reproduced here (36px in light/dark, live-arriving messages, 560-1300px wide); the unconstrained Markdown block margins above are the likely cause and are now neutralised.
 - **Expand.** One text element holds the message in both states, rendered with `ctx.ui.Markdown` (the timeline's
   renderer: lists, code, links). Collapsed, its height is 20px and the first Markdown block is line-clamped to one line with a
   real ellipsis; expanded, the clamp lifts and the height is `auto`, so the text keeps its left edge (right of the title)
@@ -133,7 +134,7 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   ignores peer messages (its own tests).
 - **Parity.** `parity.spec.mjs` runs the row against the host's subagent row, the arrow against the Questions arrow
   (opacity curve, declarations, reduced motion), and records the host action button as N/A (it only exists inside an
-  opened Execute part): 109 PASS, 0 FAIL, 33 N/A, each N/A with its reason in the spec.
+  opened Execute part), the alignment probes (height, padding, baselines, centres, content edge, run on both rows and on the open row) and the go-to-session chevron against the host's: 131 PASS, 0 FAIL, 33 N/A, each N/A with its reason in the spec.
 
 ## What a child sees
 

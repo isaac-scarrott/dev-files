@@ -55,3 +55,13 @@ test("the card's styles hard-code no colour", () => {
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(css))
   assert.ok(css.includes("var(--v2-background-bg-layer-02)"))
 })
+
+// The row's measured geometry is the host subagent row's (DESIGN.md "Alignment"); these are the rules that carry it.
+test("the row keeps the host's spacing and type, and the go-to-session chevron", () => {
+  const source = readFileSync(new URL("./gui.tsx", import.meta.url), "utf8")
+  assert.ok(source.includes("padding: 8px 12px"))
+  assert.ok(source.includes("border-radius: 8px"))
+  assert.ok(source.includes("font: 440 13px/20px"))
+  assert.ok(source.includes('icon="chevron-right"'))
+  assert.ok(source.includes('[data-component="markdown"] { margin: 0; padding: 0; font: inherit;'))
+})
