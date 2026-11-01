@@ -25,7 +25,8 @@ ${P.detail}${we}`;for(L.link.title!==ce&&(L.link.title=ce);T&&[...b.values()].so
 [data-sa-host] > [data-titlebar-tab-list] { padding-bottom: 16px; }
 [data-snooze-archive] section[hidden] { display: none; }
 [data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 16px; app-region: no-drag; }
-.sa-toggle { width: 100%; justify-content: flex-start; }
+/* The host's small Button pads 9px; the rows pad 6px (px-1.5 on the tab item), so the label starts on the rows' avatar/title edge and the chevron ends on the time column's edge. */
+.sa-toggle { width: 100%; justify-content: flex-start; padding-inline: 6px; }
 .sa-label { display: inline-flex; align-items: center; gap: 6px; }
 [data-sa-count] { margin-inline-start: auto; font-variant-numeric: tabular-nums; color: var(--v2-text-text-faint); }
 .sa-chevron { transition: transform 200ms cubic-bezier(0.23,1,0.32,1); }

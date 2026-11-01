@@ -213,3 +213,8 @@ test("expanding leaves the free space to margin-top:auto and never scrolls", asy
   sidebar.dispose()
   await window.happyDOM.close()
 })
+
+test("the group toggle pads 6px a side like the rows' tab item (px-1.5), so label and chevron land on the rows' text edges", async () => {
+  const { css } = await import("./sidebar")
+  assert.match(css, /\.sa-toggle \{[^}]*padding-inline: 6px;/)
+})
