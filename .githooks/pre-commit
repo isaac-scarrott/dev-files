@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# When vendor.manifest is staged, refresh vendored files and stage them.
+# Lints staged opencode-plugins sources; when vendor.manifest is staged, refreshes vendored files and stages them.
 set -e
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-git diff --cached --name-only | grep -qx 'vendor.manifest' || exit 0
+staged="$(git diff --cached --name-only)"
+
+if grep -q '^apps/opencode-plugins/.*\.tsx\?$' <<< "$staged"; then
+    node apps/opencode-plugins/lint.mjs
+fi
+
+grep -qx 'vendor.manifest' <<< "$staged" || exit 0
 
 scripts/vendor.sh
 
