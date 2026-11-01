@@ -6,6 +6,7 @@ Extensions → Plugins shows server-only plugins too, and tags every row with wh
 
 ## What it does
 - Lists plugins that have no desktop part, which the native page leaves out.
+- Gives every row a Reload and a switch: the host's where it draws them, ours where it does not (server-only plugins, or a plugin whose desktop part the host has not matched).
 - Adds a chip to each row for the parts it has: Desktop, Server, TUI, RPC.
 
 ## Context
