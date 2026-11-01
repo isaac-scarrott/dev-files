@@ -2,7 +2,9 @@
 
 A Subagents button in the session header that lists what is running under the session: a floating window beside the chat when the right side panel is closed, a popover when it is open.
 
-[media/demo.mp4](media/demo.mp4)
+![The Subagents window beside the chat, opening and closing](media/demo.gif)
+
+[Full-quality video](media/demo.mp4)
 
 ## What it does
 - The header button (right after the session-context button) opens "Subagents · N running" for the viewed session: its subagents and background shell tasks. Rows show the description and elapsed time; the X stops one.

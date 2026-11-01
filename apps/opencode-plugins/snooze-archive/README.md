@@ -2,7 +2,9 @@
 
 Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archive next to Delete in every session menu.
 
-[media/demo.mp4](media/demo.mp4)
+![Expanding Snoozed and Archived, then showing more rows](media/demo.gif)
+
+[Full-quality video](media/demo.mp4)
 
 ## What it does
 - **Snooze** is a submenu of the session right-click menu, the session header "…" menu and the Home row menu: In 1 hour, In 3 hours, This evening, Tomorrow, Next week, each with its wake time, then Custom… (duration or calendar and time). The palette has "Snooze session…".

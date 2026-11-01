@@ -2,7 +2,9 @@
 
 Drag a sidebar session row sideways into the chat to attach it as a "Session" chip the model can read.
 
-[media/demo.mp4](media/demo.mp4)
+![Dragging a sidebar session into the chat to attach it](media/demo.gif)
+
+[Full-quality video](media/demo.mp4)
 
 ## What it does
 - Press a session row in the sidebar (a live tab, or a Snoozed or Archived row from snooze-archive) and move sideways. A chip with the title follows the pointer and the native "Drop files to add" overlay rises over the session.

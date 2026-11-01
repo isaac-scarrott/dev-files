@@ -2,7 +2,9 @@
 
 The Search models dialog lists providers A to Z and, inside each, models by output price, with no Recent section.
 
-[media/demo.mp4](media/demo.mp4)
+![The model picker with provider sections and models sorted by price](media/demo.gif)
+
+[Full-quality video](media/demo.mp4)
 
 ## What it does
 - Providers run A to Z by name. Favorites stays above them.
