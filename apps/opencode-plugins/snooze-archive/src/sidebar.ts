@@ -1,6 +1,6 @@
 import { createComponent, createSignal } from "solid-js"
 import type { ProjectAvatarStyle } from "../../native-ui/src"
-import { SessionTabRow, TabRowAction } from "../../native-ui/src"
+import { SessionTabRow, TabRowAction, sessionTabRowClass } from "../../native-ui/src"
 import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
@@ -10,9 +10,11 @@ export interface GroupRow { key: string; title: string; project: string; until?:
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 const SCROLLER = '[data-slot="vertical-tabs-scroll"]'
-export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
+// more: the button below the rows; busy while its page loads.
+export interface GroupState { rows: GroupRow[]; status?: string; count?: number | string; more?: { label: string; busy?: boolean; run(): void } }
+export interface Hooks { toggled?(kind: "snoozed" | "archived", open: boolean): void }
 
-function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers) {
+function group(doc: Document, host: Host, name: string, schedule: (fn: () => void) => number, timers: Timers, toggled: (open: boolean) => void) {
   const section = doc.createElement("section")
   const header = doc.createElement("div")
   header.dataset.saToggle = ""
@@ -33,7 +35,9 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   content.setAttribute("aria-label", name)
   let open = false
   const expand = (next: boolean) => {
+    const changed = next !== open
     open = next
+    if (changed) toggled(next)
     panel.toggleAttribute("data-open", next)
     panel.toggleAttribute("inert", !next)
     toggle()?.setAttribute("aria-expanded", String(next))
@@ -63,6 +67,25 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
   const status = doc.createElement("p")
   status.setAttribute("role", "status")
   content.append(status)
+  // The button after the last row: the sidebar's own secondary row ("New session", app/src/shell/titlebar sidebar actions) with a chevron for its icon.
+  const moreSlot = doc.createElement("div")
+  moreSlot.dataset.saMore = ""
+  moreSlot.className = "flex w-full shrink-0"
+  moreSlot.hidden = true
+  const moreButton = doc.createElement("button")
+  moreButton.type = "button"
+  moreButton.className = "sa-more group flex h-7 w-full shrink-0 items-center gap-1.5 rounded-[6px] ps-1.5 pe-2 text-[13px] leading-4 text-v2-text-text-faint hover:text-v2-text-text-base"
+  const moreIcon = doc.createElement("span")
+  moreIcon.className = sessionTabRowClass.avatarSlot
+  const moreText = doc.createElement("span")
+  moreText.className = "min-w-0 truncate"
+  moreButton.append(moreIcon, moreText)
+  moreSlot.append(moreButton)
+  const disposeMoreIcon = host.mount(moreIcon, () => createComponent(host.ui.Icon, { name: "chevron-down", size: "normal" }))
+  let moreRun: (() => void) | undefined
+  let moreBusy = false
+  moreButton.onclick = () => { if (!moreBusy) moreRun?.() }
+  content.append(moreSlot)
   const createRow = (item: GroupRow): Row => {
     const [current, set] = createSignal(item)
     const container = doc.createElement("div")
@@ -104,6 +127,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
     section,
     dispose() {
       disposeHeader()
+      disposeMoreIcon()
       for (const row of rows.values()) { if (row.leaving !== undefined) timers.clear(row.leaving); row.dispose() }
     },
     update(state: GroupState) {
@@ -146,6 +170,12 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
         if (cursor === row.el) cursor = cursor.nextSibling
         else content.insertBefore(row.el, cursor)
       })
+      moreRun = state.more?.run
+      moreBusy = !!state.more?.busy
+      moreSlot.hidden = !state.more
+      const moreTextNow = moreBusy ? "Loading…" : state.more?.label ?? ""
+      if (moreText.textContent !== moreTextNow) moreText.textContent = moreTextNow
+      moreButton.toggleAttribute("aria-busy", moreBusy)
       populated = populated || state.rows.length > 0 || state.count !== undefined
     },
   }
@@ -154,13 +184,13 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
 export function createSidebar(doc: Document, host: Host, schedule: (fn: () => void) => number, cancel: (id: number) => void, timers: Timers = {
   set: (fn, ms) => doc.defaultView!.setTimeout(fn, ms) as unknown as number,
   clear: (id) => doc.defaultView!.clearTimeout(id),
-}) {
+}, hooks: Hooks = {}) {
   const root = doc.createElement("div")
   root.dataset.snoozeArchive = ""
   root.title = "All listed servers · top-level sessions. Snooze is device-local."
   let parent: HTMLElement | undefined
-  const snoozed = group(doc, host, "Snoozed", schedule, timers)
-  const archived = group(doc, host, "Archived", schedule, timers)
+  const snoozed = group(doc, host, "Snoozed", schedule, timers, (open) => hooks.toggled?.("snoozed", open))
+  const archived = group(doc, host, "Archived", schedule, timers, (open) => hooks.toggled?.("archived", open))
   root.append(snoozed.section, archived.section)
   const attach = () => {
     const next = doc.querySelector<HTMLElement>(`[data-slot="vertical-tabs"] > ${SCROLLER}`) ?? undefined
@@ -206,6 +236,8 @@ export const css = `
 [data-sa-panel][data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows 200ms cubic-bezier(0.23,1,0.32,1), opacity 180ms cubic-bezier(0.23,1,0.32,1), visibility 0s; }
 [data-sa-clip] { min-height: 0; overflow: hidden; }
 [data-sa-contents] { display: flex; flex-direction: column; gap: 4px; padding: 2px 0; }
+[data-sa-more][hidden] { display: none; }
+.sa-more[aria-busy] { cursor: default; opacity: .7; }
 [data-sa-contents] p { margin: 6px; font-size: 11px; color: var(--v2-text-text-muted); }
 /* Snoozed: the time until wake outranks the branch. The second line is a flex row; the project part gives way with an
    ellipsis and the time never shrinks. The link's end fade (the action's reveal) would mask a time that reaches the
