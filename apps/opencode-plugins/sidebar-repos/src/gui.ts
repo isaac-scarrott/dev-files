@@ -1,6 +1,8 @@
 import { Plugin, Style } from "@opencode/plugin/gui"
 import { createEffect } from "solid-js"
 import { render } from "solid-js/web"
+import { createTicker, lastActivity } from "./activity"
+import { removeTimes, renderTimes, stampActivity } from "./rowtime"
 import { attentionKind, badges, basename, label, truncateMiddle, type AttentionKind } from "./badges"
 
 export default Plugin.define({
@@ -60,7 +62,7 @@ export default Plugin.define({
         mask-image: none !important;
       }
       /*
-       * Text yields to whatever sits at the row's trailing edge (a status mark, or the close button on hover) through
+       * Text yields to whatever sits at the row's trailing edge (a status mark, a time, or the close button on hover) through
        * one mask on the full-height link, so the badge and title lines fade as a single band. The marks live outside
        * the link and are never masked. Same shape as the native link mask: 16px ramp, clear from --sidebar-fade in
        * (24px mark + 6px gap); idle rows keep no fade. Not animated, like the native one.
@@ -76,7 +78,32 @@ export default Plugin.define({
         -webkit-mask-image: none !important;
         mask-image: none !important;
       }
-      [data-titlebar-tab][data-orientation='vertical']:is([data-status='busy'], [data-status='attention'], [data-status='unread'], [data-sidebar-attention], [data-sa-woke], :hover, :focus-within) [data-slot='tab-link'] {
+      /*
+       * Last activity, in the status mark's slot (20px box, 4px from the end) and the title's end padding (6px).
+       * Shown only on a row with no indicator; hidden under the row's hover and focus affordances as the status mark is
+       * (no transition, like it). The text fade stops short of it: width measured into --sidebar-time-width.
+       */
+      [data-titlebar-tab] [data-sidebar-time] {
+        position: absolute;
+        inset-block: 0;
+        inset-inline-end: 2px;
+        display: flex;
+        align-items: center;
+        font-size: 11px;
+        line-height: 14px;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        color: var(--v2-text-text-muted);
+        pointer-events: none;
+      }
+      [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-sidebar-time] {
+        opacity: 0;
+      }
+      [data-titlebar-tab][data-orientation='vertical'][data-sidebar-time-shown]:not(:hover):not(:has(:focus-visible)) {
+        --sidebar-fade: calc(var(--sidebar-time-width, 0px) + 12px);
+      }
+      [data-titlebar-tab][data-orientation='vertical']:is([data-status='busy'], [data-status='attention'], [data-status='unread'], [data-sidebar-attention], [data-sidebar-time-shown], [data-sa-woke], :hover, :focus-within) [data-slot='tab-link'] {
         -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade) - 16px), transparent calc(100% - var(--sidebar-fade))) !important;
         mask-image: linear-gradient(to right, #000 calc(100% - var(--sidebar-fade) - 16px), transparent calc(100% - var(--sidebar-fade))) !important;
       }
@@ -120,6 +147,11 @@ export default Plugin.define({
       return truncateMiddle(full, available, (value) => measure(font, value))
     }
 
+    const timeFont = () => {
+      const style = window.getComputedStyle(document.body)
+      return `400 11px ${style.fontFamily}`
+    }
+
     const observed = new Set<HTMLElement>()
 
     // Status icons are the app's own catalog icons, mounted into the injected slots.
@@ -131,12 +163,15 @@ export default Plugin.define({
 
     let names = new Map<string, string>()
     let attention = new Map<string, AttentionKind>()
+    let activity = new Map<string, number>()
     let frame: number | undefined
     const refresh = () => {
       if (frame !== undefined) return
       frame = requestAnimationFrame(() => {
         frame = undefined
+        stampActivity(document, activity)
         badges(document, names, display, attention, mountIcon)
+        renderTimes(document, Date.now(), (text) => measure(timeFont(), text))
         for (const [host, dispose] of icons) {
           if (host.isConnected) continue
           dispose()
@@ -173,6 +208,30 @@ export default Plugin.define({
       }
     })
 
+    // Last activity needs each open thread's messages; fetched once per session, then kept current by the store.
+    const messagesRequested = new Set<string>()
+    createEffect(() => {
+      for (const tab of ctx.tabs.list()) {
+        const session = tab.session
+        if (!session) continue
+        const key = `${session.server.id}:${session.id}`
+        if (messagesRequested.has(key)) continue
+        messagesRequested.add(key)
+        void session.server.data.session.message.sync(session.id).catch(() => messagesRequested.delete(key))
+      }
+    })
+
+    createEffect(() => {
+      activity = new Map(ctx.tabs.list().flatMap((tab) => {
+        const session = tab.session
+        if (!session) return []
+        const data = session.server.data
+        const at = lastActivity(data.session.message.list(session.id), data.session.get(session.id)?.time.updated)
+        return at === undefined ? [] : [[tab.key, at] as const]
+      }))
+      refresh()
+    })
+
     createEffect(() => {
       names = new Map(ctx.tabs.list().flatMap((tab) => {
         const session = tab.session
@@ -197,7 +256,7 @@ export default Plugin.define({
 
     const owned = (node: Node) => {
       const element = node.nodeType === 1 ? node as Element : node.parentElement
-      return !!element?.closest("[data-sidebar-repo], [data-sidebar-status-icon]")
+      return !!element?.closest("[data-sidebar-repo], [data-sidebar-status-icon], [data-sidebar-time]")
     }
     const observer = new MutationObserver((records) => {
       if (records.some((record) => {
@@ -213,8 +272,22 @@ export default Plugin.define({
       attributeFilter: ["data-tab-key", "data-orientation", "data-status"],
     })
 
+    // One timer for every row; only while the window is visible.
+    const ticker = createTicker({
+      setInterval: (fn, ms) => window.setInterval(fn, ms),
+      clearInterval: (id) => window.clearInterval(id),
+      visible: () => document.visibilityState === "visible",
+    }, refresh)
+    const wake = () => ticker.wake()
+    window.addEventListener("focus", wake)
+    document.addEventListener("visibilitychange", wake)
+
     return () => {
       observer.disconnect()
+      ticker.dispose()
+      window.removeEventListener("focus", wake)
+      document.removeEventListener("visibilitychange", wake)
+      removeTimes(document)
       resizeObserver.disconnect()
       observed.clear()
       icons.forEach((dispose) => dispose())

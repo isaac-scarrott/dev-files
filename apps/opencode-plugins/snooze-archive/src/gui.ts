@@ -5,7 +5,7 @@ import { actionsCss, labels, type ActionName, type Target } from "./actions"
 import { iconCss } from "./icons"
 import { menuCss } from "./menu"
 import { createSessionMenus } from "./sessionmenu"
-import { loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
+import { archivedActivity, loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
 import { tabRowActionCss } from "../../native-ui/src"
 import { createSidebar, css } from "./sidebar"
 import { avatarFor } from "./avatar"
@@ -324,7 +324,7 @@ export default Plugin.define({
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
       const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", project: repoLabel(id, info), detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
-        avatar: avatarOf(id, info), action: "Restore",
+        avatar: avatarOf(id, info), action: "Restore", activeAt: archivedActivity(info.time),
         // Reading an archived session does not unarchive it; only Restore does.
         open: () => openInCurrentTab(document, id, info.id),
         active: ctx.sessions.current()?.server.id === id && ctx.sessions.current()?.id === info.id,

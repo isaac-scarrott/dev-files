@@ -5,8 +5,8 @@ import type { Avatar } from "./avatar"
 import type { Host } from "./host"
 import { openMenu, type MenuLine } from "./menu"
 
-// project: the second line ("repo · branch"); until: the trailing detail on it (time until wake); detail: the hover title.
-export interface GroupRow { key: string; title: string; project: string; until?: string; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
+// activeAt: last activity, shown by sidebar-repos at the row's end (Archived rows); project: the second line ("repo · branch"); until: the trailing detail on it (time until wake); detail: the hover title.
+export interface GroupRow { key: string; title: string; project: string; until?: string; activeAt?: number; detail: string; action: string; avatar: Avatar; active?: boolean; run(): void; open?(): void; menu?: MenuLine[] }
 export interface Timers { set(fn: () => void, ms: number): number; clear(id: number): void }
 const LEAVE_MS = 160
 export interface GroupState { rows: GroupRow[]; status?: string; count?: number }
@@ -79,6 +79,7 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
       get avatar() { const a = current().avatar; return { fallback: a.letter, src: a.src, variant: a.variant as ProjectAvatarStyle } },
       get project() { return current().project },
       get detail() { return current().until },
+      get activeAt() { return current().activeAt },
       get active() { return current().active },
       get onContextMenu() { return current().menu?.length ? showMenu : undefined },
       onOpen: () => { const row = current(); (row.open ?? row.run)() },
@@ -137,7 +138,8 @@ function group(doc: Document, host: Host, name: string, schedule: (fn: () => voi
           }
         }
         row.set(item)
-        const tip = `${item.title}\n${item.detail}`
+        const active = item.activeAt === undefined ? "" : `\nLast active ${new Date(item.activeAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "long" })}`
+        const tip = `${item.title}\n${item.detail}${active}`
         if (row.link.title !== tip) row.link.title = tip
         while (cursor && [...rows.values()].some((r) => r.el === cursor && r.leaving !== undefined)) cursor = cursor.nextSibling
         if (cursor === row.el) cursor = cursor.nextSibling

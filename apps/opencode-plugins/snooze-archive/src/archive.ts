@@ -28,3 +28,10 @@ export async function setArchived(server: ServerRef, id: string, archived: boole
 export async function removeSession(server: ServerRef, id: string, signal: AbortSignal) {
   await server.client.session.remove({ sessionID: id }, { signal })
 }
+
+// Archiving bumps time.updated to the archive moment (within ms), so it is not when the thread was last active. Then the
+// session's last busy/idle transition stands in for it, else its creation. A later update (activity after the archive) wins.
+export function archivedActivity(time: { created: number; updated: number; busy?: number; idle?: number; archived?: number }) {
+  if (time.archived === undefined || time.updated < time.archived) return time.updated
+  return Math.max(time.idle ?? 0, time.busy ?? 0) || time.created
+}

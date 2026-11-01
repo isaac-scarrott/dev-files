@@ -17,6 +17,8 @@ export interface SessionTabRowProps {
   avatar?: { fallback?: string; src?: string; variant?: ProjectAvatarStyle }
   /** The second line, in the live row's language ("repo · branch"). Shown only when sidebar-repos is loaded. */
   project?: string
+  /** Last activity (epoch ms). sidebar-repos shows it at the row's end while the row has no status; no-op alone. */
+  activeAt?: number
   /** Secondary detail appended to the second line ("repo · branch · 9:00"). */
   detail?: string
   href?: string
@@ -84,6 +86,7 @@ export function SessionTabRow(props: SessionTabRowProps) {
           data-active={!!props.active}
           data-dragging="false"
           data-status={props.status}
+          data-sidebar-active-at={props.activeAt}
           data-state={props.active || props.pressed ? "pressed" : undefined}
           onMouseDown={(event) => {
             if (event.button !== MIDDLE_MOUSE_BUTTON) return

@@ -13,6 +13,13 @@ function fixture() {
   let nextFrame = 0
   const resizeTargets = new Set<Element>()
   const observers = new Set<object>()
+  // happy-dom's own timers keep whenAsyncComplete pending forever; the plugin's one interval is faked.
+  const intervals = new Map<number, { fn: () => void; ms: number }>()
+  let nextInterval = 0
+  Object.assign(window, {
+    setInterval: (fn: () => void, ms: number) => { intervals.set(++nextInterval, { fn, ms }); return nextInterval },
+    clearInterval: (id: number) => { intervals.delete(id) },
+  })
   const globals = {
     window,
     document,
@@ -49,12 +56,15 @@ function fixture() {
   const [hydrated, setHydrated] = createSignal(false)
   const [requests, setRequests] = createSignal<{ permissions?: unknown[]; forms?: unknown[] }>({})
   const [branch, setBranch] = createSignal("main")
-  const calls = { vcs: 0, permission: 0, form: 0 }
+  const calls = { vcs: 0, permission: 0, form: 0, message: 0 }
+  const [messages, setMessages] = createSignal<{ type: string; time: { created: number; completed?: number } }[]>([])
+  const [updated, setUpdated] = createSignal(1000)
   const session = {
     id: "s", location: { directory: "/git/worktree" },
-    server: { data: {
+    server: { id: "srv", data: {
       session: {
-        get: () => hydrated() ? { projectID: "p" } : undefined,
+        get: () => hydrated() ? { projectID: "p", time: { updated: updated() } } : undefined,
+        message: { list: messages, sync: async () => { calls.message++ } },
         permission: { list: () => requests().permissions, sync: async () => { calls.permission++ } },
         form: { list: () => requests().forms, sync: async () => { calls.form++ } },
       },
@@ -85,7 +95,7 @@ function fixture() {
     await deliver()
   }
   return {
-    document, session, calls, iconNames, styles, frames, resizeTargets, observers,
+    document, session, calls, intervals, setMessages, setUpdated, iconNames, styles, frames, resizeTargets, observers,
     setHydrated, setRequests, setBranch, setTabs, setSessions, start, stop, paint, deliver,
     async close() {
       stop()
@@ -126,7 +136,7 @@ test("setup survives empty host APIs and unhydrated stores, then follows hydrati
     f.setRequests({})
     await f.paint()
     assert.notEqual(f.document.defaultView!.getComputedStyle(dot).display, "none")
-    assert.deepEqual(f.calls, { vcs: 1, permission: 1, form: 1 })
+    assert.deepEqual(f.calls, { vcs: 1, permission: 1, form: 1, message: 1 })
   } finally { await f.close() }
 })
 
@@ -193,7 +203,7 @@ test("sessions without a location still sync attention requests", async () => {
     f.setTabs([{ key: "a", session }])
     f.start()
     await f.paint()
-    assert.deepEqual(f.calls, { vcs: 0, permission: 1, form: 1 })
+    assert.deepEqual(f.calls, { vcs: 0, permission: 1, form: 1, message: 1 })
     f.setRequests({ permissions: [{}] })
     await f.paint()
     assert.equal(f.document.querySelector("[data-titlebar-tab]")?.getAttribute("data-sidebar-attention"), "permission")
@@ -214,4 +224,38 @@ test("the trailing fade is one mask on the link, not on the title or badge lines
   } finally {
     await f.close()
   }
+})
+
+test("an idle row shows its last message time, follows new messages, hides on a status and ticks on one timer", async () => {
+  const f = fixture()
+  try {
+    f.document.querySelector("[data-titlebar-tab]")!.removeAttribute("data-status")
+    const tab = f.document.querySelector("[data-titlebar-tab]")!
+    const slot = f.document.createElement("div")
+    slot.setAttribute("data-slot", "tab-close")
+    tab.append(slot)
+    f.setHydrated(true)
+    f.setSessions([f.session])
+    f.setTabs([{ key: "a", session: f.session }])
+    f.setUpdated(Date.now() - 2 * 3600_000)
+    f.start()
+    await f.paint()
+    const time = () => f.document.querySelector("[data-slot=tab-close] [data-sidebar-time]")
+    assert.equal(time()?.textContent, "2h", "falls back to session.time.updated")
+    f.setMessages([{ type: "user", time: { created: Date.now() - 5 * 60_000 } }])
+    await f.paint()
+    assert.equal(time()?.textContent, "5m", "the latest message wins")
+    assert.ok(f.document.querySelector("[data-sidebar-repo]")?.getAttribute("title")?.includes("Last active"))
+    tab.setAttribute("data-status", "unread")
+    await f.paint()
+    assert.equal(time(), null, "a status indicator hides it")
+    tab.removeAttribute("data-status")
+    await f.paint()
+    assert.equal(time()?.textContent, "5m")
+    assert.deepEqual([...f.intervals.values()].map((i) => i.ms), [30_000], "one 30s timer, not one per row")
+    assert.equal(f.calls.message, 1, "messages synced once per thread")
+    f.stop()
+    assert.equal(f.intervals.size, 0)
+    assert.equal(f.document.querySelector("[data-sidebar-time]"), null)
+  } finally { await f.close() }
 })

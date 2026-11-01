@@ -1,3 +1,5 @@
+import { lastActiveTitle } from "./rowtime"
+
 export function basename(path: string) {
   return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? ""
 }
@@ -95,6 +97,8 @@ export function badges(
 
     const visible = display?.(badge, full) ?? full
     if (badge.textContent !== visible) badge.textContent = visible
-    if (badge.title !== full) badge.title = full
+    const active = lastActiveTitle(owner)
+    const tip = active ? `${full}\n${active}` : full
+    if (badge.title !== tip) badge.title = tip
   }
 }
