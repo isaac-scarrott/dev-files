@@ -405,7 +405,6 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
                   onBlur={() => setPointed(undefined)}
                   onKeyDown={keys}
                 >
-                  <span data-timeline-rail-line aria-hidden="true" />
                   <Index each={list()}>
                     {(_, index) => (
                       <span
@@ -497,15 +496,6 @@ const CSS = `
   user-select: none;
 }
 [data-timeline-rail-strip]:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-border-border-focus); }
-[data-timeline-rail-line] {
-  position: absolute;
-  top: 0;
-  left: ${STRIP_LEFT}px;
-  width: 1px;
-  height: 100%;
-  background: color-mix(in srgb, var(--v2-text-text-faint) 15%, transparent);
-  pointer-events: none;
-}
 /* One span per prompt: 24px wide, drawn at a third of that at rest, scaled by index distance from the pointer.
    The colour is a node background, so only transform and the overlay's opacity ever change. */
 [data-timeline-rail-tick] {

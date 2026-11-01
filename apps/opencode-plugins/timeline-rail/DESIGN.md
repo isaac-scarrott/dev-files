@@ -43,8 +43,8 @@ one `<span>` per prompt, `h-0.5 w-6` (2x24px) `origin-left`, scale-x by index di
 0 -> 1, 1 -> 0.667, 2 -> 0.417, otherwise 0.333 (8px at rest). Colour `muted-foreground/25` at rest, `/60` for the active one.
 `transition-transform duration-150` (Tailwind default curve). **In view** = `after:` overlay `foreground/55` fades in
 (opacity 150ms) for each prompt whose **own user row** intersects the viewport (`isTimelineMinimapRowVisible`,
-`resolveTimelineMinimapVisibleRange`). There is no separate "current" tick colour. A 1px hairline (`border/15`) runs
-the strip's height at `left-3` (12px inside the strip). Only transform and opacity animate.
+`resolveTimelineMinimapVisibleRange`). There is no separate "current" tick colour. Only transform and opacity animate. There is no
+vertical line beside the ticks (t3-code draws a `border/15` hairline; dropped by choice).
 
 **Hover, card, keyboard** (same file, 60-153, 188-258):
 - One `<button aria-label="Jump to message: <active text or 'User message'>">` covers the strip. `mousemove` sets the
@@ -187,8 +187,7 @@ Motion is t3-code's, nothing added: `transform` on the ticks (150ms, Tailwind's 
 own (150ms). Only `transform` and `opacity`; nothing runs until `data-armed`. The card and its removal are instant.
 
 - Ticks use the host's text scale: `--v2-text-text-faint` at 45% at rest, `--v2-text-text-base` at 60% for the pointed
-  one and in full for in-view ticks (t3-code: `muted-foreground` 25% / 60% and `foreground` 55%). A 1px hairline at 15%
-  runs the strip's height at 12px in, as t3-code's `bg-border/15`. `:focus-visible` outlines with
+  one and in full for in-view ticks (t3-code: `muted-foreground` 25% / 60% and `foreground` 55%). `:focus-visible` outlines with
   `--v2-border-border-focus`.
 - The jump itself is the plugin's: the final screen is tweened by `tween.ts`, one `scrollTop` write per frame along
   `1 - (1 - t)^4`, 180ms plus 0.12ms per px, capped at 420ms; a wheel, touch, pointer-down or key on the scroller stops
