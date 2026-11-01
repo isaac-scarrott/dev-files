@@ -62,9 +62,8 @@ export class Monitors {
         await Promise.all(mine.map((monitor) => monitor.stop(`session ${sessionID} was archived or deleted`)));
     }
     /**
-     * Monitors from a previous run. Only those with a re-arm schedule come back, and the first wake says so. The rest are
-     * forgotten, because a command nobody asked for in this run must not start by itself, and their session is told once
-     * that they are gone.
+     * Monitors from a previous run. Every one still within its ttl and event cap comes back (its command starts fresh) and
+     * the first wake says so. The rest are forgotten and their session is told once that they are gone.
      */
     async restore() {
         const { store, clock, log, sessions, options } = this.deps;
@@ -83,10 +82,7 @@ export class Monitors {
                 if (notify && active)
                     await this.announceLost(def, previous);
             };
-            if (def.rearmMinutes === undefined) {
-                await forget("no re-arm schedule, so it does not survive a restart", true);
-            }
-            else if (def.expiresAt <= now) {
+            if (def.expiresAt <= now) {
                 await forget("its time limit passed", true);
             }
             else if (def.maxEvents !== undefined && (previous?.events ?? 0) >= def.maxEvents) {

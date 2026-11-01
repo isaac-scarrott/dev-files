@@ -26,8 +26,9 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   archived/deleted (`session.archived`, `session.deleted`), 3 failed wakes in a row, and dispose.
 - **Persistence**: definitions under `monitor/def/<id>`, never output. Run state under `monitor/state/<id>`: `seq`, `restartCount`,
   `events`, `lastEventAt`, `aliveAt` (heartbeat every 60 s, each wake, and clean shutdown), `lastRearmAt`, `nextRearmAt`. Writes per monitor are serialized
-  and the state is removed with the definition. Missing state (older entries) reads as: unknown downtime start, due re-arm. On startup only entries with a re-arm
-  schedule, an unexpired TTL and an active session come back, and the first wake says so. The plugin loads once per
+  and the state is removed with the definition. Missing state (older entries) reads as: unknown downtime start, due re-arm. On startup every entry with an unexpired TTL, events under `maxEvents` and an active session comes back (re-arm or not;
+  without a schedule the command just starts fresh and has no re-arm clock), and the first wake says so. A stopped
+  monitor has no state left, so it stays stopped. The plugin loads once per
   directory and instances share storage, so each stores its `origin` directory and restores only its own.
 - **Process**: `$SHELL -c command`, `detached` so it leads a process group; kill signals `-pid`. After the leader exits the
   group gets a final SIGKILL for strays. Output is drained for at most 300 ms after exit.
@@ -39,7 +40,7 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   "unknown"). Decision: event `seq` is persisted and continues across restarts (rather than labelling notices apart), so a
   `seq` identifies one wake of a monitor for good; `restart` counts service restarts. Only the notice carries `restart`.
   Output stays escaped (`>` as `&gt;`) and nothing about delivery is mentioned.
-- **Lost at restart**: a definition that is not restored (no re-arm, TTL passed, `maxMonitors` hit) wakes its session
+- **Lost at restart**: a definition that is not restored (TTL passed, `maxEvents` reached, `maxMonitors` hit) wakes its session
   once with a `<monitor-notice>`: gone, can be started again. The stored entry is removed before the wake, so repeated
   restarts or a failed wake never announce it twice. Archived/deleted sessions get nothing.
 - **TTL**: `expiresAt` is stored absolute and set once at the first start. Re-arms and restarts never move it (tested). Expiry

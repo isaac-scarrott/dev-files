@@ -105,7 +105,7 @@ export class Monitor {
     }
     this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - now))
     this.heartbeatTimer = clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS)
-    this.spawnRun({ rearmed: resume !== undefined && keepMark === undefined, mark: keepMark })
+    this.spawnRun({ rearmed: resume !== undefined && this.def.rearmMinutes !== undefined && keepMark === undefined, mark: keepMark })
     if (resume) this.scheduleFlush()
   }
 
