@@ -70,3 +70,8 @@ esc = 'mode main'
     outer.top =        0
     outer.right =      10
 
+
+# Cua Driver automation targets live on workspace Z (unbound, never visited) so background clicks cannot switch the visible workspace.
+[[on-window-detected]]
+if.app-id = 'com.apple.calculator'
+run = ['layout floating', 'move-node-to-workspace Z']

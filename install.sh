@@ -108,10 +108,13 @@ LINKS=(
   "$HOME/.config/opencode/skills/writing-for-agents|.claude/skills/writing-for-agents"
   "$HOME/.config/opencode/skills/x-shot|.claude/skills/x-shot"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
+  "$HOME/.config/opencode/agent/computer.md|.config/opencode/agent/computer.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
   "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
+  "$HOME/.config/opencode/command/babysit-ci.md|.claude/commands/babysit-ci.md"
+  "$HOME/.config/opencode/command/babysit-comments.md|.claude/commands/babysit-comments.md"
 
   # Codex — shares ~/.codex across CLI, IDE extension, and desktop app.
   # Same canonical AGENTS.md and SKILL.md sources as Claude/OpenCode (zero copies).
