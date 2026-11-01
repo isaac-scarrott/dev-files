@@ -232,20 +232,27 @@ when the child went idle after that time, so the queued prompt is not mistaken f
 
 - **Tools and instructions** use public server APIs (`ctx.tool.transform`, `ctx.session.hook`). The tools overlap the host's subagent and task concept; "API gaps in 2.2.5" says why a separate set is needed.
 - **The peer-message row** is DOM on timeline rows: message parts have no extension point ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)), and the host's team rules out timeline-row work, so the row is decorated in place by observing the timeline.
+- **Observer scope**: only the timeline scroll regions are observed, not `document.body`, and nothing runs while no open session holds a peer message. A row the host adds is swapped inside the mutation callback, before paint, by searching only the added nodes; a row whose content slot is not mounted yet is retried on the next frame. Measured in "Performance". There is no extension point that replaces the observer.
+- **Options table (OT-4)** in the README already lists `defaultWaitMs`, `maxWaitMs`, `maxWaitSessions`, `maxReadChars`, `messageLimit` and the `"tree"` scope; checked against `src/options.ts`, nothing to add.
 - **Motion**: the row expands instantly, like the host's collapsibles. The arrow and open-button reveal use `opacity`/`transform` 150ms `ease`; whether that matches the host's subagent row chevron is not verified, and `ease` is not on the animation reference's curve list. Open question for the user.
 - **Scope default** is `tree`; `all` lets any agent message or interrupt any session (see "Safety properties").
 
 ## Performance
 
-Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated harness app, 9 open tabs (a 500-turn session, six 30-turn sessions, a 60-turn session with a peer message every 10 turns, Side tabs layout), no model; median of 3 runs of one script per row, CDP `Performance.getMetrics` per second, `MutationObserver` callbacks counted through a patched constructor. Idle is 30s untouched; scroll is 5s of 900px steps per frame; stream appends one node per frame to the last timeline row for 8s; switch is 10 tab switches. Script ms/s is main-thread scripting; busy ms/s is all main-thread task time. The bar in performance.md says "within 3% of bare scripting time"; read here as 3 points of main-thread time, since bare scripting in a switch is under 1%.
 
-Standing cost, read from the source (not measured):
-- A `MutationObserver` on `document.body` whose callback runs `decorate()` synchronously for any record with added nodes: `sweep()`, `peers()` and a document-wide `querySelectorAll` per streamed node (`src/gui.tsx`).
-- A `peers` memo that walks every message of every open session on any message-store change.
-- One `ResizeObserver` and `MutationObserver` per expanded row.
-
-| Scenario | Bare | With plugin | Delta | Bar | Result |
+| Scenario | Bare (script / busy ms/s) | Before | After | Bar | Result |
 | --- | --- | --- | --- | --- | --- |
-| idle | | | | zero callbacks | not measured |
-| streaming reply | | | | within 3% scripting | not measured |
-| 10 session switches | | | | within 3% scripting | not measured |
+| idle (30s) | 0.1 / 2.4, 0 observer callbacks | 0.0 / 2.3, 0 callbacks | 0.1 / 2.4, 0 callbacks | zero callbacks | PASS |
+| scroll (5s) | 514.8 / 996.8 | 515.1 / 995.6 | 511.2 / 997.8 | within 3% | PASS |
+| stream (8s) | 6.0 / 308.7; observer time 22.7ms | 11.8 / 366.9; observer time 69.8ms | 6.7 / 316.6; observer time 29.0ms | within 3% | PASS (observer time +6ms per 8s; before +47ms) |
+| 10 switches | 9.4 / 142.3 | 10.8 / 155.2 | 11.8 / 145.3 | within 3% | PASS (+3 busy points at most; run-to-run noise on bare is 127 to 153) |
+
+Not measured: a streaming reply inside a session that has a running tool (the harness has no model, so the stream is DOM nodes added per frame); a session with hundreds of peer messages. The peer row itself was checked in the harness on a seeded session: scrolling through it, every peer user message in view had its card by the frame it was shown (8 of 8, none missing).
+
+What changed, in order of effect:
+- The observer moved from `document.body` to the timeline scroll regions (`[data-slot='session-timeline-scroll']`), found again for 12 frames after the routed session changes, since cached timelines stay mounted and a new one arrives with a switch.
+- Its callback does nothing while no open session holds a peer message, and otherwise searches only the added nodes for rows. The whole-document `querySelectorAll` and `sweep()` per record are gone; one rAF per peers change does the full scan, the sweep and the retry for a row whose content slot was not there yet.
+- `createUniqueId()` replaces the module counter; `createKeyed` replaces the `createEffect`.
+
+Standing cost left: the `peers` memo walks every message of every open session on any message-store change (OT-2, tracked separately), and one `ResizeObserver` and `MutationObserver` per mounted peer row.

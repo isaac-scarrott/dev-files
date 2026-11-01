@@ -48,11 +48,11 @@ function fixture() {
   }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
-  document.body.innerHTML = `<div data-tab-key="a" data-orientation="vertical">
+  document.body.innerHTML = `<div data-slot="vertical-tabs"><div data-tab-key="a" data-orientation="vertical">
     <div data-titlebar-tab data-orientation="vertical" data-status="attention">
       <a data-slot="tab-link"><span data-slot="project-avatar-slot"><img src="repo.png"></span><span data-slot="tab-title">Original</span></a>
       <div data-slot="tab-status"><span data-mark="attention"></span><span data-mark="unread"></span><svg data-busy-ring></svg></div>
-    </div></div>`
+    </div></div></div>`
   const [hydrated, setHydrated] = createSignal(false)
   const [requests, setRequests] = createSignal<{ permissions?: unknown[]; forms?: unknown[] }>({})
   const [branch, setBranch] = createSignal("main")
@@ -192,6 +192,33 @@ test("cleanup cancels pending frames, removes contributions and reload leaves on
     assert.equal(f.document.querySelectorAll("[data-sidebar-status-icon]").length, 2)
     assert.ok(f.iconNames.includes("warning") && f.iconNames.includes("help"))
     assert.equal(f.frames.size, 0)
+  } finally { await f.close() }
+})
+
+test("only the sidebar tab region is observed, and a replaced region is found again", async () => {
+  const f = fixture()
+  try {
+    f.setSessions([f.session]); f.setTabs([{ key: "a", session: f.session }]); f.setHydrated(true)
+    f.start()
+    await f.paint()
+    // A streaming reply elsewhere adds nodes every frame and must schedule nothing.
+    const timeline = f.document.createElement("div")
+    f.document.body.append(timeline)
+    for (let i = 0; i < 20; i++) timeline.append(f.document.createElement("span"))
+    await f.deliver()
+    assert.equal(f.frames.size, 0)
+    // The sidebar remounts: the new region is observed once a frame notices it is gone.
+    const region = f.document.querySelector("[data-slot='vertical-tabs']")!
+    const next = region.cloneNode(true) as typeof region
+    next.querySelector("[data-sidebar-repo]")?.remove()
+    region.replaceWith(next)
+    f.setTabs([{ key: "a", session: f.session }])
+    await f.paint()
+    await f.paint()
+    assert.equal(next.querySelectorAll("[data-sidebar-repo]").length, 1)
+    next.querySelector("[data-tab-key]")!.setAttribute("data-tab-key", "z")
+    await f.deliver()
+    assert.equal(f.frames.size, 1)
   } finally { await f.close() }
 })
 
