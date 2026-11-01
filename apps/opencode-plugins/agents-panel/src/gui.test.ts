@@ -7,6 +7,7 @@ import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
 import { styles } from "./panel"
+import { spinnerCss } from "../../native-ui/src"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 type Info = { id: string; parentID?: string; agent?: string; title?: string; time: { created: number; busy?: number } }
@@ -68,11 +69,13 @@ function fixture() {
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
   const [mode, setMode] = createStore({ enabled: true })
+  const [route, setRoute] = createSignal("/settings")
   const [sideOpen, setSide] = createSignal(false)
   const [dockStore, setDockStore] = createStore({ visible: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
+    router: { path: () => route(), routing: () => false },
     sessions: { current: mounted },
     layout: { ready: () => true, side: { opened: () => sideOpen() } },
     tabs: {
@@ -111,7 +114,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setRoute, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -349,31 +352,15 @@ test("close subagent tabs: closes child-session tabs, never the active or routed
   f.stop()
 })
 
-test("automatic cleanup runs once per load, after every tab's session is known", async () => {
+test("loading the plugin closes no tab; only the command does", async () => {
   const f = fixture()
   fixtureServer = () => f.server
   f.start()
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
   f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c1", "c1")])
   await f.flush()
   assert.deepEqual(f.calls.closed, [])
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c9", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  assert.equal(f.calls.toasts.length, 1)
-  f.stop()
-})
-
-test("automatic cleanup waits until a tab is on screen, so the viewed tab is never judged blind", async () => {
-  const f = fixture()
-  fixtureServer = () => f.server
-  f.start()
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  f.setTabList([tab("t-parent", "parent"), tab("t-c1", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, [])
+  assert.equal(f.calls.toasts.length, 0)
   f.stop()
 })
 
@@ -430,6 +417,43 @@ test("setting: a fifth option clones the host's markup and sits after the host o
   assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
   assert.equal(ours.getAttribute("aria-selected"), "false")
   assert.equal(f.doc.getElementById("o-center")!.hasAttribute("data-selected"), true)
+  f.stop()
+})
+
+const REAL = readFileSync(new URL("../test/fixtures/settings-background-activity.html", import.meta.url), "utf8")
+
+test("setting: the host's real markup (select in the page, listbox in a body portal) gets the fifth option", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  const ours = option(f)!
+  assert.ok(ours)
+  assert.equal(ours.parentElement!.id, "select-cl-29-listbox")
+  assert.equal(ours.parentElement!.lastElementChild, ours)
+  assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
+  assert.equal(f.doc.querySelectorAll("[data-agents-option]").length, 1)
+  f.stop()
+})
+
+test("setting: off Settings nothing is injected or observed; arriving there injects, leaving stops", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.setRoute("/")
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  assert.equal(option(f), null, "no option on another route")
+  f.setRoute("/settings")
+  await settle()
+  assert.ok(option(f), "option appears once Settings is the route")
+  f.setRoute("/")
+  await settle()
+  option(f)!.remove()
+  f.doc.getElementById("select-cl-29-listbox")!.append(f.doc.createElement("li"))
+  await settle()
+  assert.equal(option(f), null, "a mutation off Settings is not observed, so nothing is put back")
   f.stop()
 })
 
@@ -492,6 +516,26 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   f.stop()
   assert.equal(option(f), null)
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
+})
+
+test("setting: listeners live on the listbox, none on the document", async () => {
+  const f = fixture()
+  f.start()
+  const doc = f.doc as unknown as Document
+  const added: string[] = []
+  const original = doc.addEventListener.bind(doc)
+  doc.addEventListener = ((type: string, ...rest: unknown[]) => { added.push(type); return (original as any)(type, ...rest) }) as never
+  f.doc.body.innerHTML = HOST_LIST("off")
+  await settle()
+  assert.ok(option(f))
+  assert.deepEqual(added, [])
+  f.stop()
+})
+
+test("styles: the header reorder applies only beside our toggle; spinner keyframes ship with the stylesheet", () => {
+  assert.ok(!styles.includes(".session-header-actions > :has("))
+  assert.match(styles, /\.session-header-actions:has\(\[data-agents-toggle\]\) > :has\(/)
+  assert.match(spinnerCss, /@keyframes spinner-radar-/)
 })
 
 // The right side region: `ctx.layout.side.opened(session)` is the host's reactive answer (2.2.5: the session's shell tab has

@@ -9,17 +9,11 @@ const keyframes = "spinner-radar"
 
 const dots = radarDots()
 
-let added = false
+/** The spinner's keyframes. Register once with `ctx.add(Style, spinnerCss)` (`nativeUiCss` includes it). */
+export const spinnerCss = radarKeyframes(keyframes)
 
 export function ProgressSpinner(props: ComponentProps<"svg">) {
   const [local, rest] = splitProps(props, ["class"])
-
-  if (!added) {
-    added = true
-    const style = document.createElement("style")
-    style.textContent = radarKeyframes(keyframes)
-    document.head.append(style)
-  }
 
   return (
     <svg

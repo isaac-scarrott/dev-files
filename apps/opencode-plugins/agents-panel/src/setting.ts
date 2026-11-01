@@ -6,6 +6,8 @@ export type BackgroundOption = {
   label: string
   /** Whether "Panel" is the chosen mode. Reactive reads are fine; it is polled on every pass. */
   enabled(): boolean
+  /** Whether the Settings page is the route. The page mounts inside the app root, so nothing is observed outside it. */
+  active(): boolean
   set(enabled: boolean): void
 }
 
@@ -19,6 +21,9 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
   let committing = false
   let queued = false
   let disposed = false
+  // Listeners live on the listbox they serve and go with it; one signal releases them all on cleanup.
+  const lifetime = new AbortController()
+  const wired = new WeakSet<Element>()
 
   const hostItems = (list: Element) => [...list.querySelectorAll<HTMLElement>(`[role="option"]:not([${OPTION}])`)]
   const mark = (nodes: Element[], on: boolean) => {
@@ -88,6 +93,7 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
   }
 
   const sync = () => {
+    if (!option.active()) return
     const root = document.querySelector<HTMLElement>(ROOT)
     const on = option.enabled()
     if (!root) return
@@ -109,6 +115,7 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
 
     const list = document.getElementById(`${root.id}-listbox`)
     if (!list) return
+    wire(list)
     const built = list.querySelector<HTMLElement>(`[${OPTION}]`) ?? build(list)
     if (!built) return
     const ours = built
@@ -132,12 +139,10 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
 
   // A host option picked while the mode is on leaves the mode: capture runs before Kobalte's own handler.
   const leave = (event: Event) => {
-    if (committing) return
+    if (committing || !option.enabled()) return
     const item = (event.target as Element | null)?.closest?.('[role="option"]')
     if (!item || item.hasAttribute(OPTION)) return
     if (event.type === "keydown" && (event as KeyboardEvent).key !== "Enter" && (event as KeyboardEvent).key !== " ") return
-    const list = item.closest('[role="listbox"]')
-    if (!list || !document.querySelector(ROOT) || list.id !== `${document.querySelector(ROOT)!.id}-listbox`) return
     option.set(false)
   }
   // ArrowDown past the last host option reaches ours, which Kobalte's collection does not know.
@@ -162,21 +167,35 @@ export function installBackgroundOption(option: BackgroundOption): (() => void) 
     ours.tabIndex = -1
   }
 
-  const observer = new MutationObserver(schedule)
-  observer.observe(document.body, { childList: true, subtree: true })
-  for (const type of ["pointerup", "keydown"]) document.addEventListener(type, leave, true)
-  document.addEventListener("keydown", down, true)
-  for (const type of ["pointermove", "focusin"]) document.addEventListener(type, release, true)
-  schedule()
+  const wire = (list: Element) => {
+    if (wired.has(list)) return
+    wired.add(list)
+    const opts = { capture: true, signal: lifetime.signal }
+    for (const type of ["pointerup", "keydown"]) list.addEventListener(type, leave, opts)
+    list.addEventListener("keydown", down as EventListener, opts)
+    for (const type of ["pointermove", "focusin"]) list.addEventListener(type, release, opts)
+  }
+
+  // Observed only while Settings is the route: its page mounts inside the app root, and its select popup is a portal under
+  // <body>. On any other page nothing is observed and no listener exists.
+  const isOwn = (node: Node) => node.nodeType !== 1 || (node as Element).matches(`[${OPTION}], [data-agents-value]`)
+  const watching = new MutationObserver((records) => {
+    if (records.some((record) => [...record.addedNodes, ...record.removedNodes].some((node) => !isOwn(node)))) schedule()
+  })
+  const refresh = () => {
+    if (disposed) return
+    if (option.active()) watching.observe(document.body, { childList: true, subtree: true })
+    else watching.disconnect()
+    schedule()
+  }
+  refresh()
 
   const dispose = () => {
     disposed = true
-    observer.disconnect()
-    for (const type of ["pointerup", "keydown"]) document.removeEventListener(type, leave, true)
-    document.removeEventListener("keydown", down, true)
-    for (const type of ["pointermove", "focusin"]) document.removeEventListener(type, release, true)
+    watching.disconnect()
+    lifetime.abort()
     for (const node of document.querySelectorAll(`[${OPTION}], [data-agents-value]`)) node.remove()
     for (const node of document.querySelectorAll(`[${ON}]`)) node.removeAttribute(ON)
   }
-  return Object.assign(dispose, { refresh: schedule })
+  return Object.assign(dispose, { refresh })
 }

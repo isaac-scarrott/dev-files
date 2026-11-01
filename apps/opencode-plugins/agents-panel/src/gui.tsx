@@ -1,7 +1,8 @@
 import { Command, Plugin, Slot, Store, Style } from "@opencode/plugin/gui"
 import { Schema } from "effect"
 import { createEffect, onCleanup, Show } from "solid-js"
-import { cleanupOnce, closeSubagentTabs } from "./cleanup"
+import { closeSubagentTabs } from "./cleanup"
+import { spinnerCss } from "../../native-ui/src"
 import { styles } from "./panel"
 import { installBackgroundOption } from "./setting"
 import { SubagentsToggle } from "./toggle"
@@ -16,11 +17,12 @@ export default Plugin.define({
     dock: Store.global(Schema.Struct({ visible: Schema.Boolean }), { visible: false }),
   },
   setup(ctx) {
-    ctx.add(Style, styles)
+    ctx.add(Style, `${styles}\n${spinnerCss}`)
     const enabled = () => ctx.stores.mode.value.enabled
     const background = installBackgroundOption({
       label: OPTION_LABEL,
       enabled,
+      active: () => ctx.router.path().startsWith("/settings"),
       set: (value) => {
         if (value !== enabled()) ctx.stores.mode.update((draft) => { draft.enabled = value })
       },
@@ -28,6 +30,7 @@ export default Plugin.define({
     onCleanup(background)
     createEffect(() => {
       enabled()
+      ctx.router.path()
       background.refresh()
     })
 
@@ -48,9 +51,6 @@ export default Plugin.define({
         closeSubagentTabs(ctx)
       },
     })
-
-    const cleanup = cleanupOnce(ctx)
-    createEffect(cleanup)
 
     ctx.add(Slot, {
       at: "session.header",
