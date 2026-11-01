@@ -94,7 +94,7 @@ function fixture() {
   }
   const registered = (kind: string) => added.filter((entry) => entry.kind === kind).map((entry) => entry.item)
   const header = (active = true) => {
-    doc.body.innerHTML = `<div id="header"></div>`
+    doc.body.innerHTML = `<div data-slot="session-chat-panel"><div id="card"><div data-slot="session-dropzone-blur"></div><div id="header"></div></div></div>`
     createRoot((stop) => {
       const previousDispose = dispose
       dispose = () => { stop(); previousDispose() }
@@ -491,6 +491,7 @@ test("dock: with the sidebar open the button shows and hides the window, remembe
   assert.equal(dockEl(f).dataset.state, "open")
   assert.equal(dockEl(f).hasAttribute("inert"), false)
   assert.equal(inset(f), "328px")
+  assert.ok(f.doc.getElementById("card")!.contains(dockEl(f)), "the window is mounted inside the chat card")
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.toggle().getAttribute("aria-controls"), "agents-dock")
   assert.equal(f.toggle().getAttribute("aria-expanded"), "true")
@@ -506,17 +507,14 @@ test("dock: with the sidebar open the button shows and hides the window, remembe
   assert.equal(inset(f), "")
 })
 
-test("dock: the window's own close button hides it", async () => {
+test("dock: the window has no close button; only the header button hides it", async () => {
   const f = fixture()
   f.start()
   f.header()
   await sidebar(f, "open")
   f.toggle().click()
   await f.flush()
-  ;(dockEl(f).querySelector("[data-slot=agents-heading-close] button") as HTMLButtonElement).click()
-  await f.flush()
-  assert.equal(f.dockStore.visible, false)
-  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 

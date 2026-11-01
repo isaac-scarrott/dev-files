@@ -1,8 +1,13 @@
 import { createSignal, onCleanup } from "solid-js"
 
-/** The window's width, and the gap that keeps the chat card off it. */
+/** The window's width, and its inset from the chat card's end edge (the card reserves both, so the chat ends where the window starts). */
 export const DOCK_WIDTH = 320
-export const DOCK_GAP = 8
+export const DOCK_INSET = 8
+
+const CARD = "[data-slot=session-chat-panel]"
+
+/** The chat card: the rounded surface holding header, timeline and composer, the first child of the chat panel. */
+export const chatCard = (from: Element) => from.closest(CARD)?.firstElementChild ?? undefined
 
 const SIDEBAR = "[data-slot=vertical-tabs-sidebar]"
 
@@ -34,5 +39,5 @@ export function createSidebarOpen() {
 /** What the header button does, and whether the floating window is on screen. */
 export function dockState(input: { enabled: boolean; sidebarOpen: boolean; visible: boolean }) {
   const docked = input.enabled && input.sidebarOpen
-  return { docked, shown: docked && input.visible, inset: docked && input.visible ? DOCK_WIDTH + DOCK_GAP : 0 }
+  return { docked, shown: docked && input.visible, inset: docked && input.visible ? DOCK_WIDTH + DOCK_INSET : 0 }
 }

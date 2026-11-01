@@ -127,7 +127,7 @@ test("setup survives empty host APIs and unhydrated stores, then follows hydrati
     f.setHydrated(true)
     f.setRequests({ permissions: [], forms: [{}] })
     await f.paint()
-    assert.equal(f.document.querySelector("[data-sidebar-repo]")?.textContent, "repository · main")
+    assert.equal(f.document.querySelector("[data-sidebar-repo]")?.textContent, "repository")
     assert.equal(f.document.querySelector("[data-titlebar-tab]")?.getAttribute("data-sidebar-attention"), "question")
     assert.equal(f.document.defaultView!.getComputedStyle(dot).display, "none")
     f.setRequests({ permissions: [{}], forms: [{}] })
@@ -136,11 +136,11 @@ test("setup survives empty host APIs and unhydrated stores, then follows hydrati
     f.setRequests({})
     await f.paint()
     assert.notEqual(f.document.defaultView!.getComputedStyle(dot).display, "none")
-    assert.deepEqual(f.calls, { vcs: 1, permission: 1, form: 1, message: 1 })
+    assert.deepEqual(f.calls, { vcs: 0, permission: 1, form: 1, message: 1 })
   } finally { await f.close() }
 })
 
-test("setup follows branch, rename, row replacement and switching without self-write frames", async () => {
+test("setup ignores the branch, follows rename, row replacement and switching without self-write frames", async () => {
   const f = fixture()
   try {
     f.setSessions([f.session]); f.setTabs([{ key: "a", session: f.session }]); f.setHydrated(true)
@@ -155,7 +155,7 @@ test("setup follows branch, rename, row replacement and switching without self-w
     await f.paint()
     assert.equal(title.textContent, "Renamed")
     assert.equal(f.document.querySelector("img"), avatar)
-    assert.equal(f.document.querySelector("[data-sidebar-repo]")?.textContent, "repository · feature/rename")
+    assert.equal(f.document.querySelector("[data-sidebar-repo]")?.textContent, "repository")
     assert.ok(f.document.querySelector("[data-busy-ring]"))
     assert.ok(f.document.querySelector("[data-mark='unread']"))
     const old = f.document.querySelector("[data-titlebar-tab]")!

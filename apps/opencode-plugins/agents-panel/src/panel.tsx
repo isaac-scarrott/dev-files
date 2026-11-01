@@ -38,7 +38,7 @@ export function createSubagents(session: () => MountedSession) {
   })
 }
 
-export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession; onClose?: () => void }) {
+export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }) {
   const rows = createSubagents(props.session)
   const now = createClock(() => rows().length > 0)
 
@@ -70,11 +70,6 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession; 
         <span>Subagents</span>
         <span aria-hidden="true">·</span>
         <span data-agents-count>{rows().length} running</span>
-        <Show when={props.onClose}>
-          <span data-slot="agents-heading-close">
-            <props.ctx.ui.IconButton icon="outline-xmark" size="small" variant="ghost-muted" label="Hide subagents" onClick={() => props.onClose?.()} />
-          </span>
-        </Show>
       </div>
       <div data-agents-list>
         <For each={rows()}>
@@ -155,7 +150,6 @@ export const styles = `
     display: flex; gap: 4px; padding: 4px 6px 2px; font-size: 12px; font-weight: 440; line-height: 16px;
     letter-spacing: -.04px; color: var(--v2-text-text-muted); font-variant-numeric: tabular-nums;
   }
-  [data-slot=agents-heading-close] { margin-inline-start: auto; margin-block: -4px -2px; }
   [data-agents-empty] { padding: 8px 6px; font-size: 13px; color: var(--v2-text-text-muted); }
   [data-agents-row] { cursor: default; }
   [data-agents-row]:is(:hover, :focus-visible) { background: var(--menu-v2-hover); }
@@ -183,14 +177,18 @@ export const styles = `
     position: static; display: flex; flex-direction: column; min-width: 0; width: 100%; max-height: min(270px, 50vh);
     overflow-y: auto; box-sizing: border-box; padding: 0;
   }
-  /* The dock: a fixed card on the end side, below the header row (the host's Toggle review button sits at the card's end corner, outside the chat row), on the host's menu surface. While it is shown the chat row
-     reserves its width, animated with the sidebar's own curve (the host drives the sidebar width in JS, 250ms). The
-     chat row is found by its child, since the host's utility classes carry no stable hook. */
+  /* The dock: an elevated surface inside the chat card, end side, below the header row, on the host's menu surface. The
+     card clips it to its rounded corners. While it is shown the card reserves its width plus its own inset as end
+     padding, so the header, timeline and composer re-centre in the free width; the transition uses the sidebar's own
+     curve (the host drives the sidebar width in JS, 250ms). The card is found by its dropzone child, since the host's
+     utility classes carry no stable hook. */
   :root { --agents-dock-inset: 0px; --agents-dock-ease: cubic-bezier(0.2, 0.8, 0.2, 1); }
-  :has(> [data-slot=session-chat-panel]) { padding-inline-end: var(--agents-dock-inset); transition: padding-inline-end 250ms var(--agents-dock-ease); }
+  :has(> [data-slot=session-dropzone-blur]) { padding-inline-end: var(--agents-dock-inset); transition: padding-inline-end 250ms var(--agents-dock-ease); }
+  /* Portal's wrapper div must not take part in the card's flex layout. */
+  div:has(> [data-agents-dock]:only-child) { display: contents; }
   [data-agents-dock] {
-    position: fixed; z-index: 60; top: calc(var(--shell-top-inset, 8px) + 56px); right: var(--shell-inline-inset, 8px); width: 320px;
-    max-height: min(420px, calc(100vh - 80px)); display: flex; outline: none;
+    position: absolute; z-index: 60; top: 56px; right: 8px; width: 320px;
+    max-height: min(420px, calc(100% - 64px)); display: flex; outline: none; user-select: auto;
     transform: translateX(16px); opacity: 0; visibility: hidden; pointer-events: none;
     transition: transform 250ms var(--agents-dock-ease), opacity 150ms var(--agents-dock-ease), visibility 0s 250ms;
   }
@@ -201,7 +199,7 @@ export const styles = `
   }
   [data-agents-dock] [data-agents-panel] { padding: 2px; }
   @media (prefers-reduced-motion: reduce) {
-    :has(> [data-slot=session-chat-panel]) { transition: none; }
+    :has(> [data-slot=session-dropzone-blur]) { transition: none; }
     [data-agents-dock] { transform: none; transition: opacity 150ms var(--agents-dock-ease), visibility 0s 150ms; }
   }
   /* Settings > Background activity: with the mode on, the host's value is "Hidden" underneath. Show the mode's name

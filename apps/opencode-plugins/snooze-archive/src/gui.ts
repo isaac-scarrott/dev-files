@@ -235,9 +235,7 @@ export default Plugin.define({
       else void deleteAction(server, target.id)
     }
     // Cold stores may lack the session or its project; the letter then falls back to the fallback name.
-    // Same label as the live rows (sidebar-repos): the project's name, falling back to the folder, then ` · branch`. The
-    // branch is only known once the location's VCS state is synced, so each directory is synced once.
-    const synced = new Set<string>()
+    // Same label as the live rows (sidebar-repos): the project's name, falling back to the folder name.
     const repoLabel = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") => {
       const data = ctx.servers.get(server)?.data
       const directory = info?.location?.directory ?? fallback
@@ -245,13 +243,7 @@ export default Plugin.define({
       try { canonical = info?.projectID ? data?.project.get(info.projectID)?.canonical : undefined } catch {}
       const path = canonical ?? directory
       const name = path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path
-      let branch: string | undefined
-      if (info?.location && data) {
-        try { branch = data.location.vcs.info(info.location as never)?.branch.current } catch {}
-        const key = `${server}\n${directory}`
-        if (!synced.has(key)) { synced.add(key); try { void data.location.vcs.sync(info.location as never).catch(() => synced.delete(key)) } catch {} }
-      }
-      return branch ? `${name} · ${branch}` : name
+      return name
     }
     const avatarOf = (server: string, info: { projectID?: string; location?: { directory: string } } | undefined, fallback = "") =>
       avatarFor(info?.projectID ? ctx.servers.get(server)?.data.project?.get(info.projectID) : undefined, info?.location?.directory ?? fallback)
