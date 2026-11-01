@@ -103,6 +103,13 @@ the state is kept apart from `waiting`) and clears it on any event that moves th
 user message, deletion). A stated reset time that has passed also ends it, since an opted-out session has nothing else to
 clear it.
 
+Two details found in the harness. OpenCode retries an opted-out session for minutes before the run fails, so the `retry`
+hook also marks the session limited (it still lets OpenCode retry). And the GUI asks whichever location's instance
+answers, while only the owning instance saw the failure, so the mark is mirrored to shared storage (`limited/<id>`, with
+the next check time) and `get` reads it there. For the same reason the owner learns of a toggle change by reconciling
+waiting with the toggles on each tick (and at once when the call happens to reach it), so a session opted in while
+limited starts waiting within one tick (30 s by default).
+
 States: limited and off is a warning pill "Resume after limit" (click opts in and starts the wait at once); limited and
 on is a success pill "Resuming 14:05" (click opts out); a failed read is a danger pill "Auto-resume unavailable". The
 pill has no `pressed` state, so on and off are told apart by label and tone. Gap: `ComposerPill` has no hover-reveal

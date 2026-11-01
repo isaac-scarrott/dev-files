@@ -169,6 +169,14 @@ test("the pill state: limited only while stopped at a limit, opt in while limite
     })
   try {
     assert.equal((await get("s")).limited, false)
+    // OpenCode retries an opted-out session for a long while before the run fails; the pill must not wait for that.
+    const hook = { sessionID: "s", error: { type: "unknown", message: `Claude Code subscription limit reached (five hour). Resets at ${resetsAt}.` }, decision: { retry: true } } as any
+    await a.retry()!(hook)
+    assert.deepEqual(hook.decision, { retry: true })
+    assert.equal((await get("s")).limited, true)
+    bus.emit({ type: "session.execution.started", created: Date.now(), data: { sessionID: "s" } })
+    await wait(100)
+    assert.equal((await get("s")).limited, false)
     failed("s")
     failed("child")
     await wait(100)
