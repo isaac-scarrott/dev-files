@@ -7,7 +7,7 @@ extracted from `app.asar` (`src/renderer/...`) and at `gui-plugins/src/...`.
 ## What it does
 
 - Press a sidebar session row (a live tab, or a snooze-archive Snoozed/Archived row) and move sideways: a chip with
-  the session's title follows the pointer and the host's own "Drop files to add" overlay rises over the session
+  the session's title follows the pointer and the host's own drop overlay (worded "Drop to attach session") rises over the session
   panel. Release inside the panel: a native "Session" chip (title, speech-bubble icon) joins the composer's context
   row and the prompt takes focus. Release anywhere else, or press Esc: the chip fades out and nothing changes.
 - A vertical move is the host's reorder, untouched. A plain click still switches sessions.
@@ -110,7 +110,7 @@ seeded sessions, side-tabs layout):
 | Check | Result |
 | --- | --- |
 | Press, 2px move | no ghost, no navigation |
-| 8px sideways | ghost enter→active next frame (opacity 0→0.94→1), host overlay `data-visible=true` "Drop files to add", active tab unchanged |
+| 8px sideways | ghost enter→active next frame (opacity 0→0.94→1), host overlay `data-visible=true` "Drop to attach session", active tab unchanged |
 | Release over composer | ghost gone at once, overlay cleared, "Billing export job / Session" chip in context row, prompt focused |
 | Vertical drag of last row | dnd-kit overlay row shown, order changed, dragged row became active at the 6px point (as native) |
 | Plain click on titled inactive row | no switch during a 400ms hold; switch 7ms after release (native: on press) |
@@ -126,4 +126,14 @@ seeded sessions, side-tabs layout):
 - A plain click on an inactive live tab switches on release instead of on press, because the host's `mousedown`
   navigation is held until the gesture is known. Press-and-hold without moving does not switch.
 - Native file drops are accepted anywhere in the document; this drop counts only inside a session panel.
-- The host's overlay says "Drop files to add" for any text drag; the plugin cannot change its label.
+- The host's overlay says "Drop files to add" (or images/PDFs) for any text drag. While our drag is active the plugin
+  words it "Drop to attach session" instead, by CSS only: `html[data-session-drag-label]` collapses the host label
+  (`[data-slot="session-dropzone-content"] > div:not([data-slot])`, the div after the upload icon) to `font-size: 0;
+  line-height: 0` and draws ours in its `::after` as a 24px 15px block, inheriting the host's weight and colour. Solid
+  keeps owning the text node, so reactive label updates cannot undo it. The attribute is set on drag start and removed
+  200ms after it ends (the overlay's fade-out, so the old wording never flashes back), at once on uninstall. Real file
+  drags and other text drags never set it and keep the host wording. Live (harness, overlay lit by a text `dragover`,
+  attribute toggled): host label box 641,486 117.7x24 -> ours 619.8,486 160.4x24 (same y and height, centre 700),
+  upload icon unmoved, 15px/530/24px, same colour and family; removing the attribute restored the exact original
+  boxes. The gesture wiring (set/hold/restore across drop, release outside, Esc, pointercancel, blur, uninstall,
+  foreign drags) is covered by unit tests; the full pointer gesture was not re-run live (side-tabs layout not set up).

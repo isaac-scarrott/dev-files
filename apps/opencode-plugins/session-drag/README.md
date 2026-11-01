@@ -7,7 +7,7 @@ Drag a sidebar session row sideways into the chat to attach it as a "Session" ch
 [Full-quality video](media/demo.mp4)
 
 ## What it does
-- Press a session row in the sidebar (a live tab, or a Snoozed or Archived row from snooze-archive) and move sideways. A chip with the title follows the pointer and the native "Drop files to add" overlay rises over the session.
+- Press a session row in the sidebar (a live tab, or a Snoozed or Archived row from snooze-archive) and move sideways. A chip with the title follows the pointer and the native drop overlay rises over the session, worded "Drop to attach session".
 - Release inside the session: a native "Session" chip joins the composer's context row and the prompt takes focus. Release elsewhere, or press Esc: nothing changes.
 - The model receives `The user referenced session @session:<id> ("title").` The orchestrate tools take that id as is.
 - Clicking the chip opens the session. A vertical move still reorders tabs and a plain click still switches.

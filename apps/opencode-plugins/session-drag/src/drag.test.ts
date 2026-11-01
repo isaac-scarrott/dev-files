@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { GHOST_CLASS, GHOST_OFFSET, installSessionDrag, type DragHost } from "./drag"
+import { GHOST_CLASS, GHOST_OFFSET, LABEL_ATTR, LABEL_HOLD, installSessionDrag, type DragHost } from "./drag"
+import { LABEL, styles } from "./styles"
 import type { SessionTarget } from "./reference"
 
 const win = globalThis.window as unknown as Window & typeof globalThis
@@ -301,4 +302,67 @@ test("uninstall stops listening", () => {
   } finally {
     f.cleanup()
   }
+})
+
+const labelOn = () => doc.documentElement.hasAttribute(LABEL_ATTR)
+const wait = () => new Promise((resolve) => setTimeout(resolve, LABEL_HOLD + 50))
+
+test("the overlay wording is ours only while our drag is active, held through the host's fade, then restored", async () => {
+  for (const end of ["drop", "outside", "escape", "pointercancel", "blur"] as const) {
+    const f = fixture()
+    try {
+      assert.equal(labelOn(), false, `${end}: untouched before the drag`)
+      f.press(f.title, 20, 40)
+      assert.equal(labelOn(), false, `${end}: a press alone does not change it`)
+      f.pointer("pointermove", f.title, 26, 41)
+      assert.equal(labelOn(), true, `${end}: ours during the drag`)
+      if (end === "drop") f.release(f.panel, 400, 300)
+      if (end === "outside") f.release(doc.body, 100, 300)
+      if (end === "escape") doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+      if (end === "pointercancel") win.dispatchEvent(new win.Event("pointercancel"))
+      if (end === "blur") win.dispatchEvent(new win.Event("blur"))
+      assert.equal(labelOn(), true, `${end}: held while the overlay fades out`)
+      await wait()
+      assert.equal(labelOn(), false, `${end}: host wording restored`)
+    } finally {
+      f.cleanup()
+    }
+  }
+})
+
+test("a drag that starts inside the hold keeps the label; cleanup restores it at once", async () => {
+  const f = fixture()
+  try {
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 26, 41)
+    f.release(doc.body, 100, 300)
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 26, 41)
+    await wait()
+    assert.equal(labelOn(), true, "the first drag's timer must not clear the second drag's label")
+    f.uninstall()
+    assert.equal(labelOn(), false)
+  } finally {
+    f.cleanup()
+  }
+})
+
+test("the host's own drags never get our wording", () => {
+  const f = fixture()
+  try {
+    const files = new win.DragEvent("dragover", { bubbles: true, cancelable: true })
+    doc.body.dispatchEvent(files)
+    assert.equal(labelOn(), false)
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 20, 80)
+    assert.equal(labelOn(), false, "a vertical (reorder) gesture is not ours")
+  } finally {
+    f.cleanup()
+  }
+})
+
+test("the label styles hit only the host's unslotted label inside the overlay, gated on our attribute", () => {
+  assert.equal(LABEL, "Drop to attach session")
+  assert.match(styles, new RegExp(`html\\[${LABEL_ATTR}\\] \\[data-slot="session-dropzone-content"\\] > div:not\\(\\[data-slot\\]\\) \\{ font-size: 0; line-height: 0; \\}`))
+  assert.ok(styles.includes(`::after { content: "${LABEL}"; display: block; font-size: 15px; line-height: 24px; }`))
 })
