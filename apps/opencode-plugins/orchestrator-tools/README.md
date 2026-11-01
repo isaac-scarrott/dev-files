@@ -27,7 +27,11 @@ sessions it created; `scope: "all"` reaches any session on the server, whatever 
 
 - `orchestrate_create_session`: create one or more sessions, each with its own prompt. `mode: "child"` (default)
   makes them children of the caller; `mode: "independent"` makes top-level sessions.
-- `orchestrate_send_message`: queue a follow-up (`delivery: "queue"`) or steer a running session (`"steer"`).
+- `orchestrate_send_message`: message a peer by `to` (ref, unique title or session id). The receiver gets
+  `<cross-session-message from="TITLE [REF]">…</cross-session-message>` as a user message; reply by copying `from` as
+  `to`. `delivery: "queue"` runs after its current work, `"steer"` interrupts. The result says delivered now or queued.
+  Works for a child, the parent, a sibling and, with `scope: "project"` or `"all"`, any other session.
+- `orchestrate_list_peers`: reachable sessions as `name [ref]` with relation (parent, child, sibling, other), state, directory.
 - `orchestrate_read_session`: status plus the last N messages and the final assistant text, size-capped.
 - `orchestrate_wait_for_sessions`: wait for all or any of up to 16 sessions, bounded by a timeout.
 - `orchestrate_interrupt_session`: stop a session's current run.
