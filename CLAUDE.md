@@ -24,18 +24,6 @@ macOS only. `install.sh` hardcodes Library paths.
   (called from the root one) builds it and renders a LaunchAgent with the absolute binary path. Anthropic's
   `/api/oauth/usage` rate-limits hard, so keep its 5-minute poll floor and backoff; check layout with `--worst-case`.
 - `mcp.manifest.json` — canonical MCP server list. `scripts/gen-mcp.sh` renders it per tool: Claude plugin `.mcp.json` files, OpenCode's `opencode.json` `.mcp` key, and Codex's `~/.codex/config.toml`. The `targets` array on each server picks which tools get it.
-- **Computer use** — the `cua-driver` server (Cua Driver, `/Applications/CuaDriver.app`, `cua-driver mcp` proxies to a
-  daemon) is OpenCode-only and `agentOnly: "computer"`: `gen-mcp.sh` adds a global `cua-driver_*` deny to
-  `permissions` in `opencode.json`, and `.config/opencode/agent/computer.md` re-allows exactly the manifest's tools for
-  that one agent. Other agents never see them (MCP tools are Code Mode tools; denied ones drop out of the catalog).
-  The daemon runs in `bounded` mode and enforces `~/.cua-driver/session.yaml` (Calculator `com.apple.calculator` only;
-  tools `start_session end_session launch_app list_apps list_windows get_window_state click type_text press_key scroll`;
-  no drag, hover, `page`, foreground or display capture; 8h expiry, 30m idle). Start or restart it (it exits after the
-  idle timeout; `cua-driver mcp` fails until it is back):
-  `pkill -f 'CuaDriver.app/Contents/MacOS/cua-driver serve'; open -n -g /Applications/CuaDriver.app --args serve --permission-mode bounded --capability-manifest ~/.cua-driver/session.yaml --approve-capability-manifest`.
-  Widening access means editing `session.yaml`, restarting the daemon, and adding the tool to `computer.md`. Not a
-  LaunchAgent: the daemon is an app launch with a manifest the user approves each time. Keep Electron apps out of the
-  manifest until trycua/cua#6258 is fixed.
 
 ## Three agent harnesses, one source
 

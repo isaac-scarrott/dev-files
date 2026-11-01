@@ -108,7 +108,6 @@ LINKS=(
   "$HOME/.config/opencode/skills/writing-for-agents|.claude/skills/writing-for-agents"
   "$HOME/.config/opencode/skills/x-shot|.claude/skills/x-shot"
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
-  "$HOME/.config/opencode/agent/computer.md|.config/opencode/agent/computer.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"

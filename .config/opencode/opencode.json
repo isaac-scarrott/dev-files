@@ -86,23 +86,6 @@
     "datadog-mcp": {
       "type": "remote",
       "url": "https://mcp.datadoghq.eu/v1/mcp"
-    },
-    "cua-driver": {
-      "type": "local",
-      "command": [
-        "cua-driver",
-        "mcp"
-      ],
-      "environment": {
-        "PATH": "{env:HOME}/.local/bin:{env:PATH}"
-      }
     }
-  },
-  "permissions": [
-    {
-      "action": "cua-driver_*",
-      "resource": "*",
-      "effect": "deny"
-    }
-  ]
+  }
 }
