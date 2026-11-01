@@ -605,6 +605,42 @@ test("dock: rows in the window keep the popover's behaviour", async () => {
   f.stop()
 })
 
+// Regression: data arrives late (sessions list, family, status, background tasks sync at different times). The heading
+// count and the rows come from one list, so after every step they agree, and rows appear as soon as the data does.
+test("dock: heading count and rows change together as data arrives late", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await sidebar(f, "closed")
+  f.toggle().click() // the window is mounted before any child data has synced
+  await f.flush()
+  const agree = (n: number, why: string) => {
+    const heading = dockEl(f).querySelector("[data-agents-heading]")!.textContent!
+    assert.match(heading, new RegExp(`${n} running`), `${why}: heading`)
+    assert.equal(f.rows().length, n, `${why}: rows`)
+    assert.equal(!!dockEl(f).querySelector("[data-agents-empty]"), n === 0, `${why}: empty state`)
+  }
+  agree(0, "nothing synced")
+  f.setInfos([child("c1"), child("c2")])
+  await f.flush()
+  agree(0, "children listed but idle")
+  f.setFamily(["parent", "c1", "c2"])
+  f.setRunning(["c1"])
+  await f.flush()
+  agree(1, "one child running")
+  f.setRunning(["c1", "c2"])
+  await f.flush()
+  agree(2, "both running")
+  f.setBackground([{ id: "sh1", type: "shell", label: "sleep 9" }])
+  await f.flush()
+  agree(3, "a shell arrives late")
+  f.setRunning(["c2"])
+  f.setBackground([])
+  await f.flush()
+  agree(1, "data retracts")
+  f.stop()
+})
+
 // Regression: inside the dock the list panel inherited a percentage max-height from the window and collapsed to its
 // heading, so "2 running" showed with no rows. Layout is not computed here, so the stylesheet is checked instead.
 const dockRule = (selector: string) => {
