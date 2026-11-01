@@ -1,7 +1,7 @@
 # monitor: design
 
-Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor`, `list_monitors`, `stop_monitor` (registered like
-`orchestrator-tools`, through `ctx.tool.transform`, Code Mode on).
+Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`, `monitor.stop` (namespace `monitor`), registered like
+`orchestrator-tools`, through `ctx.tool.transform`, Code Mode on.
 
 ## Decisions
 - **Delivery**: `ctx.session.prompt({ delivery: "steer" })` always, idle or busy. Not exposed to the model or options.
@@ -41,4 +41,4 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor`, `list_monitors`, `st
 ## Tests
 `monitor.test.ts` uses a fake clock and fake spawn. `process.test.ts` uses real processes and checks the group kill.
 Live check (private `opencode-cli serve`, isolated XDG dirs, a harness plugin calling the registered tools): wakes land
-as user messages, `stop_monitor` ends sleeping grandchildren, SIGTERM to the server leaves no children.
+as user messages, `monitor.stop` ends sleeping grandchildren, SIGTERM to the server leaves no children.
