@@ -20,7 +20,7 @@
   "snooze-archive/src/gui.ts|no-effect": 7,
   "snooze-archive/src/testui.ts|no-effect": 2,
   "timeline-rail/src/gui.tsx|no-effect": 3,
-  "usage-resume/src/gui.tsx|no-effect": 4,
+  "usage-resume/src/gui.tsx|no-effect": 1,
   "usage-resume/src/hub.ts|no-module-state": 1,
   "visual-replies/src/gui.tsx|no-effect": 3
 }
