@@ -39,8 +39,22 @@ export function upsertArchived(state: ArchivePage, info: ArchivedSession): Archi
   return { ...state, rows }
 }
 
-export async function setArchived(server: ServerRef, id: string, archived: boolean, signal: AbortSignal) {
+type DedicatedCall = (input: { sessionID: string }, options: { signal: AbortSignal }) => Promise<unknown>
+
+// The host's own call when its client has one (2.2.5 does not: only session.update({ archived })), else the update. The
+// dedicated call's argument shape is unverified, so a call that fails falls back to the update; the state is verified after.
+export async function writeArchived(server: ServerRef, id: string, archived: boolean, signal: AbortSignal) {
+  const session = server.client.session as unknown as Record<string, unknown>
+  const dedicated = session[archived ? "archive" : "unarchive"]
+  if (typeof dedicated === "function") {
+    try { await (dedicated as DedicatedCall).call(session, { sessionID: id }, { signal }); return "dedicated" as const } catch (cause) { if (signal.aborted) throw cause }
+  }
   await server.client.session.update({ sessionID: id, archived }, { signal })
+  return "update" as const
+}
+
+export async function setArchived(server: ServerRef, id: string, archived: boolean, signal: AbortSignal) {
+  await writeArchived(server, id, archived, signal)
   const info = await server.client.session.get({ sessionID: id }, { signal })
   if ((info.time.archived !== undefined) !== archived) throw new Error("Server did not confirm archive state")
   return info

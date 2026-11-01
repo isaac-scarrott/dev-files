@@ -215,6 +215,11 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   attach()
   return {
     update(snooze: GroupState, archive: GroupState) { snoozed.update(snooze); archived.update(archive); attach() },
+    // The Archived group steps aside (kept mounted, so it returns without a rebuild) while the host has its own archive UI.
+    archiveUi(host: boolean) {
+      archived.section.hidden = host
+      root.dataset.saArchive = host ? "theirs" : "ours"
+    },
     dispose() { snoozed.dispose(); archived.dispose(); observer.disconnect(); if (frame !== undefined) cancel(frame); root.remove(); parent?.removeAttribute("data-sa-host") },
   }
 }
@@ -226,6 +231,7 @@ export const css = `
 [data-sa-host] { flex: 1 1 auto; }
 [data-slot="vertical-tabs-sidebar"] [data-sa-host] { padding-block-end: 0; }
 [data-sa-host] > [data-titlebar-tab-list] { padding-bottom: 16px; }
+[data-snooze-archive] section[hidden] { display: none; }
 [data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 16px; app-region: no-drag; }
 .sa-toggle { width: 100%; justify-content: flex-start; }
 .sa-label { display: inline-flex; align-items: center; gap: 6px; }

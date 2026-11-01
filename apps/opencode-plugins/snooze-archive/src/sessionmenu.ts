@@ -1,4 +1,5 @@
 import type { ActionName, Handlers, Target } from "./actions"
+import { hasNativeArchive } from "./guard"
 import { extendNative, isSeparator, type MenuEntry, type MenuLine } from "./menu"
 
 export interface MenuSession { target: Target; disabled: boolean; archived: boolean; subagent: boolean }
@@ -32,7 +33,9 @@ export function resolveSession(content: HTMLElement, opener: Element | undefined
 }
 
 // Adds Snooze… and Archive to every native session menu that has a Delete…, once per open menu, directly above it.
-export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: Handlers, labels: Record<ActionName, string>, snoozeLines: (target: Target) => MenuLine[]) {
+// `archive` says whether our Archive item is wanted; `native` hears, for each session menu looked at, whether the host's own has an Archive item.
+export interface MenuHooks { archive?(): boolean; native?(has: boolean): void }
+export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: Handlers, labels: Record<ActionName, string>, snoozeLines: (target: Target) => MenuLine[], hooks: MenuHooks = {}) {
   const undo = new Map<HTMLElement, () => void>()
   let opener: { el?: Element; at: number } | undefined
   const remember = (event: Event) => { opener = { el: event.target as Element, at: Date.now() } }
@@ -47,11 +50,14 @@ export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: 
     if (undo.has(content)) { if (content.querySelector("[data-sa-menu]")) return; undo.get(content)!(); undo.delete(content) }
     const fresh = opener && Date.now() - opener.at < 2000 ? opener.el : undefined
     const session = resolveSession(content, fresh, surfaces)
-    if (!session || session.archived) return
+    if (!session) return
+    const native = hasNativeArchive(content)
+    hooks.native?.(native)
+    if (session.archived) return
     const lines: MenuEntry[] = []
     if (!session.subagent) lines.push({ label: "Snooze", disabled: session.disabled, submenu: () => snoozeLines(session.target), run() {} })
-    lines.push({ label: labels.archive, disabled: session.disabled, run: () => handlers.run("archive", session.target) })
-    undo.set(content, extendNative(content, lines))
+    if (!native && (hooks.archive?.() ?? true)) lines.push({ label: labels.archive, disabled: session.disabled, run: () => handlers.run("archive", session.target) })
+    if (lines.length) undo.set(content, extendNative(content, lines))
   }
   const scan = (root: ParentNode) => root.querySelectorAll<HTMLElement>(MENU).forEach(inspect)
   const observer = new doc.defaultView!.MutationObserver((records) => {
