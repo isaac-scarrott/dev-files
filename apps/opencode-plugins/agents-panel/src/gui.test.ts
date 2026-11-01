@@ -472,13 +472,15 @@ test("setting: cleanup removes every injected node and attribute", async () => {
 // a "side" region). The header resets the body, so nothing else is needed in the DOM.
 const side = (f: ReturnType<typeof fixture>, open: boolean) => { f.setSide(open); return f.flush() }
 const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
-const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-pad")
+// The card reserves the window's width while it carries the attribute; the rules read 328px from the dock constants.
+const inset = (f: ReturnType<typeof fixture>) => ((f.doc.getElementById("card") as HTMLElement).hasAttribute("data-agents-pad") ? "328px" : "0px")
 const wrapper = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-toggle]") as HTMLElement
 
 test("dock: right panel closed: the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
   f.start()
   f.header()
+  await f.flush()
   assert.equal(dockEl(f), null)
   assert.equal(inset(f), "0px")
   assert.equal(wrapper(f).dataset.agentsMode, "window")
@@ -502,7 +504,7 @@ test("dock: right panel closed: the button shows and hides the window, remembere
   assert.equal(dockEl(f).hasAttribute("inert"), true)
   assert.equal(inset(f), "0px")
   f.stop()
-  assert.equal(inset(f), "")
+  assert.equal(f.doc.getElementById("card")!.hasAttribute("data-agents-pad"), false)
 })
 
 test("dock: the window has no close button; only the header button hides it", async () => {
@@ -651,9 +653,9 @@ test("dock: the list panel never inherits a clipping max-height from the window,
 
 test("dock: every selector the chat re-centring depends on is valid", () => {
   const doc = globalThis.document
-  for (const line of styles.split("\n").filter((l) => l.includes("--agents-dock-pad") && l.includes("{") && !l.includes("@property"))) {
+  for (const line of styles.split("\n").filter((l) => l.includes("data-agents-pad") && l.includes("{"))) {
     const selector = line.slice(0, line.indexOf("{")).trim()
-    if (!selector || selector.startsWith(":root") || selector.startsWith("/*")) continue
+    if (!selector || selector.startsWith("/*")) continue
     assert.doesNotThrow(() => doc.querySelector(selector), selector)
   }
 })

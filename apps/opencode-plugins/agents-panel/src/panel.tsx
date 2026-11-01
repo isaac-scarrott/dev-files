@@ -2,6 +2,7 @@ import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { formatElapsed, runningSubagents, type SubagentRow } from "./agents"
 import { openInCurrentTab } from "./open-child"
+import { DOCK_INSET, DOCK_WIDTH } from "./dock"
 import { SessionProgressIndicator } from "./spinner"
 
 type Ctx = Pick<Context, "ui" | "toast">
@@ -144,6 +145,7 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }
 
 // Bespoke: the host scopes its row/end-swap rules to the composer menu's content, so the heading and the
 // elapsed/stop swap are restated here with the host's tokens. Layout, surface and width come from the side region.
+const PAD = DOCK_WIDTH + DOCK_INSET
 export const styles = `
   [data-agents-panel] { display: flex; flex-direction: column; min-height: 0; max-height: inherit; overflow-y: auto; padding: 4px; box-sizing: border-box; }
   [data-agents-heading] {
@@ -178,37 +180,30 @@ export const styles = `
     overflow-y: auto; box-sizing: border-box; padding: 0;
   }
   /* The dock: an elevated surface inside the chat card, end side, below the header row, on the host's menu surface. The
-     card clips it to its rounded corners. While it is shown, --agents-dock-pad (window width plus its inset) is
-     reserved as end padding on the timeline's scroll viewport and on the composer's wrapper, so the messages and the
-     composer re-centre in the free width; the scrollbar stays on the card's edge. The header lives inside that
-     viewport, so it is widened back by the same amount and does not move. The variable itself is registered and
-     transitioned, so the padding and the header's width read one animated value and cancel exactly, however the
-     transition is interrupted. 250ms is the host sidebar's own duration (the host drives its width in JS). */
-  @property --agents-dock-pad { syntax: "<length>"; inherits: true; initial-value: 0px; }
-  :root { --agents-dock-ease: cubic-bezier(0.2, 0.8, 0.2, 1); transition: --agents-dock-pad 250ms var(--agents-dock-ease); }
-  [data-slot=session-timeline-scroll] > .scroll-view__viewport { padding-inline-end: var(--agents-dock-pad); }
-  [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: calc(100% + var(--agents-dock-pad)); }
-  :has(> [data-slot=session-dropzone-blur]) > div:has(form) > div.shrink-0.items-center { padding-inline-end: var(--agents-dock-pad); }
+     card clips it to its rounded corners. While it is shown the card carries data-agents-pad, which reserves the window's
+     width (plus its inset) as end padding on the timeline's scroll viewport and on the composer's wrapper, so the
+     messages and the composer re-centre in the free width; the scrollbar stays on the card's edge. The header lives
+     inside that viewport, so it is widened back by the same amount and does not move. The padding changes once;
+     dock-motion.ts glides the content from where it was on the host panel's own spring, so nothing is laid out per frame. */
+  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport { padding-inline-end: ${PAD}px; }
+  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: calc(100% + ${PAD}px); }
+  [data-agents-pad] > div:has(form) > div.shrink-0.items-center { padding-inline-end: ${PAD}px; }
   /* Portal's wrapper div must not take part in the card's flex layout. */
   div:has(> [data-agents-dock]:only-child) { display: contents; }
   /* Height fits the content up to the card minus the header row and a bottom inset; the menu surface scrolls inside
-     the flex column, so the heading and rows are never clipped by a percentage max-height resolved against itself. */
+     the flex column, so the heading and rows are never clipped by a percentage max-height resolved against itself.
+     The hidden look is the resting state; entering and leaving are Web Animations (dock-motion.ts). */
   [data-agents-dock] {
     position: absolute; z-index: 60; top: 56px; right: 8px; width: 320px;
     max-height: min(420px, calc(100% - 64px)); display: flex; flex-direction: column; outline: none; user-select: auto;
-    transform: translateX(16px); opacity: 0; visibility: hidden; pointer-events: none;
-    transition: transform 250ms var(--agents-dock-ease), opacity 150ms var(--agents-dock-ease), visibility 0s 250ms;
+    opacity: 0; visibility: hidden; pointer-events: none;
   }
-  [data-agents-dock][data-state=open] { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+  [data-agents-dock][data-state=open] { opacity: 1; visibility: visible; pointer-events: auto; }
   [data-agents-dock] > [data-component=menu-v2-content] {
     position: static; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; min-width: 0; max-height: none;
     overflow-y: auto; box-sizing: border-box; padding: 2px;
   }
   [data-agents-dock] [data-agents-panel] { flex: none; max-height: none; overflow: visible; padding: 2px; }
-  @media (prefers-reduced-motion: reduce) {
-    :root { transition: none; }
-    [data-agents-dock] { transform: none; transition: opacity 150ms var(--agents-dock-ease), visibility 0s 150ms; }
-  }
   /* Settings > Background activity: with the mode on, the host's value is "Hidden" underneath. Show the mode's name
      instead and move the check from the host's Hidden option to ours. */
   [data-agents-on] [data-slot="select-v2-value-text"]:not([data-agents-value]) { display: none }

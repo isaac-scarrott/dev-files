@@ -37,10 +37,47 @@ The dock follows the **right side panel** (the host's side region: review, files
 - **Narrow**: below 900px window width the chat has no room beside a 320px window, so the button is popover mode (listener on `resize`, `NARROW_BELOW` in `toggle.tsx`).
 - **Diagnostics**: the toggle's wrapper carries `data-agents-mode` (`window`|`popover`) and `data-agents-side` (`open`|`closed`).
 - **Window**: an elevated surface (the host's `menu-v2-content`) drawn inside the chat card, 320px, anchored 8px from the card's end edge and 56px below its top (under the header row), clipped by the card's rounded corners. It is `position: absolute` in the card, which is the first child of `[data-slot=session-chat-panel]` and already `relative overflow-hidden`; Portal's wrapper div is `display: contents`, so the card's flex layout, the timeline's scroll and virtualizer, and the other header buttons are untouched. Mounted only while shown or leaving; it opens a frame after mounting so the entrance transitions. The host's Toggle review button sits outside the card at its end corner and stays above the window. When the host's review panel is open it sits beside the card, and the window stays inside the card.
-- **Chat centring**: while shown, `--agents-dock-pad` (window width + its 8px inset) is set on `<html>`; it is a registered `<length>` property transitioned 250ms on the host's curve. It is reserved as end padding on the timeline's scroll viewport and on the composer's full-width wrapper, so messages and composer re-centre in the free width while the scrollbar stays on the card edge. The header sits inside that viewport (`.sticky`), so it is widened by the same variable and does not move (0px delta, also mid-animation). The timeline column keeps its width: no reflow, no scroll jump.
+- **Chat centring**: while shown, the card carries `data-agents-pad`; its rules reserve the window width + its 8px inset (328px, from `DOCK_WIDTH + DOCK_INSET`) as end padding on the timeline's scroll viewport and on the composer's full-width wrapper, so messages and composer re-centre in the free width (card start edge to window start edge) while the scrollbar stays on the card edge. The header sits inside that viewport (`.sticky`), so it is widened by the same amount and does not move (0px delta, also mid-animation). The padding changes **once**, at the click; the movement is the glide described under Dock motion.
 - **Layout**: the window's height fits its content up to `min(420px, card height - 64px)`; the menu surface scrolls inside it. The list panel sets `max-height: none; overflow: visible` because it otherwise inherited a percentage max-height and collapsed to its heading (rows empty while the count read "N running").
 - **Hiding**: the window has no close button. The header Subagents button is the only way to show or hide it, besides the panel rule.
 - **Choice**: `dock.visible`, a global plugin store, default hidden. Opening the right panel (button, `⇧⌘R` or command) while the window is visible hides it (animated out, chat re-centres) and stores hidden, without opening the popover; closing the panel does not bring it back, the user toggles it with the button.
-- **Motion**: window 250ms transform + 150ms opacity, chat 250ms; reduced motion drops movement (opacity stays, the chat re-centres instantly).
+- **Motion**: see Dock motion below.
 - **Not built**: dragging and resizing. The window does not shrink the chat below the host's own flex limits on a very narrow window.
 - **One list**: the heading count, the rows and the empty state all read the same memo (`createSubagents`), so they cannot disagree in a reactive pass. The sessions list, family, status and background tasks sync at different times; each is a reactive read inside that memo, so rows and count appear together as each arrives (tested with data arriving late and retracting). The host exposes no call to sync children, only the reactive stores. The "N running, no rows" seen in the real app was the list panel collapsing to its heading (see Layout), not a data filter.
+
+## Dock motion
+
+The chat re-centring and the window's entrance copy the host's own right panel (Cmd+Shift+R), read from the 2.2.5 renderer (`E3t` in `main-*.js`, the `session-chat-panel` card in `route-*.js`).
+
+**What the host does.** A JS frame loop steps a critically damped spring (bounce 0). Its duration is `0.3s * sqrt(distance / 480)` clamped to 0.15..0.3s (`data-motion="reduce"` or the media query snaps instead). Per frame it writes the card's `style.width`; the card's content is held at its final width (`--panel-hold-width`) and the blocks inside are moved with `style.translate` from where they were, so text does not reflow while the card resizes. The side content fades in over 150ms on `cubic-bezier(.22, 1, .36, 1)`. Every frame is a main-thread layout of the card plus a style write on up to 400 elements.
+
+**What ours did.** `--agents-dock-pad` was a registered, inherited `<length>` transitioned on `:root`: each of the ~35 frames restyled the whole document (about 240ms of style recalc per toggle, 11ms per frame) and re-laid the timeline out 20 times, and the window's own slide ran on a different curve (250ms CSS transition) from a frame later. Compositor frames produced during the toggle: 29-35 against the host's 76-79, 13-14 dropped.
+
+**What it does now** (`src/spring.ts`, `src/dock-motion.ts`, `src/toggle.tsx`):
+
+- The end padding is written once, at the click, as an attribute on the card (`data-agents-pad`; rules name only the viewport, the sticky header and the composer wrapper, so the restyle stays that small. A custom property on the card cost 27ms of restyle in the click task; the attribute costs 7ms).
+- The content (the timeline's children under the sticky header, and the composer's column) is moved back to where it was and glides to its new place with a `translate` Web Animation, so the compositor does the per-frame work and nothing is laid out or restyled per frame. The offset is the centre shift (half the padding change, sign by `direction`) plus whatever offset an interrupted glide still had, so reversing mid-way is continuous. The old offsets are read before the padding is written, so no layout is forced.
+- The curve is the host's spring, sampled into a `linear()` easing (`springEasing`): same formula, same duration rule (timed as the host's panel is, 0.3s: its panel is at least 400px wide, and the rule is flat above 480px; sizing it by the 328px the chat gives up would be 0.248s and 12 points ahead of the host's panel), run until the host's own rest test (5e-5 of the travel, 2e-4/s) passes. The animation starts one 60Hz step in (`delay: -16.7ms`), as the host's loop takes its first step as a full frame.
+- The window slides 16px on the same spring and fades over 150ms on the host's fade curve, both started in the same task as the glide (no `requestAnimationFrame` hop, so they are in step). Leaving, the fade holds `visibility: visible` until it ends, then the window unmounts. Reduced motion (`data-motion` or the media query, as the host tests it) keeps the fade and drops the slide and the glide.
+- No observer reacts during the glide: the host's `ResizeObserver`s (timeline-rail's, the timeline's own) see one size change at the click, not 35. sidebar-repos observes the left tab rows, which do not move.
+
+**Not copied:** the host carries the spring's velocity into a reversal; ours restarts the curve from rest at the current offset (only a reversal mid-animation differs). The host's debug slow-motion multiplier is ignored.
+
+**Measured** (harness, 2000x1190 at 120Hz, seeded thread of 320 prompts per session, plugin set of the user's config minus blindfold and claude-proxy, 10 toggles each direction, medians; native = Cmd+Shift+R panel):
+
+| | native open / close | ours before | ours after |
+|---|---|---|---|
+| layouts per toggle | 171 / 163 | 20 / 21 | 4 / 5 |
+| layout ms | 23 / 16 | 3.2 / 3.1 | 0.9 / 0.6 |
+| style recalc ms | 91 / 74 | 241 / 250 | 20 / 25 |
+| main-thread task ms (1.1s window) | 297 / 256 | 299 / 304 | 77 / 78 |
+| rAF intervals over 17.5ms | 1 / 0 | 0 / 1 | 0 / 0 (worst run 1 / 0) |
+| compositor frames drawn / dropped (1.1s) | 76 / 4, 79 / 8 | 35 / 13, 29 / 14 | 71 / 2, 71 / 2 |
+| slowest gap between compositor frames, first 450ms, 6 runs | 17.5-22ms / 11.7-16.5ms | not sampled | 10.2-12.3ms / 14.4-17.5ms |
+| click task | 32ms | 16ms | 16ms (9ms warm) |
+
+The compositor-frame rows come from a separate traced pass (tracing itself slows both sides equally). After the glide ends the compositor sits idle for the last ~100ms of the spring (nothing moves a pixel), so intervals are counted only over the first 450ms. A frame over 16.7ms in the table is the click task itself (style write plus mounting the window); it is on a par with the host's, whose first frame is the 30ms measure-and-translate setup.
+
+The curve was sampled per frame on the message column (progress against time since the click, native / ours): open 17ms 15/5, 50ms 36/27, 100ms 65/62, 133ms 79/76, 200ms 93/92, 300ms 99/99; close 17ms 11/10, 50ms 31/36, 100ms 64/66, 200ms 93/93. Within 3 points from 100ms on; on open the first frames trail by up to 10 points (one frame of start latency: the click task is heavier than the host's). Centring after the change: message column and composer centres 0px from the free-space centre, header edges 0px delta at rest and in every sampled frame, composer back at its exact start after a close.
+
+Reproduce: `test/motion-profile.mjs <native|ours> <runs> <out.json> [notrace]` (metrics, traced layout/style/frame counts per toggle) and `test/motion-curve.mjs <native|ours> <open|close> <out.json>` (per-frame centres). Both need `playwright-core` and a harness window.

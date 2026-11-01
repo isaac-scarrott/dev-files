@@ -1,7 +1,8 @@
 import type { Context, MountedSession } from "@opencode/plugin/gui"
-import { createEffect, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { chatCard, dockState } from "./dock"
+import { glide, present } from "./dock-motion"
 import { SubagentsList } from "./panel"
 
 type Ctx = Pick<Context, "ui" | "toast" | "layout">
@@ -14,8 +15,7 @@ export type Dock = {
 const DOCK_ID = "agents-dock"
 // Below this window width the chat has no room beside a 320px window (the host narrows its own panels there too).
 const NARROW_BELOW = 900
-// The window's exit transition (transform 250ms) plus a frame.
-const DOCK_EXIT_MS = 270
+const PAD = "data-agents-pad"
 
 const GAP = 8
 
@@ -40,35 +40,56 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   createEffect(() => {
     if (props.input.active && sideOpen()) props.dock.setVisible(false)
   })
-  // The chat reserves the window's width through this variable (see the dock rules in panel.tsx), for the session on screen.
-  createEffect(() => {
-    if (!props.input.active) return
-    document.documentElement.style.setProperty("--agents-dock-pad", `${state().inset}px`)
-    onCleanup(() => document.documentElement.style.removeProperty("--agents-dock-pad"))
-  })
-
-  // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It opens a frame
-  // after mounting so the entrance transitions, except when it is already shown at load.
-  const [mounted, setMounted] = createSignal(state().shown)
-  const [windowOpen, setWindowOpen] = createSignal(state().shown)
-  createEffect(() => {
-    if (state().shown) {
-      setMounted(true)
-      const frame = requestAnimationFrame(() => setWindowOpen(true))
-      onCleanup(() => cancelAnimationFrame(frame))
-      return
-    }
-    setWindowOpen(false)
-    const timer = setTimeout(() => setMounted(false), DOCK_EXIT_MS)
-    onCleanup(() => clearTimeout(timer))
-  })
-
   // The window lives in the chat card, which holds this header; it is resolved once the header is in the document.
   const [card, setCard] = createSignal<Element>()
   createEffect(() => {
     session().key
     queueMicrotask(() => setCard(chatCard(wrap)))
   })
+
+  // The chat reserves the window's width while the card carries this attribute (see the dock rules in panel.tsx). An
+  // attribute restyles only the few elements its rules name; a custom property would restyle the whole card subtree. It
+  // changes once: the content glides to its new place with a Web Animation (see dock-motion.ts).
+  let applied: { card: Element; inset: number } | undefined
+  const release = () => {
+    applied?.card.removeAttribute(PAD)
+    applied = undefined
+  }
+  onCleanup(release)
+  createEffect(() => {
+    const target = props.input.active ? card() : undefined
+    const next = state().inset
+    if (!target) return release()
+    if (applied && applied.card !== target) release()
+    const play = applied ? glide(target, next - applied.inset) : undefined
+    target.toggleAttribute(PAD, next > 0)
+    applied = { card: target, inset: next }
+    play?.()
+  })
+
+  // The window mounts only while it is shown or leaving, so a hidden dock costs no second list or clock. It enters and
+  // leaves with a Web Animation started as it mounts or as it is hidden, except when it is already shown at load.
+  const [mounted, setMounted] = createSignal(state().shown)
+  const [dock, setDock] = createSignal<HTMLElement>()
+  let skipEnter = state().shown
+  const seen = new WeakSet<HTMLElement>()
+  createEffect(() => {
+    if (state().shown) setMounted(true)
+  })
+  createEffect(
+    on([dock, () => state().shown], ([el, shown]) => {
+      if (!el) return shown ? undefined : setMounted(false)
+      const fresh = !seen.has(el)
+      seen.add(el)
+      if (shown && skipEnter) {
+        skipEnter = false
+        return
+      }
+      skipEnter = false
+      const done = present(el, shown, fresh)
+      if (!shown) void done.then(() => state().shown || setMounted(false))
+    }),
+  )
 
   let wrap!: HTMLSpanElement
   let pop: HTMLDivElement | undefined
@@ -159,11 +180,12 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
         <Portal mount={mount() as HTMLElement}>
           <div
             id={DOCK_ID}
+            ref={setDock}
             data-agents-dock
-            data-state={windowOpen() && state().shown ? "open" : "closed"}
+            data-state={state().shown ? "open" : "closed"}
             role="region"
             aria-label="Subagents"
-            inert={!(windowOpen() && state().shown)}
+            inert={!state().shown}
           >
             <div data-component="menu-v2-content">
               <SubagentsList ctx={ctx} session={session} />
