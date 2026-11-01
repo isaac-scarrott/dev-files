@@ -41,3 +41,9 @@ Built `dist/gui-experimental.cjs` files are tracked so registration works on a n
 checkout before installing development dependencies. Rebuild and commit them with source.
 
 Develop with the `opencode-gui-plugins` skill in `../../.claude/skills/`.
+
+## Lint
+
+`pnpm lint` (in this folder) enforces the core team's GUI plugin rules: no `createEffect`/`createRenderEffect`/`createComputed`, no module-level `let`/`var`/`Map`/`Set`/`WeakMap`/signal/store, no `@/`, `@opencode/app` or `@opencode/desktop` imports, and no hand-made `<style>` element (use `ctx.add(Style, css)`). Tests, `blindfold` and `dist` are skipped.
+
+Today's violations are recorded per file in `lint-baseline.json`; the gate fails only when a file goes over its count. After fixing some, run `pnpm lint:update` to shrink the baseline (never grow it). The pre-commit hook runs it when `apps/opencode-plugins/*.ts(x)` is staged (~50ms). No dependencies: one Node script, `lint.mjs`.
