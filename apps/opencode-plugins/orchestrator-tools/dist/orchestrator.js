@@ -1,5 +1,6 @@
 import { Error as ToolError } from "@opencode/plugin/promise/tool";
 import { METADATA_KEY, ancestors, describe, marker, reachable, running } from "./scope.js";
+import { label, matches, refOf, relation, wrap } from "./peers.js";
 import { clip, finalText, summarize } from "./messages.js";
 import { waitForSessions } from "./wait.js";
 const MAX_MESSAGES = 50;
@@ -64,24 +65,37 @@ export class Orchestrator {
         return { sessions };
     }
     async sendMessage(caller, input) {
-        const target = await this.target(caller, input.sessionID);
+        const me = await this.self(caller);
+        const target = await this.resolve(me, input.to ?? input.sessionID);
         if (target.id === caller.sessionID)
             throw fail("send_message targets other sessions; reply normally in this one");
         const text = input.text?.trim();
         if (!text)
             throw fail("text must not be empty");
         const delivery = input.delivery ?? "queue";
+        const busy = running(target);
+        const delivered = busy && delivery === "queue" ? "queued" : "now";
+        const notice = delivered === "queued"
+            ? `${label(target)} is busy; the message is queued and arrives when its current work ends. A reply comes only if it chooses to send one: silence is not agreement.`
+            : `Delivered to ${label(target)}${busy ? " (current step interrupted)" : ""}. A reply comes only if it chooses to send one: silence is not agreement.`;
+        const sent = { sessionID: target.id, to: label(target), delivery, delivered, notice };
         const key = input.clientRequestId ? requestKey(caller.sessionID, input.clientRequestId) : undefined;
         if (key) {
             const stored = await this.host.storage.get(key);
             if (stored && typeof stored === "object" && "messageID" in stored && typeof stored.messageID === "string") {
-                return { sessionID: target.id, messageID: stored.messageID, delivery };
+                return { ...sent, messageID: stored.messageID };
             }
         }
-        const message = await this.host.session.prompt({ sessionID: target.id, text, delivery });
+        const message = await this.host.session.prompt({ sessionID: target.id, text: wrap(me, text), delivery });
         if (key)
             await this.host.storage.set(key, { messageID: message.id, sessionID: target.id });
-        return { sessionID: target.id, messageID: message.id, delivery };
+        return { ...sent, messageID: message.id };
+    }
+    async listPeers(caller, input = {}) {
+        const me = await this.self(caller);
+        const limit = Math.min(Math.max(input.limit ?? LIST_LIMIT, 1), LIST_LIMIT);
+        const peers = await this.peers(me, limit);
+        return { you: label(me), peers: peers.map((p) => ({ ...describe(p), ref: refOf(p.id), name: label(p), relation: relation(me, p) })) };
     }
     async readSession(caller, input) {
         const target = await this.target(caller, input.sessionID);
@@ -276,6 +290,68 @@ export class Orchestrator {
         catch {
             throw fail(`The calling session ${caller.sessionID} could not be read`);
         }
+    }
+    /** Every session this one can message: parent, children, siblings, and project or server sessions when the scope allows. */
+    async peers(me, limit) {
+        const found = new Map();
+        const add = (list) => {
+            for (const info of list)
+                if (info.id !== me.id && !found.has(info.id))
+                    found.set(info.id, info);
+        };
+        if (me.parentID !== undefined) {
+            try {
+                add([await this.host.session.get({ sessionID: me.parentID })]);
+            }
+            catch {
+                // The parent is gone.
+            }
+        }
+        add((await this.host.session.list({ parentID: me.id, limit })).data);
+        for (const id of await this.independents(me.id)) {
+            try {
+                add([await this.host.session.get({ sessionID: id })]);
+            }
+            catch {
+                // Deleted since it was recorded.
+            }
+        }
+        if (me.parentID !== undefined)
+            add((await this.host.session.list({ parentID: me.parentID, limit })).data);
+        if (this.options.scope === "project")
+            add((await this.host.session.list({ project: me.projectID, limit })).data);
+        if (this.options.scope === "all")
+            add((await this.host.session.list({ limit })).data);
+        return [...found.values()];
+    }
+    async resolve(me, to) {
+        const query = typeof to === "string" ? to.trim() : "";
+        if (!query)
+            throw fail("to is required: a peer ref, a unique title or a session id (see list_peers)");
+        const peers = await this.peers(me, LIST_LIMIT);
+        const hits = peers.filter((p) => matches(p, query));
+        if (hits.length === 1 && hits[0])
+            return hits[0];
+        if (hits.length > 1) {
+            throw fail(`"${query}" matches ${hits.length} peers; send to one by its ref: ${hits.map((p) => label(p)).join(", ")}`);
+        }
+        // A full id that list_peers cannot show still works when the scope reaches it.
+        if (query.startsWith("ses")) {
+            let target;
+            try {
+                target = await this.host.session.get({ sessionID: query });
+            }
+            catch {
+                // Fall through to the not-found error.
+            }
+            if (target) {
+                if (!(await reachable(this.host, me, target, this.options.scope))) {
+                    throw fail(`Session ${query} is outside this session's scope; list_peers shows who can be messaged`);
+                }
+                return target;
+            }
+        }
+        throw fail(`No peer matches "${query}". Call list_peers for the names and refs you can message.`);
     }
     async target(caller, sessionID) {
         if (typeof sessionID !== "string" || !sessionID)

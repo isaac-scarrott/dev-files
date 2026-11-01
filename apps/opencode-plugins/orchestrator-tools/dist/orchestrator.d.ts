@@ -2,6 +2,7 @@ import { Error as ToolError } from "@opencode/plugin/promise/tool";
 import type { Host } from "./host.js";
 import type { Options } from "./options.js";
 import { type SessionSummary } from "./scope.js";
+import { type Relation } from "./peers.js";
 import { type MessageSummary } from "./messages.js";
 import { type WaitResult } from "./wait.js";
 export interface Caller {
@@ -26,10 +27,18 @@ export interface Created extends SessionSummary {
     readonly reused: boolean;
 }
 export interface SendInput {
-    readonly sessionID: string;
+    /** Peer ref, unique title, `title [ref]` label or full session id. */
+    readonly to?: string;
+    /** Older spelling of `to`. */
+    readonly sessionID?: string;
     readonly text: string;
     readonly delivery?: "queue" | "steer";
     readonly clientRequestId?: string;
+}
+export interface Peer extends SessionSummary {
+    readonly ref: string;
+    readonly name: string;
+    readonly relation: Relation;
 }
 export interface ReadInput {
     readonly sessionID: string;
@@ -64,8 +73,17 @@ export declare class Orchestrator {
     }>;
     sendMessage(caller: Caller, input: SendInput): Promise<{
         sessionID: string;
+        to: string;
         messageID: string;
         delivery: "queue" | "steer";
+        delivered: "now" | "queued";
+        notice: string;
+    }>;
+    listPeers(caller: Caller, input?: {
+        limit?: number;
+    }): Promise<{
+        you: string;
+        peers: Peer[];
     }>;
     readSession(caller: Caller, input: ReadInput): Promise<{
         session: SessionSummary;
@@ -155,6 +173,9 @@ export declare class Orchestrator {
     private wait;
     private createOne;
     private self;
+    /** Every session this one can message: parent, children, siblings, and project or server sessions when the scope allows. */
+    private peers;
+    private resolve;
     private target;
     private budget;
     private remembered;

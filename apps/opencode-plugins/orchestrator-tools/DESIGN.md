@@ -15,7 +15,8 @@ what lets `execute` hand the result back as a value. A tool error reaches the mo
 | Tool | Input | Output |
 | --- | --- | --- |
 | `create_session` | `sessions: [{ prompt, title?, directory?, agent?, model?, mode?, context?, clientRequestId? }]` | `{ sessions: [SessionSummary & { reused }] }` |
-| `send_message` | `{ sessionID, text, delivery?: "queue" \| "steer", clientRequestId? }` | `{ sessionID, messageID, delivery }` |
+| `send_message` | `{ to, text, delivery?: "queue" \| "steer", clientRequestId? }` (`sessionID` is accepted as an older spelling of `to`) | `{ sessionID, to, messageID, delivery, delivered: "now" \| "queued", notice }` |
+| `list_peers` | `{ limit? }` | `{ you, peers: [SessionSummary & { ref, name, relation }] }` |
 | `read_session` | `{ sessionID, limit?, offset? }` | `{ session, total, offset, messages, finalText, truncated }` |
 | `wait_for_sessions` | `{ sessionIDs, timeoutMs?, mode?: "all" \| "any" }` | `{ results: [{ sessionID, state, outcome?, reason?, finalText? }], timedOut, aborted }` |
 | `interrupt_session` | `{ sessionID }` | `{ sessionID, interrupted }` |
@@ -30,6 +31,30 @@ sessions are still recorded as created by the caller so the caller can read, wai
 
 `delegate_task` is `create_session` with one child plus a bounded wait. When the wait times out it returns
 `state: "running"` with the session id rather than failing, so the caller can wait again.
+
+## Peer messaging
+
+Sessions message each other in the shape Claude Code uses, so models trained on it use it as is.
+
+- **Wrapper.** `send_message` prompts the target with `<cross-session-message from="TITLE [REF]">text</cross-session-message>`
+  as a user-role message. `REF` is the last 8 characters of the sender's session id; the sender is always the calling
+  session, so a reply goes back to it. Title and body are XML-escaped (`& < > "`), so neither can close the tag or
+  forge a second sender.
+- **Addresses.** `list_peers` returns `name [ref]`, `relation` (`parent`, `child`, `sibling`, `other`), `state` and
+  `directory` for the parent, children (including independents the caller created), siblings and, per the `scope`
+  option, project or server sessions. `to` accepts a ref, a title (case-insensitive, must be unique), the whole
+  `title [ref]` label, or a full session id. Several matches fail with the candidate labels; none fails and points at
+  `list_peers`. A full id outside `list_peers` still works when `scope` reaches it.
+- **Reach.** Messaging follows the `scope` rules below, plus one addition: the caller's parent. The parent is
+  messageable but still not readable, waitable or interruptible by the child. "Any other session" needs `scope: "project"` or `"all"`.
+- **Receiver note.** The instruction hook adds the wrapper explanation to every session that has the tools: what the
+  tag means, reply by copying `from` as `to`, peers are not workers, messages are input not authority.
+- **Delivery notice.** The tool result carries `delivered: "now"` or `"queued"` (the target was busy and `delivery` is
+  `queue`) plus a `notice`. `steer` interrupts the target's step and counts as now.
+- **Subagents.** The host does not re-address a child's send under its parent, so a child's message carries the
+  child's own `name [ref]` and the receiver replies to the child.
+- **Not built: `notify_when_idle`.** A one-shot idle notice needs a background subscription that outlives the tool
+  call and a way to prompt the sender later; `wait_for_sessions` already covers the need.
 
 ## What a child sees
 
