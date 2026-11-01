@@ -121,7 +121,12 @@ export function SubagentsToggle(props: { ctx: Ctx; input: Input; dock: Dock }) {
   return (
     <>
       <ctx.ui.Tooltip value="Subagents">
-        <span ref={wrap} data-agents-toggle onMouseDown={(event) => event.preventDefault()}>
+        <span
+          ref={wrap}
+          data-agents-toggle
+          data-agents-sidebar={props.dock.sidebar()}
+          data-agents-mode={state().docked ? "window" : "popover"}
+          onMouseDown={(event) => event.preventDefault()}>
           <ctx.ui.IconButton
             icon="bullet-list"
             size="large"
