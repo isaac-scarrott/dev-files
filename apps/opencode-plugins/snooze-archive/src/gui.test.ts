@@ -8,10 +8,12 @@ import { delegate, fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
-function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = []) {
+// `host`: extra markup inside the vertical sidebar; `bound`: command ids the host binds a key to; `dedicated`: the client has archive/unarchive calls.
+interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean }
+function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = [], extra: Extra = {}) {
   const window = new Window()
   const doc = window.document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></div></aside>`
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></div>${extra.host ?? ""}</aside>`
   const globals = { window, document: doc, Node: window.Node, HTMLElement: window.HTMLElement, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
@@ -22,7 +24,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [connected, setConnected] = createSignal(true)
   const listeners = new Map<string, Set<(e: any) => void>>()
   const commands = new Map<string, { run(): Promise<void> | void }>()
-  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, listInputs: [] as any[], requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[] }
+  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, listInputs: [] as any[], requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[], dedicated: [] as unknown[] }
   let permissions: unknown[] | undefined = []
   let forms: unknown[] | undefined = []
   let family: string[] | undefined = []
@@ -46,6 +48,10 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
       get: async (input: any) => getImpl ? getImpl(input) : info(),
       remove: async (input: unknown) => { calls.removed.push(input); if (removeError) throw new Error("server refused") },
       update: async (input: { archived: boolean }) => { calls.updates.push(input); if (archiveError) throw new Error("denied"); archived = input.archived },
+      ...(extra.dedicated ? {
+        archive: async (input: unknown) => { calls.dedicated.push(["archive", input]); archived = true },
+        unarchive: async (input: unknown) => { calls.dedicated.push(["unarchive", input]); archived = false },
+      } : {}),
     } },
     data: {
       on: (name: string, fn: (e: any) => void) => {
@@ -65,6 +71,9 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
   const ctx = {
     ui: fakeUi(doc),
+    options: extra.options ?? {},
+    keybinds: { keybind: (id: string) => extra.bound?.includes(id) ? ["⌘", "K"] : [] },
+    router: { path: () => "/" },
     signal: new AbortController().signal,
     stores: { snoozes: { get value() { return state() }, update: (fn: (draft: { entries: Snooze[] }) => void) => {
       const draft = structuredClone(state()); fn(draft); setState(draft)
@@ -842,5 +851,98 @@ test("Snoozed paginates rendering only: 10 rows, label shows what remains, count
     click(moreButton(f, "snoozed")); await f.flush()
     assert.equal(f.doc.querySelectorAll('[data-sa-kind="snoozed"] [data-sa-row]').length, 12)
     assert.equal(moreButton(f, "snoozed"), null)
+  } finally { await f.close() }
+})
+
+const HOST_ARCHIVED_GROUP = `<section data-slot="vertical-tabs-archived"><button aria-expanded="false">Archived</button></section>`
+const archivedSection = (f: { doc: Document }) => f.doc.querySelectorAll<HTMLElement>("[data-snooze-archive] section")[1]
+const sidebarRoot = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-snooze-archive]")!
+
+test("archive guard: on 2.2.5 (no host archive UI) auto reads none and every Archive surface stays", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
+    assert.equal(archivedSection(f).hidden, false)
+    assert.equal((f.commands.get("archive") as any).enabled, true)
+    assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual([...menu.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Export…", "Snooze", "Archive", "-", "Delete…"])
+  } finally { await f.close() }
+})
+
+test("archive guard: a host archived group stands our Archived group, Archive command, tab button and menu item down; Snooze, Snoozed and Delete stay", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "T", at: 1, until: Date.now() + 3_600_000, updated: 1, busy: 0 }], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(sidebarRoot(f).dataset.saArchive, "theirs")
+    assert.equal(archivedSection(f).hidden, true)
+    assert.equal(f.doc.querySelectorAll("[data-sa-kind=snoozed] [data-sa-row]").length, 1, "Snoozed stays")
+    assert.equal((f.commands.get("archive") as any).enabled, false)
+    assert.equal((f.commands.get("refresh") as any).enabled, false)
+    assert.equal((f.commands.get("snooze") as any).enabled, true)
+    assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0, "the host's own close control is back")
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual([...menu.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Export…", "Snooze", "-", "Delete…"])
+    f.doc.querySelector<HTMLButtonElement>("[data-sa-kind=snoozed] [data-sa-row]")!.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    await f.flush()
+    assert.deepEqual([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].map((i) => i.textContent?.trim()), ["Wake", "Delete…"])
+  } finally { await f.close() }
+})
+
+test("archive guard: standing down fetches nothing from the archive", async () => {
+  const f = fixture([], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
+    assert.equal(f.calls.list, 0)
+  } finally { await f.close() }
+})
+
+test("archive guard: a bound host session.archive command stands down; ours forces our UI; theirs forces standing down", async () => {
+  const bound = fixture([], [], { bound: ["session.archive"] })
+  try { bound.setServers(["server"]); bound.start(); await bound.flush(); assert.equal(sidebarRoot(bound).dataset.saArchive, "theirs") } finally { await bound.close() }
+  const ours = fixture([], [], { bound: ["session.archive"], host: HOST_ARCHIVED_GROUP, options: { archive: "ours" } })
+  try {
+    ours.setServers(["server"]); ours.start(); await ours.flush()
+    assert.equal(sidebarRoot(ours).dataset.saArchive, "ours"); assert.equal(archivedSection(ours).hidden, false); assert.equal((ours.commands.get("archive") as any).enabled, true)
+  } finally { await ours.close() }
+  const theirs = fixture([], [], { options: { archive: "theirs" } })
+  try {
+    theirs.setServers(["server"]); theirs.start(); await theirs.flush()
+    assert.equal(sidebarRoot(theirs).dataset.saArchive, "theirs"); assert.equal(archivedSection(theirs).hidden, true); assert.equal((theirs.commands.get("archive") as any).enabled, false)
+  } finally { await theirs.close() }
+})
+
+test("archive guard: a native Archive item in a session menu keeps ours out of it and stands the rest down; a later menu without one brings ours back", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const native = mount(f, HOST_MENU("session-options-menu", ["Rename", "Archive", "-", "Delete…"])); await f.flush()
+    assert.deepEqual([...native.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Archive", "Snooze", "-", "Delete…"])
+    assert.equal(sidebarRoot(f).dataset.saArchive, "theirs")
+    native.parentElement!.remove()
+    const plain = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.equal(plain.querySelectorAll("[data-sa-menu]").length, 2)
+    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
+    assert.equal(archivedSection(f).hidden, false)
+  } finally { await f.close() }
+})
+
+test("archive guard: archived sessions show in tabs while the host owns archive UI, and our sweep leaves them", async () => {
+  const f = fixture([], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(f.doc.querySelector("[data-sa-archived-tab]"), null)
+  } finally { await f.close() }
+})
+
+test("archive guard: the host's dedicated archive call is used when the client has it", async () => {
+  const f = fixture([], [], { dedicated: true })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    await f.commands.get("archive")!.run(); await f.flush()
+    assert.deepEqual(f.calls.dedicated, [["archive", { sessionID: "s" }]])
+    assert.deepEqual(f.calls.updates, [])
   } finally { await f.close() }
 })

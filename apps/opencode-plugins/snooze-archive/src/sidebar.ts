@@ -215,6 +215,11 @@ export function createSidebar(doc: Document, host: Host, schedule: (fn: () => vo
   attach()
   return {
     update(snooze: GroupState, archive: GroupState) { snoozed.update(snooze); archived.update(archive); attach() },
+    // The Archived group steps aside (kept mounted, so it returns without a rebuild) while the host has its own archive UI.
+    archiveUi(host: boolean) {
+      archived.section.hidden = host
+      root.dataset.saArchive = host ? "theirs" : "ours"
+    },
     dispose() { snoozed.dispose(); archived.dispose(); observer.disconnect(); if (frame !== undefined) cancel(frame); root.remove(); parent?.removeAttribute("data-sa-host") },
   }
 }
@@ -226,8 +231,10 @@ export const css = `
 [data-sa-host] { flex: 1 1 auto; }
 [data-slot="vertical-tabs-sidebar"] [data-sa-host] { padding-block-end: 0; }
 [data-sa-host] > [data-titlebar-tab-list] { padding-bottom: 16px; }
+[data-snooze-archive] section[hidden] { display: none; }
 [data-snooze-archive] { flex: 0 0 auto; margin-top: auto; padding: 8px 0 16px; app-region: no-drag; }
-.sa-toggle { width: 100%; justify-content: flex-start; }
+/* The host's small Button pads 9px; the rows pad 6px (px-1.5 on the tab item), so the label starts on the rows' avatar/title edge and the chevron ends on the time column's edge. */
+.sa-toggle { width: 100%; justify-content: flex-start; padding-inline: 6px; }
 .sa-label { display: inline-flex; align-items: center; gap: 6px; }
 [data-sa-count] { margin-inline-start: auto; font-variant-numeric: tabular-nums; color: var(--v2-text-text-faint); }
 .sa-chevron { transition: transform 200ms cubic-bezier(0.23,1,0.32,1); }

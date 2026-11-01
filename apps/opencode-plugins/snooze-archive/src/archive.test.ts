@@ -74,3 +74,22 @@ test("archivedActivity ignores the archive's own update bump", async () => {
   assert.equal(archivedActivity({ created: 1, updated: 20, archived: 40 }), 20, "updated before archiving stands")
   assert.equal(archivedActivity({ created: 1, updated: 20 }), 20)
 })
+
+test("a dedicated archive/unarchive call is preferred when the client has one; a failing one falls back to update; 2.2.5 has none", async () => {
+  const run = async (dedicated: "none" | "works" | "fails") => {
+    const signal = new AbortController().signal
+    const calls: unknown[] = []
+    let archived = false
+    const session: Record<string, unknown> = {
+      update: async (input: { archived: boolean }) => { calls.push(["update", input.archived]); archived = input.archived },
+      get: async () => ({ time: archived ? { archived: 10 } : {} }),
+    }
+    if (dedicated !== "none") for (const name of ["archive", "unarchive"]) session[name] = async () => { calls.push([name]); if (dedicated === "fails") throw new Error("bad shape"); archived = name === "archive" }
+    const server = { client: { session } } as unknown as Parameters<typeof setArchived>[0]
+    await setArchived(server, "s", true, signal); await setArchived(server, "s", false, signal)
+    return calls
+  }
+  assert.deepEqual(await run("none"), [["update", true], ["update", false]])
+  assert.deepEqual(await run("works"), [["archive"], ["unarchive"]])
+  assert.deepEqual(await run("fails"), [["archive"], ["update", true], ["unarchive"], ["update", false]])
+})
