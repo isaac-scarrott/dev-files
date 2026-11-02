@@ -53,8 +53,11 @@ export function renderTimes(document: Document, now: number, measure: (text: str
     }
     const text = formatAge(at, now)
     if (node.textContent !== text) node.textContent = text
-    const title = fullTime(at)
-    if (node.title !== title) node.title = title
+    // The tooltip depends on `at` alone; formatting it for every row on every refresh was most of a refresh.
+    if (node.getAttribute("data-at") !== String(at)) {
+      node.setAttribute("data-at", String(at))
+      node.title = fullTime(at)
+    }
     if (!row.hasAttribute("data-sidebar-time-shown")) row.setAttribute("data-sidebar-time-shown", "")
     const width = `${Math.ceil(measure(text))}px`
     if (row.style.getPropertyValue("--sidebar-time-width") !== width) row.style.setProperty("--sidebar-time-width", width)

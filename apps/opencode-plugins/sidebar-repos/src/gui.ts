@@ -126,13 +126,20 @@ export default Plugin.define({
 
     const canvas = document.createElement("canvas")
     const context = canvas.getContext("2d")
+    // Widths by font and text: rows share a handful of strings ("now", "5m", the same repo names).
+    const widths = new Map<string, number>()
     const measure = (font: string, value: string) => {
+      const key = `${font}|${value}`
+      const known = widths.get(key)
+      if (known !== undefined) return known
+      let width = value.length * 6
       if (context) {
         if (context.font !== font) context.font = font
-
-        return context.measureText(value).width
+        width = context.measureText(value).width
       }
-      return value.length * 6
+      if (widths.size > 2000) widths.clear()
+      widths.set(key, width)
+      return width
     }
 
     // Middle truncation: the repo head and the branch tail survive; the tooltip keeps the full label.
@@ -165,14 +172,28 @@ export default Plugin.define({
     let attention = new Map<string, AttentionKind>()
     let activity = new Map<string, number>()
     let frame: number | undefined
+    let held: ReturnType<typeof setTimeout> | undefined
+    // A refresh that was dear (every row measured, the page laid out) holds the next one off for nine times its cost, at most
+    // 250ms: while the host builds a long list each added row asks for a refresh, and running one per frame is the whole
+    // main thread. A refresh under 8ms holds nothing, so a single change still lands in the next frame.
+    let holdUntil = 0
+    let burst = 0
+    let lastRefresh = 0
     const refresh = () => {
-      if (frame !== undefined) return
+      if (frame !== undefined || held !== undefined) return
+      const wait = holdUntil - performance.now()
+      if (wait > 4) {
+        held = setTimeout(() => ((held = undefined), refresh()), wait)
+        return
+      }
       frame = requestAnimationFrame(() => {
         frame = undefined
+        const started = performance.now()
         findRegion()
         stampActivity(document, activity)
         badges(document, names, display, attention, mountIcon)
-        renderTimes(document, Date.now(), (text) => measure(timeFont(), text))
+        const font = timeFont()
+        renderTimes(document, Date.now(), (text) => measure(font, text))
         for (const [host, dispose] of icons) {
           if (host.isConnected) continue
           dispose()
@@ -190,6 +211,11 @@ export default Plugin.define({
             observed.add(element)
             resizeObserver.observe(element)
           })
+        const cost = performance.now() - started
+        // Only a burst counts (five refreshes within half a second: hydration, a long list arriving).
+        burst = started - lastRefresh < 500 ? burst + 1 : 1
+        lastRefresh = started
+        holdUntil = cost < 8 || burst < 5 ? 0 : performance.now() + Math.min(250, cost * 9)
       })
     }
 
@@ -313,6 +339,7 @@ export default Plugin.define({
       icons.forEach((dispose) => dispose())
       icons.clear()
       if (frame !== undefined) cancelAnimationFrame(frame)
+      clearTimeout(held)
       document.querySelectorAll("[data-sidebar-repo]").forEach((badge) => badge.remove())
       document.querySelectorAll("[data-sidebar-status-icon]").forEach((icon) => icon.remove())
       document

@@ -42,6 +42,38 @@ What changed:
 
 Left: the switch scenario still costs about 5 ms/s of scripting over bare. It is the `refresh()` work per tab-list change (badge writes with a `getBoundingClientRect` and a canvas measure per row), driven by the three remaining `createEffect`s (SR-2, a separate item). Not attributed further.
 
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 295 | -15 | 0 | 0 | 16.6 (16.5) | PASS |
+| type | 150 | 155 | 6 | 0 | -1 | 9.9 (9.8) | PASS |
+| switch | 131 | 149 | 18 | 0 | -1 | 10.0 (10.1) | **FAIL** |
+| stream | 253 | 244 | -10 | 0 | 0 | 9.8 (9.9) | PASS |
+| hover | 176 | 166 | -10 | 0 | -1 | 9.9 (9.9) | PASS |
+| idle | 85 | 77 | -8 | 0 | 0 | 9.8 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 385 | 13 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 51 | 3 | | | | PASS |
+
 ## Tests
 
 `pnpm test`: truncation, age formatting, attention kind and time stamping against fixtures in the host's markup. `parity.spec.mjs` compares the result with the live app.
+
+### Sidebar scale (`perf.mjs --sidebar`), 2026-11-02
+
+150 live sessions open as tabs over 12 projects, 600 archived, Side tabs, the long thread unopened. The floor is the `null` plugin plus the `sidebar-seed` fixture; the host alone settles a cold load in about 13.5 s and a hover sweep costs about 1.7 s of style at this size (host `:has()` rules and 150 rows), so this is a tab count worth watching on its own. Plugin cost, before this change (one run) and after (the cold-load and open rows are two runs):
+
+| Scenario | Floor | Before | After | Bar | Result |
+|---|---|---|---|---|---|
+| ten row clicks, script ms | 221-236 | 1415 | 263-286 | within 3% or noise | PASS |
+| ten row clicks, worst settle ms | 337-503 | 3937 | 427-463 | within 5% or 20 ms | PASS |
+| cold load, script ms | 144-258 | 1395 | 400-409 | within noise | FAIL (+250 ms) |
+| cold load, time to settled | 13.6-14.1 s | 20.9 s | 20.0-21.3 s | within 5% | FAIL (+6-7 s) |
+| hover sweep, new frames over 20 ms | 0-4 | 119 | 0 (one run), 61 (second run) | within noise | FAIL (unstable) |
+| idle | | | no extra callbacks | zero | PASS |
+
+What changed: `fullTime` builds its `Intl.DateTimeFormat` once per locale (`toLocaleString` made a new one per call, and a refresh formatted every row twice); the row tooltip is written only when the time changes; the time font is read once per refresh and text widths are cached by font and string; `badges()` creates nodes first, then reads every width, then writes (the forced layout per row was 6.2 s of a cold load); a refresh that costs 8 ms or more, inside a burst of five within half a second, holds the next one off for nine times its cost up to 250 ms.
+
+Left: cold-load settle is still 6-7 s over the floor. Disabling the plugin's CSS cost about 3 s of it and disabling the refresh the rest, so both the `:has()` rules and the per-row refresh matter; it is bimodal (one instrumented run settled at 10.8 s against a 13.2 s floor), so attribution is open. Ten-click style cost and the hover sweep depend on whether the sidebar was reloaded before the scenario (style 0.4 s after a reload, 3.6 s without one), unexplained.

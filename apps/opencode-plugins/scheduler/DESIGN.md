@@ -52,3 +52,20 @@ Wrapper only, as chosen, plus options with generous defaults: `maxSchedules` 50,
 
 ## Performance
 The chip adds nothing at idle and two requests per message change; table in [native-ui DESIGN](../native-ui/DESIGN.md#composer-chips-harness-225-monitor--scheduler-loaded-a-session-with-a-running-subagent-a-monitor-and-a-schedule). The `gui-experimental.cjs` bundle grew from 17.3 kB to 28.4 kB.
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 297 | -13 | 0 | 22 | 24.1 (16.5) | **FAIL** |
+| type | 150 | 151 | 1 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 149 | 18 | 0 | -2 | 9.3 (10.1) | **FAIL** |
+| stream | 253 | 255 | 2 | 0 | 0 | 9.2 (9.9) | PASS |
+| hover | 176 | 174 | -2 | 0 | -1 | 9.2 (9.9) | PASS |
+| idle | 85 | 80 | -5 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 390 | 17 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 49 | 0 | | | | PASS |
+
+Scroll FAIL, root cause (bisected by plugin group, then by CSS): the shared injected-row stylesheet in `native-ui` carries `[data-timeline-key^="user-message:"]:has(+ [data-timeline-key^="turn-gap:"] + [data-timeline-key^="user-message:"]) [data-injected-row]` (the "followed by another user message" spacing). The virtualizer inserts and removes rows on every scroll step and each insertion re-evaluates that sibling `:has()` on its neighbours. With scheduler rows in the thread, frame p95 in fast scroll is 24.3 ms against 16.6 ms; with only that line removed it is 16.6 ms (two runs each, `--eval` filter on the plugin's style tag). Script time is lower with the plugin than without, so a script profile does not show it. The rule lives in `native-ui/src/injected-message-row.tsx`, in the spacing code another worker is changing, so it is not edited here. Suggested replacement: forward combinators only, e.g. give the row its 29px padding unconditionally and pull the following user row up with `[data-injected-row-host] + [data-timeline-key^="turn-gap:"] + [data-timeline-key^="user-message:"] { margin-top: -28px }`, or set a `data-followed` attribute from `mountInjectedRows` when it decorates the row. Monitor and orchestrator-tools load the same rule; in this fixture their rows did not reproduce it (orchestrator-tools alone and monitor alone: p95 16.6 ms), so the cost depends on where in the timeline the rows sit. Re-measure all three after the change.

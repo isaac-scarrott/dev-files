@@ -1,0 +1,1 @@
+{ "name": "sidebar-seed", "version": "0.0.0", "private": true, "type": "module", "exports": { "./gui-experimental": "./dist/gui-experimental.cjs" } }

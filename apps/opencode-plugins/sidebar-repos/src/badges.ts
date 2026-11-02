@@ -55,6 +55,9 @@ export function badges(
   attention: ReadonlyMap<string, AttentionKind> = new Map(),
   mountIcon?: (host: HTMLElement, kind: AttentionKind) => void,
 ) {
+  // Two phases: nodes are created first, then every width is read, then every text is written. Reading a width after each
+  // write made the browser lay the page out once per row.
+  const pending: { badge: HTMLElement; full: string; owner: HTMLElement }[] = []
   for (const tab of document.querySelectorAll<HTMLElement>("[data-tab-key]")) {
     const title = tab.querySelector<HTMLElement>("[data-slot='tab-title']")
     const existing = tab.querySelector<HTMLElement>("[data-sidebar-repo]")
@@ -90,10 +93,19 @@ export function badges(
       title.before(badge)
     }
 
-    const visible = display?.(badge, full) ?? full
+    pending.push({ badge, full, owner })
+  }
+  const shown = pending.map(({ badge, full }) => display?.(badge, full) ?? full)
+  pending.forEach(({ badge, full, owner }, index) => {
+    const visible = shown[index]!
     if (badge.textContent !== visible) badge.textContent = visible
+    // The tooltip depends on the label and the row's activity time alone; formatting the date for every row on every refresh
+    // was a large part of a refresh.
+    const stamp = `${full}|${owner.getAttribute("data-sidebar-active-at") ?? ""}`
+    if (badge.getAttribute("data-tip-key") === stamp) return
+    badge.setAttribute("data-tip-key", stamp)
     const active = lastActiveTitle(owner)
     const tip = active ? `${full}\n${active}` : full
     if (badge.title !== tip) badge.title = tip
-  }
+  })
 }

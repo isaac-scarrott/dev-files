@@ -48,3 +48,18 @@ Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/
 | dialog open (idle, host list rendered and hidden) | not measured | not measured | | not measured |
 
 Standing cost: one `childList` observer on `body` plus one subtree observer per direct body child other than `#root` (8 in the harness), and one observer per open dialog (`src/pane.ts`). The host's list is rendered but hidden, so the open dialog does its work twice.
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 312 | 2 | 0 | -1 | 16.6 (16.5) | PASS |
+| type | 150 | 152 | 2 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 128 | -3 | 0 | 0 | 9.2 (10.1) | PASS |
+| stream | 253 | 253 | -0 | 0 | 0 | 9.2 (9.9) | PASS |
+| hover | 176 | 167 | -9 | 0 | 0 | 9.2 (9.9) | PASS |
+| idle | 85 | 77 | -8 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 373 | 1 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 48 | -1 | | | | PASS |

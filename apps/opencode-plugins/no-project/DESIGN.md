@@ -109,3 +109,18 @@ Standing cost, read from the source (not measured):
 | idle | | | | zero callbacks | not measured |
 | streaming reply | | | | within 3% scripting | not measured |
 | 10 session switches | | | | within 3% scripting | not measured |
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 325 | 15 | 0 | -1 | 16.6 (16.5) | PASS |
+| type | 150 | 155 | 5 | 0 | -1 | 9.1 (9.8) | PASS |
+| switch | 131 | 141 | 10 | 0 | 0 | 9.3 (10.1) | PASS |
+| stream | 253 | 268 | 15 | 0 | 0 | 9.1 (9.9) | PASS |
+| hover | 176 | 250 | 74 | 0 | -1 | 9.2 (9.9) | **FAIL** |
+| idle | 85 | 81 | -4 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 378 | 5 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 46 | -2 | | | | PASS |

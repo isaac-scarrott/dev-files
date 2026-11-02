@@ -8,7 +8,10 @@
 //   --plugins   GUI plugins to measure alone (default: every dir under the plugins root with dist/gui-experimental.cjs)
 //   --all-of    plugins composing the "all" config (default: --plugins); lets a second invocation add plugins to the same --out
 //   --only-all  skip the per-plugin configs; measure bare + all
+//   --init JS   like --eval but installed before every page load (survives reloads: coldload experiments)
 //   --eval JS   run JS in the page after setup (experiments: hide a plugin's node, disable a feature) before any scenario
+//   --sidebar [L,A,P]  sidebar scale: L live sessions opened as tabs, A archived, P projects (default 300,600,12), via fixtures/sidebar-seed.
+//               Use with the sidebar scenarios: coldload,sbopen,sbscroll,sbexpand,sbhover,idle,type
 //   --plain     the old seed (plain text prompts and answers). Default is --realistic: reasoning, tool calls with large outputs
 //               and diffs, subagent children, attachments, long markdown (see seed-session.mjs); --turns = assistant messages
 //   --profile   also take a V8 CPU profile per scenario (self time by script url) into runs/*.json
@@ -33,6 +36,7 @@ const args = (() => {
     if (["profile", "report", "plain"].includes(k)) o[k] = true
     else if (k === "only-all") o.onlyAll = true
     else if (k === "all-of") o.allOf = a[++i]
+    else if (k === "sidebar") o.sidebar = a[i + 1] && !a[i + 1].startsWith("--") ? a[++i] : "150,600,12"
     else o[k] = a[++i]
   }
   o.runs = +o.runs; o.idle = +o.idle
@@ -101,7 +105,11 @@ function harness(cmd, dirs = [], extra = {}) {
 async function oneRun(chromium, config, stubCfg) {
   try { harness("stop") } catch {}
   fs.rmSync(ROOT, { recursive: true, force: true })
-  harness("start", config.dirs, { OC_HARNESS_EXTRA_CONFIG: stubCfg })
+  harness("start", [...(args.sidebar ? [path.join(HERE, "fixtures/sidebar-seed")] : []), ...config.dirs], { OC_HARNESS_EXTRA_CONFIG: stubCfg })
+  if (args.sidebar) {
+    const password = JSON.parse(fs.readFileSync(path.join(ROOT, "state/opencode/service.json"), "utf8")).password
+    execFileSync("node", [path.join(HERE, "seed-session.mjs"), `http://127.0.0.1:${SVC}`, password, path.join(ROOT, "project"), "0", "--sidebar", args.sidebar], { stdio: "ignore" })
+  }
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP}`)
   try {
     const page = browser.contexts()[0].pages()[0]
@@ -110,6 +118,7 @@ async function oneRun(chromium, config, stubCfg) {
     await cdp.send("Performance.enable")
     await cdp.send("HeapProfiler.enable")
     await page.addInitScript(INSTRUMENT)
+    if (args.init) await page.addInitScript(args.init)
     await page.reload()
     await page.waitForTimeout(2500)
     const out = { config: config.name, bundleBytes: bundleBytes(config.dirs), scenarios: {}, profile: {} }
@@ -120,6 +129,11 @@ async function oneRun(chromium, config, stubCfg) {
     await page.getByText("Settings", { exact: true }).first().click(); await page.waitForTimeout(800)
     await page.getByText("Side tabs", { exact: true }).first().click(); await page.waitForTimeout(1200)
     await goHome(page); await page.waitForTimeout(1500)   // scenarios open the long thread themselves
+    if (args.sidebar) {
+      await page.addInitScript((n) => (window.__seedTabs = n), Number(args.sidebar.split(",")[0]))
+      await page.reload(); await page.waitForTimeout(15000)   // the fixture opens the live sessions as tabs
+      out.seeded = await page.evaluate(() => ({ opened: window.__seedTabsOpened, rows: document.querySelectorAll("[data-titlebar-tab]").length }))
+    }
     await page.mouse.move(800, 500)
     out.setup = await page.evaluate(() => ({ tabs: [...document.querySelectorAll("[data-titlebar-tab]")].map((t) => t.getAttribute("data-active") + ":" + t.textContent.slice(0, 20)), nodes: document.querySelectorAll("*").length, styles: [...document.querySelectorAll("style[data-plugin]")].map((s) => s.dataset.plugin) }))
 
@@ -133,7 +147,7 @@ async function oneRun(chromium, config, stubCfg) {
     }
     for (const name of SCENARIOS) {
       if (!SCENARIO_FNS[name]) continue
-      if (name !== "open" && name !== "reopen") await ensureLong(page)
+      if (!args.sidebar && name !== "open" && name !== "reopen") await ensureLong(page)
       log(name); await settle(page)
       if (args.profile) { await cdp.send("Profiler.enable"); await cdp.send("Profiler.setSamplingInterval", { interval: 500 }); await cdp.send("Profiler.start") }
       const m0 = await api.metrics(), p0 = await api.perf(), t0 = Date.now()
@@ -175,13 +189,17 @@ function selfTimeByUrl(profile) {
 // ---------- scenarios (identical script each run) ----------
 /** The sidebar's Home row (sidebar-repos hides it, so a DOM click), falling back to its text. */
 async function goHome(page) {
+  const row = page.locator("[data-action='vertical-tabs-home']").first()
+  const real = await row.isVisible().catch(() => false)
+  if (real) { await row.click({ timeout: 5000 }).catch(() => {}); return }
   const hit = await page.evaluate(() => { const el = document.querySelector("[data-action='vertical-tabs-home']"); el?.click(); return !!el })
   if (!hit) await page.getByText("Home", { exact: true }).first().click()
 }
 
 async function ensureLong(page) {
   if ((await page.locator("[data-titlebar-tab]").count()) < 2) {
-    await goHome(page); await page.waitForTimeout(800)
+    // Home toggles: if the list is not there after a click, the first click left it, so click again.
+    for (let i = 0; i < 3 && !(await page.getByText("Seeded long session").first().isVisible().catch(() => false)); i++) { await goHome(page); await page.waitForTimeout(1200) }
     await page.getByText("Seeded long session").first().click(); await page.waitForTimeout(4000)
     return
   }
@@ -207,7 +225,83 @@ async function openRounds(api, rounds, cold = false) {
   return { firstRowMs: median(first), paintMs: median(paint), settleMs: median(settle), settleMaxMs: Math.max(0, ...settle), mountedRows: median(rows), openRounds: first.length }
 }
 
+const ROWSEL = "[data-titlebar-tab][data-orientation='vertical']"
+const SCROLLER = "[data-slot='vertical-tabs-scroll']"
+
 const SCENARIO_FNS = {
+  // Cold start of the window with a big sidebar: reload to first sidebar row, to settled (no DOM/long-task activity for 500 ms).
+  async coldload({ page }) {
+    const t0 = Date.now()
+    await page.reload()
+    await page.waitForSelector(ROWSEL, { timeout: 60000 }).catch(() => {})
+    const first = Date.now() - t0
+    await page.waitForFunction(() => performance.now() - window.__perf.tLast > 500 && document.querySelectorAll("[data-titlebar-tab]").length > 5, null, { timeout: 60000, polling: 100 }).catch(() => {})
+    return { firstRowMs: first, settleMs: Date.now() - t0, rowsAfter: await page.evaluate(() => document.querySelectorAll("[data-titlebar-tab]").length), mo: await page.evaluate(() => window.__mo && { ...window.__mo, t: performance.now() }) }
+  },
+
+  // Click rows in the middle of the sidebar, 10 times alternating two rows: click to settled (no DOM/long-task activity for 250 ms).
+  async sbopen({ page }) {
+    const settle = []
+    for (let i = 0; i < 10; i++) {
+      await page.evaluate((i) => { const rows = document.querySelectorAll("[data-titlebar-tab][data-orientation='vertical']"); const el = rows[Math.min(rows.length - 1, 40 + (i % 2) * 7)]; el.scrollIntoView({ block: "center" }); window.__target = el }, i)
+      await page.waitForTimeout(400)
+      const t = await page.evaluate(() => new Promise((res) => {
+        const t0 = performance.now()
+        window.__target.querySelector("[data-slot='tab-link']")?.click?.() ?? window.__target.click()
+        const tick = () => { const P = window.__perf; if (performance.now() - P.tLast > 250 && performance.now() - t0 > 100) res(P.tLast - t0); else if (performance.now() - t0 > 8000) res(8000); else setTimeout(tick, 30) }
+        tick()
+      }))
+      settle.push(t)
+    }
+    return { settleMs: median(settle), settleMaxMs: Math.max(...settle) }
+  },
+
+  // Wheel the sidebar list fast, up and down, 6 s.
+  async sbscroll({ page }) {
+    const box = await page.locator(SCROLLER).first().boundingBox()
+    if (!box) return { skipped: true }
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    const t0 = Date.now(); let ev = 0
+    while (Date.now() - t0 < 6000) { await page.mouse.wheel(0, (Math.floor((Date.now() - t0) / 1500) % 2 === 0 ? 1 : -1) * 240); ev++; await page.waitForTimeout(12) }
+    return { wheelEvents: ev }
+  },
+
+  // Expand and collapse the Archived group three times, then page it: the cost of opening a 500+ row group.
+  async sbexpand({ page }) {
+    const toggle = page.locator("[data-sa-toggle] button", { hasText: "Archived" }).first()
+    if (!(await toggle.count())) return { skipped: true }
+    const times = []
+    for (let i = 0; i < 3; i++) {
+      const t0 = await page.evaluate(() => performance.now())
+      await toggle.click({ force: true })
+      await page.waitForFunction((t0) => performance.now() - window.__perf.tLast > 400 && performance.now() - t0 > 450, t0, { timeout: 15000, polling: 50 }).catch(() => {})
+      times.push(await page.evaluate((t0) => window.__perf.tLast - t0, t0))
+      if (i < 2) { await toggle.click({ force: true }); await page.waitForTimeout(800) }
+    }
+    const rows = () => page.evaluate(() => document.querySelectorAll("[data-sa-kind='archived'] [data-slot='tab-link']").length)
+    const opened = await rows()
+    for (let i = 0; i < 4; i++) { const more = page.locator("[data-sa-more] button").first(); if (await more.isVisible().catch(() => false)) { await more.click({ force: true }); await page.waitForTimeout(1500) } }
+    const after = await rows()
+    await toggle.click({ force: true }); await page.waitForTimeout(1000)   // end collapsed: the next scenario starts from the same sidebar
+    return { expandSettleMs: median(times), expandSettleMaxMs: Math.max(...times), archivedRows: opened, archivedRowsAfterMore: after }
+  },
+
+  // The same sweep with the Archived group open (its rows sit at the foot of the list).
+  async sbhoverx(api) {
+    const toggle = api.page.locator("[data-sa-toggle] button", { hasText: "Archived" }).first()
+    if (!(await toggle.count())) return { skipped: true }
+    await toggle.click({ force: true }); await api.page.waitForTimeout(1500)
+    await SCENARIO_FNS.sbhover(api)
+    await toggle.click({ force: true }); await api.page.waitForTimeout(800)
+  },
+
+  // Sweep the pointer down and up the sidebar rows, four passes.
+  async sbhover({ page }) {
+    const box = await page.locator(SCROLLER).first().boundingBox()
+    if (!box) return { skipped: true }
+    for (let pass = 0; pass < 4; pass++) for (let y = box.y + 6; y < box.y + box.height - 6; y += 14) await page.mouse.move(box.x + 60 + (pass % 2) * 40, pass % 2 ? box.y + box.height - (y - box.y) : y, { steps: 2 })
+  },
+
   // the first open of the long thread in this window (cold: nothing cached), then repeat opens (warm)
   async open(api) { return openRounds(api, 1, true) },
   async reopen(api) { return openRounds(api, 5) },
