@@ -166,3 +166,23 @@ test("the stylesheet caps the row, clips the text mid-glyph and sizes the slot l
   assert.match(css, /justify-content: flex-end/)
   assert.match(css, /:root\[data-motion="reduce"\][^{]*\.injected-action \{ transition: none; \}/)
 })
+
+test("a clipped end fades with the host's 16px tab-title ramp, only while the text overflows", async () => {
+  const host = dom()
+  let measure!: () => void
+  ;(globalThis as any).ResizeObserver = class { constructor(fn: () => void) { measure = fn } observe() {} disconnect() {} }
+  mount(host, { more: true })
+  await tick()
+  const row = host.querySelector("[data-injected-row]")!
+  const main = host.querySelector("[data-slot=injected-main]") as any
+  assert.equal(row.getAttribute("data-clipped"), "false")
+  Object.defineProperty(main, "scrollWidth", { configurable: true, value: 400 })
+  Object.defineProperty(main, "clientWidth", { configurable: true, value: 300 })
+  measure()
+  assert.equal(row.getAttribute("data-clipped"), "true")
+  Object.defineProperty(main, "scrollWidth", { configurable: true, value: 300 })
+  measure()
+  assert.equal(row.getAttribute("data-clipped"), "false")
+  const css = injectedMessageRowCss
+  assert.match(css, /\[data-clipped="true"\] \[data-slot="injected-main"\] \{\s*-webkit-mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);\s*mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);/)
+})

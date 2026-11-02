@@ -44,21 +44,19 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
   let main!: HTMLSpanElement
   let tail!: HTMLSpanElement
 
-  // Only a row whose body is the preview itself needs to know whether the text is cut off. Like the host's, the clip box (`main`)
-  // cuts the text mid-glyph, and the trailing slot takes room from it on hover, so the width compared is the one at rest: the box
-  // plus what the slot has taken so far. The observer's callback runs after layout, so reading the widths there forces nothing;
-  // measuring on mount instead forced a layout per row while scrolling. The text is laid out in both states (hidden when open),
-  // but only the closed one tells.
-  if (!props.more) {
-    const measure = () => {
-      if (open()) return
-      const taken = tail.getBoundingClientRect().width + parseFloat(getComputedStyle(tail).marginInlineStart)
-      setClipped(main.scrollWidth > main.clientWidth + taken + 1)
-    }
-    const observer = new ResizeObserver(measure)
-    onCleanup(() => observer.disconnect())
-    queueMicrotask(() => observer.observe(main))
+  // Whether the text is cut off decides the fade (every row) and, for a row whose body is the preview itself, whether it expands.
+  // Like the host's, the clip box (`main`) cuts the text, and the trailing slot takes room from it on hover, so the width compared
+  // is the one at rest: the box plus what the slot has taken so far. The observer's callback runs after layout, so reading the
+  // widths there forces nothing; measuring on mount instead forced a layout per row while scrolling. The text is laid out in both
+  // states (hidden when open), but only the closed one tells.
+  const measure = () => {
+    if (open()) return
+    const taken = tail.getBoundingClientRect().width + (parseFloat(getComputedStyle(tail).marginInlineStart) || 0)
+    setClipped(main.scrollWidth > main.clientWidth + taken + 1)
   }
+  const observer = new ResizeObserver(measure)
+  onCleanup(() => observer.disconnect())
+  queueMicrotask(() => observer.observe(main))
 
   // The host scrolls to the bottom whenever a row resizes, which would carry the clicked header out from under the pointer.
   // Hold the header at its screen position through the change (the user's decision; the host does not do this for its own
@@ -77,7 +75,7 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
   }
 
   return (
-    <div ref={root} data-injected-row="" data-kind={props.kind} data-open={open()} data-expandable={expandable()} data-action={props.action ? "" : undefined}>
+    <div ref={root} data-injected-row="" data-kind={props.kind} data-open={open()} data-expandable={expandable()} data-clipped={clipped()} data-action={props.action ? "" : undefined}>
       <div data-slot="injected-head">
         <button type="button" data-slot="injected-trigger" aria-expanded={open()} aria-controls={id} aria-label={props.title} onClick={toggle} />
         <span data-slot="injected-icon" aria-hidden="true">{props.icon}</span>
@@ -140,6 +138,13 @@ ${HEAD} [data-slot="injected-icon"] > * { display: block; width: 16px; height: 1
 ${HEAD} [data-slot="injected-main"] { position: relative; flex: 1 1 auto; display: flex; gap: 8px; min-width: 0; overflow: hidden; pointer-events: none; }
 ${HEAD} [data-slot="injected-title"] { flex: none; white-space: nowrap; font-weight: 530; }
 ${HEAD} [data-slot="injected-preview"] { flex: none; height: 20px; overflow: hidden; white-space: nowrap; user-select: none; }
+/* A clipped end fades out like the host's sidebar tab titles (the tab-link mask: a 16px linear ramp ending at the clip edge,
+   only on a title that overflows, not animated). The mask is on the clip box, whose edge moves 18px when the slot opens, so the ramp
+   moves with it. A row that fits keeps no mask. */
+${ROW}[data-clipped="true"] [data-slot="injected-main"] {
+  -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to right, black 0, black calc(100% - 16px), transparent 100%);
+}
 /* Open: the preview keeps its width but is not drawn (and leaves the accessibility tree), so the header is the same box as closed. */
 ${ROW}[data-open="true"] [data-slot="injected-preview"] { visibility: hidden; }
 /* The trailing slot is the host task-tool-action, copied: the last item of the row, so the chevron rides the row's right edge. Collapsed
