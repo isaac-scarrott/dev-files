@@ -3,6 +3,9 @@ type Method<A extends unknown[], R> = { bivarianceHack(...args: A): R }["bivaria
 /** Levels checked below the faked type: `ctx` (0), `ctx.tabs` (1), `ctx.tabs.list` (2). What a method returns is not. */
 type Depth = [unknown, unknown, unknown]
 
+/** The members of `T`, each optional and faked in turn. */
+type Members<T, D extends unknown[]> = { [K in keyof T]?: Fake<T[K], [...D, unknown]> }
+
 /** A fake method may return a partial of the host's result, or nothing when the test does not read it. */
 type Returned<R, D extends unknown[]> = R extends Promise<infer U> ? Promise<Fake<U, D> | void> : Fake<R, D> | void
 
@@ -15,13 +18,13 @@ type Returned<R, D extends unknown[]> = R extends Promise<infer U> ? Promise<Fak
 export type Fake<T, D extends unknown[] = []> = D["length"] extends Depth["length"]
   ? unknown
   : T extends (...args: infer A) => infer R
-    ? Method<A, Returned<R, [...D, unknown]>>
+    ? Method<A, Returned<R, [...D, unknown]>> | (keyof T extends never ? never : Members<T, D>)
     : T extends Promise<infer U>
       ? Promise<Fake<U, D>>
       : T extends readonly (infer U)[]
         ? readonly Fake<U, D>[]
         : T extends object
-          ? { [K in keyof T]?: Fake<T[K], [...D, unknown]> }
+          ? Members<T, D>
           : T
 
 /**

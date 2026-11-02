@@ -9,6 +9,7 @@ import { createLog, Samples } from "./diag.js"
 import { acquireUsage, createUsageSource } from "./hub.js"
 import { Resumer, type Clock, type Host } from "./resume.js"
 import { Toggles } from "./toggles.js"
+import { fake } from "../../test-utils/fake.js"
 import { availability, MIN_INTERVAL_MS, type Reading } from "./usage.js"
 
 const T0 = Date.UTC(2026, 9, 31, 12, 0, 0)
@@ -53,7 +54,7 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
   const notices: string[] = []
   const storage = new Map<string, unknown>()
   const fetches: string[] = []
-  const host = {
+  const host = fake<Host>({
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         const s = sessions.get(sessionID)
@@ -74,7 +75,7 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
       set: async (key: string, value: unknown) => void storage.set(key, JSON.parse(JSON.stringify(value))),
       remove: async (key: string) => void storage.delete(key),
     },
-  } as unknown as Host
+  })
   const sampleDir = path.join(authDir, "samples")
   const logs: string[] = []
   const options: Options = { ...DEFAULTS, authDir, snapshotPath: "", staggerMs: 0, sampleDir, ...overrides }
