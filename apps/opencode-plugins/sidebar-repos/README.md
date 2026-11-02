@@ -4,7 +4,7 @@ Two-line sidebar rows: the project name above the session title, a status icon f
 
 > **Credit:** the trailing-edge fade mask follows the shape of [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) own sidebar row mask (2.2.5).
 
-![Sidebar rows with project name, title and last-active time](media/demo.png)
+![Sidebar rows with project name, title and last-active time; a running session and a session that woke from snooze show their mark in the time's place](media/demo.png)
 
 ## What it does
 - Each session row shows the project's name (middle-truncated, full text on hover) above the title.

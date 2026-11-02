@@ -323,6 +323,9 @@ sibling. No `parity.spec.mjs` exists for this plugin.
   `@agent` labels, PageUp/PageDown, Escape, the hover brightening of the whole strip,
   the history breathe mark, the appear/disappear fade, chevrons shown on strip hover, the 28px column at 6px from the
   edge**: not in t3-code, removed.
+- **Observers kept alive across a session switch** (`plugins/timeline-switch`): the host mounts a new timeline per switch, so
+  nothing survives to reuse; with the observers keyed on the scroller regardless of `active` and the re-measure skipped for
+  unchanged sizes, 12 switch runs averaged 3.9% against 3.4% for the shipped code. Reverted. See Performance.
 - **Header button + palette command** (the original `message-jump`): one target at a time, no overview.
 - **DOM-scraped floating pill**: fixed positioning over the timeline broke on pane resize and bled over other sessions.
 - **`location.hash = "#message-<id>"`**: desktop uses a memory router; the hash never changes the host's `useLocation`.
@@ -425,12 +428,33 @@ the wrapper walk; then the move to observers: the line observer, which replaced 
 observer, which replaced the one remaining `scrollTop` read (an intermediate build with the scroll listener cost 5 to 9% in
 the profile, all of it that read forcing a layout). Before this step: 3.1%; after: 0.9%.
 
-Switch: the cost is the rail being rebuilt when a timeline becomes active (Solid setup, the observers' first
-notification, `range` reading the container and scroller, `prompts`), 0.25 to 0.6 ms per switch, spread over many
-functions, and the three runs differ more with each other (2.5 to 7.7ms) than before and after do. It is above the bar
-before and after this change; no single cause to remove was found. Open: keep the observers alive across a switch (the
-cached timeline is hidden, so they idle) instead of tearing them down, at the price of "reads nothing while inactive".
+Switch, second pass (`plugins/timeline-switch`; `OpenCode` 2.2.5, same seeded session plus three 30-prompt chats, 10 switches
+Home to chat and back, 3 runs per launch, profiler plugin self time over host script time, launches interleaved with a bare
+one; the box was shared, so each variant ran 3 to 4 launches):
 
+| Variant | Plugin script per 10 switches | % of host script | Result |
+| --- | --- | --- | --- |
+| bare (no plugin) | 100 / 97 / 101 and 80 / 76 / 79 ms | | the host alone moves by 25% between launches |
+| master | 4.6 / 3.5 / 2.5, 3.3 / 2.6 / 3.9, 4.1 / 3.0 / 2.6 ms | 3.9 3.6 2.6, 2.9 2.7 4.1, 4.3 3.1 3.0 (mean 3.4%, median 3.1%) | FAIL by about 0.4 point, inside the run-to-run spread |
+| observers kept across a switch, plus no re-measure when shown at the sizes last measured | 2.8 / 4.4 / 3.6, 3.9 / 4.1 / 3.7, 4.2 / 3.0 / 3.3, 2.6 / 3.4 / 6.4 ms | mean 3.9% | no gain; reverted |
+
+Why the observers cannot be kept: the host does not keep a switched-away timeline. Probed with a mark on each
+`[data-scrollable]`: after every switch, by the Home list and by the titlebar tabs alike, the scroller is a new element, and
+only the visible session's scroller exists in the document (the previous one and its rail are gone). There is nothing to keep
+alive and no key to persist observers under, since an observer is bound to the element it watches. The earlier note that a
+cached timeline idles hidden does not hold for 2.2.5 on these routes. The same rules out the other candidates: ticks are
+already built per switch with the rail (10 spans, one Solid `Index`), so diffing or deferring them moves nothing; a session with
+no changes still has a new document, so there is nothing to skip.
+
+Where the remaining 3 to 4 ms goes (unminified build, per function): the first `ResizeObserver` notification, which reads
+the scroller and container geometry (`range`, `fit`: 1.2 to 1.7 ms of the total), then `active`, `prompts`, `loadedIds` and
+Solid's effect setup at 0.1 to 0.5 ms each. The first is a layout the host runs in the same frame anyway: the layout and style
+milliseconds are the same with and without the plugin (74 and 74 ms layout, 402 and 408 ms style per 10 switches), and only the
+layout count differs (136 bare, 169 with the plugin, small passes after the rail's own writes). So most of the figure is
+layout work charged to the plugin because it asks first, not work the plugin adds; removing the read would hand the same cost
+to the host's next frame. What is ours is about 2 ms per 10 switches (about 2%), under the bar. Judged against the bar as
+worded ("within 3 points of main-thread time"), the median 3.1% passes by noise and the mean 3.4% misses by 0.4 point; no
+change was found that moves the number by more than the spread between launches, so none is kept.
 
 Previous/next from the end (`plugins/timeline-prev`), private harness (window on AeroSpace workspace Z, own ports): a
 seeded 12-prompt chat (10 ticks; short last turns, bottom-pinned) and a longer 10-prompt chat. Before: previous at the end

@@ -4,7 +4,7 @@ Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archiv
 
 > **Credit:** menu markup is adapted from [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) desktop app (2.2.5). The accordion's `grid-template-rows` technique and `cubic-bezier(.23,1,.32,1)` curve are from Emil Kowalski's animation guidance.
 
-![Expanding Snoozed and Archived, then showing more rows](media/demo.gif)
+![Snoozing a session from its menu, a session that woke showing the clock, then expanding Snoozed and Archived and showing more rows](media/demo.gif)
 
 [Full-quality video](media/demo.mp4)
 

@@ -3,6 +3,7 @@ import { test } from "node:test"
 import { Window } from "happy-dom"
 import { createRoot, createSignal } from "solid-js"
 import plugin from "./gui"
+import { fake } from "../../test-utils/fake"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
@@ -57,7 +58,7 @@ function fixture() {
   const [requests, setRequests] = createSignal<{ permissions?: unknown[]; forms?: unknown[] }>({})
   const [branch, setBranch] = createSignal("main")
   const calls = { vcs: 0, permission: 0, form: 0, message: 0 }
-  const [messages, setMessages] = createSignal<{ type: string; time: { created: number; completed?: number } }[]>([])
+  const [messages, setMessages] = createSignal<{ type: "user" | "assistant"; time: { created: number; completed?: number } }[]>([])
   const [updated, setUpdated] = createSignal(1000)
   const session = {
     id: "s", location: { directory: "/git/worktree" },
@@ -83,7 +84,7 @@ function fixture() {
   const styles: string[] = []
   const iconNames: string[] = []
   const ui = { Icon: (props: { name: string }) => { iconNames.push(props.name); return document.createElement("svg") } }
-  const ctx = { sessions: { list: sessions }, tabs: { list: tabs }, ui, add: (_: unknown, css: string) => styles.push(css) } as unknown as Context
+  const ctx = fake<Context>({ sessions: { list: sessions }, tabs: { list: tabs }, ui, add: (_, css) => { styles.push(css as string); return () => {} } })
   const start = () => createRoot((stop) => { dispose = stop; cleanup = plugin.setup!(ctx) })
   const stop = () => { dispose(); if (typeof cleanup === "function") void cleanup() }
   const deliver = () => window.happyDOM.whenAsyncComplete()

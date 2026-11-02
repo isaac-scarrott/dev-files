@@ -14,7 +14,8 @@
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --conditions=browser --test src/*.test.ts"
+    "test": "tsx --conditions=browser --test src/*.test.ts",
+    "smoke": "node --conditions=browser test/smoke.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.5",

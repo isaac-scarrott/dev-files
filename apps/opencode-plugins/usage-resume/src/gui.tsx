@@ -1,5 +1,5 @@
-import { ComposerPill, createLatest, Plugin, SettingsPage } from "@opencode/plugin/gui"
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { ComposerPill, createKeyed, createLatest, Plugin, SettingsPage } from "@opencode/plugin/gui"
+import { createSignal, onCleanup } from "solid-js"
 import { UsageResume } from "./rpc.js"
 import { type Loaded, pillFor, type SessionState } from "./view.js"
 
@@ -23,9 +23,8 @@ export default Plugin.define({
 
     // One reactive view of the server's state, refreshed by its `changed` event.
     const [version, setVersion] = createSignal(0)
-    createEffect(() => {
-      const off = rpc().events.on("changed", () => void setVersion((v) => v + 1))
-      onCleanup(off)
+    createKeyed(rpc, (client) => {
+      onCleanup(client.events.on("changed", () => void setVersion((v) => v + 1)))
     })
 
     const defaults = createLatest(

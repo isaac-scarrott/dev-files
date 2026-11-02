@@ -10,16 +10,15 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 
 | Package | What it does | Kind |
 | --- | --- | --- |
-| [`agents-panel`](agents-panel) | Header button listing running subagents and shells: a floating window beside the chat when the sidebar is closed, a popover when open. Opt in with Settings → Timeline → Background activity → Panel | GUI |
 | [`blindfold`](blindfold) | Vendored vimtor/opencode-blindfold 0.5.0: agents use secrets without seeing them | server, TUI, GUI |
 | [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction; the cache window (5m or 1h) is read from Claude Code's transcript | GUI + server |
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |
-| [`monitor`](monitor) | `monitor`, `list_monitors`, `stop_monitor`: run a command in the background and wake the session with its output lines (batched, escaped, untrusted-data trailer); optional re-arm; wakes show as a grey row with a Stop button | server, GUI |
-| [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive`, `orchestrator-tools`, `monitor` and `scheduler` import it (`agents-panel` carries copies of the spinner files); the shared injected-message row | library |
+| [`monitor`](monitor) | `monitor`, `list_monitors`, `stop_monitor`: run a command in the background and wake the session with its output lines (batched, escaped, untrusted-data trailer); optional re-arm; wakes show as a grey row with a Stop button, and a "N monitors" chip beside the composer lists what runs for the session (Stop on each row) | server, GUI |
+| [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive`, `orchestrator-tools`, `monitor` and `scheduler` import it; the shared injected-message row and the composer chip (a `ComposerPill` that collapses in and out, with its popover rows) | library |
 | [`no-project`](no-project) | "No project" row in the project picker and `/no-project`: a draft in its own scratch folder, swept when unused | GUI + server |
 | [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions; a peer's message shows as a grey row | server, GUI |
-| [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep; runs show as a grey row with a Cancel button | server, GUI |
+| [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep; runs show as a grey row with a Cancel button, and a "N schedules" chip beside the composer lists what is scheduled for the session (Cancel on each row) | server, GUI |
 | [`session-drag`](session-drag) | Drag a sidebar session row into the chat to attach a `@session:<id>` chip | GUI |
 | [`sidebar-repos`](sidebar-repos) | Two-line sidebar rows (project name over title), permission and question icons, last-active time on idle rows | GUI |
 | [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu | GUI |
@@ -48,3 +47,11 @@ Develop with the `opencode-gui-plugins` skill in `../../.claude/skills/`.
 `pnpm lint` (in this folder) enforces the core team's GUI plugin rules: no `createEffect`/`createRenderEffect`/`createComputed`, no module-level `let`/`var`/`Map`/`Set`/`WeakMap`/signal/store, no `@/`, `@opencode/app` or `@opencode/desktop` imports, and no hand-made `<style>` element (use `ctx.add(Style, css)`). Tests, `blindfold` and `dist` are skipped.
 
 Today's violations are recorded per file in `lint-baseline.json`; the gate fails only when a file goes over its count. After fixing some, run `pnpm lint:update` to shrink the baseline (never grow it). The pre-commit hook runs it when `apps/opencode-plugins/*.ts(x)` is staged (~50ms). No dependencies: one Node script, `lint.mjs`.
+
+## Smoke
+
+`pnpm smoke` (in this folder) runs each plugin's `test/smoke.mjs` under a 30 s wall-clock limit and prints a table. Each smoke requires the plugin's **built** `dist/gui-experimental.cjs` the way the host does (the SDK's shared modules served to the bundle, a happy-dom window, an empty app as `ctx`), runs `setup` under a Solid root, and checks that it contributed to the expected registries, then runs its cleanup and `dispose` and checks that no timer, interval, frame, observer or document/window listener is left. Where a `dist/server.js` exists it must export a plugin definition. Build first (`pnpm build` in the plugin); a stale or missing bundle fails. Run one plugin with `pnpm smoke` inside it or `node smoke.mjs <name>`.
+
+The harness is `test-utils/gui-smoke.mjs`; it has no dependencies of its own and takes Solid and happy-dom from the plugin's `node_modules`. Needed host members beyond the empty defaults go in the `host` option (see `usage-resume/test/smoke.mjs`). Not covered yet: `monitor`, `scheduler`, `native-ui` (a library) and the vendored `blindfold`; `claude-proxy` is server-only.
+
+`test-utils/fake.ts` is `fake<T>(partial)`: a partial of a host type that is checked field by field against `T`, for unit-test fakes of `Context` and its parts.

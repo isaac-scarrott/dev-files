@@ -1,16 +1,9 @@
 {
-  "agents-panel/src/dock.ts|no-module-state": 1,
-  "agents-panel/src/gui.tsx|no-effect": 1,
-  "agents-panel/src/panel.tsx|no-effect": 2,
-  "agents-panel/src/toggle.tsx|no-effect": 9,
   "native-ui/src/header-icon-button.tsx|no-effect": 1,
   "native-ui/src/header-icon-button.tsx|no-module-state": 1,
   "native-ui/src/popover.tsx|no-effect": 1,
   "no-project/src/sweep.ts|no-module-state": 1,
   "scheduler/src/hub.ts|no-module-state": 1,
-  "sidebar-repos/src/gui.ts|no-effect": 3,
-  "snooze-archive/src/gui.ts|no-effect": 6,
   "snooze-archive/src/testui.ts|no-effect": 2,
-  "usage-resume/src/gui.tsx|no-effect": 1,
   "usage-resume/src/hub.ts|no-module-state": 1
 }

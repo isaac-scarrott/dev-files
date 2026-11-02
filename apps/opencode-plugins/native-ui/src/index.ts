@@ -13,6 +13,12 @@ export { InjectedMessageRow, injectedMessageRowCss, type InjectedMessageAction, 
 export { mountInjectedRows, type InjectedRows, type InjectedRowsOptions } from "./injected-rows"
 export { unescapeMarkup, firstLine, hasMore } from "./injected-text"
 export { holdTop, scrollerOf } from "./anchor"
+export { createLaneChip, type LaneChip, type LaneChipOptions, type LaneChipSession } from "./lane-chip"
+export { CHIP_EASE, CHIP_MS, domMotion, reducedMotion, type ChipMotion, type ChipRun } from "./chip-motion"
+export { LaneChipRows, laneChipCss, CLOCK_PLACEHOLDER, type LaneChipRow, type LaneChipRowsProps } from "./lane-chip-rows"
+export { createSessionChip, type SessionChipOptions } from "./session-chip"
+export { messageSignature } from "./chip-signature"
+export { span, nextChange, MINUTE } from "./chip-time"
 export { AgentIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
 
 import { tabRowActionCss } from "./tab-row-action"

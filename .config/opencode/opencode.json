@@ -21,7 +21,6 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/timeline-rail",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/snooze-archive",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/visual-replies",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/agents-panel",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/no-project",
     {
       "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/orchestrator-tools",
@@ -75,7 +74,7 @@
       "type": "local",
       "command": [
         "uvx",
-        "awslabs.redshift-mcp-server@latest"
+        "awslabs.redshift-mcp-server@0.1.2"
       ],
       "environment": {
         "PATH": "{env:HOME}/.local/bin:{env:PATH}",

@@ -1,0 +1,6 @@
+{
+  "name": "test-utils",
+  "private": true,
+  "type": "module",
+  "description": "Shared test helpers for the plugins here: typed fakes and the built-bundle smoke host. No dependencies of its own."
+}

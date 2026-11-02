@@ -170,6 +170,7 @@ export class Monitors {
             state: monitor.paused ? "paused" : monitor.state,
             runningSince: iso(monitor.startedAt),
             events: monitor.events,
+            ...(def.maxEvents === undefined ? {} : { maxEvents: def.maxEvents }),
             lastEvent: monitor.lastEventAt === undefined ? null : iso(monitor.lastEventAt),
             expiresAt: iso(def.expiresAt),
             ...(def.rearmMinutes === undefined ? {} : { rearmMinutes: def.rearmMinutes }),

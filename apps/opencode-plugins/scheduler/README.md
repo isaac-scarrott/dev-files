@@ -2,6 +2,11 @@
 
 Tools that let an agent schedule a prompt for later, once or on a repeat, and wake a session with it when it is due.
 
+![A "1 schedule" chip beside the host's "1 subagent" chip, its popover open on a task's row](media/schedule-chip-light.png)
+![The same in dark](media/schedule-chip-dark.png)
+
+Chips animate in and out and the row moves with them: [recording](../native-ui/media/lane-chips.gif) ([mp4](../native-ui/media/lane-chips.mp4)).
+
 ## What it does
 - `schedule_task` takes a prompt and exactly one of `at` (ISO time or `+2h`), `every` (`30m`, `2h`, `1d`) or `cron` (5 fields, your local time zone). It wakes the calling session, or another one by ref or title.
 - `list_schedules` shows each task's id, name, kind, next and last run and target, plus recently ended tasks and why they ended.
@@ -11,6 +16,7 @@ Tools that let an agent schedule a prompt for later, once or on a repeat, and wa
 - A task whose session was archived or deleted is dropped and the reason is listed. A task that fires more than 10 times in an hour is paused with a notice in its session.
 
 - In the desktop app a scheduled run is not a raw user bubble: it is a grey row in the style of the host's subagent row with a clock icon, the task's name and `scheduled run`, and, when opened, the prompt as the user wrote it in a card below. A Cancel button on the row ends a repeating task that is still scheduled.
+- A "N schedules" chip (clock icon, hidden at zero) sits in the row above the composer, beside the host's own "N subagents" capsule. It counts the tasks aimed at the session on screen, including ones another session scheduled for it. Click it for a popover with one row per task: its name, a muted line (`every 2h · next in 1h 47m · 2 of 6 runs`) and a Cancel button that appears on hover or focus. Chips come and go with a short collapse and the neighbours slide to their new places.
 
 ## Context
 OpenCode has no scheduled or recurring jobs; Claude Code does. The tools appear in Code Mode as `tools.scheduler.schedule_task(...)`, `tools.scheduler.list_schedules()` and `tools.scheduler.cancel_schedule(...)`, like the `orchestrate_*` tools of [orchestrator-tools](../orchestrator-tools). Limits worth knowing: the server must be running to fire anything, and the plugin does not look at [usage-resume](../usage-resume) (see DESIGN.md).
@@ -41,6 +47,7 @@ Pass them with `{ "package": "/path/to/scheduler", "options": { ... } }`.
 Per task, `maxRuns` stops a recurring task after that many runs.
 
 ## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the chip is the host's own `ComposerPill` capsule and popover (`session/composer/plugin-pills.tsx`, `composer-lane.css`); the popover rows follow its activity panel (`activity-chips.tsx`), from the renderer source (2.2.5). The motion follows Emil Kowalski's animation rules ([emilkowalski/skills](https://github.com/emilkowalski/skills)).
 - [OpenCode](https://github.com/anomalyco/opencode) (MIT): the row's markup values (padding, radius, type, the trailing slot's reveal) follow the desktop app's background-subagent row, from its renderer source (2.2.5); the row itself is `native-ui`'s `InjectedMessageRow`.
 
 ## Development

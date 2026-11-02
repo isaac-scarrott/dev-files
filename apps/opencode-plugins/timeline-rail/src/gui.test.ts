@@ -4,6 +4,7 @@ import { createEffect, createRoot, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import plugin from "./gui"
 import type { Message } from "./rail"
+import { fake } from "../../test-utils/fake"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
@@ -216,15 +217,15 @@ function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
       return button
     },
   }
-  const ctx = {
+  const ctx = fake<Context>({
     id: "timeline-rail",
     ui,
-    add: (_kind: unknown, item: unknown) => {
+    add: (_kind, item) => {
       if (typeof item === "string") registry.styles.push(item)
       else registry.slots.push(item)
       return () => {}
     },
-  }
+  })
 
   const flush = async () => {
     for (let round = 0; round < 12; round += 1) {
@@ -296,7 +297,7 @@ async function mountSlot(f: ReturnType<typeof fixture>) {
   let dispose = () => {}
   createRoot((d) => {
     dispose = d
-    plugin.setup!(f.ctx as unknown as Context)
+    plugin.setup!(f.ctx)
   })
   const slot = f.registry.slots.find((item) => typeof item === "object" && item.at === "session.header")
   assert.ok(slot, "slot contributed")

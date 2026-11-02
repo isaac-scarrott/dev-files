@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 import plugin from "./server.js"
+import { fake } from "../../test-utils/fake.js"
 
 type Handler = (input: any) => Promise<any>
 
@@ -13,7 +14,7 @@ async function boot(directory: string, storage: Map<string, unknown>, bus: Bus, 
   const handlers: Record<string, Handler> = {}
   let retry: ((event: any) => Promise<void> | void) | undefined
   const events: any[] = []
-  const ctx = {
+  const ctx = fake<Parameters<typeof plugin.setup>[0]>({
     options,
     location: { directory },
     storage: {
@@ -40,9 +41,9 @@ async function boot(directory: string, storage: Map<string, unknown>, bus: Bus, 
         return { events: { emit: async (name: string, data: unknown) => void events.push([name, data]) }, dispose: async () => {} }
       },
     },
-    event: { subscribe: (opts: { types: string[]; signal: AbortSignal }) => bus.subscribe(opts.types, opts.signal) },
-  }
-  const cleanup = (await plugin.setup(ctx as never)) as () => Promise<void>
+    event: { subscribe: (opts) => bus.subscribe([...opts!.types!], opts!.signal!) },
+  })
+  const cleanup = (await plugin.setup(ctx)) as () => Promise<void>
   return { prompts, handlers, retry: () => retry, cleanup, events }
 }
 

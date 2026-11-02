@@ -4,6 +4,11 @@ Start a command in the background and wake the session with its output as it hap
 
 > **Credit:** Idea and tool wording follow Claude Code's Monitor tool (Anthropic); the wrapper and untrusted-data trailer follow the `<cross-session-message>` pattern in [`orchestrator-tools`](../orchestrator-tools). No code was copied.
 
+![A "1 monitor" chip beside the host's "1 subagent" chip, its popover open on a monitor's row, in light and dark](media/monitor-chip-light.png)
+![The same in dark](media/monitor-chip-dark.png)
+
+Chips animate in and out and the row moves with them: [recording](../native-ui/media/lane-chips.gif) ([mp4](../native-ui/media/lane-chips.mp4)).
+
 ## What it does
 - `monitor.start` runs a shell command in the background. Each stdout/stderr line (optionally filtered by a regex) is an event; lines arriving close together become one message in the session, idle or busy, as `<monitor-event name="…" id="…" seq="N">` with a trailer saying the content is untrusted program output.
 - One more message arrives when the command exits, with its exit code.
@@ -16,6 +21,7 @@ Start a command in the background and wake the session with its output as it hap
 - A noisy monitor pauses with a notice after `maxEventsPerHour` lines; extra lines are counted, not shown.
 
 - In the desktop app a wake is not a raw user bubble: it is a grey row in the style of the host's subagent row with the monitor's name, what happened (`first line · N lines`, `restarted (restart 5)`, `ended`, `lost`, `paused`) and, when opened, the real output in a card below, unescaped, without the tags or the trailer. A Stop button on the row ends the monitor while it still runs. The model still receives the wrapped, escaped text.
+- A "N monitors" chip sits in the row above the composer, beside the host's own "N subagents" capsule (same capsule, hidden at zero). It counts the monitors aimed at the session on screen, including ones another session started for it. Click it for a popover with one row per monitor: its name, a muted line (`3 of 50 events · re-arms in 12m · expires in 1h 5m`) and a Stop button that appears on hover or focus. Chips come and go with a short collapse (200ms) and the neighbours, the host's capsule included, slide to their new places; the popover's times tick over at minute boundaries while it is open.
 
 ## Context
 OpenCode's background shell only notifies when the command exits. This fills the gap for watchers, dev servers and polling loops.
@@ -47,6 +53,7 @@ The row needs the GUI export: the host decides a plugin's parts when the service
 | `logDir` | `~/.local/share/opencode/monitor` | `monitor.log` (lifecycle only, never output) |
 
 ## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the chip is the host's own `ComposerPill` capsule and popover (`session/composer/plugin-pills.tsx`, `composer-lane.css`); the popover rows follow its activity panel (`activity-chips.tsx`), from the renderer source (2.2.5). The chip's motion follows Emil Kowalski's animation rules ([emilkowalski/skills](https://github.com/emilkowalski/skills)): ease-out `cubic-bezier(0.23, 1, 0.32, 1)`, 200ms, no `scale(0)`, reduced-motion branch.
 - [OpenCode](https://github.com/anomalyco/opencode) (MIT): the row's markup values (padding, radius, type, the trailing slot's reveal) follow the desktop app's background-subagent row, from its renderer source (2.2.5); the row itself is `native-ui`'s `InjectedMessageRow`.
 
 ## Development

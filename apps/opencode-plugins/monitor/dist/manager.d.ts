@@ -48,6 +48,8 @@ export interface MonitorInfo {
     readonly state: string;
     readonly runningSince: string;
     readonly events: number;
+    /** The cap on events over the monitor's life; absent when it has none. */
+    readonly maxEvents?: number;
     readonly lastEvent: string | null;
     readonly expiresAt: string;
     readonly rearmMinutes?: number;

@@ -106,12 +106,14 @@ const SLOT = `[data-slot="injected-head"]:is(:hover, :focus-within, :has([data-s
 /** Register once with `ctx.add(Style, injectedMessageRowCss)`. Host tokens only; both themes follow. No pointer cursor (the app reserves it for links). */
 export const injectedMessageRowCss = `
 [data-injected-host] [data-component="user-message"] { display: none; }
-/* The row stands where a user bubble would, so it takes the bubble's footprint: the host reserves 28px under the last bubble of a run of
-   user messages (8px margin + the 20px copy/retry footer that shows on hover), which is the gap its next assistant part sits at. A bubble
-   that is followed by another user message has no footer (the host's 4px TurnGap row separates them), so the reserve drops there too.
-   The padding is the row's own height, so the virtualised timeline measures it; a margin would collapse out of the host's content box. */
-${ROW} { display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding-bottom: 28px; }
-${FOLLOWED} ${ROW} { padding-bottom: 0; }
+/* The row stands where a user bubble would and takes its row height, so everything below it sits where it does under a bubble. The host's
+   user row is the bubble (37px) + 8px margin + the 20px copy/retry footer (hover-only, but laid out) = 65px for the last message of a run
+   (and the bubble's 37px alone when another user message follows, a 4px TurnGap row between them). Ours is the 36px header (13px/20px type
+   like the host subagent row, against the bubble's 17px line) plus the remainder: 29px, or 1px inside a run. The host's own hidden bubble
+   and footer are display:none here, so none of that is counted twice. The padding is the row's own height, so the virtualised timeline
+   measures it; a margin would collapse out of the host's content box. */
+${ROW} { display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding-bottom: 29px; }
+${FOLLOWED} ${ROW} { padding-bottom: 1px; }
 ${HEAD} {
   position: relative; box-sizing: border-box; display: flex; align-items: flex-start; gap: 8px;
   width: fit-content; max-width: 100%; min-width: 0; padding: 8px 12px;

@@ -1,6 +1,8 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
 import { createMemo, createSignal } from "solid-js"
-import { ClockIcon, drawnIconCss, InjectedMessageRow, injectedMessageRowCss, mountInjectedRows } from "../../native-ui/src"
+import { ClockIcon, CLOCK_PLACEHOLDER, createSessionChip, drawnIconCss, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
+import { scheduleDeadlines, scheduleStatus } from "./chip"
+import type { ScheduleItem } from "./control"
 import { scheduledOf, type ScheduledRun } from "./message"
 import { ScheduleControl } from "./rpc"
 
@@ -18,12 +20,52 @@ export default Plugin.define({
       run: "scheduled run",
       cancel: "Cancel schedule",
       gone: "That schedule is no longer active.",
+      "chip.one": "{{count}} schedule",
+      "chip.other": "{{count}} schedules",
+      once: "once",
+      next: "next in {{span}}",
+      "runs.one": "{{count}} run",
+      "runs.other": "{{count}} runs",
+      "runsOf.other": "{{count}} of {{max}} runs",
+      paused: "paused",
     },
   },
   setup(ctx) {
     ctx.add(Style, drawnIconCss)
     ctx.add(Style, injectedMessageRowCss)
     ctx.add(Style, css)
+    ctx.add(Style, laneChipCss)
+
+    // The tasks aimed at the session on screen, as a chip beside the host's own background-activity capsule. The pill API takes
+    // catalog icons only and the catalog has no clock, so the chip names a placeholder icon that laneChipCss draws as the clock.
+    const words = {
+      get once() {
+        return ctx.t("once")
+      },
+      next: (span: string) => ctx.t("next", { span }),
+      runs: (count: number, max: number | undefined) => (max !== undefined ? ctx.t("runsOf.other", { count: String(count), max: String(max) }) : ctx.plural("runs", count)),
+      get paused() {
+        return ctx.t("paused")
+      },
+    }
+    createSessionChip<ScheduleItem>(ctx, {
+      id: "schedules",
+      icon: CLOCK_PLACEHOLDER,
+      rowIcon: () => <ClockIcon />,
+      label: (count) => ctx.plural("chip", count),
+      get actionLabel() {
+        return ctx.t("cancel")
+      },
+      get gone() {
+        return ctx.t("gone")
+      },
+      load: async (session, signal) =>
+        ((await session.server.client.rpc(ScheduleControl).pending({ sessionID: session.id }, { signal, location: session.location })) as { items: ScheduleItem[] }).items,
+      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: scheduleStatus(item, now, words) })),
+      deadlines: scheduleDeadlines,
+      act: async (session, item) =>
+        ((await session.server.client.rpc(ScheduleControl).cancel({ id: item.id, sessionID: session.id }, { location: session.location })) as { cancelled: boolean }).cancelled,
+    })
 
     const runs = createMemo(() => {
       const found = new Map<string, Located>()
