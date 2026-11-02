@@ -13,16 +13,22 @@ Reason for each copy, against the public components `ctx.ui` offers and the "no 
 - **Header icon button** wraps `ctx.ui.IconButton` (public) and adds the pressed look, `aria-haspopup`, `aria-expanded` and `aria-controls` the host's header buttons carry.
 - **`createHost(ctx.ui)`** keeps the setup owner, so components rendered later from an observer, timer or DOM event still find the plugin's Solid context.
 - **Sharing by relative path**, not a package: a consumer bundles the source into its own build (`snooze-archive` does, via its `tsconfig` include). `agents-panel` imports the spinner; `snooze-archive/src/menu.ts` re-implements part of the menu, a known duplicate, not a decision.
+- **Injected-message row** (`src/injected-message-row.tsx`, `injected-rows.tsx`, `injected-text.ts`, `anchor.ts`, `AgentIcon`; user decisions 2026-11-01): one component for a message the app injected into a session (a peer's, a monitor's, a scheduled run's). The host has no message-renderer registry, so `mountInjectedRows` decorates mounted `UserMessage` timeline rows (hides the host bubble, appends the row in the same frame via a `MutationObserver` on the timeline scroll regions only, nothing runs while no open session holds a message of that kind); each plugin passes the messages it owns. The header copies the host subagent row's markup values and its trailing slot (width, margin, opacity, translateX over 150ms `ease`; 18px wider on hover, 36px with the triangle), the triangle rotates like the host's collapsible arrow, and the header is held under the pointer through a toggle (`holdTop`: the host re-pins the timeline on any resize, which would carry the header away). Evidence and numbers: [orchestrator-tools DESIGN](../orchestrator-tools/DESIGN.md) (peer row).
+  - Grey header kept when open: the preview stays in layout with `visibility: hidden`, so the header's box does not change (Δ0.00 in x, width and y per frame, measured) and the second click lands where the first did. The body is a card below the header, outside the click target, mounted only while open (no Markdown or text cost for closed rows).
+  - Display text is the real content: `unescapeMarkup` undoes one level of the servers' wrapper escaping (`&amp;gt;` shows `&gt;`, what the command printed), no wrapper tags, no trailer.
+  - No `cursor: pointer` (the app reserves it for links); `lint.mjs` forbids it outside `a` and `[role=link]`.
+  - The action is a 24px ghost icon button from `ctx.ui.IconButton`; `ctx.ui` has no stop-square icon, so Stop and Cancel use the catalog `close`.
+  - Not built: a height animation (the host's collapsibles are instant too).
 
 ## Known gaps
 
 - Module state: a module `WeakSet` in the header icon button. It is not owned by a plugin owner, so a Reload leaves the set behind.
-- 6 tests for 14 exports; the parity spec covers the rest live.
+- 20 tests for the exports (the injected row has its own, `anchor.ts` moved here with its tests); the parity spec covers the rest live.
 - `demo/` is a separate GUI plugin used to exercise the components; it has a document-wide observer and is not part of the library.
 
 ## Performance
 
-Not measured. The library registers nothing itself. Standing cost of what it exports: none at import: each spinner makes its own `ResizeObserver` and `IntersectionObserver` in its owner and disconnects them on cleanup; the keyframes are `spinnerCss`, registered by the consumer. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md).
+Measured through the injected-message row in [orchestrator-tools DESIGN](../orchestrator-tools/DESIGN.md#performance) (three plugins on one shared observer per window); the other components are not measured. The library registers nothing itself. Standing cost of what it exports: none at import: each spinner makes its own `ResizeObserver` and `IntersectionObserver` in its owner and disconnects them on cleanup; the keyframes are `spinnerCss`, registered by the consumer. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md).
 
 | Scenario | Bare | With plugin | Delta | Bar | Result |
 | --- | --- | --- | --- | --- | --- |

@@ -52,6 +52,15 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   it resets on restart, since downtime usually exceeds the hour and the cap is a flood guard, not a quota; `paused` likewise.
 - **`match`**: tested before an output line counts as an event, so batching, `maxEvents` and the rate window see matched lines only.
 
+## Desktop row (`src/gui.tsx`, `src/parse.ts`, `src/rpc.ts`, `src/control.ts`)
+
+A wake is shown as the shared injected-message row from `native-ui` (design and measurements in [native-ui DESIGN](../native-ui/DESIGN.md) and the peer row's in [orchestrator-tools DESIGN](../orchestrator-tools/DESIGN.md)). Decisions (user, 2026-11-01):
+
+- **Detection.** A user message is a monitor wake only when it carries the server's `metadata.monitor = { monitorID, seq }` and its text parses as one or more `<monitor-event>` / `<monitor-notice>` blocks of that monitor followed by the trailer (or nothing). A message a user typed with the same tags has no metadata and stays the user's bubble; one that has the metadata but text this parser cannot read (an unclosed tag, text before a block, a different trailer, another monitor's block) also falls back to the host's rendering, so nothing is hidden. The wrapper and its escaping are unchanged: the model gets exactly what it got before.
+- **Content.** Lines are unescaped one level (`&gt;` becomes `>`, `&amp;` `&`, `&lt;` `<`, `&quot;` `"`); `&amp;gt;` therefore shows `&gt;`, which is what the command printed. Event blocks are monospace and scroll past 360px; notices are muted prose. Header: title = monitor name; preview = first line plus ` · N lines` for an event, `restarted (restart N)`, `lost`, `ended`, `paused`, `resumed` or `command exited` for a notice. Each parse is cached by message id and text, so a store change never re-parses a 5000-line message.
+- **Stop.** The row offers Stop only while the monitor runs. The GUI half asks the server half (`rpc.ts`: `running({ ids })`, `stop({ id, sessionID })`; ids and booleans only) when the set of monitors on screen changes; a monitor that ends sends its last message, which is when that set changes. The plugin loads once per directory and a monitor lives in the instance of the directory its session runs in, so each call carries the session's `location` (without it the call reaches the default instance, which holds none of them; found and fixed in the harness). `stop` checks the monitor belongs to the calling row's session. If the monitor is already gone the row says so in a toast.
+- **No server half, no button.** Without the RPC the row is still drawn; it just offers no Stop.
+
 ## Not done
 - Renewing a TTL without starting a new monitor (decided against: the expiry wake is the prompt to start again).
 

@@ -7,7 +7,10 @@
 
 const scroll = `(async () => { const v = document.querySelector("[data-slot=session-timeline-scroll] .scroll-view__viewport"); v.scrollTop = v.scrollHeight; await new Promise((r) => setTimeout(r, 400)) })()`
 
-const ROW = "[data-peer-card][data-expandable=true]"
+const HEAD = "[data-slot=injected-head]"
+const PEER = "[data-injected-row][data-kind=peer]"
+const ROW = `${PEER}[data-expandable=true] ${HEAD}`
+const ONE = `${PEER}:not([data-expandable=true]) ${HEAD}`
 const both = (reason, ...names) => Object.fromEntries(["rest", "hover"].flatMap((state) => names.map((name) => [`${state}.${name}`, reason])))
 
 
@@ -15,13 +18,13 @@ const both = (reason, ...names) => Object.fromEntries(["rest", "hover"].flatMap(
 // gap, the title and text lines, where their baselines fall, and where the content's left edge starts. `height` is left out when
 // headerOnly is set (an open row grows; its header must still match).
 const probe = (headerOnly) => `
-  const o = el.getBoundingClientRect(), cs = getComputedStyle(el), ours = el.hasAttribute("data-peer-card");
-  const title = el.querySelector(ours ? "[data-slot=peer-name]" : "[data-component=task-tool-title]");
-  const text = el.querySelector(ours ? "[data-slot=peer-text]" : "[data-slot=basic-tool-tool-subtitle]");
-  const first = ours ? (el.querySelector("[data-slot=peer-text] [data-markdown-block] > *") || text) : text;
+  const o = el.getBoundingClientRect(), cs = getComputedStyle(el), ours = el.matches("[data-slot=injected-head]");
+  const title = el.querySelector(ours ? "[data-slot=injected-title]" : "[data-component=task-tool-title]");
+  const text = el.querySelector(ours ? "[data-slot=injected-preview]" : "[data-slot=basic-tool-tool-subtitle]");
+  const first = text;
   const mark = (node) => { let n = node; while (n && n.nodeType !== 3) n = n.firstChild; if (!n) return null; const p = document.createElement("span"); p.style.cssText = "display:inline-block;width:0;height:0"; const r = document.createRange(); r.setStart(n, 0); r.collapse(true); r.insertNode(p); const y = p.getBoundingClientRect().top; const par = p.parentNode; p.remove(); par.normalize(); return y; };
   const t = title.getBoundingClientRect(), x = text.getBoundingClientRect();
-  const ink = ours ? el.querySelector("[data-slot=peer-dir] path").getBoundingClientRect() : t;
+  const ink = ours ? el.querySelector("[data-slot=injected-icon]").getBoundingClientRect() : t;
   const cy = o.top + ${headerOnly ? 18 : "o.height / 2"}, xc = ${headerOnly ? "x.top + 10" : "x.top + x.height / 2"}, r2 = (n) => Math.round(n * 100) / 100;
   const tf = getComputedStyle(title), xf = getComputedStyle(first);
   return {
@@ -47,9 +50,9 @@ const HOST_HEADER = { padding: "8px 12px 8px 12px", radius: "8px", contentLeft: 
 // all 150ms `ease`, cubic-bezier(.25,.1,.25,1)), allowing the sampler's one-frame start offset.
 const HOVER_START = `
   window.__hf = [];
-  const s = el.closest("[data-peer-card], [data-component=task-tool-surface]"), ours = s.hasAttribute("data-peer-card");
-  const chev = ours ? s.querySelector(".peer-open svg") : s.querySelector("[data-component=task-tool-action] svg");
-  const slot = ours ? s.querySelector("[data-slot=peer-tail]") : s.querySelector("[data-component=task-tool-action]");
+  const s = el.closest("[data-slot=injected-head], [data-component=task-tool-surface]"), ours = s.matches("[data-slot=injected-head]");
+  const chev = ours ? s.querySelector(".injected-action svg") : s.querySelector("[data-component=task-tool-action] svg");
+  const slot = ours ? s.querySelector("[data-slot=injected-tail]") : s.querySelector("[data-component=task-tool-action]");
   const t0 = performance.now();
   const tick = () => { const o = s.getBoundingClientRect(), c = chev.getBoundingClientRect(); window.__hf.push({ t: performance.now() - t0, w: o.width, x: o.right - c.right, op: +getComputedStyle(slot).opacity }); if (performance.now() - t0 < 800) requestAnimationFrame(tick); };
   tick();`
@@ -75,8 +78,8 @@ export default {
       name: "peer-row",
       ours: ROW,
       native: "[data-component=task-tool-surface]",
-      row: "[data-peer-card], [data-component=task-tool-surface]",
-      parts: { icon: "[data-slot=peer-dir]", title: "[data-slot=peer-name], [data-component=task-tool-title]", text: "[data-slot=peer-text], [data-slot=basic-tool-tool-subtitle]" },
+      row: "[data-slot=injected-head], [data-component=task-tool-surface]",
+      parts: { icon: "[data-slot=injected-icon]", title: "[data-slot=injected-title], [data-component=task-tool-title]", text: "[data-slot=injected-preview], [data-slot=basic-tool-tool-subtitle]" },
       style: { states: ["rest", "hover"] },
       allow: {
         ...both("both rows are fit-content; the width follows each one's own words and ours fills the column when the message is long", "width", "box.width", "text.width", "title.width"),
@@ -90,14 +93,14 @@ export default {
     },
     {
       name: "alignment-one-line",
-      ours: "[data-peer-card]",
+      ours: ONE,
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{ name: "alignment", check: "scenario", steps: [], probe: probe(false) }],
     },
     {
       name: "alignment-expandable-collapsed",
-      ours: { selector: "[data-peer-card][data-expandable=true]", index: 0 },
+      ours: { selector: ROW, index: 0 },
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{ name: "alignment", check: "scenario", steps: [], probe: probe(false) }],
@@ -105,17 +108,17 @@ export default {
     {
       // An open row grows, so there is no host height to compare; its header must still sit exactly where the host row's does.
       name: "alignment-expanded-header",
-      ours: { selector: "[data-peer-card][data-expandable=true]", index: 0 },
+      ours: { selector: ROW, index: 0 },
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{
         name: "alignment",
         check: "scenario",
         only: "ours",
-        steps: ["js:el.querySelector('[data-slot=peer-trigger]').click()"],
+        steps: ["js:el.querySelector('[data-slot=injected-trigger]').click()"],
         probe: probe(true),
         expect: { result: HOST_HEADER },
-        after: "document.querySelector('[data-peer-card][data-open=true] [data-slot=peer-trigger]')?.click()",
+        after: "document.querySelector('[data-injected-row][data-open=true] [data-slot=injected-trigger]')?.click()",
       }],
     },
     {
@@ -123,9 +126,9 @@ export default {
       // over 150ms ease, so the fit-content row gets wider as the host row does. Measured on a row with no expand triangle (the host row
       // has none), every frame must match; the triangle's 18px extra is checked separately below.
       name: "tail-reveal",
-      ours: "[data-peer-card]:not([data-expandable=true]) [data-slot=peer-tail]",
+      ours: `${ONE} [data-slot=injected-tail]`,
       native: "[data-component=task-tool-action]",
-      row: "[data-peer-card], [data-component=task-tool-surface]",
+      row: "[data-slot=injected-head], [data-component=task-tool-surface]",
       style: { states: ["rest", "row"], props: ["width", "opacity", "transform", "margin", "transition", "overflow"] },
       allow: {
         "rest.box.height": "ours' slot is the 20px line (its 24px button centres on it); the host's holds a 16px icon on the same centre",
@@ -134,6 +137,7 @@ export default {
         "row.icon.width": "same",
         "rest.icon.height": "same",
         "row.icon.height": "same",
+        "curve.width": "the same one-frame sampling phase between the two runs reads as up to 0.2px of the slot width at 0ms (it passed in some runs and not others with identical code); the per-frame easing fit in tail-hover-in-per-frame checks the width against the host curve with the phase removed",
         "curve.transform": "the slide is 4px, so a one-frame sampling phase difference between the two runs reads as up to 0.5px; the per-frame easing fit in tail-hover-in-per-frame covers the same motion with the phase removed",
         "rest.overflow": "ours clips with overflow-clip-margin so the button's 4px side padding stays visible; the host's slot holds a bare 16px icon",
         "row.overflow": "same",
@@ -148,7 +152,7 @@ export default {
     {
       // With the expand triangle in front the slot is 18px wider than a bare chevron (16 triangle + 2 gap): the same motion, a larger distance.
       name: "tail-reveal-with-triangle",
-      ours: { selector: "[data-peer-card][data-expandable=true]", index: 0 },
+      ours: { selector: ROW, index: 0 },
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{
@@ -165,9 +169,9 @@ export default {
       // that fades in on hover. Ours is the same catalog icon inside a 24px ghost button, centred on the same x from the row's
       // right edge (20px) and the same y; the button's box is the only difference, so the compared element is the icon.
       name: "open-session-icon",
-      ours: `${ROW} .peer-open svg`,
+      ours: `${ROW} .injected-action svg`,
       native: "[data-component=task-tool-action] svg",
-      row: "[data-peer-card], [data-component=task-tool-surface]",
+      row: "[data-slot=injected-head], [data-component=task-tool-surface]",
       style: { states: ["row", "hover"], props: ["width", "height", "color", "opacity"] },
       allow: {
         ...Object.fromEntries(["row", "hover"].flatMap((state) => [[`${state}.row.inset-end`, "ours sits in a 24px button after the triangle; the icon's centre is 20px from the row's right edge on both sides (checked in alignment-open-icon)"], [`${state}.row.centre-dy`, "checked in alignment-open-icon"]])),
@@ -176,19 +180,19 @@ export default {
     {
       // Where the chevron ends up once the row is hovered: the same catalog icon at the same size, distance from the right edge and height.
       name: "open-session-icon-position",
-      ours: "[data-peer-card]:not([data-expandable=true])",
+      ours: ONE,
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{
         name: "icon-source-and-centre",
         check: "scenario",
         steps: ["hover", "wait:400"],
-        probe: `const ours = el.hasAttribute("data-peer-card"), v = el.querySelector(ours ? ".peer-open svg" : "[data-component=task-tool-action] svg"), o = el.getBoundingClientRect(), r = v.getBoundingClientRect(); return { href: v.querySelector("use").getAttribute("href"), size: [r.width, r.height], fromRight: Math.round((o.right - (r.left + r.width / 2)) * 10) / 10, cy: Math.round((r.top + r.height / 2 - o.top) * 10) / 10, color: getComputedStyle(v).color }`,
+        probe: `const ours = el.matches("[data-slot=injected-head]"), v = el.querySelector(ours ? ".injected-action svg" : "[data-component=task-tool-action] svg"), o = el.getBoundingClientRect(), r = v.getBoundingClientRect(); return { href: v.querySelector("use").getAttribute("href"), size: [r.width, r.height], fromRight: Math.round((o.right - (r.left + r.width / 2)) * 10) / 10, cy: Math.round((r.top + r.height / 2 - o.top) * 10) / 10, color: getComputedStyle(v).color }`,
       }],
     },
     {
       name: "open-session-button",
-      ours: `${ROW} .peer-open`,
+      ours: `${ROW} .injected-action`,
       native: "[data-slot=basic-tool-action] button",
       na: "the host's ghost action button (24px, radius 6px, hover-revealed) only exists inside an opened Execute tool part, which the seeded session does not have; ours is measured in alignment (24px, radius 6px) and its icon against the host's go-to-session chevron above",
     },

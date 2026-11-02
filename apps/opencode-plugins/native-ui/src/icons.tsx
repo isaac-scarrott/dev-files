@@ -39,3 +39,18 @@ export function clockIcon(doc: Document): HTMLElement {
 }
 
 export const drawnIconCss = `[data-slot=drawn-icon] { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center; color: currentColor; }`
+
+/** A 5x5 grid of 2px squares at fixed opacities: the dithered mark the agent rows use. Filled, so it inherits the surrounding colour. */
+const DITHER = [0.05,0.32,0.2,0.55,0.12,0.21,0.31,0.41,0.4,0.41,0.52,0.14,0.24,0.23,0.91,0.24,0.64,0.14,0.71,0.39,0.48,0.45,0.46,0.62,0.74] as const
+
+export function AgentIcon() {
+  return (
+    <span data-slot="drawn-icon" data-icon="agent" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+        {DITHER.map((opacity, index) => (
+          <rect x={1 + (index % 5) * 3} y={1 + Math.floor(index / 5) * 3} width="2" height="2" opacity={opacity} />
+        ))}
+      </svg>
+    </span>
+  )
+}
