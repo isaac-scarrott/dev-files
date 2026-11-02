@@ -131,3 +131,58 @@ test("the row reserves the host user bubble's footer below it, except inside a r
   assert.match(injectedMessageRowCss, /\[data-injected-row\] \{[^}]*padding-bottom: 29px;/)
   assert.match(injectedMessageRowCss, /\[data-timeline-key\^="user-message:"\]:has\(\+ \[data-timeline-key\^="turn-gap:"\] \+ \[data-timeline-key\^="user-message:"\]\) \[data-injected-row\] \{ padding-bottom: 1px; \}/)
 })
+
+// A full-width row behaves like the host subagent row (native-ui DESIGN, "Injected-row hover"): capped at the container less 24px, one
+// clip box around title and preview that cuts mid-glyph (no ellipsis), and the trailing slot last in the head so it takes its width
+// from the clip box and the chevron rides the row's right edge.
+test("the head is [icon][clip box with title and preview][trailing slot], the slot last", () => {
+  const host = dom()
+  mount(host, { action: { icon: "chevron-right", label: "Open", onClick() {} } })
+  const head = host.querySelector("[data-slot=injected-head]")!
+  const slots = [...head.children].map((child) => child.getAttribute("data-slot"))
+  assert.deepEqual(slots, ["injected-trigger", "injected-icon", "injected-main", "injected-tail"])
+  const main = head.querySelector("[data-slot=injected-main]")!
+  assert.deepEqual([...main.children].map((child) => child.getAttribute("data-slot")), ["injected-title", "injected-preview"])
+  assert.equal(head.querySelector("[data-slot=injected-tail]")?.nextElementSibling, null)
+  assert.equal(host.querySelector("[data-injected-row]")?.hasAttribute("data-action"), true)
+  const bare = dom()
+  mount(bare)
+  assert.equal(bare.querySelector("[data-injected-row]")?.hasAttribute("data-action"), false)
+})
+
+test("the stylesheet caps the row, clips the text mid-glyph and sizes the slot like the host's", () => {
+  const css = injectedMessageRowCss
+  assert.match(css, /max-width: calc\(100% - 24px\)/)
+  assert.match(css, /\[data-slot="injected-main"\] \{[^}]*flex: 1 1 auto;[^}]*min-width: 0;[^}]*overflow: hidden;/)
+  assert.match(css, /\[data-slot="injected-title"\] \{ flex: none;/)
+  assert.match(css, /\[data-slot="injected-preview"\] \{ flex: none;/)
+  assert.doesNotMatch(css, /text-overflow/, "the host cuts the text with its clip box, no ellipsis")
+  // The slot rests at no width and no margin, grows to 16px + 2px on hover (the host's task-tool-action), 34px with triangle and action.
+  assert.match(css, /width: 0; margin-inline: 0;/)
+  assert.match(css, /width: 16px; margin-inline: 2px 0;/)
+  assert.match(css, /\[data-expandable="true"\]\[data-action\][^{]*\{ width: 34px; margin-inline: 2px 0; \}/)
+  // The action slides 8px over the slot's 150ms, which is the host chevron's 4px path in a slot anchored to the row's end.
+  assert.match(css, /\.injected-action \{[^}]*transform: translate\(8px\); transition: transform 150ms;/)
+  assert.match(css, /justify-content: flex-end/)
+  assert.match(css, /:root\[data-motion="reduce"\][^{]*\.injected-action \{ transition: none; \}/)
+})
+
+test("a clipped end fades with the host's 16px tab-title ramp, only while the text overflows", async () => {
+  const host = dom()
+  let measure!: () => void
+  ;(globalThis as any).ResizeObserver = class { constructor(fn: () => void) { measure = fn } observe() {} disconnect() {} }
+  mount(host, { more: true })
+  await tick()
+  const row = host.querySelector("[data-injected-row]")!
+  const main = host.querySelector("[data-slot=injected-main]") as any
+  assert.equal(row.getAttribute("data-clipped"), "false")
+  Object.defineProperty(main, "scrollWidth", { configurable: true, value: 400 })
+  Object.defineProperty(main, "clientWidth", { configurable: true, value: 300 })
+  measure()
+  assert.equal(row.getAttribute("data-clipped"), "true")
+  Object.defineProperty(main, "scrollWidth", { configurable: true, value: 300 })
+  measure()
+  assert.equal(row.getAttribute("data-clipped"), "false")
+  const css = injectedMessageRowCss
+  assert.match(css, /\[data-clipped="true"\] \[data-slot="injected-main"\] \{\s*-webkit-mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);\s*mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);/)
+})
