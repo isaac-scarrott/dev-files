@@ -1,6 +1,6 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
 import { createMemo, createSignal, For } from "solid-js"
-import { createSessionChip, firstLine, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
+import { createSessionChip, firstLine, ProgressSpinner, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
 import { monitorDeadlines, monitorStatus } from "./chip"
 import type { MonitorItem } from "./control"
 import { monitorOf, summarize, type MonitorWake } from "./parse"
@@ -49,7 +49,7 @@ export default Plugin.define({
     createSessionChip<MonitorItem>(ctx, {
       id: "monitors",
       icon: "outline-console",
-      rowIcon: () => <ctx.ui.Icon name="outline-console" size="small" />,
+      rowIcon: () => <ProgressSpinner />,
       label: (count) => ctx.plural("chip", count),
       get actionLabel() {
         return ctx.t("stop")
