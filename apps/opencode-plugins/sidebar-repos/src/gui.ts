@@ -1,5 +1,5 @@
 import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
-import { createEffect } from "solid-js"
+import { createMemo } from "solid-js"
 import { render } from "solid-js/web"
 import { createTicker, lastActivity } from "./activity"
 import { removeTimes, renderTimes, stampActivity } from "./rowtime"
@@ -210,10 +210,8 @@ export default Plugin.define({
 
     // Last activity needs each open thread's messages; fetched once per session, then kept current by the store.
     const messagesRequested = new Set<string>()
-    createEffect(() => {
-      for (const tab of ctx.tabs.list()) {
-        const session = tab.session
-        if (!session) continue
+    createKeyed(() => ctx.tabs.list().flatMap((tab) => tab.session ? [tab.session] : []), (sessions) => {
+      for (const session of sessions) {
         const key = `${session.server.id}:${session.id}`
         if (messagesRequested.has(key)) continue
         messagesRequested.add(key)
@@ -221,33 +219,38 @@ export default Plugin.define({
       }
     })
 
-    createEffect(() => {
-      activity = new Map(ctx.tabs.list().flatMap((tab) => {
-        const session = tab.session
-        if (!session) return []
-        const data = session.server.data
-        const at = lastActivity(data.session.message.list(session.id), data.session.get(session.id)?.time.updated)
-        return at === undefined ? [] : [[tab.key, at] as const]
-      }))
+    const activityByTab = createMemo(() => new Map(ctx.tabs.list().flatMap((tab) => {
+      const session = tab.session
+      if (!session) return []
+      const data = session.server.data
+      const at = lastActivity(data.session.message.list(session.id), data.session.get(session.id)?.time.updated)
+      return at === undefined ? [] : [[tab.key, at] as const]
+    })))
+    createKeyed(activityByTab, (next) => {
+      activity = next
       refresh()
     })
 
-    createEffect(() => {
-      names = new Map(ctx.tabs.list().flatMap((tab) => {
+    const rowLabels = createMemo(() => ({
+      names: new Map(ctx.tabs.list().flatMap((tab) => {
         const session = tab.session
         if (!session) return []
         const info = session.server.data.session.get(session.id)
         const project = info ? session.server.data.project.get(info.projectID) : undefined
         const name = basename(project?.canonical ?? session.location?.directory ?? "")
         return name ? [[tab.key, name] as const] : []
-      }))
-      attention = new Map(ctx.tabs.list().flatMap((tab) => {
+      })),
+      attention: new Map(ctx.tabs.list().flatMap((tab) => {
         const session = tab.session
         if (!session) return []
         const data = session.server.data
         const kind = attentionKind(data.session.permission.list(session.id), data.session.form.list(session.id))
         return kind ? [[tab.key, kind] as const] : []
-      }))
+      })),
+    }))
+    createKeyed(rowLabels, (next) => {
+      names = next.names
+      attention = next.attention
       refresh()
     })
 
