@@ -8,6 +8,7 @@ import { delegateEvents, render } from "solid-js/web"
 export function fakeUi(doc: Document): Ui {
   const node = (tag: string, props: Record<string, unknown>) => {
     const el = doc.createElement(tag) as HTMLButtonElement
+    // Test double for a host component: binding reactive props to the element is what the host's own JSX compiles to.
     createRenderEffect(() => {
       if (props.label !== undefined) el.setAttribute("aria-label", String(props.label))
       if (props.icon !== undefined) el.dataset.icon = String(props.icon)
@@ -30,6 +31,7 @@ export function fakeUi(doc: Document): Ui {
     Tooltip: (props) => props.children,
     TextInput: (props) => {
       const el = doc.createElement("input") as HTMLInputElement
+      // Same binding as above, for the input's props.
       createRenderEffect(() => { el.value = String(props.value); el.setAttribute("aria-label", String(props.label)); if (props.invalid) el.setAttribute("aria-invalid", "true"); else el.removeAttribute("aria-invalid") })
       el.oninput = () => props.onInput(el.value)
       el.onkeydown = (event) => { if (event.key === "Enter") props.onSubmit?.(el.value) }
