@@ -9,7 +9,8 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=browser --import tsx --import ../native-ui/test/register.mjs --test src/*.test.ts"
+    "test": "node --conditions=browser --import tsx --import ../native-ui/test/register.mjs --test src/*.test.ts",
+    "smoke": "node --conditions=browser test/smoke.mjs"
   },
   "dependencies": {
     "effect": "4.0.6",

@@ -9,7 +9,8 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --conditions=browser --import tsx --import ./test/register.mjs --test src/*.test.ts src/*.test.tsx"
+    "test": "node --conditions=browser --import tsx --import ./test/register.mjs --test src/*.test.ts src/*.test.tsx",
+    "smoke": "node --conditions=browser test/smoke.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.5",
