@@ -67,13 +67,14 @@ Left: the switch scenario still costs about 5 ms/s of scripting over bare. It is
 
 | Scenario | Floor | Before | After | Bar | Result |
 |---|---|---|---|---|---|
-| ten row clicks, script ms | 221-236 | 1415 | 263-286 | within 3% or noise | PASS |
+| ten row clicks, script ms | 221-242 | 1415 | 243-286 | within 3% or noise | PASS |
 | ten row clicks, worst settle ms | 337-503 | 3937 | 427-463 | within 5% or 20 ms | PASS |
-| cold load, script ms | 144-258 | 1395 | 400-409 | within noise | FAIL (+250 ms) |
-| cold load, time to settled | 13.6-14.1 s | 20.9 s | 20.0-21.3 s | within 5% | FAIL (+6-7 s) |
-| hover sweep, new frames over 20 ms | 0-4 | 119 | 0 (one run), 61 (second run) | within noise | FAIL (unstable) |
+| cold load, script ms | 152-258 | 1395 | 301-409 | within noise | FAIL (+150-250 ms) |
+| cold load, time to settled | 13.1-14.1 s | 20.9 s | 19.6-21.3 s | within 5% | FAIL (+6-7 s) |
+| hover sweep, new frames over 20 ms | 0-4 | 119 | 0, 3, 0, 61 (four runs on two builds) | within noise | PASS on the final build (3 and 0), earlier build 61 once |
+| sidebar list scroll, script ms | 244-250 | 386 | 136 | within 3% | PASS |
 | idle | | | no extra callbacks | zero | PASS |
 
-What changed: `fullTime` builds its `Intl.DateTimeFormat` once per locale (`toLocaleString` made a new one per call, and a refresh formatted every row twice); the row tooltip is written only when the time changes; the time font is read once per refresh and text widths are cached by font and string; `badges()` creates nodes first, then reads every width, then writes (the forced layout per row was 6.2 s of a cold load); a refresh that costs 8 ms or more, inside a burst of five within half a second, holds the next one off for nine times its cost up to 250 ms.
+What changed: the row tooltip and the badge tooltip are formatted only when the row's activity time or label changes (`toLocaleString` builds a new `Intl` formatter per call, and a refresh formatted every row twice); the time font is read once per refresh and text widths are cached by font and string; `badges()` creates nodes first, then reads every width, then writes (the forced layout per row was 6.2 s of a cold load); a refresh that costs 8 ms or more, inside a burst of five within half a second, holds the next one off for nine times its cost up to 250 ms.
 
 Left: cold-load settle is still 6-7 s over the floor. Disabling the plugin's CSS cost about 3 s of it and disabling the refresh the rest, so both the `:has()` rules and the per-row refresh matter; it is bimodal (one instrumented run settled at 10.8 s against a 13.2 s floor), so attribution is open. Ten-click style cost and the hover sweep depend on whether the sidebar was reloaded before the scenario (style 0.4 s after a reload, 3.6 s without one), unexplained.
