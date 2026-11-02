@@ -97,6 +97,7 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
 }
 
 const ROW = "[data-injected-row]"
+const FOLLOWED = `[data-timeline-key^="user-message:"]:has(+ [data-timeline-key^="turn-gap:"] + [data-timeline-key^="user-message:"])`
 const HEAD = `${ROW} [data-slot="injected-head"]`
 const BODY = `${ROW} [data-slot="injected-body"]`
 const TAIL = `${HEAD} [data-slot="injected-tail"]`
@@ -105,7 +106,12 @@ const SLOT = `[data-slot="injected-head"]:is(:hover, :focus-within, :has([data-s
 /** Register once with `ctx.add(Style, injectedMessageRowCss)`. Host tokens only; both themes follow. No pointer cursor (the app reserves it for links). */
 export const injectedMessageRowCss = `
 [data-injected-host] [data-component="user-message"] { display: none; }
-${ROW} { display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+/* The row stands where a user bubble would, so it takes the bubble's footprint: the host reserves 28px under the last bubble of a run of
+   user messages (8px margin + the 20px copy/retry footer that shows on hover), which is the gap its next assistant part sits at. A bubble
+   that is followed by another user message has no footer (the host's 4px TurnGap row separates them), so the reserve drops there too.
+   The padding is the row's own height, so the virtualised timeline measures it; a margin would collapse out of the host's content box. */
+${ROW} { display: flex; flex-direction: column; align-items: flex-start; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding-bottom: 28px; }
+${FOLLOWED} ${ROW} { padding-bottom: 0; }
 ${HEAD} {
   position: relative; box-sizing: border-box; display: flex; align-items: flex-start; gap: 8px;
   width: fit-content; max-width: 100%; min-width: 0; padding: 8px 12px;
