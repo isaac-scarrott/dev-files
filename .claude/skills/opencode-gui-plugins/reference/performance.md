@@ -41,6 +41,8 @@ Fresh private root, side-tabs layout (sidebar plugins act only there), the long 
 - `null`: a plugin whose `setup` does nothing (`scripts/fixtures/null-plugin`). Loading any plugin costs the host about 35 ms of script per 30 s and a little per interaction. That is the host's, not the plugin's: **every verdict is against `null`**, not `bare`.
 - each GUI plugin alone, then `all` together (plugins add up, and some share work, so `all` is not the sum).
 
+Seed realistic data ([stress.md](stress.md)): rich threads and a populated sidebar, not text messages.
+
 ## Scenarios (identical script each run)
 
 | Scenario | What runs |

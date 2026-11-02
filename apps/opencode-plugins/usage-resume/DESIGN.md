@@ -38,7 +38,7 @@ and the usage endpoint covers the rest.
   is doing and never steers a running turn.
 - `ctx.session.synthetic({ ..., description, resume: false })` for the "Resumes at 14:05" notice. A synthetic item with a
   description renders in the timeline, and `resume: false` keeps it from waking the session. There is no server-side toast
-  API (`ctx.toast` is GUI-only), and a timeline notice sits in the session it is about, so there is no GUI part.
+  API (`ctx.toast` is GUI-only), and a timeline notice sits in the session it is about. The GUI part (v2) is only the opt-in toggle and setting, below.
 - `ctx.storage` for state.
 
 Not verifiable here: no real limit can be triggered in the harness, so the exact error shape rests on the binary's
@@ -75,11 +75,95 @@ limited whether or not the account has extra usage on, except that an `overage` 
 Note the interaction with the cliproxy overage problem (extra-usage-guard research): this plugin only resumes work when a
 subscription window has reset, so it does not make overage spending more likely.
 
+## Opt-in (v2)
+
+Auto-resume is **off by default** and needs a human opt-in, at two levels:
+
+1. **Per session**: a `ComposerPill` above the composer, shown **only while the session is stopped at a usage limit**
+   (see "The composer pill"). Clicking it turns auto-resume on or off for that session. Sessions without a choice are off.
+2. **Global default**: a switch "Auto-resume after usage limit" in Settings > Preferences > General, off by default.
+   On means a session starts with its toggle on when it is **created** (`session.created`, root sessions only). It is
+   not retroactive: a session that already exists keeps what it had, and turning the default off later leaves sessions
+   already created as they are. The session's own toggle always overrides the default.
+
+The server plugin checks the toggle when a limit is detected, again right before resuming (so switching it off while
+waiting stops the resume), and in the `retry` hook: an opted-out session keeps OpenCode's own retry behaviour.
+
+### The composer pill
+
+The toggle used to be an `IconButton` injected into the composer controls row by a body-wide `MutationObserver`. It
+looked detached (the host shows the reasoning-effort control there only on hover, leaving our button alone) and was
+visible all the time. It is now a `ComposerPill`, the host's registry for status capsules in the row above the composer
+beside the background-work and todo pills: host spacing, tones and hover states, no DOM injection, no observer, no
+`resize` listener, and no pill in a subagent's session (which matches "never subagents").
+
+Visibility rule, evaluated by the host's reactive `show`: the pill exists only while the server reports the session as
+`limited`. The server marks a session limited when a run fails on a usage limit (whether or not it opted in, which is why
+the state is kept apart from `waiting`) and clears it on any event that moves the session on (a run starts or ends, a
+user message, deletion). A stated reset time that has passed also ends it, since an opted-out session has nothing else to
+clear it.
+
+Two details found in the harness. OpenCode retries an opted-out session for minutes before the run fails, so the `retry`
+hook also marks the session limited (it still lets OpenCode retry). And the GUI asks whichever location's instance
+answers, while only the owning instance saw the failure, so the mark is mirrored to shared storage (`limited/<id>`, with
+the next check time) and `get` reads it there. For the same reason the owner learns of a toggle change by reconciling
+waiting with the toggles on each tick (and at once when the call happens to reach it), so a session opted in while
+limited starts waiting within one tick (30 s by default).
+
+States: limited and off is a warning pill "Resume after limit" (click opts in and starts the wait at once); limited and
+on is a success pill "Resuming 14:05" (click opts out); a failed read is a danger pill "Auto-resume unavailable". The
+pill has no `pressed` state, so on and off are told apart by label and tone. Gap: `ComposerPill` has no hover-reveal
+rule of its own; it is simply absent when not limited.
+
+### Where the state lives
+
+GUI and server are separate processes. The server plugin owns the state in `ctx.storage` (`toggle/default`,
+`toggle/session/<id>`) and the GUI reads and writes it over the plugin's RPC (`src/rpc.ts`: `get`, `set`, `getDefault`,
+`setDefault`, and a `changed` event so every window re-reads). Session metadata was rejected: the GUI has no write path to
+it, and storage keeps the toggle out of exported sessions. A draft composer (no session yet) shows no pill; the default
+applies when the session is created.
+
+### One instance per project location
+
+Measured in the harness: the server loads this plugin once per project location (3 instances for 3 locations), all in
+one process, over **one shared storage**, and every instance's `event.subscribe` hears every session's events. Left
+alone that resumes a session once per location and polls the usage endpoint once per location. So:
+
+- an instance acts only on sessions whose `location.directory` equals its own; the rest are ignored silently;
+- waiting/attempt state is keyed per location (`state/v2/<hash of directory>`);
+- the usage readings, backoff schedules and the in-flight refresh are one shared object (`src/hub.ts`) persisted under
+  `usage/v1`, so the 5-minute floor holds however many locations are open;
+- the toggle state is shared storage and needs no ownership.
+
+### Diagnostics
+
+The plugin API has no logger, and the service's stderr is not kept anywhere readable (checked in the harness), so every
+line goes to stderr **and** to `<sampleDir>/usage-resume.log` (default `$XDG_DATA_HOME/opencode/usage-resume/`,
+`~/.local/share/opencode/usage-resume/`), rotated once at 1 MB. It logs: startup (location, default, waiting count),
+every failed run (type, status, redacted message), every detected limit (kind, resetsAt), every schedule, every
+"not yet available" re-check, every resume, and every skip with its reason (`toggle off`, `subagent`, `archived`,
+`attempt cap`, `touched since the stall`, …). Tokens, bearer values, JWTs and key-like blobs are redacted from log lines
+and samples.
+
+Samples: the first detected limit error is written to `limit-error.json`, and the first error that **reads** like a limit
+(`limit|quota|usage|429|rate limit|exhausted|resets|overage|billing`) but did not match the detector to
+`unmatched-limit-like-error.json`. Neither is overwritten. They are real provider text for future detector tests.
+
+### Known gap: a limit that never fails
+
+On the night this was specified, all accounts hit their window limits and the v1 plugin did nothing: it loaded but logged
+nothing, and work did not stop. Most likely a run **never failed**: an account with extra usage on (the holibob Max 20x)
+keeps serving past 100% and bills the overage, so no limit error reaches OpenCode and there is nothing to detect. This
+plugin reacts to a failed run; it cannot see a window being exceeded while requests keep succeeding, and it must not
+enable or pay for extra usage. The new log shows whether that is what happened (no `run failed` lines at all while usage
+was at 100%), and `unmatched-limit-like-error.json` catches the other possibility, that the error text differs from what
+the detector expects.
+
 ## Decisions (defaults)
 
 | Decision | Default | Option |
 |---|---|---|
-| Which sessions | all top-level sessions stalled by a Claude limit; subagent sessions (with a parent) skipped, since the parent decides what to do with a failed child | `includeChildren` |
+| Which sessions | **opt-in only.** A session is resumed only when its own toggle is on. Subagent sessions (with a parent) are never resumed and have no toggle: the parent decides what to do with a failed child | |
 | Prompt | `Continue.`, queued | `prompt` |
 | One resume per stall | the stall is forgotten before the prompt is sent; a new stall needs a new failure | |
 | Loop cap | 3 resumes per session, counted until the session completes a run; the Nth+1 failure posts a notice and stops | `maxAttempts` |
@@ -97,7 +181,10 @@ subscription window has reset, so it does not make overage spending more likely.
 - `src/usage.ts`: accounts, polling with floor/backoff, snapshot reuse, pure `availability`.
 - `src/plan.ts`: pure `decide` (resume or when to look again).
 - `src/resume.ts`: `Resumer`, the state machine behind a small `Host` interface.
-- `src/server.ts`: wiring: events, retry hook, tick.
+- `src/server.ts`: wiring: events, retry hook, tick, rpc.
+- `src/toggles.ts`: opt-in state (default and per session). `src/rpc.ts`: the GUI/server contract.
+- `src/hub.ts`: the usage source shared by every location's instance. `src/diag.ts`: log file, redaction, samples.
+- `src/gui.tsx`: the composer pill and the Settings row. `src/view.ts`: pure `pillFor`, what the pill shows.
 
 ## Known limits
 
@@ -106,3 +193,22 @@ subscription window has reset, so it does not make overage spending more likely.
 - If the app is quit while sessions wait, nothing resumes until it is reopened; then overdue sessions resume on the first tick.
 - The error shape was read from the binary, not observed live. If a bare 429 carries no limit text it is not treated as a
   usage limit (it is usually a short rate limit that OpenCode already retries).
+
+## Decisions: DOM hooks
+
+- **The composer toggle** is DOM injected into the composer row by a body-wide observer (`src/gui.tsx`, `src/composer.ts`). `ComposerPill` is the official capsule near the composer and would replace it, but it sits above the row rather than after the model picker. Which placement wins is the user's call (a `ComposerPill` spike is queued).
+- **Server side** uses public hooks (`SettingsPage`, RPC, session hooks) only.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- A body-wide `MutationObserver` plus a `resize` listener and rAF to place the composer button (`src/gui.tsx`).
+- Server: a 30 second deadline check and the usage poll, at the notch app's pace (5 minute floor per account).
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |

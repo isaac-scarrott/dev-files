@@ -1,4 +1,7 @@
-// The ghost is positioned with `transform`, so its entrance scales with the separate `scale` property.
+import { LABEL_ATTR } from "./drag"
+
+export const LABEL = "Drop to attach session"
+
 export const styles = `
 [data-session-drag-ghost] {
   position: fixed;
@@ -8,20 +11,18 @@ export const styles = `
   max-width: 280px;
   pointer-events: none;
   white-space: nowrap;
-  transform-origin: 0 50%;
-  opacity: 1;
-  scale: 1;
-  will-change: transform, opacity;
-  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1), scale 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
 }
-[data-session-drag-ghost][data-state="enter"] { opacity: 0; scale: 0.97; }
-[data-session-drag-ghost][data-state="leave"] { opacity: 0; }
 html[data-session-drag], html[data-session-drag] * {
   cursor: default !important;
   user-select: none !important;
   -webkit-user-select: none !important;
 }
-@media (prefers-reduced-motion: reduce) {
-  [data-session-drag-ghost][data-state="enter"] { scale: 1; }
-}
+/*
+ * The host's dropzone overlay words every text drag as files. While our drag is active its label (the unslotted div
+ * after the upload icon) is collapsed to a zero-height line and ours is drawn after it as a block with the host's 15px/24px (leading-6);
+ * weight and colour are inherited from the host label. Solid keeps owning the text node.
+ */
+html[${LABEL_ATTR}] [data-slot="session-dropzone-content"] > div:not([data-slot]) { font-size: 0; line-height: 0; }
+html[${LABEL_ATTR}] [data-slot="session-dropzone-content"] > div:not([data-slot])::after { content: "${LABEL}"; display: block; font-size: 15px; line-height: 24px; }
 `

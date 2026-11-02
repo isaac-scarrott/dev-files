@@ -82,3 +82,10 @@ test("an already open group is not clicked", () => {
   openPublishedGroups(t.doc, new Set(["a"]), new Set())
   assert.equal(g.clicks.count, 0)
 })
+
+test("ids that are finished but have no page are not reported unknown", () => {
+  const t = setup()
+  t.group(["a", "b", "c"])
+  const scan = openPublishedGroups(t.doc, new Set(["a"]), new Set(), new Set(["a", "b"]))
+  assert.deepEqual(scan.unknown, ["c"])
+})

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { jumpTo, type Host } from "./jump"
+import { jumpTo, readRows, type Host } from "./jump"
 import { seekTop } from "./target"
 
 const INSET = 48
@@ -16,11 +16,9 @@ type Spec = { owner: string; y: number; height: number; prompt?: boolean }
 async function fixture(input: {
   ids: string[]
   rows: Spec[]
-  more?: boolean
   total?: number
   scrollTop?: number
   reduced?: boolean
-  loadMore?: (f: Fixture) => void
 }) {
   const window = new Window()
   const document = window.document
@@ -64,9 +62,8 @@ async function fixture(input: {
   }
   mount(input.rows)
 
-  const calls = { loads: 0, loading: [] as boolean[], frames: 0 }
-  let ids = input.ids
-  let more = input.more ?? false
+  const calls = { frames: 0 }
+  const ids = input.ids
   const f = {
     scroller,
     state,
@@ -74,10 +71,6 @@ async function fixture(input: {
     wheels,
     calls,
     mount,
-    setIds: (next: string[], nextMore = false) => {
-      ids = next
-      more = nextMore
-    },
     host: undefined as unknown as Host,
     close: async () => {
       await window.happyDOM.abort()
@@ -91,17 +84,11 @@ async function fixture(input: {
   f.host = {
     scroller,
     ids: () => ids,
-    more: () => more,
-    loadMore: async () => {
-      calls.loads += 1
-      input.loadMore?.(f)
-    },
     reducedMotion: () => input.reduced ?? false,
     frame: async () => {
       calls.frames += 1
       if (calls.frames > 1000) throw new Error("runaway frames")
     },
-    loading: (value) => calls.loading.push(value),
   }
   return f
 }
@@ -240,27 +227,20 @@ test("a prompt the virtualizer renders one frame late is probed for again from t
   }
 })
 
-test("the first loaded prompt, unmounted with older history, loads a page then probes for it", async () => {
-  const f = await fixture({
-    ids: ["m2", "m3"],
-    more: true,
-    scrollTop: 400,
-    rows: [{ owner: "m3", y: 448, height: 60, prompt: true }, { owner: "m3", y: 508, height: 900 }],
-    loadMore: (fx) => {
-      fx.setIds(["m1", "m2", "m3"], false)
-      fx.mount([
-        { owner: "m2", y: 100, height: 60, prompt: true },
-        { owner: "m2", y: 160, height: 288 },
-        { owner: "m3", y: 448, height: 60, prompt: true },
-        { owner: "m3", y: 508, height: 900 },
-      ])
-    },
-  })
+test("the first listed prompt, unmounted, is probed for upward; the plugin never asks the host for older history", async () => {
+  const layout: Spec[] = [
+    { owner: "m2", y: 100, height: 60, prompt: true },
+    { owner: "m2", y: 160, height: 288 },
+    { owner: "m3", y: 448, height: 60, prompt: true },
+    { owner: "m3", y: 508, height: 900 },
+  ]
+  const f = await fixture({ ids: ["m2", "m3"], scrollTop: 400, total: 3000, rows: layout.slice(2) })
+  virtualize(f, layout, { lag: 0 })
   try {
     assert.equal(await jumpTo(f.host, "m2", new AbortController().signal), "done")
-    assert.equal(f.calls.loads, 1)
-    assert.deepEqual(f.calls.loading, [true, false])
-    assert.deepEqual(f.scrolls, [{ top: 100 - INSET, behavior: "smooth" }])
+    assert.equal(f.scrolls.at(-1)?.behavior, "smooth")
+    assert.equal(f.state.scrollTop, 100 - INSET)
+    assert.deepEqual(Object.keys(f.host).sort(), ["frame", "ids", "reducedMotion", "scroller"], "a Host has no way to load history")
   } finally {
     await f.close()
   }
@@ -276,23 +256,6 @@ test("a prompt the host does not list: no scroll, no unpin", async () => {
     assert.equal(await jumpTo(f.host, "m9", new AbortController().signal), "none")
     assert.deepEqual(f.scrolls, [])
     assert.deepEqual(f.wheels, [])
-  } finally {
-    await f.close()
-  }
-})
-
-test("an aborted jump stops after the load and scrolls nothing", async () => {
-  const controller = new AbortController()
-  const f = await fixture({
-    ids: ["m2"],
-    more: true,
-    scrollTop: 0,
-    rows: [{ owner: "m2", y: 48, height: 900 }],
-    loadMore: () => controller.abort(),
-  })
-  try {
-    assert.equal(await jumpTo(f.host, "m2", controller.signal), "aborted")
-    assert.deepEqual(f.scrolls, [])
   } finally {
     await f.close()
   }
@@ -371,4 +334,38 @@ test("a new click (abort) during the seek stops it", async () => {
   } finally {
     await f.close()
   }
+})
+
+test("rows are read through the virtualizer's keyed wrappers, or by scanning when there are none", () => {
+  const doc = globalThis.document
+  const scroller = doc.createElement("div")
+  const rect = (top: number) => () => ({ top, bottom: top + 10 }) as DOMRect
+  const make = (owner: string, top: number, prompt: boolean) => {
+    const row = doc.createElement("div")
+
+    row.setAttribute("data-message-id", owner)
+    row.setAttribute("data-timeline-row", prompt ? "UserMessage" : "AssistantPart")
+    row.getBoundingClientRect = rect(top)
+
+    return row
+  }
+  const header = doc.createElement("div")
+  const list = doc.createElement("div")
+
+  header.setAttribute("data-session-title", "")
+  scroller.append(header, list)
+  for (const [owner, top, prompt] of [["m1", 0, true], ["m1", 10, false], ["m2", 20, true]] as const) {
+    const wrapper = doc.createElement("div")
+    const inner = doc.createElement("div")
+
+    wrapper.setAttribute("data-timeline-key", owner)
+    inner.append(make(owner, top, prompt))
+    wrapper.append(inner)
+    list.append(wrapper)
+  }
+  const keyed = readRows(scroller)
+
+  assert.deepEqual(keyed.map((row) => [row.owner, row.prompt, row.top]), [["m1", true, 0], ["m1", false, 10], ["m2", true, 20]])
+  list.querySelectorAll("[data-timeline-key]").forEach((wrapper) => wrapper.removeAttribute("data-timeline-key"))
+  assert.deepEqual(readRows(scroller), keyed, "without wrappers the whole scroller is scanned, with the same result")
 })

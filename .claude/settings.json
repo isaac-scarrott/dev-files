@@ -143,5 +143,9 @@
   "skipWorkflowUsageWarning": true,
   "theme": "custom:synth",
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8317"
+  },
+  "apiKeyHelper": "/Users/isaac/git/dev-files/scripts/cliproxy-key.sh"
 }

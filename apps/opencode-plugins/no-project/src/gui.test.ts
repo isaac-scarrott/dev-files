@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { createRoot } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 import { Window } from "happy-dom"
 import plugin from "./gui"
 
@@ -10,12 +10,13 @@ Object.assign(globalThis, { document: window.document, requestAnimationFrame: wi
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
-function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean; draft?: boolean } = {}) {
+function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean; draft?: boolean; directory?: unknown } = {}) {
   const calls: string[] = []
   const controller = new AbortController()
   const drafts: unknown[] = []
   const toasts: unknown[] = []
-  const tabs = options.draft ? [{ key: "origin", session: undefined, active: true }, { key: "other", session: undefined, active: false }] : []
+  type Tab = { key: string; session: undefined; active: boolean }
+  const [tabs, setTabs] = createSignal<Tab[]>(options.draft ? [{ key: "origin", session: undefined, active: true }, { key: "other", session: undefined, active: false }] : [])
   const tabCalls: string[] = []
   const commands: { id: string; title: string; slash?: { name: string }; run: () => unknown }[] = []
   const client = {
@@ -28,14 +29,14 @@ function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean;
   }
   const server = { id: "sidecar", builtin: true, client }
   const ctx = {
-    options: {},
+    options: { directory: options.directory },
     signal: controller.signal,
     t: (key: string) => key,
     sessions: { current: () => options.current ? { server: { ...server, id: "other" } } : undefined },
     servers: { list: () => ["sidecar"], get: () => server },
-    layout: { draft: (input: unknown) => { drafts.push(input); tabs.push({ key: "new", session: undefined, active: true }) } },
+    layout: { draft: (input: unknown) => { drafts.push(input); setTabs((list) => [...list, { key: "new", session: undefined, active: true }]) } },
     tabs: {
-      list: () => tabs,
+      list: tabs,
       move: (key: string, index: number) => tabCalls.push(`move ${key} ${index}`),
       close: (key: string) => tabCalls.push(`close ${key}`),
     },
@@ -119,4 +120,16 @@ test("choosing the picker row reopens the draft in the scratch folder with its p
   await new Promise((resolve) => setTimeout(resolve, 30))
   assert.match((drafts[0] as { directory: string }).directory, SCRATCH)
   assert.deepEqual(tabCalls, ["move new 0", "close origin"])
+})
+
+test("a bad directory option fails the plugin at setup", () => {
+  assert.throws(() => fixture({ directory: "relative" }), /directory/)
+  assert.throws(() => fixture({ directory: "/a/../b" }), /directory/)
+})
+
+test("a valid directory option pins the draft's folder", async () => {
+  const { commands, drafts } = fixture({ directory: "/data/scratch/" })
+  await commands[0].run()
+  await settle()
+  assert.equal((drafts[0] as { directory: string }).directory, "/data/scratch")
 })

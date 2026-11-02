@@ -1,11 +1,14 @@
 import assert from "node:assert/strict"
-import { mkdtemp, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 import { detectUsageLimit } from "./detect.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
+import { createLog, Samples } from "./diag.js"
+import { acquireUsage, createUsageSource } from "./hub.js"
 import { Resumer, type Clock, type Host } from "./resume.js"
+import { Toggles } from "./toggles.js"
 import { availability, MIN_INTERVAL_MS, type Reading } from "./usage.js"
 
 const T0 = Date.UTC(2026, 9, 31, 12, 0, 0)
@@ -31,8 +34,11 @@ interface Env {
   usage: Map<string, Body | number>
   fetches: string[]
   options: Options
-  make(): Promise<Resumer>
+  make(directory?: string): Promise<Resumer>
   authDir: string
+  toggles: Toggles
+  logs: string[]
+  sampleDir: string
 }
 
 async function env(accounts: Record<string, Body | number>, overrides: Partial<Options> = {}): Promise<Env> {
@@ -66,9 +72,13 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
     storage: {
       get: async (key: string) => storage.get(key),
       set: async (key: string, value: unknown) => void storage.set(key, JSON.parse(JSON.stringify(value))),
+      remove: async (key: string) => void storage.delete(key),
     },
   } as unknown as Host
-  const options: Options = { ...DEFAULTS, authDir, snapshotPath: "", staggerMs: 0, ...overrides }
+  const sampleDir = path.join(authDir, "samples")
+  const logs: string[] = []
+  const options: Options = { ...DEFAULTS, authDir, snapshotPath: "", staggerMs: 0, sampleDir, ...overrides }
+  const toggles = new Toggles(host.storage, () => clock.now())
   const fakeFetch = (async (_url: string, init: { headers: Record<string, string> }) => {
     const name = init.headers.Authorization.replace("Bearer tok-", "")
     fetches.push(name)
@@ -77,15 +87,26 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
     return new Response(JSON.stringify(body), { status: 200 })
   }) as unknown as typeof fetch
   const out: Env = {
-    clock, host, prompts, notices, sessions, storage, usage, fetches, options, authDir,
-    make: () => Resumer.create(host, out.options, clock, { random: () => 0, fetch: fakeFetch }),
+    clock, host, prompts, notices, sessions, storage, usage, fetches, options, authDir, toggles, logs, sampleDir,
+    make: async (directory = "/work") =>
+      Resumer.create(
+        host,
+        out.options,
+        clock,
+        await createUsageSource(host.storage, { now: () => clock.now(), random: () => 0, fetch: fakeFetch, authDir: out.options.authDir, snapshotPath: out.options.snapshotPath }),
+        toggles,
+        new Samples({ dir: sampleDir, now: () => clock.now(), log: () => {} }),
+        directory,
+        (m) => void logs.push(m),
+      ),
   }
   return out
 }
 
 /** A session whose run failed at `at`. */
-function stalled(e: Env, id: string, at: number, extra: Record<string, any> = {}) {
-  e.sessions.set(id, { id, outcome: "failed", time: { created: at - HOUR, busy: at - MIN, idle: at }, ...extra })
+function stalled(e: Env, id: string, at: number, extra: Record<string, any> = {}, optIn = true) {
+  if (optIn) e.storage.set(`toggle/session/${id}`, { enabled: true })
+  e.sessions.set(id, { id, outcome: "failed", location: { directory: "/work" }, time: { created: at - HOUR, busy: at - MIN, idle: at }, ...extra })
 }
 
 const bothFree = { five_hour: win(10, T0 + 5 * HOUR), seven_day: win(20, T0 + 100 * HOUR) }
@@ -215,7 +236,7 @@ test("does not resume a session the user touched, archived, deleted or that fini
   }
   assert.equal(r.waiting().length, cases.length)
   for (const [id, change] of cases) {
-    if (change) e.sessions.set(id, { id, outcome: "failed", ...change, time: { created: T0 - HOUR, ...change.time } })
+    if (change) e.sessions.set(id, { id, outcome: "failed", location: { directory: "/work" }, ...change, time: { created: T0 - HOUR, ...change.time } })
     else e.sessions.delete(id)
   }
   e.clock.t = T0 + 2 * HOUR
@@ -235,7 +256,7 @@ test("a user message or a new run while waiting cancels the wait", async () => {
   assert.equal(e.prompts.length, 0)
 })
 
-test("skips archived sessions at the stall and subagent sessions by default", async () => {
+test("skips archived sessions at the stall and never resumes subagent sessions, even toggled on", async () => {
   const e = await env({ a: bothFree })
   stalled(e, "child", T0, { parentID: "ses_p" })
   stalled(e, "old", T0, { time: { archived: T0 - HOUR } })
@@ -243,10 +264,7 @@ test("skips archived sessions at the stall and subagent sessions by default", as
   await r.onFailed("child", limitError(T0 + MIN), T0)
   await r.onFailed("old", limitError(T0 + MIN), T0)
   assert.equal(r.waiting().length, 0)
-  e.options = { ...e.options, includeChildren: true }
-  const withChildren = await e.make()
-  await withChildren.onFailed("child", limitError(T0 + MIN), T0)
-  assert.equal(withChildren.waiting().length, 1)
+  assert.equal(e.logs.some((l) => l.includes("child: not resuming: subagent")), true)
 })
 
 test("ignores errors that are not usage limits", async () => {
@@ -356,7 +374,7 @@ test("usage endpoint: five-minute floor, 429 backoff doubles, never hammered", a
   assert.equal(e.fetches.length, 2)
   await (r as any).evaluate(r.waiting()[0])
   assert.equal(e.fetches.length, 2)
-  const schedule = (e.storage.get("state/v1") as any).usage.schedules["claude-a.json"]
+  const schedule = (e.storage.get("usage/v1") as any).schedules["claude-a.json"]
   assert.equal(schedule.backoff, 2 * MIN_INTERVAL_MS)
 })
 
@@ -419,4 +437,216 @@ test("options validate", () => {
   assert.equal(parseOptions({ maxWaitHours: 2 }).maxWaitMs, 2 * HOUR)
   assert.throws(() => parseOptions({ maxAttempts: 0 }))
   assert.throws(() => parseOptions({ prompt: " " }))
+})
+
+// --- opt-in toggles and diagnostics ---
+
+test("auto-resume is off by default: a session nobody opted in is detected, logged and skipped", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  assert.equal(r.waiting().length, 0)
+  assert.equal(e.notices.length, 0)
+  assert.equal(e.logs.some((l) => /usage limit detected kind=five hour/.test(l)), true)
+  assert.equal(e.logs.some((l) => /ses_1: not resuming: toggle off/.test(l)), true)
+  e.clock.t = T0 + 5 * HOUR
+  await r.tick()
+  assert.equal(e.prompts.length, 0)
+})
+
+test("only toggled sessions are resumed", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "on", T0)
+  stalled(e, "off", T0, {}, false)
+  stalled(e, "explicit_off", T0, {}, false)
+  await e.toggles.set("explicit_off", false)
+  const r = await e.make()
+  for (const id of ["on", "off", "explicit_off"]) await r.onFailed(id, limitError(T0 + MIN), T0)
+  e.clock.t = T0 + HOUR
+  await r.tick()
+  assert.deepEqual(e.prompts.map((p) => p.sessionID), ["on"])
+})
+
+test("global default on: a session created while it is on starts on; the session's own choice overrides either way", async () => {
+  const e = await env({ a: bothFree })
+  const t = e.toggles
+  assert.equal((await t.default()).enabled, false)
+  await t.seed("before")
+  assert.equal(await t.own("before"), undefined)
+
+  e.clock.t = T0 + 1000
+  await t.setDefault(true)
+  await t.seed("created_on")
+  assert.equal(await t.own("created_on"), true)
+  assert.equal((await t.effective("created_on", true, T0 + 2000)).on, true)
+  // A session that existed before the default was turned on is unaffected.
+  assert.equal((await t.effective("before", true, T0)).on, false)
+  // Per-session override wins over the default.
+  await t.set("created_on", false)
+  assert.equal((await t.effective("created_on", true, T0 + 2000)).on, false)
+  // Seeding again never undoes a choice.
+  await t.seed("created_on")
+  assert.equal(await t.own("created_on"), false)
+
+  // Turning the default off leaves sessions already created as they are, and new ones start off.
+  await t.setDefault(false)
+  await t.seed("later")
+  assert.equal(await t.own("later"), undefined)
+  await t.set("before", true)
+  assert.equal((await t.effective("before", true, T0)).on, true)
+  assert.equal((await t.effective("child", false, T0)).on, false)
+})
+
+test("a session created under default-on is resumed without anyone touching its toggle", async () => {
+  const e = await env({ a: bothFree })
+  await e.toggles.setDefault(true)
+  await e.toggles.seed("ses_1")
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  e.clock.t = T0 + HOUR
+  await r.tick()
+  assert.equal(e.prompts.length, 1)
+})
+
+test("turning the toggle off while waiting stops the resume", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  assert.equal(r.waiting().length, 1)
+  await e.toggles.set("ses_1", false)
+  e.clock.t = T0 + HOUR
+  await r.tick()
+  assert.equal(e.prompts.length, 0)
+  assert.equal(e.logs.some((l) => /ses_1: not resuming: session toggle off/.test(l)), true)
+})
+
+test("logs every failure, detected limit, schedule, wait and resume with reasons", async () => {
+  const e = await env({ a: { five_hour: win(100, T0 + HOUR), seven_day: win(10, T0 + 99 * HOUR) } })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + HOUR), T0)
+  e.usage.set("a", { five_hour: win(100, T0 + 2 * HOUR), seven_day: win(10, T0 + 99 * HOUR) })
+  e.clock.t = T0 + HOUR + DEFAULTS.marginMs
+  await r.tick()
+  e.usage.set("a", bothFree)
+  e.clock.t = T0 + 2 * HOUR + DEFAULTS.marginMs
+  await r.tick()
+  const log = e.logs.join("\n")
+  assert.match(log, /run failed type=unknown status=- message="Claude Code subscription limit reached/)
+  assert.match(log, /usage limit detected kind=five hour resetsAt=2026-10-31T13:00:00.000Z/)
+  assert.match(log, /scheduled first check at 2026-10-31T13:01:00.000Z/)
+  assert.match(log, /not yet available, next check at 2026-10-31T14:01:00.000Z/)
+  assert.match(log, /ses_1: resumed \(usage verified\)/)
+})
+
+test("log lines redact tokens", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  await r.onFailed("ses_1", { type: "x", message: "failed Bearer abcdefghijklmnop1234 access_token=sk-ant-oat01-ABCDEFGHIJKLMNOP usage limit" }, T0)
+  const joined = e.logs.join("\n")
+  assert.equal(/abcdefghijklmnop1234|ABCDEFGHIJKLMNOP/.test(joined), false)
+  assert.match(joined, /\[redacted/)
+})
+
+test("the first real limit error is saved redacted and never overwritten", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", { ...limitError(T0 + HOUR), response: { body: '{"authorization":"Bearer secrettokenvalue12345"}' } }, T0)
+  const file = path.join(e.sampleDir, "limit-error.json")
+  const first = await readFile(file, "utf8")
+  assert.match(first, /subscription limit reached \(five hour\)/)
+  assert.equal(/secrettokenvalue12345/.test(first), false)
+  await r.onFailed("ses_1", limitError(T0 + 2 * HOUR, "seven day"), T0)
+  assert.equal(await readFile(file, "utf8"), first)
+})
+
+test("an error that reads like a limit but is not detected is logged and sampled", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  await r.onFailed("ses_1", { type: "unknown", message: "Your plan quota is exhausted for this period" }, T0)
+  assert.equal(r.waiting().length, 0)
+  assert.equal(e.logs.some((l) => /reads like a limit but is not one the detector knows/.test(l)), true)
+  assert.match(await readFile(path.join(e.sampleDir, "unmatched-limit-like-error.json"), "utf8"), /quota is exhausted/)
+})
+
+// --- one plugin instance per project location ---
+
+test("every location's instance hears the failure; only the one serving the session's location acts", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const owner = await e.make("/work")
+  const other = await e.make("/elsewhere")
+  await other.onFailed("ses_1", limitError(T0 + MIN), T0)
+  await owner.onFailed("ses_1", limitError(T0 + MIN), T0)
+  assert.equal(other.waiting().length, 0)
+  assert.equal(owner.waiting().length, 1)
+  e.clock.t = T0 + HOUR
+  await other.tick()
+  await owner.tick()
+  assert.equal(e.prompts.length, 1)
+  assert.equal(e.notices.length, 1)
+  assert.equal(e.logs.filter((l) => l.includes("usage limit detected")).length, 1)
+})
+
+test("instances share one usage source: concurrent refreshes make one request per account", async () => {
+  const e = await env({ a: bothFree })
+  const deps = { now: () => e.clock.now(), random: () => 0, fetch: (async () => (e.fetches.push("a"), new Response(JSON.stringify(bothFree)))) as unknown as typeof fetch, authDir: e.authDir, snapshotPath: "" }
+  const first = acquireUsage(e.host.storage, deps)
+  const second = acquireUsage(e.host.storage, deps)
+  assert.equal(await first.source, await second.source)
+  await Promise.all([(await first.source).refresh(), (await second.source).refresh()])
+  assert.equal(e.fetches.length, 1)
+  first.release()
+  second.release()
+})
+
+test("the log file gets every line with a timestamp", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "usage-resume-log-"))
+  const log = createLog(dir, () => T0)
+  log("hello world")
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  assert.match(await readFile(path.join(dir, "usage-resume.log"), "utf8"), /^2026-10-31T12:00:00.000Z hello world\n$/)
+})
+
+test("createLog redacts every line, including ones that carry a raw error string", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "usage-resume-log-"))
+  const log = createLog(dir, () => T0)
+  const error = console.error
+  console.error = () => {}
+  try {
+    log("event stream ended: Error: 401 Authorization: Bearer abcdefghijklmnop1234")
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  } finally {
+    console.error = error
+  }
+  const body = await readFile(path.join(dir, "usage-resume.log"), "utf8")
+  assert.equal(body.includes("abcdefghijklmnop1234"), false)
+  assert.match(body, /event stream ended/)
+})
+
+test("a limit on an opted-out session is recorded for the pill, then waits once the toggle is turned on", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", { type: "x", message: `Claude Code subscription limit reached (five hour). Resets at ${new Date(T0 + 3_600_000).toISOString()}.` }, T0)
+  assert.equal(r.waiting().length, 0)
+  assert.ok(await r.limited("ses_1"))
+  // Another location's instance answers from shared storage.
+  assert.ok(e.storage.get("limited/ses_1"))
+  e.storage.set("toggle/session/ses_1", { enabled: true })
+  await r.reconcile()
+  assert.equal(r.waiting().length, 1)
+  assert.equal(typeof (await r.limited("ses_1"))?.resumesAt, "number")
+  e.storage.set("toggle/session/ses_1", { enabled: false })
+  await r.reconcile()
+  assert.equal(r.waiting().length, 0)
+  await r.onSettled("ses_1")
+  assert.equal(await r.limited("ses_1"), undefined)
+  assert.equal(e.storage.has("limited/ses_1"), false)
 })

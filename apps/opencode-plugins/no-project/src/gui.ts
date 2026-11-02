@@ -1,8 +1,8 @@
-import { Command, Plugin } from "@opencode/plugin/gui"
-import { onCleanup } from "solid-js"
+import { Command, createKeyed, Plugin } from "@opencode/plugin/gui"
+import { createRoot, onCleanup } from "solid-js"
 import { render } from "solid-js/web"
 import { attachPicker } from "./picker"
-import { NAME, pinnedDirectory, readme, scratchDirectory } from "./scratch"
+import { directoryOption, NAME, readme, scratchDirectory } from "./scratch"
 
 const EDITOR = '[data-component="composer-editor"]'
 
@@ -19,21 +19,29 @@ export default Plugin.define({
     // The picker chooses where the draft it was opened from runs. The app gives plugins no way to retarget that draft,
     // so the draft is reopened in the scratch folder in its place, with its prompt text, and the old tab is closed
     // (it stays under recently closed tabs).
-    const reopen = (origin: { key: string } | undefined, known: Set<string>, frames = 30) => {
+    const pinned = directoryOption(ctx.options.directory)
+
+    const reopen = (origin: { key: string } | undefined, known: Set<string>) => {
       if (!origin) return
-      const tab = ctx.tabs.list().find((item) => !known.has(item.key))
-      if (!tab) {
-        if (frames > 0 && !ctx.signal.aborted) requestAnimationFrame(() => reopen(origin, known, frames - 1))
-        return
-      }
-      const index = ctx.tabs.list().findIndex((item) => item.key === origin.key)
-      if (index >= 0) ctx.tabs.move(tab.key, index)
-      ctx.tabs.close(origin.key)
+      createRoot((dispose) => {
+        const timer = setTimeout(dispose, 5000)
+        onCleanup(() => clearTimeout(timer))
+        ctx.signal.addEventListener("abort", dispose, { once: true })
+        createKeyed(
+          () => ctx.tabs.list().find((item) => !known.has(item.key)),
+          (tab) => {
+            const index = ctx.tabs.list().findIndex((item) => item.key === origin.key)
+            if (index >= 0) ctx.tabs.move(tab.key, index)
+            ctx.tabs.close(origin.key)
+            dispose()
+          },
+        )
+      })
     }
 
     const serverRef = () => ctx.sessions.current()?.server ?? ctx.servers.list().map((id) => ctx.servers.get(id)).find((item) => item?.builtin)
     const folder = async (server: NonNullable<ReturnType<typeof serverRef>>) =>
-      scratchDirectory((await server.client.location.get(undefined, { signal: ctx.signal })).directory, ctx.options.directory)
+      scratchDirectory((await server.client.location.get(undefined, { signal: ctx.signal })).directory, pinned)
 
     const open = async (replace = false) => {
       const origin = replace ? ctx.tabs.list().find((item) => item.active && !item.session) : undefined
@@ -64,7 +72,7 @@ export default Plugin.define({
     const stop = attachPicker(document, {
       title: NAME,
       description: ctx.t("scratch"),
-      path: () => pinnedDirectory(ctx.options.directory),
+      path: () => pinned,
       keywords: ["scratch", "none", "without", "empty", "projectless"],
       icon: () => {
         const host = document.createElement("div")

@@ -11,15 +11,20 @@ project config is picked up. The folder belongs to one session and is deleted wi
 export const readme = () => new TextEncoder().encode(README);
 const trim = (path) => path.replace(/\/+$/, "");
 /**
- * A fresh scratch folder for one session. The leaf is always `No project` so the host labels every one of them the
- * same; the unique part is the parent. An absolute `directory` option pins a single shared folder instead.
+ * The `directory` option: undefined when unset, else an absolute path without `.` or `..` segments.
+ * Throws on anything else so a typo fails the plugin at setup instead of opening sessions somewhere unintended.
  */
-export function scratchDirectory(home, option, id = crypto.randomUUID()) {
-    if (typeof option === "string" && option.startsWith("/"))
-        return trim(option);
-    return `${trim(home)}/${BASE_UNDER_HOME}/${id}/${NAME}`;
+export function directoryOption(option) {
+    if (option === undefined || option === "")
+        return undefined;
+    if (typeof option !== "string" || !option.startsWith("/") || option.includes("\0") || option.split("/").some((part) => part === "." || part === ".."))
+        throw new Error(`no-project: option "directory" must be an absolute path without "." or ".." segments, got ${JSON.stringify(option)}`);
+    return trim(option) || "/";
 }
-/** The pinned folder from the `directory` option, if one is set. */
-export function pinnedDirectory(option) {
-    return typeof option === "string" && option.startsWith("/") ? trim(option) : undefined;
+/**
+ * A fresh scratch folder for one session. The leaf is always `No project` so the host labels every one of them the
+ * same; the unique part is the parent. A validated `directory` pins a single shared folder instead.
+ */
+export function scratchDirectory(home, pinned, id = crypto.randomUUID()) {
+    return pinned ?? `${trim(home)}/${BASE_UNDER_HOME}/${id}/${NAME}`;
 }

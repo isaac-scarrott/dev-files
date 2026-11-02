@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/server.ts",
-    "./rpc": "./src/rpc.ts",
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
     "./gui-experimental": "./dist/gui-experimental.cjs"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --conditions=browser --import tsx --test src/*.test.ts"
   },
@@ -24,5 +27,7 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
     "vite-plugin-solid": "^2.11.15"
-  }
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts"
 }

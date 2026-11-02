@@ -1,68 +1,36 @@
-import { Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js"
-import { $RAW } from "solid-js/store"
+import { createKeyed, Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
+import { createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { loadHistory, type HistoryHost } from "./history"
-import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
-import { indexFromPointer, MIN_ITEMS, promptCacheFor, prompts, railHeightStyle, topPercent, visibleRange, type Message } from "./rail"
-import { createStrip } from "./strip"
-import { currentPrompt } from "./target"
-import { tweenScroll } from "./tween"
+import { inset, jumpTo, unpin, type Host } from "./jump"
+import { atEnd, heldPrompt } from "./target"
+import { EMPTY_TITLE, indexFromPointer, loadedIds, MIN_ITEMS, promptWindow, prompts, railHeightStyle, topPercent, type Message, type PromptWindow } from "./rail"
+import { readReading, type Reading } from "./reading"
 
-/** The rail's column, ticks included; it hugs the left edge of the view. */
-const RAIL_WIDTH = 28
-/** The rail hugs the view's left edge, this far in, and only moves toward the column when the gutter is too narrow. */
-const EDGE_INSET = 6
-/** Below this gutter the rail would sit over the column's own padding, so it hides. */
-const MIN_GUTTER = 44
+/** t3-code's `left-3`: the strip sits this far from the view's left edge. */
+const STRIP_LEFT = 12
+/** t3-code's `TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH`. */
+const HIT_MAX = 40
+/** t3-code's `TIMELINE_MINIMAP_PERSISTENT_GUTTER`: with less room the rail shows only while hovered or focused. */
+const PERSISTENT_GUTTER = 48
+/** t3-code's `TIMELINE_MINIMAP_NAVIGATION_REACH`: the chevrons are reachable only with a strip this wide. */
+const NAVIGATION_REACH = 14
 /** The host hides the session header under this width (`createMediaQuery` in `session/model.ts`). */
 const DESKTOP = "(min-width: 768px)"
-// The host's tooltip timings (`ui/src/overlays/tooltip/tooltip.tsx`: openDelay, skipDelayDuration, tooltipV2Out).
-const OPEN_DELAY = 400
-const SKIP_DELAY = 300
-const CLOSE_MOTION = 90
-/** Previous / next turn by this many prompts with PageUp / PageDown. */
-const PAGE = 5
-/** The timeline counts as scrolling until it has been still this long (ms). */
-const SCROLL_QUIET = 160
-/** Longest a streaming reply goes without the prompt list being rebuilt (ms). */
-const LIST_INTERVAL = 250
 
-type Geometry = { readonly top: number; readonly height: number; readonly left: number; readonly show: boolean }
+type Geometry = {
+  readonly top: number
+  readonly height: number
+  /** The strip's pointer width in px: the gutter minus its offset, at most 40; 0 means the rail is not offered. */
+  readonly hit: number
+  readonly persistent: boolean
+}
 
 const reducedMotion = () =>
   typeof window !== "undefined" && typeof window.matchMedia === "function"
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false
 
-/** Waits `ms`, then for an idle moment (at most 400ms more); resolves early when aborted. */
-const pauseIdle = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const done = () => {
-      clearTimeout(timer)
-      signal.removeEventListener("abort", done)
-      resolve()
-    }
-
-    signal.addEventListener("abort", done, { once: true })
-    timer = setTimeout(() => (typeof requestIdleCallback === "function" ? requestIdleCallback(done, { timeout: 400 }) : done()), ms)
-    if (signal.aborted) done()
-  })
-
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
-/**
- * The conversation read without store proxies. Walking every message, part and field of a long thread through proxies is
- * most of what rebuilding the prompt list costs; the raw objects are the store's own data, mutated in place as it
- * changes, so this read is current and tracks nothing (the rebuild is driven by `stamp`).
- */
-function unproxied(messages: readonly Message[]): readonly Message[] {
-  const raw = (value: object): object => (value as { [$RAW]?: object })[$RAW] ?? value
-  const list = raw(messages) as readonly Message[]
-
-  return list === messages ? messages.map((message) => raw(message) as Message) : list
-}
 
 /** The session view root: the element the scroller, the jump-to-latest pill and the visible-area box share. */
 function viewOf(scroller: HTMLElement) {
@@ -72,7 +40,8 @@ function viewOf(scroller: HTMLElement) {
 /**
  * Where the rail goes, in the view's coordinates: the visible timeline area under the sticky header, and the gutter
  * between the view's left edge and the centred column, measured from a mounted row (which follows the host's panel
- * motion) or from the column width token when no row is mounted.
+ * motion) or from the column width token when no row is mounted. The gutter decides the strip's width and whether the
+ * rail is always shown, as t3-code's `resolveTimelineMinimapHitStripWidth` and `...HasPersistentGutter`.
  */
 export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
   const box = view.getBoundingClientRect()
@@ -83,7 +52,7 @@ export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
     row instanceof HTMLElement
       ? row.getBoundingClientRect().left
       : box.left + Math.max(0, (box.width - (parseFloat(window.getComputedStyle(view).getPropertyValue("--container-session")) || box.width)) / 2)
-  const gutter = column - box.left
+  const gutter = Math.max(0, column - box.left)
   const header = inset(scroller)
 
   return {
@@ -92,66 +61,54 @@ export function measure(scroller: HTMLElement, view: HTMLElement): Geometry {
     // visible area, and the rail must not change height (and re-lay its ticks) when they come and go. It lives in the
     // gutter, beside the composer, so reaching the bottom overlaps nothing.
     height: Math.max(0, box.bottom - area.top - header),
-    left: Math.min(EDGE_INSET, Math.max(0, Math.round((gutter - RAIL_WIDTH) / 2))),
-    show: gutter >= MIN_GUTTER,
+    hit: Math.max(0, Math.min(HIT_MAX, Math.floor(gutter) - STRIP_LEFT)),
+    persistent: gutter >= PERSISTENT_GUTTER,
   }
 }
 
 type HostUi = Pick<Ui, "IconButton" | "Tooltip">
 
+/** The pointer is over the card: its text is selectable and it is not the strip. */
+const onCard = (target: EventTarget | null) => (target as Element | null)?.closest?.("[data-timeline-rail-card]") != null
+
 function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
-  const [scroller, setScroller] = createSignal<HTMLElement>()
-  const [view, setView] = createSignal<HTMLElement>()
+  // The scroller and the view root are found together, so a run keyed on them never sees one without the other.
+  const [mount, setMount] = createSignal<{ readonly root: HTMLElement; readonly parent: HTMLElement }>()
+  const scroller = () => mount()?.root
+  const view = () => mount()?.parent
   const [geometry, setGeometry] = createSignal<Geometry>()
+  // The prompt whose turn is being read (see `activePrompt`), lit at rest. The pointer's index is separate.
   const [current, setCurrent] = createSignal(-1)
-  const [range, setRange] = createSignal<readonly [number, number]>()
-  const [loading, setLoading] = createSignal(false)
+  // The prompt a chevron or tick jump chose while the scroller sits at its end (see `heldPrompt`); cleared by the user's input.
+  let chosen: number | undefined
+  let jumping = false
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
   const data = () => session().server.data.session
   const messages = () => data().message.list(session().id) as readonly Message[]
-  // What the list depends on, read cheaply: the count and the newest message's text length and state. Streaming writes
-  // only the newest message, so a delta re-reads one message instead of subscribing to, and walking, every message of
-  // the conversation through the store (which cost more than the rail's own work). An edit to an older message shows
-  // at the next new message.
-  const stamp = createMemo(() => {
-    const all = messages()
-    const last = all[all.length - 1]
-    const parts = last?.content
+  const revert = () => data().get(session().id)?.revert?.messageID
 
-    return `${all.length}|${last?.id}|${parts?.length}|${parts?.[parts.length - 1]?.text?.length}|${last?.time?.completed}|${last?.error ? 1 : 0}`
+  // What the host has loaded. The rail never asks for more: older history reaches it only when the host loads it, as
+  // t3-code's minimap only grows when the user presses "Load earlier turns".
+  const loaded = createMemo(() => loadedIds(messages(), revert()))
+  // The session the user has scrolled, touched or typed in: a page of older history that lands now was asked for.
+  const [askedIn, setAskedIn] = createSignal<string>()
+  // t3-code's thread window: the newest prompts at first, a page more when the host pages older history in. Each run
+  // folds the previous one in, and a different session starts over, so the memo depends on its inputs only.
+  const covered = createMemo<{ readonly id: string; readonly window: PromptWindow | undefined }>((previous) => {
+    const id = session().id
+
+    return { id, window: promptWindow(previous?.id === id ? previous.window : undefined, loaded(), askedIn() === id) }
   })
-  const cache = promptCacheFor(session().id)
-  // The list is rebuilt at most once per LIST_INTERVAL while a reply streams (first change at once, the rest trailing):
-  // the ticks and the card only need the newest snippet, and every rebuild walks the whole conversation.
-  const [version, setVersion] = createSignal(0)
-  let rebuild: ReturnType<typeof setTimeout> | undefined
-  let rebuiltAt = Number.NEGATIVE_INFINITY
-  const bump = () => {
-    rebuild = undefined
-    rebuiltAt = performance.now()
-    setVersion((value) => value + 1)
-  }
-  createEffect(
-    on(stamp, () => {
-      if (rebuild !== undefined) return
-      const wait = ((globalThis as { __timelineRailListInterval?: number }).__timelineRailListInterval ?? LIST_INTERVAL) - (performance.now() - rebuiltAt)
-
-      if (wait <= 0) bump()
-      else rebuild = setTimeout(bump, wait)
-    }, { defer: true }),
-  )
-  onCleanup(() => clearTimeout(rebuild))
   const list = createMemo(() => {
-    version()
-    const revert = data().get(session().id)?.revert?.messageID
+    const from = covered().window?.from
 
-    return untrack(() => prompts(unproxied(messages()), revert, cache))
+    return from ? prompts(messages(), revert(), from) : []
   })
-  const ids = createMemo(() => list().map((prompt) => prompt.id))
-  // A memo: the cursor changes with every page, and the history effect must rerun only when "more" itself flips.
-  const more = createMemo(() => data().message.more(session().id))
-  const indexOf = createMemo(() => new Map(ids().map((id, index) => [id, index] as const)))
+  // The same array while the prompts are the same, so a streaming reply does not wake what follows the ids.
+  const ids = createMemo(() => list().map((prompt) => prompt.id), [], {
+    equals: (previous, next) => previous.length === next.length && previous.every((id, index) => id === next[index]),
+  })
   const count = () => list().length
 
   // The slot's element joins the timeline after it is created; the scroller is its nearest scrollable ancestor.
@@ -162,10 +119,8 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const root = element?.closest<HTMLElement>("[data-scrollable]")
     const parent = root && viewOf(root)
 
-    if (root && parent) {
-      setScroller(root)
-      setView(parent)
-    } else if (left > 0) locating = requestAnimationFrame(() => locate(left - 1))
+    if (root && parent) setMount({ root, parent })
+    else if (left > 0) locating = requestAnimationFrame(() => locate(left - 1))
   }
 
   onMount(() => locate(10))
@@ -182,16 +137,15 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     onCleanup(() => query.removeEventListener("change", update))
   })
 
-  // When the user last scrolled, touched or typed in the timeline: the history loader waits for quiet.
-  let lastInput = Number.NEGATIVE_INFINITY
-  const idle = () => performance.now() - lastInput
-
-  createEffect(() => {
-    const root = scroller()
-
-    if (!root) return
-    const mark = () => void (lastInput = performance.now())
-    const types = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"] as const
+  createKeyed(scroller, (root) => {
+    const mark = () => {
+      setAskedIn(session().id)
+      // The plugin's own unpin, dispatched synchronously by a jump, is not the user taking the wheel.
+      if (jumping || chosen === undefined) return
+      chosen = undefined
+      setCurrent(reading?.active(ids()) ?? -1)
+    }
+    const types = ["wheel", "touchmove", "pointerdown", "keydown"] as const
 
     for (const type of types) root.addEventListener(type, mark, { passive: true })
     onCleanup(() => {
@@ -206,68 +160,40 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
 
     return {
       scroller: root,
-      ids,
-      more,
-      loadMore: (signal) => data().message.loadMore(session().id, { signal }),
+      // Every prompt the host holds, not only the rail's: the far-jump estimate is a share of the whole content height.
+      ids: loaded,
       reducedMotion,
       frame,
-      loading: setLoading,
-      tween: (to, signal) => tweenScroll({ scroller: root, frame, now: () => performance.now() }, to, signal),
     }
   }
 
-  // The whole conversation, behind the user: ticks and jumps must cover history the host has not paged in. One
-  // page per request, each after the user holds still for a beat; aborted on deactivation, session switch and unmount.
-  const [paging, setPaging] = createSignal(false)
-
-  const active = createMemo(() => props.input.active)
-
-  createEffect(() => {
-    const root = scroller()
-
-    if (!root || !active() || !more()) return
-    const controller = new AbortController()
-    const target: HistoryHost = {
-      scroller: root,
-      more: () => data().message.more(session().id),
-      loadMore: ({ signal, beforePublish }) => data().message.loadMore(session().id, { signal, beforePublish, all: true }),
-      frame,
-      idle,
-      pause: (globalThis as { __timelineRailPause?: typeof pauseIdle }).__timelineRailPause ?? pauseIdle,
-      inset: () => inset(root),
-      loading: setPaging,
-      drift: (globalThis as { __timelineRailDrift?: (px: number) => void }).__timelineRailDrift,
-    }
-
-    // Untracked: the loader's own reads of the cursor would otherwise restart it after every page.
-    void untrack(() => loadHistory(target, controller.signal))
-    onCleanup(() => {
-      controller.abort()
-      setPaging(false)
-    })
-  })
-
   let pending: number | undefined
 
+  // The reading rule's answer, or the prompt a jump chose while the scroller is still at its end.
+  const resolve = (computed: number) => {
+    const root = scroller()
+
+    if (chosen === undefined || !root) return computed
+    const held = heldPrompt({ chosen, computed, count: ids().length, scroll: { top: root.scrollTop, max: root.scrollHeight - root.clientHeight } })
+
+    if (held === computed) chosen = undefined
+
+    return held
+  }
+
+  // The rail's place changes with the view's size or the prompts, never with scrolling.
   const refresh = () => {
     pending = undefined
     const root = scroller()
     const parent = view()
 
     if (!props.input.active || !root || !parent) return
-    // Reads only; Solid applies the writes after.
-    const rows = readRows(root)
-    const edge = root.getBoundingClientRect()
-    const fold = edge.top + inset(root)
-    const index = currentPrompt(ids(), rows, fold)
-    const shown = visibleRange(indexOf(), rows, { top: fold, bottom: edge.bottom })
-    const box = measure(root, parent)
-    setCurrent(index)
-    setRange((previous) => (previous && shown && previous[0] === shown[0] && previous[1] === shown[1] ? previous : shown))
+    const place = measure(root, parent)
+
     setGeometry((previous) =>
-      previous && previous.top === box.top && previous.height === box.height && previous.left === box.left && previous.show === box.show
+      previous && previous.top === place.top && previous.height === place.height && previous.hit === place.hit && previous.persistent === place.persistent
         ? previous
-        : box,
+        : place,
     )
   }
 
@@ -276,43 +202,51 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     pending = requestAnimationFrame(refresh)
   }
 
-  // Ticks animate for the pointer, not for scrolling: a fast scroll creates and retires a transforming tick every frame,
-  // and the compositor layers that costs halve the frame rate. Transitions are off while the timeline scrolls.
-  let scrolling: ReturnType<typeof setTimeout> | undefined
-  const onScroll = () => {
-    if (container && scrolling === undefined) container.setAttribute("data-scrolling", "")
-    clearTimeout(scrolling)
-    scrolling = setTimeout(() => {
-      scrolling = undefined
-      container?.removeAttribute("data-scrolling")
-    }, SCROLL_QUIET)
-    schedule()
-  }
-  onCleanup(() => clearTimeout(scrolling))
-
   onCleanup(() => {
     if (pending !== undefined) cancelAnimationFrame(pending)
   })
 
-  createEffect(() => {
-    const root = scroller()
-    const parent = view()
-
-    if (!root || !parent) return
-    root.addEventListener("scroll", onScroll, { passive: true })
+  createKeyed(mount, ({ parent }) => {
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : undefined
     observer?.observe(parent)
     const visible = parent.querySelector("[data-slot='session-timeline-visible']")
 
     if (visible) observer?.observe(visible)
     schedule()
-    onCleanup(() => {
-      root.removeEventListener("scroll", onScroll)
-      observer?.disconnect()
-    })
+    onCleanup(() => observer?.disconnect())
   })
 
-  createEffect(on([ids, more, () => props.input.active, desktop], schedule, { defer: true }))
+  // Which turn is read comes from observers on the timeline's rows (`readReading`), not from reading layout per frame.
+  let reading: Reading | undefined
+
+  createKeyed(
+    () => (props.input.active && desktop() ? scroller() : undefined),
+    (root) => {
+      let ready = false
+      const watch: Reading = readReading(root, () => {
+        if (ready) setCurrent(resolve(watch.active(ids())))
+      })
+      ready = true
+      reading = watch
+      setCurrent(watch.active(ids()))
+      onCleanup(() => {
+        watch.stop()
+        if (reading === watch) reading = undefined
+      })
+    },
+  )
+
+  // New or changed prompts, the timeline becoming (in)active, the breakpoint: measure and resolve again. `ids` keeps its
+  // identity while the prompts are the same, so a streaming reply does not come through here.
+  createKeyed(
+    () => (props.input.active && desktop() ? ids() : undefined),
+    (list) => {
+      schedule()
+      reading?.rescan()
+      chosen = undefined
+      setCurrent(reading?.active(list) ?? -1)
+    },
+  )
 
   let inflight: AbortController | undefined
 
@@ -324,126 +258,36 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     inflight?.abort()
     const controller = new AbortController()
     inflight = controller
-    void jumpTo(target, id, controller.signal).finally(() => {
+    jumping = true
+    const jump = jumpTo(target, id, controller.signal)
+    jumping = false
+    void jump.then((outcome) => {
       if (inflight === controller) inflight = undefined
-      schedule()
+
+      if (outcome !== "done") return
+      const root = scroller()
+
+      if (!root || !atEnd({ top: root.scrollTop, max: root.scrollHeight - root.clientHeight })) return
+      chosen = index
+      setCurrent(index)
     })
   }
 
   onCleanup(() => inflight?.abort())
 
-  // The card follows the host's tooltip: a delay before the first open, instant while one just closed, instant on
-  // keyboard focus. Once open it stays mounted and glides between prompts instead of popping again.
-  const [hover, setHover] = createSignal<number>()
-  // The index under the pointer or keyboard now: it centres the fisheye. The card keeps `hover` while it closes.
+  // The index under the pointer or keyboard: it centres the fisheye and names the card. t3-code opens the card the
+  // moment an index is active and removes it the moment it is not: no delay, no motion.
   const [pointed, setPointed] = createSignal<number>()
-  const [phase, setPhase] = createSignal<"closed" | "open" | "closing">("closed")
-  const [entered, setEntered] = createSignal(false)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let closedAt = Number.NEGATIVE_INFINITY
-
-  const arm = (index: number, now = false) => {
-    setHover(index)
-    setPointed(index)
-
-    if (phase() === "open") return
-    clearTimeout(timer)
-
-    if (phase() === "closing" || now || Date.now() - closedAt < SKIP_DELAY) {
-      setPhase("open")
-
-      return
-    }
-    timer = setTimeout(() => setPhase("open"), OPEN_DELAY)
-  }
-
-  const close = () => {
-    clearTimeout(timer)
-    timer = undefined
-    setPointed(undefined)
-
-    if (phase() !== "open") {
-      setPhase("closed")
-
-      return
-    }
-    closedAt = Date.now()
-
-    if (reducedMotion()) {
-      setPhase("closed")
-
-      return
-    }
-    setPhase("closing")
-    timer = setTimeout(() => {
-      if (phase() === "closing") setPhase("closed")
-    }, CLOSE_MOTION)
-  }
-
-  onCleanup(() => clearTimeout(timer))
-
-  // The first frame of a card is its closed look; the next flips it, so the browser has a transition to run.
-  createEffect(() => {
-    if (phase() !== "open") {
-      setEntered(false)
-
-      return
-    }
-    const id = requestAnimationFrame(() => setEntered(true))
-    onCleanup(() => cancelAnimationFrame(id))
-  })
-
-  const cardIndex = createMemo(() => {
-    const index = hover()
-
-    return index === undefined || phase() === "closed" || index >= count() ? undefined : index
-  })
-  const cardPrompt = () => {
-    const index = cardIndex()
-
-    return index === undefined ? undefined : list()[index]
-  }
-  const cardMeta = () => {
-    const index = cardIndex()
-
-    return index === undefined || more() || paging() ? undefined : `${index + 1} of ${count()}`
-  }
-  const label = () => list()[pointed() ?? Math.max(0, current())]?.title ?? "User message"
-
-  let container: HTMLDivElement | undefined
-  let strip: HTMLButtonElement | undefined
-  let cardElement: HTMLDivElement | undefined
-  const [cardTop, setCardTop] = createSignal(0)
-  const [cardOrigin, setCardOrigin] = createSignal(0)
   const [armed, setArmed] = createSignal(false)
-  const [stripHost, setStripHost] = createSignal<HTMLElement>()
+  const [passThrough, setPassThrough] = createSignal(false)
+  const pointedPrompt = () => {
+    const index = pointed()
 
-  // Ticks are one imperative strip of nodes; every update below repaints a band of them, never all.
-  const ticks = createMemo(() => {
-    const host = stripHost()
+    return index === undefined || index >= count() ? undefined : list()[index]
+  }
+  const label = () => pointedPrompt()?.title ?? EMPTY_TITLE
 
-    return host ? createStrip(host) : undefined
-  })
-
-  createEffect(() => ticks()?.count(count()))
-  createEffect(() => ticks()?.view(range()))
-  createEffect(() => ticks()?.current(current()))
-  createEffect(() => ticks()?.active(reducedMotion() ? undefined : pointed()))
-
-  // Placed once the card has its size, before paint: Solid runs this after the DOM updates of the same tick.
-  createEffect(() => {
-    const index = cardIndex()
-    const prompt = cardPrompt()
-
-    if (index === undefined || !prompt || !container || !strip || !cardElement) return
-    const box = container.getBoundingClientRect()
-    const own = strip.getBoundingClientRect()
-    const centre = own.top + (own.height * topPercent(index, count())) / 100 - box.top
-    const height = cardElement.offsetHeight
-    const top = Math.round(Math.max(0, Math.min(centre - height / 2, box.height - height)))
-    setCardTop(top)
-    setCardOrigin(Math.round(centre - top))
-  })
+  let strip: HTMLButtonElement | undefined
 
   const select = (index: number | undefined) => {
     if (index !== undefined && index >= 0 && index < count()) run(index)
@@ -459,7 +303,6 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   // A press that starts on the strip scrubs; a drag that arrives from elsewhere (selecting text, a scrollbar) passes
   // through, so the strip never swallows it. Released outside the window skips pointerup, so a button-free move counts.
   let pressedOnStrip = false
-  const [passThrough, setPassThrough] = createSignal(false)
 
   const afterRelease = (done: () => void) => {
     const check = (event: PointerEvent) => {
@@ -479,35 +322,15 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const wheel = (event: WheelEvent) => {
     const root = scroller()
 
-    if (!root) return
+    if (!root || event.defaultPrevented || event.ctrlKey || event.deltaY === 0) return
     event.preventDefault()
-    lastInput = performance.now()
     unpin(root)
     root.scrollBy({ top: event.deltaY, left: event.deltaX })
   }
 
+  // t3-code's keys: arrows move by one from the current prompt, Home and End go to the ends, Enter or Space jump.
   const keys = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      close()
-
-      return
-    }
     const last = count() - 1
-    const at = pointed() ?? Math.max(0, current())
-    const next =
-      event.key === "ArrowDown"
-        ? Math.min(last, at + 1)
-        : event.key === "ArrowUp"
-          ? Math.max(0, at - 1)
-          : event.key === "PageDown"
-            ? Math.min(last, at + PAGE)
-            : event.key === "PageUp"
-              ? Math.max(0, at - PAGE)
-              : event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? last
-                  : -1
 
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
@@ -515,21 +338,23 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
 
       return
     }
+    const at = pointed() ?? 0
+    const next =
+      event.key === "ArrowDown" ? Math.min(last, at + 1) : event.key === "ArrowUp" ? Math.max(0, at - 1) : event.key === "Home" ? 0 : event.key === "End" ? last : -1
+
     if (next === -1) return
     event.preventDefault()
-    arm(next, true)
+    setPointed(next)
   }
 
   const style = () => {
     const box = geometry()
 
-    return { top: `${box?.top ?? 0}px`, height: `${box?.height ?? 0}px`, left: `${box?.left ?? 0}px` }
+    return { top: `${box?.top ?? 0}px`, height: `${box?.height ?? 0}px` }
   }
 
   const step = (delta: number) => {
-    const index = current() + delta
-
-    if (current() >= 0) select(index)
+    if (current() >= 0) select(current() + delta)
   }
 
   const turn = (direction: "previous" | "next") => {
@@ -537,8 +362,11 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const label = previous ? "Previous turn" : "Next turn"
 
     return (
-      <props.ui.Tooltip value={label} placement={previous ? "top" : "bottom"}>
-        <span data-timeline-rail-turn={direction}>
+      // The positioned box is outside the Tooltip: the host's trigger is a block div that takes the size of its content, and
+      // around an absolutely positioned child it collapses to nothing at the strip's corner, which put the tooltip over the
+      // chevron (previous) or inside the strip (next).
+      <span data-timeline-rail-turn={direction}>
+        <props.ui.Tooltip value={label} placement={previous ? "top" : "bottom"}>
           <props.ui.IconButton
             icon="chevron-down"
             label={label}
@@ -547,101 +375,113 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
             disabled={previous ? current() <= 0 : current() < 0 || current() >= count() - 1}
             onClick={() => step(previous ? -1 : 1)}
           />
-        </span>
-      </props.ui.Tooltip>
+        </props.ui.Tooltip>
+      </span>
     )
   }
 
+  // The card hangs off the tick's percentage like t3-code's: centred on it, flush with the strip's top for the first
+  // prompt and its bottom for the last. No clamping to the view.
+  const cardShift = (index: number) => (index === 0 ? "0%" : index === count() - 1 ? "-100%" : "-50%")
+
   return (
     <span ref={(el) => (element = el)} style={{ display: "contents" }}>
-      <Show when={props.input.active && desktop() && geometry()?.show && view()}>
+      <Show when={props.input.active && desktop() && count() >= MIN_ITEMS && (geometry()?.hit ?? 0) > 0 && view()}>
         {(mount) => (
           <Portal mount={mount()} ref={(el) => (el.style.display = "contents")}>
             <div
               ref={(el) => {
-                container = el
                 el.addEventListener("wheel", wheel, { passive: false })
                 // No transitions on first paint: they switch on two frames after the rail exists.
                 requestAnimationFrame(() => requestAnimationFrame(() => setArmed(true)))
               }}
               data-timeline-rail
-              data-empty={count() < MIN_ITEMS ? "" : undefined}
+              data-persistent={geometry()?.persistent ? "" : undefined}
               data-armed={armed() ? "" : undefined}
               style={style()}
-              onPointerLeave={() => close()}
             >
-              <div data-timeline-rail-body style={{ "--timeline-rail-height": railHeightStyle(count()) }}>
-                <span data-timeline-rail-history data-active={paging() ? "" : undefined} aria-hidden="true" />
+              <div
+                data-timeline-rail-body
+                data-navigation={(geometry()?.hit ?? 0) >= NAVIGATION_REACH ? "" : undefined}
+                data-pass={passThrough() ? "" : undefined}
+                style={{
+                  "--timeline-rail-height": railHeightStyle(count()),
+                  width: pointedPrompt() ? "22rem" : `${geometry()?.hit ?? 0}px`,
+                }}
+                onPointerDown={() => {
+                  if (pressedOnStrip) return
+                  pressedOnStrip = true
+                  afterRelease(() => (pressedOnStrip = false))
+                }}
+                onPointerMove={(event) => {
+                  if (event.buttons === 0 || pressedOnStrip || passThrough()) return
+                  setPassThrough(true)
+                  afterRelease(() => setPassThrough(false))
+                }}
+              >
                 {turn("previous")}
                 <button
                   ref={strip}
                   type="button"
                   data-timeline-rail-strip
-                  data-pass={passThrough() ? "" : undefined}
                   aria-label={`Jump to message: ${label()}`}
-                  aria-busy={loading() || paging() ? "true" : undefined}
-                  onPointerDown={() => {
-                    if (pressedOnStrip) return
-                    pressedOnStrip = true
-                    afterRelease(() => (pressedOnStrip = false))
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onPointerEnter={(event) => {
-                    if (event.pointerType === "touch") return
-                    const index = fromPointer(event)
-                    if (index !== null) arm(index)
+                  onMouseDown={(event) => {
+                    if (!onCard(event.target)) event.preventDefault()
                   }}
                   onPointerMove={(event) => {
-                    if (event.pointerType === "touch") return
-                    if (event.buttons !== 0 && !pressedOnStrip) {
-                      if (!passThrough()) {
-                        setPassThrough(true)
-                        afterRelease(() => setPassThrough(false))
-                      }
-
-                      return
-                    }
+                    if (event.pointerType === "touch" || (event.buttons !== 0 && !pressedOnStrip)) return
                     const index = fromPointer(event)
-                    if (index !== null && index !== pointed()) arm(index)
+                    if (index !== null && index !== pointed()) setPointed(index)
                   }}
+                  onPointerLeave={() => setPointed(undefined)}
                   onClick={(event) => {
-                    if (event.detail === 0) return
+                    if (onCard(event.target) || event.detail === 0) return
                     // The prompt the card shows: a click event's clientY is a whole pixel, which at thousands of prompts
                     // is several prompts away from the fractional pointermove position the card was opened at.
                     select(pointed() ?? fromPointer(event) ?? undefined)
                     event.currentTarget.blur()
                   }}
-                  onFocus={(event) => {
-                    if (pointed() === undefined) arm(Math.max(0, current()), event.currentTarget.matches(":focus-visible"))
+                  onFocus={() => {
+                    if (pointed() === undefined) setPointed(Math.max(0, current()))
                   }}
-                  onBlur={() => close()}
+                  onBlur={() => setPointed(undefined)}
                   onKeyDown={keys}
                 >
-                  <span ref={setStripHost} data-timeline-rail-ticks aria-hidden="true" />
+                  <Index each={list()}>
+                    {(_, index) => (
+                      <span
+                        data-timeline-rail-tick
+                        data-index={index}
+                        data-d={pointed() !== undefined && Math.abs(index - pointed()!) <= 2 ? Math.abs(index - pointed()!) : undefined}
+                        data-active={index === current() || index === pointed() ? "" : undefined}
+                        aria-hidden="true"
+                        style={{ top: `${topPercent(index, count())}%` }}
+                      />
+                    )}
+                  </Index>
+                  <Show when={pointedPrompt()}>
+                    {(item) => (
+                      <span
+                        data-timeline-rail-card
+                        onPointerMove={(event) => event.stopPropagation()}
+                        style={{ top: `${topPercent(pointed()!, count())}%`, transform: `translateY(${cardShift(pointed()!)})` }}
+                      >
+                        <span data-timeline-rail-card-body role="tooltip">
+                          <span data-timeline-rail-card-title dir="auto">
+                            {item().title}
+                          </span>
+                          <Show when={item().snippet}>
+                            <span data-timeline-rail-card-snippet dir="auto">
+                              {item().snippet}
+                            </span>
+                          </Show>
+                        </span>
+                      </span>
+                    )}
+                  </Show>
                 </button>
                 {turn("next")}
               </div>
-              <Show when={cardIndex() !== undefined}>
-                  <div
-                    data-timeline-rail-card
-                    data-entered={entered() ? "" : undefined}
-                    style={{ "--card-y": `${cardTop()}px`, "--card-origin": `${cardOrigin()}px` }}
-                  >
-                    <div ref={cardElement} data-timeline-rail-card-body role="tooltip">
-                      <Show when={cardMeta()}>
-                        <div data-timeline-rail-card-meta>{cardMeta()}</div>
-                      </Show>
-                      <div data-timeline-rail-card-title dir="auto">
-                        {cardPrompt()?.title}
-                      </div>
-                      <Show when={cardPrompt()?.snippet || cardPrompt()?.working}>
-                        <div data-timeline-rail-card-snippet dir="auto" data-working={cardPrompt()?.working ? "" : undefined}>
-                          {cardPrompt()?.snippet ?? "Working…"}
-                        </div>
-                      </Show>
-                    </div>
-                  </div>
-              </Show>
             </div>
           </Portal>
         )}
@@ -650,32 +490,37 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   )
 }
 
-// Tokens and numbers copied from the host: the card is `menu-v2-content`'s surface (layer-01, floating elevation, 6px
-// radius). Motion follows reference/animation.md: ease-out for entrances, the on-screen curve for movement, only
-// `transform` and `opacity`, nothing runs until `data-armed` (two frames after the rail exists, so nothing animates
-// on first paint), and reduced motion keeps opacity and drops movement.
+// The structure is t3-code's TimelineMinimap. The card uses the host's menu surface for colour and shadow
+// (`menu-v2-content`: layer-01, floating elevation) at t3-code's geometry. The only motion is t3-code's: `transform`
+// on the ticks (150ms, Tailwind's default curve) and `opacity` on the active tick's overlay and the hover reveal, none of it
+// until `data-armed` (two frames after the rail exists, so nothing animates on first paint).
 const CSS = `
 [data-timeline-rail] {
-  --timeline-rail-ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --timeline-rail-move: cubic-bezier(0.77, 0, 0.175, 1);
   position: absolute;
+  left: 0;
   z-index: 55;
-  display: flex;
+  display: none;
   flex-direction: column;
   justify-content: center;
-  width: ${RAIL_WIDTH}px;
+  width: 72px;
   pointer-events: none;
+  --timeline-rail-curve: cubic-bezier(0.4, 0, 0.2, 1);
 }
-[data-timeline-rail][data-empty] { opacity: 0; visibility: hidden; }
-[data-timeline-rail][data-armed] { transition: opacity 200ms var(--timeline-rail-ease), visibility 0s; }
-[data-timeline-rail][data-armed][data-empty] { transition: opacity 160ms var(--timeline-rail-ease), visibility 0s 160ms; }
+@media (pointer: fine) {
+  [data-timeline-rail] { display: flex; }
+}
+[data-timeline-rail]:not([data-persistent]) { opacity: 0; }
+[data-timeline-rail]:not([data-persistent]):hover,
+[data-timeline-rail]:not([data-persistent]):focus-within { opacity: 1; }
+[data-timeline-rail][data-armed]:not([data-persistent]) { transition: opacity 150ms var(--timeline-rail-curve); }
 [data-timeline-rail-body] {
   position: relative;
-  width: 100%;
+  margin-left: ${STRIP_LEFT}px;
   height: var(--timeline-rail-height);
   flex: none;
   pointer-events: none;
 }
+[data-timeline-rail-body]:not([data-pass]) { pointer-events: auto; }
 [data-timeline-rail-strip] {
   appearance: none;
   position: absolute;
@@ -686,168 +531,99 @@ const CSS = `
   padding: 0;
   border: 0;
   background: none;
-  cursor: pointer;
+  font: inherit;
+  text-align: left;
   outline: none;
-  pointer-events: auto;
   user-select: none;
 }
-[data-timeline-rail-strip][data-pass] { pointer-events: none; }
-[data-timeline-rail-strip]:focus-visible { outline: 2px solid var(--v2-border-border-focus); outline-offset: 2px; border-radius: 2px; }
-[data-timeline-rail-ticks] { position: absolute; inset: 0; display: block; pointer-events: none; }
-[data-timeline-rail-history] {
-  position: absolute;
-  top: -9px;
-  left: 0;
-  width: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--v2-text-text-faint);
-  opacity: 0;
-}
-[data-timeline-rail][data-armed] [data-timeline-rail-history] { transition: opacity 200ms var(--timeline-rail-ease); }
-[data-timeline-rail-history][data-active] { opacity: 1; animation: timelineRailHistory 1.4s ease-in-out infinite; }
-/* Faint ticks are one gradient (a 2px tick every height / (count - 1), 8px wide); only prompts with something to show
-   get a node, drawn at a third of its 24px width at rest. The fisheye is t3-code's: scale-x by index distance from the
-   active prompt. Only transform and opacity ever change. */
-[data-timeline-rail-base] {
-  position: absolute;
-  left: 0;
-  top: -1px;
-  width: 8px;
-  height: calc(var(--timeline-rail-height) + 2px);
-  background: repeating-linear-gradient(
-    to bottom,
-    var(--v2-text-text-faint) 0 2px,
-    transparent 2px calc(var(--timeline-rail-height) / var(--max, 1))
-  );
-  opacity: 0.45;
-  pointer-events: none;
-}
-[data-timeline-rail][data-armed] [data-timeline-rail-base] { transition: opacity 150ms var(--timeline-rail-ease); }
+[data-timeline-rail-strip]:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-border-border-focus); }
+/* One span per prompt: 24px wide, drawn at a third of that at rest, scaled by index distance from the pointer.
+   The colour is a node background, so only transform and the lit overlay's opacity ever change. */
 [data-timeline-rail-tick] {
   position: absolute;
   left: 0;
-  top: calc(var(--i) / var(--max) * 100%);
   width: 24px;
   height: 2px;
   margin-top: -1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--v2-text-text-faint) 45%, transparent);
   transform-origin: 0 50%;
-  transform: scale(0.3333, 1);
+  transform: scaleX(0.3333);
   pointer-events: none;
 }
-[data-timeline-rail-tick][data-d="0"] { transform: scale(1, 1.8); }
-[data-timeline-rail-tick][data-d="1"] { transform: scale(0.667, 1.4); }
-[data-timeline-rail-tick][data-d="2"] { transform: scale(0.417, 1.15); }
-[data-timeline-rail-tick]::before,
+[data-timeline-rail-tick][data-d="0"] { transform: scaleX(1); }
+[data-timeline-rail-tick][data-d="1"] { transform: scaleX(0.667); }
+[data-timeline-rail-tick][data-d="2"] { transform: scaleX(0.417); }
 [data-timeline-rail-tick]::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: 1px;
+  background: color-mix(in srgb, var(--v2-text-text-base) 60%, transparent);
   opacity: 0;
 }
-[data-timeline-rail-tick]::before { background: var(--v2-text-text-faint); }
-[data-timeline-rail-tick]::after { background: var(--v2-text-text-base); }
-[data-timeline-rail-tick][data-d]::before { opacity: 0.8; }
-[data-timeline-rail-tick][data-d="0"]::after { opacity: 0.6; }
-[data-timeline-rail-tick][data-view]::after,
-[data-timeline-rail-tick][data-current]::after { opacity: 1; }
-@starting-style {
-  [data-timeline-rail-tick] { transform: scale(0.3333, 1); }
-  [data-timeline-rail-tick]::before,
-  [data-timeline-rail-tick]::after { opacity: 0; }
-}
-[data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: transform 150ms var(--timeline-rail-ease); }
-[data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
-[data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 150ms var(--timeline-rail-ease); }
-[data-timeline-rail][data-scrolling] [data-timeline-rail-tick],
-[data-timeline-rail][data-scrolling] [data-timeline-rail-tick]::before,
-[data-timeline-rail][data-scrolling] [data-timeline-rail-tick]::after { transition: none !important; }
-@media (hover: hover) and (pointer: fine) {
-  [data-timeline-rail-strip]:hover [data-timeline-rail-base] { opacity: 0.8; }
-}
+[data-timeline-rail-tick][data-active]::after { opacity: 1; }
+[data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: transform 150ms var(--timeline-rail-curve); }
+[data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 150ms var(--timeline-rail-curve); }
 [data-timeline-rail-turn] {
   position: absolute;
-  left: -2px;
+  left: 4px;
   z-index: 1;
-  display: inline-flex;
+  display: none;
+  transform: translateX(-50%);
   opacity: 0;
-  pointer-events: auto;
 }
+[data-timeline-rail-body][data-navigation] [data-timeline-rail-turn] { display: inline-flex; pointer-events: auto; }
 [data-timeline-rail-turn="previous"] { bottom: calc(100% + 2px); }
 [data-timeline-rail-turn="previous"] svg { transform: rotate(180deg); }
 [data-timeline-rail-turn="next"] { top: calc(100% + 2px); }
-[data-timeline-rail][data-armed] [data-timeline-rail-turn] { transition: opacity 150ms var(--timeline-rail-ease); }
-[data-timeline-rail-body]:hover [data-timeline-rail-turn],
+[data-timeline-rail][data-armed] [data-timeline-rail-turn] { transition: opacity 150ms var(--timeline-rail-curve); }
 [data-timeline-rail-turn]:hover,
 [data-timeline-rail-turn]:focus-within { opacity: 1; }
 [data-timeline-rail-card] {
   position: absolute;
-  top: 0;
-  left: ${RAIL_WIDTH}px;
-  padding-left: 4px;
+  left: 32px;
+  width: 320px;
+  display: block;
+  cursor: text;
+  user-select: text;
   pointer-events: auto;
-  transform: translateY(var(--card-y, 0px));
 }
-[data-timeline-rail-card][data-entered] { transition: transform 140ms var(--timeline-rail-ease); }
 [data-timeline-rail-card-body] {
+  display: block;
   box-sizing: border-box;
-  width: min(320px, 40vw);
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 12px;
+  border-radius: 12px;
   background: var(--v2-background-bg-layer-01);
   box-shadow: var(--v2-elevation-floating);
   color: var(--v2-text-text-base);
-  opacity: 0;
-  transform: scale(0.96);
-  transform-origin: 0 var(--card-origin, 50%);
-  transition: opacity 90ms var(--timeline-rail-ease), transform 90ms var(--timeline-rail-ease);
-}
-[data-timeline-rail-card][data-entered] [data-timeline-rail-card-body] {
-  opacity: 1;
-  transform: none;
-  transition: opacity 140ms var(--timeline-rail-ease), transform 140ms var(--timeline-rail-ease);
-}
-[data-timeline-rail-card-meta] {
-  margin-bottom: 2px;
-  font-size: 11px;
-  line-height: 14px;
-  font-weight: 440;
-  letter-spacing: 0.05px;
-  color: var(--v2-text-text-faint);
-  font-variant-numeric: tabular-nums;
+  text-align: left;
 }
 [data-timeline-rail-card-title] {
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 530;
-  letter-spacing: -0.04px;
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
 }
 [data-timeline-rail-card-snippet] {
-  margin-top: 4px;
-  font-size: 11px;
-  line-height: 14px;
-  font-weight: 440;
-  letter-spacing: 0.05px;
-  color: var(--v2-text-text-muted);
   display: -webkit-box;
+  margin-top: 4px;
+  max-height: 60px;
+  overflow: hidden;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  overflow: hidden;
   overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--v2-text-text-muted);
 }
-[data-timeline-rail-card-snippet][data-working] { color: var(--v2-text-text-faint); }
-@keyframes timelineRailHistory { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) {
-  [data-timeline-rail-history][data-active] { animation: none; opacity: 0.6; }
   [data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: none; }
-  [data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
   [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 120ms linear; }
-  [data-timeline-rail-card][data-entered] { transition: none; }
-  [data-timeline-rail-card-body], [data-timeline-rail-card][data-entered] [data-timeline-rail-card-body] { transform: none; transition: opacity 90ms linear; }
 }
 `
 

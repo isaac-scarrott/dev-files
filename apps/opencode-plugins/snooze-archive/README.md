@@ -1,49 +1,63 @@
 # Snooze / archive
 
-OpenCode Desktop **2.2.5**, GUI-only plugin. No app modifications.
+Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archive next to Delete in every session menu.
 
-The vertical session sidebar ends with collapsed **Snoozed** and **Archived** groups. Click or use Enter/Space to toggle; Right/Left expands/collapses. Each group scrolls independently and is capped at 220px / 24vh.
+> **Credit:** menu markup is adapted from [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) desktop app (2.2.5). The accordion's `grid-template-rows` technique and `cubic-bezier(.23,1,.32,1)` curve are from Emil Kowalski's animation guidance.
 
-- **Snooze** is a real submenu of the tab right-click menu (a **Snooze ▸** item with the host chevron; the presets open beside it on hover, Right, Enter or Space; Left/Esc close only the submenu). From the palette, **Snooze session…** opens the same presets anchored under the session's own tab row (fallback: the tab list), and Esc returns focus to that tab. Presets, in the app's `menu-v2` markup: *In 1 hour*, *In 3 hours*, *This evening* (only while 18:00 is ahead), *Tomorrow* 9:00, *Next week* Mon 9:00, then **Custom…**, each with its resolved time right-aligned in the user's locale and 12/24-hour preference (`Intl.DateTimeFormat`), recomputed every time the menu opens. Arrows, Home/End, Enter, Esc work. "In N hours" is elapsed time; Tomorrow/This evening/Next week are local wall-clock times (`src/time.ts`): a time that does not exist (spring forward) moves ahead by the jump, an ambiguous one (fall back) takes the first occurrence; tested in Europe/London, America/New_York, Asia/Kolkata, Asia/Kathmandu, Australia/Lord_Howe, Pacific/Auckland. Next week on a Monday is the following Monday.
-- **Custom…** opens a host `Dialog` with a Duration | Date & time switch (host `Button`s). Duration: chips (15m…1w) plus a host `TextInput` parsing `90m`, `1h30`, `1.5h`, `2 days`, `in 2 hours`, `45`; Date & time: a month grid (arrow/Home/End/PageUp/PageDown, today dot, past and >1 year days disabled, locale first weekday via `Intl.Locale`) and a time field (`9:30`, `930`, `2:30 pm`, ↑/↓ ±5 min, Shift ±1 h). The host has no calendar or time field, so the grid is a small bespoke piece in `src/custom.ts` (native buttons, `--v2` tokens). A live line shows the resolved wake time with the zone (`GMT+1 · Europe/London`), a warning with the applied resolution for nonexistent/ambiguous times, and clear errors for past times and anything beyond one year. Enter confirms, Esc cancels.
-- The absolute deadline is authoritative: if the device zone or offset changes, the wake time is shown in the current zone and the deadline does not move. The 30-second timer plus `visibilitychange`/`focus` recheck handle sleep, resume and clock changes; deadlines already past at launch wake immediately.
-- Snooze is persisted **on this device**, shared between its windows, keyed by server + session. Closing the shell tab does not stop server work. Pending approval/question in the session or known descendants declines snooze. Wake/Undo reopens it. Opening through Home/Recently closed also wakes it.
-- Wakes early on approval/question, new execution/queued input, completion or failure. Startup/reconnect checks metadata and pending requests; a 30-second timer handles deadlines, resume and missed state changes. Timed wake waits for a disconnected server to reconnect. App-closed deadlines are handled on the next launch, not by a background service.
-- **Woke mark.** A session that wakes by itself (deadline, approval/question, new work, completion; also deadlines that passed while the app was closed) shows a clock in its vertical tab's trailing status slot until it is opened. Opening means it becomes the mounted session by any route (click, palette, keyboard, Home), not hover. Woken by Wake/Undo, Home or Recently closed, or while already open, it is not marked; archiving, deleting or re-snoozing it clears the mark. The mark is stored on this device in its own `woke` store, keyed by server + session (capped at 200; an entry for a session deleted while the app was closed is inert). The clock is `src/woke.ts`: the drawn 14px icon, the unread dot's blue (`--v2-background-bg-accent`), a sibling of the host's aria-hidden `tab-status` with `role="img"` and `aria-label="Woke from snooze"`, same slot position, hover swap for the close button and title fade as the native marks, no animation (native marks have none). Precedence: a pending approval/question (`data-status="attention"`) still shows its native mark; the clock replaces the busy ring and unread dot. The host marks carry no tooltip and hide on row hover, so there is none either. Vertical tab layout only. A session restored as the active tab at launch counts as opened.
-- **One hover action, the rest in right-click.** A session tab shows a single **Archive** `IconButton` on hover/focus, beside the app's own close X (untouched: that is "close tab"). Everywhere the app shows a session **Delete…** menu, a **Snooze** submenu and **Archive** sit directly above it, ahead of the separator that precedes it (`src/sessionmenu.ts`): the tab right-click menu, the session header **…** menu (the routed session) and the Home session row menu (that row's session; the server is the connected one that knows the id). The menu is recognised by its shape (last item alone after a separator), not its label. Archived sessions keep their own Restore/Delete; subagents get no Snooze; a draft's items are disabled. The inbox entry menu has no DOM hook for its session and already has a native Archive, so it is untouched. The plugin adds no second Delete. Snoozed and Archived rows are the app's session-tab markup; hover shows one action (**Wake** / **Restore**) and right-click (or the menu key) opens a popup in the same `menu-v2` markup: Wake, Archive, **Delete…** for snoozed; Restore, **Delete…** for archived. Plugin Delete always asks first, says it is permanent, focuses Cancel and calls `client.session.remove({ sessionID })`; on failure an error toast shows and the row stays. There is no session-header cluster. Palette commands (Snooze session…, Archive session, Delete session…) remain.
-- **Snooze icon.** The host catalog has no clock, so `src/icons.ts` draws one (16px, outline, `currentColor`, round caps, circle r6 plus hands) and the Snoozed group header uses it. Host `IconButton`/`ctx.ui.Menu` only take catalog names and the native menu's items carry no icons, so the clock appears where we render the markup.
-- **Motion.** Group open/close animates `grid-template-rows` 0fr→1fr plus opacity (200ms, `cubic-bezier(0.23,1,0.32,1)`) with CSS transitions; collapsed content is `inert`/`visibility:hidden`. Rows fade/translate in and out only while a group is open after its first content, never on startup or count changes. `prefers-reduced-motion` keeps opacity only.
-- **Reading archived sessions.** Clicking an Archived row (or Enter on its focused link) opens the session in a tab via `ctx.tabs.open(…, { focus: true })` and leaves it archived: no `session.update` call. Only the **Archive** action closes a tab, at the moment it archives; refresh, `session.archived` events and the archived inventory never close tabs, so a tab opened from the group, Home or Recently closed stays. Restore (hover button, or right-click) is the only unarchive. The 2.2.5 sources have no archived guard on the session route or tab (no banner, read-only composer or redirect; "archived" is checked only when resolving a transcript-mentioned session, Home lookup and the palette index), so the session should render as any other, with no archived marker; the host offers none and none is invented. Unverified live.
-- **Archive session** uses native `session.update({ archived: true })`, then verifies native state. **Restore** uses `archived: false`, verifies, and opens the session. Archive state is never invented locally.
-- Archived inventory includes **all top-level sessions on every listed server**, including sessions without open tabs, following every cursor page. Snooze uses the same top-level scope. Counts show `—` while loading, disconnected, incompatible or failed; expand for the reason. Refresh via **Refresh archived sessions**.
+![Expanding Snoozed and Archived, then showing more rows](media/demo.gif)
 
-## Build / register
+[Full-quality video](media/demo.mp4)
 
-```sh
-npm_config_registry=https://registry.npmjs.org pnpm install --frozen-lockfile
-npm_config_registry=https://registry.npmjs.org pnpm typecheck
-npm_config_registry=https://registry.npmjs.org pnpm test
-npm_config_registry=https://registry.npmjs.org pnpm build
+## What it does
+- **Snooze** is a submenu of the session right-click menu, the session header "…" menu and the Home row menu: In 1 hour, In 3 hours, This evening, Tomorrow, Next week, each with its wake time, then Custom… (duration or calendar and time). The palette has "Snooze session…".
+- A snoozed session wakes at its deadline or when it needs attention (approval, question, new work, completion). It then shows a clock until you open it. Snoozes are stored on this device and survive restarts.
+- **Archive** and **Restore** use OpenCode's native archive state. Opening an archived row reads it without unarchiving. Snoozed and Archived rows have Wake, Restore and Delete… (always confirmed) in their own menus.
+- Archived loads lazily. Each group shows 10 rows, and **Show N more** adds the next 25.  The Archived header shows no count, because the total isn't known until every page is loaded; Snoozed shows its count.
+- The groups scroll with the live rows inside the sidebar. Expanding one grows it upward into the empty space first, then downward. Rows never move.
+
+## Context
+OpenCode Desktop archives sessions but has no snooze, and no way to browse a long archive. This adds both inside the sidebar. The host has no slot there or a hook for the tab menu, so the groups and menu items are injected into its DOM and removed on cleanup. This tracks the 2.2.5 markup. Closing a snoozed or archived tab can leave an entry in native Recently closed.
+
+## Install
+Register by absolute path in `~/.config/opencode/opencode.json`:
+```json
+"plugins": ["/path/to/apps/opencode-plugins/snooze-archive"]
 ```
+Kind: GUI (`gui-experimental`). Cmd+R for GUI. The groups need the Side tabs layout; the palette commands work in any layout.
 
-Add the installed directory to global `opencode.json`'s `plugins`:
+## Options
+| Option | Default | |
+|---|---|---|
+| `archive` | `auto` | `auto`: yield to OpenCode's own archive UI (its own archived group, or an Archive item of its own for our Archive actions). `ours`: always show ours. `theirs`: always stand down. |
 
 ```json
-"/Users/isaac/git/dev-files/apps/opencode-plugins/snooze-archive"
+"plugins": [{ "package": "/path/to/apps/opencode-plugins/snooze-archive", "options": { "archive": "theirs" } }]
 ```
 
-The built CommonJS entry is tracked in `dist/gui-experimental.cjs`. Local rebuilds are watched by the host.
+## When OpenCode adds archive UI
+OpenCode 2.2.5 stores archived sessions but has no archive UI in its Side tabs sidebar, its menus or its palette. Its experimental Inbox layout has an Archived section and an Archive menu item of its own; that layout shows none of this plugin's groups, so it does not count. In `auto` the plugin watches for the host's own:
 
-## Compatibility / verification boundary
+- **Menu**: a session menu (tab, header, Home row) that already has an Archive or Unarchive item. Our menu item is then left out of that menu.
+- **Home**: the Home row's `data-action="home-session-archive"` button.
+- **Sidebar**: an archived group inside the Side tabs sidebar (`data-slot` or `data-component` containing `archived`).
 
-Commands, data, storage, toasts, dialogs and native mutations use the public SDK. 2.2.5 has no sidebar-bottom slot: the two group nodes and a parent layout attribute are injected next to `[data-slot="vertical-tabs"]`, one Archive button is appended as a sibling inside each `[data-tab-key]` tab wrapper (marked `data-sa-tab-host`, removed on cleanup), and a body-level `MutationObserver` adds our items to the app's tab context menu when it opens (see below). Cleanup removes them. Host title, rename, avatars, status, scroll and footer controls are left intact. Inbox/horizontal tab layouts have no group attachment; commands still work.
+A host **Archive action** (the menu item or the Home button) makes our Archive actions stand down: the Archive menu items, the hover Archive button (the host's close X comes back), the Archive palette command, and the Snoozed row's Archive. It does not make the **Archived** group stand down, because the group is how you browse and restore what was archived. Only a host **archived group** in the sidebar does that, and then the Refresh palette command goes too. Snooze, the Snoozed group, Delete…, waking when a session is archived elsewhere, and the woke mark always stay. It is live: the group stays mounted but hidden, nothing is fetched while it is down, and it comes back, and loads what it missed, when the host's UI goes away. The sidebar root carries `data-sa-archive="ours|theirs"` (the group) and, when a signal fired, `data-sa-standdown="menu,home,sidebar"` naming it.
 
-The public tab API exposes only user-style `close`, so snoozed/archived tabs can appear in native Recently closed. Restoring an archived entry should use this plugin's Restore action; opening an archive through native history does not itself unarchive it.
+A bound `session.archive` keybind is not a signal: OpenCode answers keybind lookups from a stored catalog of commands that includes ones of older builds, so it cannot tell a live command from a stale one.
 
-Tests cover mocked API calls/errors/pagination, snooze transitions and DST, the woke mark (set, clear on open, persistence, passed-while-closed, no mark for never-snoozed/Home-opened/archived), keyed group counts/toggles, startup/reconnect, manual wake, undo, and cleanup/reload against a versioned sidebar fixture. Cold permission/form lists and metadata may be undefined despite SDK declarations: new snoozes require confirmed hydrated state; existing snoozes defer safely while known deadline/archive/attention signals remain effective. **Tab-row button position (right offset 30px to clear the close button), header placement, and animations are unverified live. Actual desktop appearance, interaction and native archive writes remain unverified**: native desktop-control tools were unavailable. Mock/fixture tests are not live API or UI evidence.
+Archive and Restore call the client's own `session.archive` / `session.unarchive` when it has them, else `session.update({ archived })`, then check the server's state.
 
-## Context-menu integration
+### Re-check on each OpenCode update
+- **SDK**: do `client.session.archive` / `unarchive` exist, and with which argument (the plugin assumes `{ sessionID }` and falls back to `update` on any error)? Does `session.list({ archived: true })` still work?
+- **Commands**: whether the host registers an archive command (its bundle has no `session.archive` id in 2.2.5). Not detectable from a keybind (see above); look for the menu item or button it would come with.
+- **Menus**: the label or `data-action` of the host's Archive item in the tab, header and Home row menus (`hasNativeArchive`).
+- **Sidebar**: the `data-slot` / `data-component` of an archived group in the Side tabs sidebar (`SIDEBAR_ARCHIVED`). The probe is scoped to `[data-slot="vertical-tabs-sidebar"]`.
+- **Home**: whether `SHOW_HOME_SESSION_ARCHIVE` is on (`home-session-archive`).
+- **Layouts**: whether the Inbox layout's Archived section moves into Side tabs.
 
-`MenuItem` registers only in `session.panel`, `server.add` and `server.row`, and `ctx.ui.Menu` is a button-triggered menu with no way to open at a point, so neither can extend or replace a tab context menu. The app's menu (Kobalte, `Menu.Context` in `tab-nav.tsx`) is a portal of `[role=menu][data-component=menu-v2-content]` labelled by the tab link. `src/tabmenu.ts` watches `<body>` for that node, resolves the tab through `aria-labelledby` → `closest([data-tab-key])` (so only session tabs), and `extendNative` in `src/menu.ts` inserts `menu-v2-item` nodes (same attributes, `data-slot`s, `data-variant=critical`) before the app's separator. It is idempotent (`data-sa-menu` marks our nodes), removed on cleanup, and does not touch the app's items. Kobalte keeps a collection of its own items, so arrow/Home/End presses that would step onto or off our items are handled by us (highlight moved to a single item, as Kobalte does); every other key still reaches the app. Choosing an item dispatches Escape on the menu to close it through the app's own path, then runs the action. Tradeoff: this depends on the 2.2.5 DOM, and highlight state for a native item is cleared by us when focus moves onto ours. Snoozed/Archived rows have no native menu, so they use `openMenu` (fixed popup, same markup, arrows/Home/End/Enter/Escape, outside-click and blur close, focus restored).
+## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the menu markup, adapted from the desktop app's renderer source (2.2.5).
+- Emil Kowalski: the `grid-template-rows` accordion and `cubic-bezier(.23,1,.32,1)`, taken verbatim from his animation guidance.
 
-The Snooze submenu is a `menu-v2-content` element appended inside the native menu element (position absolute, `left: calc(100% + 2px)`, flipping left when there is no room), so Kobalte's outside-click and focus-out checks see it as part of the menu. Its items copy the host's item markup and computed styles match the native items exactly (height 28, padding 0 6px 0 12px, 13px/24px 440, radius 4, hint 11px 530 `rgb(128,128,128)`, menu radius 6, same shadow).
+## Development
+`pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

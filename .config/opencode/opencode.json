@@ -1,10 +1,54 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "build",
+  "experimental": {
+    "artifacts": true
+  },
+  "provider": {
+    "claude-agent": {
+      "models": {
+        "claude-fable-5-1[1m]": {
+          "limit": {
+            "context": 1000000,
+            "output": 0
+          }
+        }
+      }
+    }
+  },
   "plugins": [
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/sidepanel",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/sidebar-repos",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/message-jump"
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/timeline-rail",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/snooze-archive",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/visual-replies",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/agents-panel",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/no-project",
+    {
+      "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/orchestrator-tools",
+      "options": {
+        "scope": "all"
+      }
+    },
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/session-drag",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/model-picker",
+    {
+      "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold",
+      "options": {
+        "shell": {
+          "enabled": true,
+          "approve": true
+        },
+        "codemode": {
+          "enabled": true
+        }
+      }
+    },
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/usage-resume",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/claude-proxy",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/scheduler",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/monitor",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/file-viewer",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/cache-warning"
   ],
   "mcp": {
     "paper": {

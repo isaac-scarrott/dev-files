@@ -1,4 +1,4 @@
-import { correction, currentPrompt, glidePlan, probeDirection, revealPlan, seekTop, type Row } from "./target"
+import { correction, glidePlan, probeDirection, seekTop, type Row } from "./target"
 
 /** What a jump needs from the timeline it runs in. */
 export type Host = {
@@ -6,16 +6,9 @@ export type Host = {
   readonly scroller: HTMLElement
   /** The prompts the timeline shows, in order. */
   ids(): readonly string[]
-  /** Older history exists on the server. */
-  more(): boolean
-  loadMore(signal: AbortSignal): Promise<void>
   reducedMotion(): boolean
   /** Resolves on the next animation frame. */
   frame(): Promise<void>
-  /** Called with true while older history loads, false when it is done. */
-  loading?(value: boolean): void
-  /** Scrolls to `to` along the host's own ease-out; absent, the browser's smooth scroll is used. */
-  tween?(to: number, signal: AbortSignal): Promise<boolean>
 }
 
 export type Outcome = "done" | "none" | "aborted"
@@ -25,7 +18,6 @@ const SETTLE_LIMIT = 40
 const GLIDE_LIMIT = 120
 const PROBE_LIMIT = 200
 const PROBE_ATTEMPTS = 3
-const PAGE_LIMIT = 5
 /** A pre-seek pays off when probing would take this many viewports of one-per-frame paging or more. */
 const SEEK_VIEWPORTS = 20
 /** Correction rounds after the seek, each waiting for the virtualizer to render the new position. */
@@ -34,16 +26,37 @@ const RENDER_FRAMES = 2
 /** Reveal-and-glide rounds before a jump settles for where it is. */
 const LAND_ROUNDS = 4
 
-/** Mounted rows in document order, as the host's cursor reads them. */
+/**
+ * Mounted rows in document order, as the host's cursor reads them. The virtualizer mounts each row in a keyed wrapper
+ * (`[data-timeline-key]`) under one container, so the container's children are walked and each wrapper is asked for its
+ * row: a query for every `[data-message-id]` in the scroller scans every node of every mounted row, thousands of them
+ * with long replies, on each scroll frame. A scroller with no keyed wrapper is scanned whole.
+ */
 export function readRows(scroller: HTMLElement): Row[] {
-  return [...scroller.querySelectorAll<HTMLElement>("[data-message-id]")].flatMap((element) => {
+  const container = scroller.querySelector("[data-timeline-key]")?.parentElement
+  const rows: Row[] = []
+  const add = (element: HTMLElement) => {
     const owner = element.dataset.messageId
 
-    if (!owner) return []
+    if (!owner) return
     const rect = element.getBoundingClientRect()
 
-    return [{ owner, prompt: element.dataset.timelineRow === "UserMessage", top: rect.top, bottom: rect.bottom }]
-  })
+    rows.push({ owner, prompt: element.dataset.timelineRow === "UserMessage", top: rect.top, bottom: rect.bottom })
+  }
+
+  if (!container) {
+    for (const element of scroller.querySelectorAll<HTMLElement>("[data-message-id]")) add(element)
+
+    return rows
+  }
+
+  for (const child of container.children) {
+    const row = child.matches("[data-message-id]") ? child : child.querySelector("[data-message-id]")
+
+    if (row) add(row as HTMLElement)
+  }
+
+  return rows
 }
 
 /** The sticky header's height: what the host's `scrollToElement` keeps a revealed prompt below. */
@@ -59,28 +72,12 @@ export function anchorOf(scroller: HTMLElement, id: string) {
   )
 }
 
-/** The index of the prompt whose turn contains the viewport top, under the sticky header. */
-export function currentIndex(host: Pick<Host, "scroller" | "ids">): number {
-  const box = host.scroller.getBoundingClientRect()
-
-  return currentPrompt(host.ids(), readRows(host.scroller), box.top + inset(host.scroller))
-}
-
 /**
  * Tells the host the user scrolled up: its wheel handler releases the tool anchor, marks a user scroll so its next
  * navigation starts from the cursor, and unpins the timeline from its end. A programmatic scroll does none of that.
  */
 export function unpin(scroller: HTMLElement) {
   scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }))
-}
-
-async function load(host: Host, signal: AbortSignal) {
-  host.loading?.(true)
-  try {
-    await host.loadMore(signal)
-  } finally {
-    host.loading?.(false)
-  }
 }
 
 /** The offset that puts `anchor` right under the sticky header. */
@@ -185,24 +182,8 @@ async function seek(host: Host, id: string, signal: AbortSignal) {
   }
 }
 
-async function revealFar(host: Host, id: string, signal: AbortSignal, pages = 0): Promise<void> {
+async function revealFar(host: Host, id: string, signal: AbortSignal): Promise<void> {
   const { scroller } = host
-  const plan = revealPlan({ ids: host.ids(), target: id, more: host.more() })
-
-  if (plan.kind === "load") {
-    if (pages >= PAGE_LIMIT) return
-    await load(host, signal)
-
-    if (signal.aborted) return
-
-    return revealFar(host, id, signal, pages + 1)
-  }
-
-  if (plan.kind === "top") {
-    scroller.scrollTo({ top: 0, behavior: "auto" })
-
-    return settle(host, id, signal)
-  }
 
   await seek(host, id, signal)
 
@@ -235,7 +216,7 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
     scroller.scrollTo({ top: plan.start, behavior: "auto" })
     await host.frame()
   }
-  // The host's curve when it supplies one; otherwise the browser's own smooth scroll, which has no ease-out to match.
+  // The browser's own smooth scroll, as the host's jump-to-message and jump-to-latest use (`scrollTo({ behavior: "smooth" })`).
   const move = async (to: number) => {
     if (plan.behavior === "auto") {
       scroller.scrollTo({ top: to, behavior: "auto" })
@@ -243,7 +224,6 @@ async function glide(host: Host, id: string, signal: AbortSignal) {
       return true
     }
 
-    if (host.tween) return host.tween(to, signal)
     scroller.scrollTo({ top: to, behavior: plan.behavior })
     let last = Number.NaN
     let still = 0
@@ -302,7 +282,10 @@ export async function jumpTo(host: Host, id: string, outer: AbortSignal): Promis
       if (signal.aborted) return "aborted"
       const landed = anchorOf(host.scroller, id)
 
-      if (landed && Math.abs(offsetOf(host.scroller, landed) - host.scroller.scrollTop) <= 2) break
+      // A prompt whose offset lies past the scroll maximum cannot land closer: stop at the end, as the host does.
+      const { scroller } = host
+
+      if (landed && (Math.abs(offsetOf(scroller, landed) - scroller.scrollTop) <= 2 || scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 2)) break
     }
 
     return signal.aborted ? "aborted" : "done"

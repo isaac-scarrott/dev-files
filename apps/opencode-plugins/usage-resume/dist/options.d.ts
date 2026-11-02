@@ -18,8 +18,8 @@ export interface Options {
     readonly snapshotPath: string;
     /** Post a timeline notice when a session starts waiting. */
     readonly notices: boolean;
-    /** Also resume subagent sessions (those with a parent). */
-    readonly includeChildren: boolean;
+    /** Where the first real limit error is saved for detector tests. */
+    readonly sampleDir: string;
 }
 export declare const DEFAULTS: Options;
 /** Durations are given in seconds (`marginSeconds`, `tickSeconds`, …) and held in ms. */

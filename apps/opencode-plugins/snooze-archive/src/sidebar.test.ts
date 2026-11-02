@@ -2,15 +2,16 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
 import { createSidebar, css } from "./sidebar"
-import { fakeHost } from "./testui"
+import { fakeHost, withHub } from "./testui"
 
 const avatar = { letter: "R", variant: "gray" }
 
 test("bottom groups default collapsed; keyed counts, native buttons and arrow keys", async () => {
   const window = new Window()
   const doc = window.document as unknown as Document
-  doc.body.innerHTML = `<aside><header>Host controls</header><div id="host"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><span data-slot="tab-title">Rename me</span></div></div></div><footer>Native footer</footer></aside>`
-  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><header>Host controls</header><div id="host"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><span data-slot="tab-title">Rename me</span></div></div></div><footer>Native footer</footer></aside>`
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
   let woke = 0
   const row = { key: "a\ns", title: "Session", detail: "Later", project: "repo · main", action: "Wake", avatar, run: () => { woke++ } }
   sidebar.update({ rows: [row], count: 1 }, { rows: [], count: 100 })
@@ -32,8 +33,9 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
   assert.equal(doc.querySelector('[data-slot="tab-title"]')?.textContent, "Rename me")
   assert.equal(buttons[1].textContent, "Archived—")
-  assert.match(css, /max-height: min\(24vh, 220px\)/)
-  sidebar.dispose()
+  assert.doesNotMatch(css, /max-height|overflow-y/)
+  assert.match(css, /\[data-sa-host\] \{ flex: 1 1 auto; \}/)
+  rig.stop()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
   assert.equal(doc.querySelector("[data-sa-host]"), null)
   assert.equal(doc.querySelector("header")?.textContent, "Host controls")
@@ -41,49 +43,47 @@ test("bottom groups default collapsed; keyed counts, native buttons and arrow ke
   await window.happyDOM.close()
 })
 
+const SIDE = (inner: string) => `<div><aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside></div>${inner}`
+
 test("attachment survives cold startup, sidebar replacement and cleanup/reload", async () => {
   const window = new Window()
   const doc = window.document as unknown as Document
-  const frames = new Map<number, () => void>()
-  const schedule = (fn: () => void) => { frames.set(1, fn); return 1 }
-  const start = () => createSidebar(doc, fakeHost(doc), schedule, (id) => { frames.delete(id) })
-  let sidebar = start()
+  const start = () => withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  let rig = start()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
-  doc.body.innerHTML = `<div><div data-slot="vertical-tabs"></div></div>`
+  doc.body.innerHTML = SIDE("")
   await window.happyDOM.whenAsyncComplete()
-  for (const fn of frames.values()) fn()
-  frames.clear()
+  rig.flush()
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
-  doc.body.innerHTML = `<main><div data-slot="vertical-tabs"></div></main>`
+  doc.body.innerHTML = `<main>${SIDE("")}</main>`
   await window.happyDOM.whenAsyncComplete()
-  for (const fn of frames.values()) fn()
-  frames.clear()
-  assert.ok(doc.querySelector("main > [data-snooze-archive]"))
+  rig.flush()
+  assert.ok(doc.querySelector("main [data-slot=vertical-tabs] > [data-slot=vertical-tabs-scroll][data-sa-host] > [data-snooze-archive]"))
   await window.happyDOM.whenAsyncComplete()
-  assert.equal(frames.size, 0, "own attachment must not schedule observer loops")
+  assert.equal(rig.frames.size, 0, "own attachment must not schedule observer loops")
   const strip = doc.querySelector('[data-slot="vertical-tabs"]')!
   strip.setAttribute("data-slot", "titlebar-tabs")
   await window.happyDOM.whenAsyncComplete()
-  for (const fn of frames.values()) fn()
-  frames.clear()
+  rig.flush()
   assert.equal(doc.querySelector("[data-snooze-archive]"), null)
   strip.setAttribute("data-slot", "vertical-tabs")
   await window.happyDOM.whenAsyncComplete()
-  for (const fn of frames.values()) fn()
-  frames.clear()
+  rig.flush()
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
-  sidebar.dispose()
-  sidebar = start()
+  rig.stop()
+  rig = start()
   assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1)
-  sidebar.dispose()
-  assert.equal(frames.size, 0)
+  rig.stop()
+  assert.equal(rig.frames.size, 0)
+  assert.equal(doc.querySelector("[data-snooze-archive]"), null)
   await window.happyDOM.close()
 })
 
 test("group toggle sets aria-expanded, data-open and inert together; collapsed content is inert", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
-  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
   const toggle = doc.querySelector<HTMLButtonElement>("[data-sa-toggle] button")!
   const panel = doc.querySelector<HTMLElement>("[data-sa-panel]")!
   assert.equal(panel.hasAttribute("data-open"), false)
@@ -94,48 +94,34 @@ test("group toggle sets aria-expanded, data-open and inert together; collapsed c
   assert.equal(panel.hasAttribute("inert"), false)
   toggle.click()
   assert.equal(panel.hasAttribute("inert"), true)
-  assert.match(css, /grid-template-rows: 0fr/)
-  assert.match(css, /prefers-reduced-motion/)
-  sidebar.dispose()
+  assert.match(css, /\[data-sa-panel\]:not\(\[data-open\]\) \{ display: none; \}/)
+  assert.doesNotMatch(css, /grid-template-rows|opacity 1[58]0ms|prefers-reduced-motion/)
+  rig.stop()
 })
 
-test("rows animate only when open after first content; leaving rows are interruptible and cleared", () => {
+test("rows and groups have no motion: rows come and go in one frame, only the chevron transitions", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
-  const timers = new Map<number, () => void>()
-  let n = 0
-  const frames: (() => void)[] = []
-  const sidebar = createSidebar(doc, fakeHost(doc), (fn) => { frames.push(fn); return 1 }, () => {}, { set: (fn) => { timers.set(++n, fn); return n }, clear: (id) => { timers.delete(id) } })
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
   const row = (key: string) => ({ key, title: key, detail: "d", project: "d", action: "Wake", avatar, run() {} })
   const empty = { rows: [] }
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  assert.equal(doc.querySelector("[data-sa-row][data-entering]"), null, "no animation on first paint")
   doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[0].click()
   sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
-  assert.ok(doc.querySelector('[data-sa-row="b"][data-entering]'))
-  assert.equal(doc.querySelector('[data-sa-row="a"]')?.hasAttribute("data-entering"), false)
-  frames.forEach((fn) => fn())
-  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-entering"), false)
+  assert.ok(doc.querySelector('[data-sa-row="b"]'))
   sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  assert.ok(doc.querySelector('[data-sa-row="b"][data-leaving]'))
-  sidebar.update({ rows: [row("a"), row("b")], count: 2 }, empty)
-  assert.equal(doc.querySelector('[data-sa-row="b"]')?.hasAttribute("data-leaving"), false)
-  assert.equal(timers.size, 0, "re-adding cancels the pending removal")
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  ;[...timers.values()].forEach((fn) => fn())
-  timers.clear()
-  assert.equal(doc.querySelector('[data-sa-row="b"]'), null)
-  sidebar.update({ rows: [row("a"), row("c")], count: 2 }, empty)
-  sidebar.update({ rows: [row("a")], count: 1 }, empty)
-  sidebar.dispose()
-  assert.equal(timers.size, 0)
+  assert.equal(doc.querySelector('[data-sa-row="b"]'), null, "removed at once, no leaving state")
+  assert.equal(doc.querySelector("[data-entering], [data-leaving]"), null)
+  assert.deepEqual(css.match(/transition:[^;]*;/g), ["transition: transform .15s;"], "the host's arrow transition is the only one")
+  rig.stop()
 })
 
 test("rows reuse the session tab markup so the app styles them, without acting as live tabs", async () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
-  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
   let deleted = 0
   const archived = { key: "k", title: "Fix bug", detail: "Local · /repo", project: "repo · main", action: "Restore", avatar: { letter: "R", variant: "blue" }, run() {}, menu: [{ label: "Restore", run() {} }, "separator" as const, { label: "Delete…", danger: true, run: () => { deleted++ } }] }
   sidebar.update({ rows: [], count: 0 }, { rows: [archived], count: 1 })
@@ -167,14 +153,15 @@ test("rows reuse the session tab markup so the app styles them, without acting a
   sidebar.update({ rows: [], count: 0 }, { rows: [{ ...archived, menu: undefined }], count: 1 })
   row.dispatchEvent(new (doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
   assert.equal(doc.querySelector("[data-sa-popup]"), null)
-  sidebar.dispose()
+  rig.stop()
 })
 
 test("snoozed second line keeps the time whole: project truncates, time is its own flex:none part; archived rows are unsplit", () => {
   const doc = new Window().document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"></div></aside>`
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div></aside>`
   doc.head.innerHTML = `<style data-plugin="sidebar-repos"></style>`
-  const sidebar = createSidebar(doc, fakeHost(doc), () => 1, () => {})
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
   const long = "a-very-long-repository-name · feature/an-extremely-long-branch-name-that-cannot-fit"
   const snoozed = { key: "s", title: "T", project: long, until: "2d 3h", detail: "d", action: "Wake", avatar, run() {} }
   const archived = { ...snoozed, key: "a", until: undefined, action: "Restore" }
@@ -188,5 +175,58 @@ test("snoozed second line keeps the time whole: project truncates, time is its o
   assert.equal(archivedLine.textContent, long)
   assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-main\] \{ flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/)
   assert.match(css, /\[data-sa-kind="snoozed"\] \[data-sidebar-repo-detail\] \{ flex: none; white-space: nowrap; \}/)
-  sidebar.dispose()
+  rig.stop()
+})
+
+test("expanding leaves the free space to margin-top:auto and never scrolls", async () => {
+  const window = new Window()
+  const doc = window.document as unknown as Document
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-titlebar-tab-list></div></div></div></aside>`
+  const scroller = doc.querySelector<HTMLElement>("[data-slot=vertical-tabs-scroll]")!
+  let writes = 0
+  Object.defineProperty(scroller, "scrollTop", { get: () => 0, set: () => { writes++ } })
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  const sidebar = rig.value
+  sidebar.update({ rows: [], count: 0 }, { rows: [], count: 0 })
+  const root = doc.querySelector<HTMLElement>("[data-snooze-archive]")!
+  const [snoozed, archived] = [...doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")]
+  snoozed.click()
+  archived.click()
+  snoozed.click()
+  archived.click()
+  assert.equal(root.style.marginTop, "")
+  assert.match(css, /\[data-snooze-archive\] \{[^}]*margin-top: auto/)
+  assert.equal(writes, 0)
+  rig.stop()
+  await window.happyDOM.close()
+})
+
+test("the group toggle pads 6px a side like the rows' tab item (px-1.5), so label and chevron land on the rows' text edges", async () => {
+  const { css } = await import("./sidebar")
+  assert.match(css, /\.sa-toggle \{[^}]*padding-inline: 6px;/)
+})
+
+test("a sidebar the layout setting mounts later, as a child of the row that holds <main>, is found without a body-wide observer", async () => {
+  const window = new Window()
+  const doc = window.document as unknown as Document
+  doc.body.innerHTML = `<div id="root"><div class="row"><div class="inset"></div><main></main></div></div>`
+  const rig = withHub(doc, (hub) => createSidebar(doc, fakeHost(doc), hub))
+  assert.equal(doc.querySelector("[data-snooze-archive]"), null)
+  const aside = doc.createElement("aside")
+  aside.setAttribute("data-slot", "vertical-tabs-sidebar")
+  aside.innerHTML = `<div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"></div></div>`
+  doc.querySelector(".row")!.insertBefore(aside, doc.querySelector("main"))
+  await window.happyDOM.whenAsyncComplete()
+  rig.flush()
+  assert.equal(doc.querySelectorAll("[data-slot=vertical-tabs-scroll] > [data-snooze-archive]").length, 1)
+  aside.remove()
+  await window.happyDOM.whenAsyncComplete()
+  rig.flush()
+  assert.equal(doc.querySelector("[data-snooze-archive]"), null, "gone with its sidebar")
+  doc.querySelector(".row")!.insertBefore(aside, doc.querySelector("main"))
+  await window.happyDOM.whenAsyncComplete()
+  rig.flush()
+  assert.equal(doc.querySelectorAll("[data-snooze-archive]").length, 1, "and back with it")
+  rig.stop()
+  await window.happyDOM.close()
 })

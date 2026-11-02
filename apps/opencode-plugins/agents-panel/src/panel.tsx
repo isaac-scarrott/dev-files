@@ -2,7 +2,8 @@ import type { Context, MountedSession } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { formatElapsed, runningSubagents, type SubagentRow } from "./agents"
 import { openInCurrentTab } from "./open-child"
-import { SessionProgressIndicator } from "./spinner"
+import { DOCK_INSET, DOCK_WIDTH } from "./dock"
+import { ProgressSpinner } from "../../native-ui/src"
 
 type Ctx = Pick<Context, "ui" | "toast">
 
@@ -91,7 +92,7 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }
               <span data-slot="menu-v2-item-content">
                 <Show
                   when={row.type === "shell"}
-                  fallback={<SessionProgressIndicator class="shrink-0 text-v2-icon-icon-muted" />}
+                  fallback={<ProgressSpinner class="shrink-0 text-v2-icon-icon-muted" />}
                 >
                   <props.ctx.ui.Icon name="console" class="shrink-0 text-v2-icon-icon-muted" />
                 </Show>
@@ -144,6 +145,7 @@ export function SubagentsList(props: { ctx: Ctx; session: () => MountedSession }
 
 // Bespoke: the host scopes its row/end-swap rules to the composer menu's content, so the heading and the
 // elapsed/stop swap are restated here with the host's tokens. Layout, surface and width come from the side region.
+const PAD = DOCK_WIDTH + DOCK_INSET
 export const styles = `
   [data-agents-panel] { display: flex; flex-direction: column; min-height: 0; max-height: inherit; overflow-y: auto; padding: 4px; box-sizing: border-box; }
   [data-agents-heading] {
@@ -168,9 +170,16 @@ export const styles = `
     [data-slot=spinner-dots] rect { animation: none !important; opacity: var(--still); }
   }
   [data-agents-toggle] { position: relative; display: inline-flex; }
+  /* The host's own tag (accent variant: data-component="tag" in @opencode/ui badge.css) placed as the sidebar toggle's unread
+     dot is: out of flow at the button's top end corner (4px up, 6px out: a 16px tag would cover the 16px icon at the dot's -2px), ringed in the page base so it reads against the button.
+     Out of flow, so showing or hiding it never moves the header's icons; it appears and goes instantly, as the host's does. */
+  [data-agents-badge] {
+    position: absolute; top: -4px; inset-inline-end: -6px; pointer-events: none;
+    box-shadow: 0 0 0 1.5px var(--v2-background-bg-base);
+  }
   /* The host lays the header actions out as a flex row, and slot content renders before the host's own items. The
      context button moves ahead of the toggle so the toggle sits directly after it. */
-  .session-header-actions > :has(> button[data-component="button-v2"]) { order: -1 }
+  .session-header-actions:has([data-agents-toggle]) > :has(> button[data-component="button-v2"]) { order: -1 }
   /* The popover reuses the host's menu surface; the host positions menu-v2-content itself, so it is made static here. */
   [data-agents-popover] { position: fixed; z-index: 60; width: 320px; max-width: calc(100vw - 32px); outline: none; }
   [data-agents-popover] > [data-component=menu-v2-content] {
@@ -178,30 +187,30 @@ export const styles = `
     overflow-y: auto; box-sizing: border-box; padding: 0;
   }
   /* The dock: an elevated surface inside the chat card, end side, below the header row, on the host's menu surface. The
-     card clips it to its rounded corners. While it is shown the card reserves its width plus its own inset as end
-     padding, so the header, timeline and composer re-centre in the free width; the transition uses the sidebar's own
-     curve (the host drives the sidebar width in JS, 250ms). The card is found by its dropzone child, since the host's
-     utility classes carry no stable hook. */
-  :root { --agents-dock-inset: 0px; --agents-dock-ease: cubic-bezier(0.2, 0.8, 0.2, 1); }
-  :has(> [data-slot=session-dropzone-blur]) { padding-inline-end: var(--agents-dock-inset); transition: padding-inline-end 250ms var(--agents-dock-ease); }
+     card clips it to its rounded corners. While it is shown the card carries data-agents-pad, which reserves the window's
+     width (plus its inset) as end padding on the timeline's scroll viewport and on the composer's wrapper, so the
+     messages and the composer re-centre in the free width; the scrollbar stays on the card's edge. The header lives
+     inside that viewport, so it is widened back by the same amount and does not move. The padding changes once;
+     dock-motion.ts glides the content from where it was on the host panel's own spring, so nothing is laid out per frame. */
+  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport { padding-inline-end: ${PAD}px; }
+  [data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport > .sticky { width: auto; margin-inline-end: -${PAD}px; }
+  [data-agents-pad] > div:has(form) > div.shrink-0.items-center { padding-inline-end: ${PAD}px; }
   /* Portal's wrapper div must not take part in the card's flex layout. */
   div:has(> [data-agents-dock]:only-child) { display: contents; }
+  /* Height fits the content up to the card minus the header row and a bottom inset; the menu surface scrolls inside
+     the flex column, so the heading and rows are never clipped by a percentage max-height resolved against itself.
+     The hidden look is the resting state; entering and leaving are Web Animations (dock-motion.ts). */
   [data-agents-dock] {
-    position: absolute; z-index: 60; top: 56px; right: 8px; width: 320px;
-    max-height: min(420px, calc(100% - 64px)); display: flex; outline: none; user-select: auto;
-    transform: translateX(16px); opacity: 0; visibility: hidden; pointer-events: none;
-    transition: transform 250ms var(--agents-dock-ease), opacity 150ms var(--agents-dock-ease), visibility 0s 250ms;
+    position: absolute; z-index: 60; top: 56px; right: 8px; width: 288px;
+    max-height: min(420px, calc(100% - 64px)); display: flex; flex-direction: column; outline: none; user-select: auto;
+    opacity: 0; visibility: hidden; pointer-events: none;
   }
-  [data-agents-dock][data-state=open] { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+  [data-agents-dock][data-state=open] { opacity: 1; visibility: visible; pointer-events: auto; }
   [data-agents-dock] > [data-component=menu-v2-content] {
-    position: static; display: flex; flex-direction: column; min-width: 0; width: 100%; max-height: inherit;
+    position: static; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; min-width: 0; max-height: none;
     overflow-y: auto; box-sizing: border-box; padding: 2px;
   }
-  [data-agents-dock] [data-agents-panel] { padding: 2px; }
-  @media (prefers-reduced-motion: reduce) {
-    :has(> [data-slot=session-dropzone-blur]) { transition: none; }
-    [data-agents-dock] { transform: none; transition: opacity 150ms var(--agents-dock-ease), visibility 0s 150ms; }
-  }
+  [data-agents-dock] [data-agents-panel] { flex: none; max-height: none; overflow: visible; padding: 2px; }
   /* Settings > Background activity: with the mode on, the host's value is "Hidden" underneath. Show the mode's name
      instead and move the check from the host's Hidden option to ours. */
   [data-agents-on] [data-slot="select-v2-value-text"]:not([data-agents-value]) { display: none }

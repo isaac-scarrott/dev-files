@@ -6,13 +6,19 @@ export { MenuContent, MenuItem, MenuSeparator, MenuChevron, highlight, nextItem,
 export { Popover, popoverCss, type PopoverProps } from "./popover"
 export { SummaryCard, SummaryHeading, SummaryRows, SummaryRow, type SummaryRowProps } from "./summary"
 export { ProjectAvatar, getProjectAvatarVariant, displayName, first, PROJECT_AVATAR_VARIANTS, type ProjectAvatarProps, type ProjectAvatarStyle, type ProjectAvatarVariant } from "./project-avatar"
-export { ProgressSpinner } from "./spinner"
+export { ProgressSpinner, spinnerCss } from "./spinner"
+export { syncSpinPhase } from "./spin-phase"
 export { HeaderIconButton, type HeaderIconButtonProps } from "./header-icon-button"
-export { ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { InjectedMessageRow, injectedMessageRowCss, type InjectedMessageAction, type InjectedMessageRowProps } from "./injected-message-row"
+export { mountInjectedRows, type InjectedRows, type InjectedRowsOptions } from "./injected-rows"
+export { unescapeMarkup, firstLine, hasMore } from "./injected-text"
+export { holdTop, scrollerOf } from "./anchor"
+export { AgentIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
 
 import { tabRowActionCss } from "./tab-row-action"
 import { popoverCss } from "./popover"
 import { drawnIconCss } from "./icons"
+import { spinnerCss } from "./spinner"
 
 /** Everything the library needs beyond the host's own CSS. Register once: `ctx.add(Style, nativeUiCss)`. */
-export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss].join("\n")
+export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, spinnerCss].join("\n")

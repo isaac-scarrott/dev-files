@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UsageForecast
 
 struct UsageWindow: Equatable, Codable {
     let utilization: Double
@@ -11,10 +12,35 @@ struct AccountUsage: Identifiable, Equatable, Codable {
     let label: String
     let org: String
     var plan: String?
+    /// Allowance multiple from the account's rate-limit tier: 20 for Max 20x, 5 for Max 5x.
+    var capacity: Double?
     var fiveHour: UsageWindow?
     var sevenDay: UsageWindow?
     var fetchedAt: Date?
     var problem: String?
+    /// Recent 5h readings, for the burn rate.
+    var history: [Sample] = []
+
+    init(id: String, label: String, org: String) {
+        self.id = id
+        self.label = label
+        self.org = org
+    }
+
+    // Snapshots written before `history` existed must still load: losing one re-polls every account at once.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        label = try c.decode(String.self, forKey: .label)
+        org = try c.decode(String.self, forKey: .org)
+        plan = try c.decodeIfPresent(String.self, forKey: .plan)
+        capacity = try c.decodeIfPresent(Double.self, forKey: .capacity)
+        fiveHour = try c.decodeIfPresent(UsageWindow.self, forKey: .fiveHour)
+        sevenDay = try c.decodeIfPresent(UsageWindow.self, forKey: .sevenDay)
+        fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt)
+        problem = try c.decodeIfPresent(String.self, forKey: .problem)
+        history = try c.decodeIfPresent([Sample].self, forKey: .history) ?? []
+    }
 }
 
 private struct CredentialFile: Decodable {
@@ -35,12 +61,19 @@ private struct UsageResponse: Decodable {
     let seven_day: Window?
 }
 
-private struct ProfileResponse: Decodable {
+private struct ProfileResponse: Decodable, Sendable {
     struct Organization: Decodable {
         let organization_type: String?
         let rate_limit_tier: String?
     }
     let organization: Organization?
+
+    var capacity: Double? {
+        let tier = organization?.rate_limit_tier ?? ""
+        if tier.hasSuffix("_20x") { return 20 }
+        if tier.hasSuffix("_5x") { return 5 }
+        return organization?.organization_type == "claude_pro" ? 1 : nil
+    }
 
     var plan: String? {
         guard let org = organization else { return nil }
@@ -97,6 +130,7 @@ final class UsageStore: ObservableObject {
     private static let maxBackoff: TimeInterval = 30 * 60
     private static let failureRetry: TimeInterval = 60
     private static let tick: Duration = .seconds(30)
+    nonisolated private static let historyKept: TimeInterval = 2 * 3600
 
     private var schedules: [String: Schedule] = [:]
     private var refreshing = false
@@ -207,9 +241,16 @@ final class UsageStore: ObservableObject {
     /// On failure, keep the last good numbers and say why they're old, rather than blanking the row.
     nonisolated private static func fetch(_ cred: Credential, previous: AccountUsage?) async -> (AccountUsage, Outcome) {
         // The plan rarely changes, so it's fetched once and carried forward.
-        async let plan = previous?.plan == nil ? fetchPlan(cred) : previous?.plan
-        var usage = AccountUsage(id: cred.id, label: cred.label, org: cred.org, plan: nil,
-                                 fiveHour: previous?.fiveHour, sevenDay: previous?.sevenDay, fetchedAt: previous?.fetchedAt)
+        async let profile = previous?.capacity == nil ? fetchProfile(cred) : nil
+        var usage = AccountUsage(id: cred.id, label: cred.label, org: cred.org)
+        if let previous {
+            usage.plan = previous.plan
+            usage.capacity = previous.capacity
+            usage.fiveHour = previous.fiveHour
+            usage.sevenDay = previous.sevenDay
+            usage.fetchedAt = previous.fetchedAt
+            usage.history = previous.history
+        }
         var outcome = Outcome.failed
         do {
             let (data, response) = try await URLSession.shared.data(for: request("usage", cred))
@@ -222,9 +263,14 @@ final class UsageStore: ObservableObject {
                     usage.problem = "Unexpected response"
                     break
                 }
+                let now = Date.now
                 usage.fiveHour = body.five_hour?.window
                 usage.sevenDay = body.seven_day?.window
-                usage.fetchedAt = .now
+                usage.fetchedAt = now
+                if let five = usage.fiveHour {
+                    usage.history = usage.history.filter { now.timeIntervalSince($0.at) < historyKept }
+                        + [Sample(at: now, utilization: five.utilization, resetsAt: five.resetsAt)]
+                }
             case 401, 403:
                 usage.problem = "Signed out"
                 outcome = .rateLimited(retryAfter: nil)
@@ -237,14 +283,17 @@ final class UsageStore: ObservableObject {
         } catch {
             usage.problem = "Offline"
         }
-        usage.plan = await plan
+        if let profile = await profile {
+            usage.plan = profile.plan
+            usage.capacity = profile.capacity
+        }
         return (usage, outcome)
     }
 
-    nonisolated private static func fetchPlan(_ cred: Credential) async -> String? {
+    nonisolated private static func fetchProfile(_ cred: Credential) async -> ProfileResponse? {
         guard let (data, response) = try? await URLSession.shared.data(for: request("profile", cred)),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return (try? JSONDecoder().decode(ProfileResponse.self, from: data))?.plan
+        return try? JSONDecoder().decode(ProfileResponse.self, from: data)
     }
 
     nonisolated private static func request(_ endpoint: String, _ cred: Credential) -> URLRequest {

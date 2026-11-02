@@ -1,4 +1,5 @@
-import { createRenderEffect, type JSX } from "solid-js"
+import { createRenderEffect, createRoot, type JSX } from "solid-js"
+import { createDomHub, type DomHub } from "./hub"
 import type { Ui } from "@opencode/plugin/gui"
 import type { Host } from "./host"
 import { delegateEvents, render } from "solid-js/web"
@@ -47,4 +48,17 @@ export const fakeHost = (doc: Document): Host => {
   Object.assign(globalThis, { document: doc, Node: doc.defaultView!.Node, HTMLElement: doc.defaultView!.HTMLElement })
   delegate(doc)
   return { ui: fakeUi(doc), mount: (el: HTMLElement, view: () => JSX.Element) => render(view, el) }
+}
+
+// A hub under its own owner, with the frames it schedules collected: `flush()` runs them. `stop()` is the plugin going away.
+export function withHub<T>(doc: Document, build: (hub: DomHub) => T, schedule?: (fn: () => void) => number) {
+  const frames = new Map<number, () => void>()
+  let next = 0
+  const queue = schedule ?? ((fn: () => void) => { frames.set(++next, fn); return next })
+  return createRoot((stop) => {
+    const hub = createDomHub(doc, queue, (id) => { frames.delete(id) })
+    const value = build(hub)
+    const flush = () => { const run = [...frames.values()]; frames.clear(); run.forEach((fn) => fn()) }
+    return { value, hub, stop, frames, flush }
+  })
 }

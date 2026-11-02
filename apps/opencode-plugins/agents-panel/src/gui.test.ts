@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
-import { createEffect, createRoot, createSignal } from "solid-js"
+import { batch, createEffect, createRoot, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { insert } from "solid-js/web"
 import plugin from "./gui"
 import { formatElapsed } from "./agents"
+import { styles } from "./panel"
+import { spinnerCss } from "../../native-ui/src"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 type Info = { id: string; parentID?: string; agent?: string; title?: string; time: { created: number; busy?: number } }
@@ -67,12 +69,15 @@ function fixture() {
   const [tabList, setTabList] = createSignal<any[]>([])
   const [memory, setMemory] = createStore({ done: false })
   const [mode, setMode] = createStore({ enabled: true })
+  const [route, setRoute] = createSignal("/settings")
+  const [sideOpen, setSide] = createSignal(false)
   const [dockStore, setDockStore] = createStore({ visible: false })
   const ctx = {
     id: "agents-panel", signal: new AbortController().signal, ui,
     add: (kind: { id: string }, item: any) => { added.push({ kind: kind.id, item }) },
+    router: { path: () => route(), routing: () => false },
     sessions: { current: mounted },
-    layout: { ready: () => true },
+    layout: { ready: () => true, side: { opened: () => sideOpen() } },
     tabs: {
       list: () => tabList(),
       close: (key: string) => { calls.closed.push(key) },
@@ -109,7 +114,7 @@ function fixture() {
   const toggle = () => doc.querySelector("[data-agents-toggle] button") as HTMLButtonElement
   return {
     doc, calls, intervals, rows, header, toggle, start, stop, flush, registered,
-    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setEnabled: (value: boolean) => setMode("enabled", value),
+    setInfos, setFamily, setRunning, setBackground, setCurrent, setTabList, setMemory, server, session, mode, dockStore, setSide, setRoute, setVisible: (value: boolean) => setDockStore("visible", value), setEnabled: (value: boolean) => setMode("enabled", value),
     failInterrupt: () => { failInterrupt = true },
   }
 }
@@ -134,10 +139,11 @@ test("closed by default: only the header toggle is mounted", () => {
   f.stop()
 })
 
-test("the toggle opens one floating popover with the host's menu surface and wears the host's expanded attributes", async () => {
+test("with the right panel open the toggle opens one floating popover with the host's menu surface and wears the host's expanded attributes", async () => {
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   running(f, ["c1"])
   await open(f)
   assert.equal(f.doc.querySelectorAll("[data-agents-popover]").length, 1)
@@ -146,7 +152,6 @@ test("the toggle opens one floating popover with the host's menu surface and wea
   assert.equal(f.toggle().getAttribute("aria-pressed"), "true")
   assert.equal(f.toggle().getAttribute("aria-expanded"), "true")
   assert.equal(f.toggle().hasAttribute("data-expanded"), true)
-  assert.equal(f.doc.querySelector("[data-agents-dock]"), null)
   await open(f)
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.toggle().hasAttribute("data-expanded"), false)
@@ -158,6 +163,7 @@ test("Escape and an outside click close the popover; Escape returns focus to the
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   await open(f)
   f.doc.dispatchEvent(new (f.doc.defaultView as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
   await f.flush()
@@ -174,6 +180,7 @@ test("routing to another session closes the popover", async () => {
   const f = fixture()
   f.start()
   f.header()
+  await side(f, true) // popover mode: the right panel is open
   await open(f)
   f.setCurrent("other")
   await f.flush()
@@ -204,6 +211,30 @@ test("scope: only this session's descendants and shells; not siblings, other tre
   f.stop()
 })
 
+test("badge: the host's accent tag, count of running, 99+ clamp, hidden at none", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  const ids = Array.from({ length: 120 }, (_, i) => `c${i}`)
+  running(f, ids.slice(0, 1), ids.slice(0, 1).map((id) => child(id)))
+  await f.flush()
+  const badge = () => f.doc.querySelector("[data-agents-badge]")
+  assert.equal(badge()!.getAttribute("data-component"), "tag")
+  assert.equal(badge()!.getAttribute("data-variant"), "accent")
+  assert.equal(badge()!.textContent, "1")
+  running(f, ids, ids.map((id) => child(id)))
+  await f.flush()
+  assert.equal(badge()!.textContent, "99+")
+  assert.equal(f.toggle().getAttribute("aria-label"), "Subagents · 120")
+  running(f, ids.slice(0, 10), ids.slice(0, 10).map((id) => child(id)))
+  await f.flush()
+  assert.equal(badge()!.textContent, "10")
+  f.setRunning([])
+  await f.flush()
+  assert.equal(badge(), null)
+  f.stop()
+})
+
 test("rows: description and elapsed, no agent type, subagent wording only", async () => {
   const f = fixture()
   f.start()
@@ -215,10 +246,12 @@ test("rows: description and elapsed, no agent type, subagent wording only", asyn
   assert.doesNotMatch(f.rows()[0].textContent!, /General|@general/i)
   assert.match(f.doc.body.textContent!, /Subagents\s*·\s*2 running/)
   assert.doesNotMatch(f.doc.body.textContent!, /sub-agent|sub agent|\bAgents\b/i)
-  assert.equal(f.toggle().getAttribute("aria-label"), "Subagents")
-  assert.equal(f.doc.querySelector("[data-agents-badge]"), null)
+  assert.equal(f.toggle().getAttribute("aria-label"), "Subagents · 2")
+  assert.equal(f.doc.querySelector("[data-agents-badge]")!.textContent, "2")
   f.setRunning([])
   await f.flush()
+  assert.equal(f.toggle().getAttribute("aria-label"), "Subagents")
+  assert.equal(f.doc.querySelector("[data-agents-badge]"), null)
   assert.equal(f.rows().length, 0)
   assert.match(f.doc.body.textContent!, /No subagents running/)
   f.stop()
@@ -319,31 +352,15 @@ test("close subagent tabs: closes child-session tabs, never the active or routed
   f.stop()
 })
 
-test("automatic cleanup runs once per load, after every tab's session is known", async () => {
+test("loading the plugin closes no tab; only the command does", async () => {
   const f = fixture()
   fixtureServer = () => f.server
   f.start()
+  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
   f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c1", "c1")])
   await f.flush()
   assert.deepEqual(f.calls.closed, [])
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  f.setTabList([tab("t-parent", "parent", { active: true }), tab("t-c9", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, ["t-c1"])
-  assert.equal(f.calls.toasts.length, 1)
-  f.stop()
-})
-
-test("automatic cleanup waits until a tab is on screen, so the viewed tab is never judged blind", async () => {
-  const f = fixture()
-  fixtureServer = () => f.server
-  f.start()
-  f.setInfos([{ id: "parent", time: { created: 1 } }, { ...child("c1") }])
-  f.setTabList([tab("t-parent", "parent"), tab("t-c1", "c1")])
-  await f.flush()
-  assert.deepEqual(f.calls.closed, [])
+  assert.equal(f.calls.toasts.length, 0)
   f.stop()
 })
 
@@ -400,6 +417,43 @@ test("setting: a fifth option clones the host's markup and sits after the host o
   assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
   assert.equal(ours.getAttribute("aria-selected"), "false")
   assert.equal(f.doc.getElementById("o-center")!.hasAttribute("data-selected"), true)
+  f.stop()
+})
+
+const REAL = readFileSync(new URL("../test/fixtures/settings-background-activity.html", import.meta.url), "utf8")
+
+test("setting: the host's real markup (select in the page, listbox in a body portal) gets the fifth option", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  const ours = option(f)!
+  assert.ok(ours)
+  assert.equal(ours.parentElement!.id, "select-cl-29-listbox")
+  assert.equal(ours.parentElement!.lastElementChild, ours)
+  assert.equal(ours.querySelector("[data-slot=menu-v2-item-content]")!.textContent, "Panel")
+  assert.equal(f.doc.querySelectorAll("[data-agents-option]").length, 1)
+  f.stop()
+})
+
+test("setting: off Settings nothing is injected or observed; arriving there injects, leaving stops", async () => {
+  const f = fixture()
+  f.setEnabled(false)
+  f.setRoute("/")
+  f.start()
+  f.doc.body.innerHTML = REAL
+  await settle()
+  assert.equal(option(f), null, "no option on another route")
+  f.setRoute("/settings")
+  await settle()
+  assert.ok(option(f), "option appears once Settings is the route")
+  f.setRoute("/")
+  await settle()
+  option(f)!.remove()
+  f.doc.getElementById("select-cl-29-listbox")!.append(f.doc.createElement("li"))
+  await settle()
+  assert.equal(option(f), null, "a mutation off Settings is not observed, so nothing is put back")
   f.stop()
 })
 
@@ -464,33 +518,49 @@ test("setting: cleanup removes every injected node and attribute", async () => {
   assert.equal(f.doc.querySelector("[data-agents-value], [data-agents-on]"), null)
 })
 
-// The left sidebar is the host's aside; the header resets the body, so it is added after.
-const sidebar = (f: ReturnType<typeof fixture>, state: "open" | "closed") => {
-  let aside = f.doc.querySelector("aside")
-  if (!aside) {
-    aside = f.doc.createElement("aside")
-    aside.setAttribute("data-slot", "vertical-tabs-sidebar")
-    f.doc.body.append(aside)
-  }
-  aside.setAttribute("data-state", state)
-  return f.flush()
-}
-const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
-const inset = (f: ReturnType<typeof fixture>) => f.doc.documentElement.style.getPropertyValue("--agents-dock-inset")
+test("setting: listeners live on the listbox, none on the document", async () => {
+  const f = fixture()
+  f.start()
+  const doc = f.doc as unknown as Document
+  const added: string[] = []
+  const original = doc.addEventListener.bind(doc)
+  doc.addEventListener = ((type: string, ...rest: unknown[]) => { added.push(type); return (original as any)(type, ...rest) }) as never
+  f.doc.body.innerHTML = HOST_LIST("off")
+  await settle()
+  assert.ok(option(f))
+  assert.deepEqual(added, [])
+  f.stop()
+})
 
-test("dock: with the sidebar open the button shows and hides the window, remembered in the store, and no popover opens", async () => {
+test("styles: the header reorder applies only beside our toggle; spinner keyframes ship with the stylesheet", () => {
+  assert.ok(!styles.includes(".session-header-actions > :has("))
+  assert.match(styles, /\.session-header-actions:has\(\[data-agents-toggle\]\) > :has\(/)
+  assert.match(spinnerCss, /@keyframes spinner-radar-/)
+})
+
+// The right side region: `ctx.layout.side.opened(session)` is the host's reactive answer (2.2.5: the session's shell tab has
+// a "side" region). The header resets the body, so nothing else is needed in the DOM.
+const side = (f: ReturnType<typeof fixture>, open: boolean) => { f.setSide(open); return f.flush() }
+const dockEl = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-dock]") as HTMLElement
+// The card reserves the window's width while it carries the attribute; the rules read 328px from the dock constants.
+const inset = (f: ReturnType<typeof fixture>) => ((f.doc.getElementById("card") as HTMLElement).hasAttribute("data-agents-pad") ? "296px" : "0px")
+const wrapper = (f: ReturnType<typeof fixture>) => f.doc.querySelector("[data-agents-toggle]") as HTMLElement
+
+test("dock: right panel closed: the button shows and hides the window, remembered in the store, and no popover opens", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
+  await f.flush()
   assert.equal(dockEl(f), null)
   assert.equal(inset(f), "0px")
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  assert.equal(wrapper(f).dataset.agentsSide, "closed")
   f.toggle().click()
   await f.flush()
   assert.equal(f.dockStore.visible, true)
   assert.equal(dockEl(f).dataset.state, "open")
   assert.equal(dockEl(f).hasAttribute("inert"), false)
-  assert.equal(inset(f), "328px")
+  assert.equal(inset(f), "296px")
   assert.ok(f.doc.getElementById("card")!.contains(dockEl(f)), "the window is mounted inside the chat card")
   assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(f.toggle().getAttribute("aria-controls"), "agents-dock")
@@ -504,64 +574,339 @@ test("dock: with the sidebar open the button shows and hides the window, remembe
   assert.equal(dockEl(f).hasAttribute("inert"), true)
   assert.equal(inset(f), "0px")
   f.stop()
-  assert.equal(inset(f), "")
+  assert.equal(f.doc.getElementById("card")!.hasAttribute("data-agents-pad"), false)
 })
 
 test("dock: the window has no close button; only the header button hides it", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
   f.toggle().click()
   await f.flush()
   assert.equal(dockEl(f).querySelector("button, [data-slot=agents-heading-close]"), null)
   f.stop()
 })
 
-test("dock: closing the sidebar hides the window and frees the chat, opening it restores the remembered choice, and the closed button opens the popover", async () => {
+test("dock: window visible, the right panel opens => window hidden, stored hidden, popover NOT opened; closing the panel does not bring it back", async () => {
   const f = fixture()
   f.start()
   f.header()
-  await sidebar(f, "open")
   f.toggle().click()
   await f.flush()
-  await sidebar(f, "closed")
-  assert.equal(f.dockStore.visible, true)
-  assert.equal(dockEl(f).dataset.state, "closed")
-  assert.equal(inset(f), "0px")
-  assert.equal(f.toggle().hasAttribute("aria-controls"), false)
-  f.toggle().click()
-  await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  assert.equal(f.dockStore.visible, true)
-  await sidebar(f, "open")
-  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
   assert.equal(dockEl(f).dataset.state, "open")
-  assert.equal(inset(f), "328px")
-  f.stop()
-})
-
-test("dock: no sidebar in the document (top tabs) behaves as closed: popover only", async () => {
-  const f = fixture()
-  f.start()
-  f.header()
+  await side(f, true)
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(dockEl(f).dataset.state, "closed")
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.toggle().getAttribute("aria-expanded"), "false")
+  assert.equal(inset(f), "0px")
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  assert.equal(wrapper(f).dataset.agentsSide, "open")
+  await f.flush()
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null, "still closed after settling")
   f.toggle().click()
   await f.flush()
-  assert.ok(f.doc.querySelector("[data-agents-popover]"))
-  assert.equal(dockEl(f), null)
+  assert.ok(f.doc.querySelector("[data-agents-popover]"), "panel open: the button opens the popover")
+  await side(f, false)
+  assert.equal(f.doc.querySelector("[data-agents-popover]"), null)
+  assert.equal(f.dockStore.visible, false)
+  assert.ok(!dockEl(f) || dockEl(f).dataset.state === "closed")
   assert.equal(inset(f), "0px")
   f.stop()
 })
 
-test("dock: rows in the window keep the popover's behaviour (stop, open child)", async () => {
+test("dock: right panel open is popover mode exactly: no window, no inset, rows in the popover", async () => {
   const f = fixture()
   f.start()
   running(f, ["c1"])
   f.header()
-  await sidebar(f, "open")
+  await side(f, true)
   f.toggle().click()
+  await f.flush()
+  assert.equal(dockEl(f), null)
+  assert.equal(inset(f), "0px")
+  assert.equal(f.rows().length, 1)
+  assert.ok(f.doc.querySelector("[data-agents-popover]")!.contains(f.rows()[0]))
+  f.stop()
+})
+
+test("dock: a window too narrow for chat plus window is popover mode", async () => {
+  const win = (globalThis as any).window
+  const before = win.innerWidth
+  win.innerWidth = 700
+  const f = fixture()
+  f.start()
+  f.header()
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  f.toggle().click()
+  await f.flush()
+  assert.ok(f.doc.querySelector("[data-agents-popover]"))
+  assert.equal(dockEl(f), null)
+  win.innerWidth = before
+  win.dispatchEvent(new win.Event("resize"))
+  await f.flush()
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  f.stop()
+})
+
+test("dock: another session's panel state decides for that session's button", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+  await side(f, true)
+  assert.equal(wrapper(f).dataset.agentsMode, "popover")
+  await side(f, false)
+  assert.equal(wrapper(f).dataset.agentsMode, "window")
+  f.stop()
+})
+
+test("dock: rows in the window keep the popover's behaviour", async () => {
+  const f = fixture()
+  f.start()
+  running(f, ["c1"])
+  f.header()
+    f.toggle().click()
   await f.flush()
   assert.equal(f.rows().length, 1)
   assert.equal(dockEl(f).contains(f.rows()[0]), true)
   f.stop()
+})
+
+// Regression: data arrives late (sessions list, family, status, background tasks sync at different times). The heading
+// count and the rows come from one list, so after every step they agree, and rows appear as soon as the data does.
+test("dock: heading count and rows change together as data arrives late", async () => {
+  const f = fixture()
+  f.start()
+  f.header()
+    f.toggle().click() // the window is mounted before any child data has synced
+  await f.flush()
+  const agree = (n: number, why: string) => {
+    const heading = dockEl(f).querySelector("[data-agents-heading]")!.textContent!
+    assert.match(heading, new RegExp(`${n} running`), `${why}: heading`)
+    assert.equal(f.rows().length, n, `${why}: rows`)
+    assert.equal(!!dockEl(f).querySelector("[data-agents-empty]"), n === 0, `${why}: empty state`)
+  }
+  agree(0, "nothing synced")
+  f.setInfos([child("c1"), child("c2")])
+  await f.flush()
+  agree(0, "children listed but idle")
+  f.setFamily(["parent", "c1", "c2"])
+  f.setRunning(["c1"])
+  await f.flush()
+  agree(1, "one child running")
+  f.setRunning(["c1", "c2"])
+  await f.flush()
+  agree(2, "both running")
+  f.setBackground([{ id: "sh1", type: "shell", label: "sleep 9" }])
+  await f.flush()
+  agree(3, "a shell arrives late")
+  f.setRunning(["c2"])
+  f.setBackground([])
+  await f.flush()
+  agree(1, "data retracts")
+  f.stop()
+})
+
+// Regression: inside the dock the list panel inherited a percentage max-height from the window and collapsed to its
+// heading, so "2 running" showed with no rows. Layout is not computed here, so the stylesheet is checked instead.
+const dockRule = (selector: string) => {
+  const match = styles.match(new RegExp(`${selector.replace(/[[\]().*+?^${}|]/g, "\\$&")}\\s*\\{([^}]*)\\}`))
+  return match?.[1] ?? ""
+}
+
+test("dock: the list panel never inherits a clipping max-height from the window, and the window's menu scrolls instead", () => {
+  const panel = dockRule("[data-agents-dock] [data-agents-panel]")
+  assert.match(panel, /max-height:\s*none/)
+  assert.match(panel, /overflow:\s*visible/)
+  assert.match(dockRule("[data-agents-dock] > [data-component=menu-v2-content]"), /overflow-y:\s*auto/)
+})
+
+test("dock: every selector the chat re-centring depends on is valid", () => {
+  const doc = globalThis.document
+  for (const line of styles.split("\n").filter((l) => l.includes("data-agents-pad") && l.includes("{"))) {
+    const selector = line.slice(0, line.indexOf("{")).trim()
+    if (!selector || selector.startsWith("/*")) continue
+    assert.doesNotThrow(() => doc.querySelector(selector), selector)
+  }
+})
+
+// Regression: the sticky header was widened with `width: calc(100% + 296px)` inside a viewport that carries 296px of end
+// padding. That box ends 296px past the content box and the scroller then also counted its padding, so the timeline
+// scrolled sideways by exactly 296px while the window was shown. The header now takes the padding back as a negative
+// end margin, which ends at the viewport edge. Layout is not computed here; the measured table is in DESIGN.md.
+test("dock: nothing in the timeline scroller is widened past its content box (no horizontal scroll)", () => {
+  const viewport = "[data-agents-pad] [data-slot=session-timeline-scroll] > .scroll-view__viewport"
+  assert.match(dockRule(viewport), /padding-inline-end:\s*296px/)
+  const header = dockRule(`${viewport} > .sticky`)
+  assert.match(header, /width:\s*auto/)
+  assert.match(header, /margin-inline-end:\s*-296px/)
+  const rules = styles.split("\n").filter((l) => l.includes("data-agents-pad") && l.includes("{"))
+  for (const rule of rules) assert.doesNotMatch(rule, /(?:^|[^-])width:\s*calc\(/, rule)
+})
+
+// The host keeps ONE chat card and swaps sessions in it, so on a tab switch the entering and the leaving toggle both
+// resolve that same element. Whichever order their effects run in, the card must keep the attribute while the window is shown.
+for (const order of ["entering effect first", "leaving effect first"] as const) {
+  test(`dock: switching tabs with the window shown keeps the pad on the shared card (${order})`, async () => {
+    const f = fixture()
+    f.start()
+    f.doc.body.innerHTML = `<div data-slot="session-chat-panel"><div id="card"><div data-slot="session-dropzone-blur"></div><div id="headerA"></div><div id="headerB"></div></div></div>`
+    const [enteringActive, setEntering] = createSignal(false)
+    const [leavingActive, setLeaving] = createSignal(true)
+    const mountToggle = (id: string, active: () => boolean) =>
+      createRoot((stop) => {
+        const view = f.registered("slot")[0].render({ get active() { return active() }, get session() { return f.session } })
+        insert(f.doc.getElementById(id)!, view)
+        return stop
+      })
+    // Effects of one batch run in creation order: the toggle created first acts first.
+    const entering = { id: "headerA", active: enteringActive }
+    const leaving = { id: "headerB", active: leavingActive }
+    const [first, second] = order === "entering effect first" ? [entering, leaving] : [leaving, entering]
+    const stops = [mountToggle(first.id, first.active), mountToggle(second.id, second.active)]
+    await f.flush()
+    const card = f.doc.getElementById("card")!
+    f.dockStore.visible = false
+    f.toggle().click()
+    await f.flush()
+    assert.equal(card.hasAttribute("data-agents-pad"), true, "the window is shown and the card is padded")
+    for (let i = 0; i < 6; i++) {
+      batch(() => {
+        setEntering((value) => !value)
+        setLeaving((value) => !value)
+      })
+      await f.flush()
+      assert.equal(f.dockStore.visible, true)
+      assert.equal(card.hasAttribute("data-agents-pad"), true, `after switch ${i + 1} the active toggle's window has its pad`)
+    }
+    f.toggle().click()
+    await f.flush()
+    assert.equal(card.hasAttribute("data-agents-pad"), false, "hiding the window drops the pad")
+    stops.forEach((s) => s())
+    f.stop()
+  })
+}
+
+// Motion only on a real transition. A recording stand-in for Web Animations: happy-dom has none.
+function recordAnimations() {
+  const proto = (globalThis as any).window.HTMLElement.prototype
+  const calls: string[] = []
+  const had = Object.getOwnPropertyDescriptor(proto, "animate")
+  const hadGet = Object.getOwnPropertyDescriptor(proto, "getAnimations")
+  proto.animate = function (_k: unknown, o: { id?: string }) { calls.push(o.id ?? "?"); return { finished: Promise.resolve() } }
+  proto.getAnimations = () => []
+  return { calls, has: (id: string) => calls.includes(id), restore() { had ? Object.defineProperty(proto, "animate", had) : delete proto.animate; hadGet ? Object.defineProperty(proto, "getAnimations", hadGet) : delete proto.getAnimations } }
+}
+
+// A card with the timeline and composer the glide moves, and two headers: one per session's toggle, as on a tab switch.
+function twoToggles(f: ReturnType<typeof fixture>, startA: boolean) {
+  f.doc.body.innerHTML = `<div data-slot="session-chat-panel"><div id="card"><div data-slot="session-timeline-scroll"><div class="scroll-view__viewport"><div id="content"></div></div></div><div id="headerA"></div><div id="headerB"></div></div></div>`
+  const [a, setA] = createSignal(startA)
+  const stops = (["headerA", "headerB"] as const).map((id) =>
+    createRoot((stop) => {
+      const active = id === "headerA" ? a : () => !a()
+      insert(f.doc.getElementById(id)!, f.registered("slot")[0].render({ get active() { return active() }, get session() { return f.session } }))
+      return stop
+    }),
+  )
+  return { switchTab: () => setA((value) => !value), stop: () => stops.forEach((s) => s()) }
+}
+const cardPad = (f: ReturnType<typeof fixture>) => f.doc.getElementById("card")!.hasAttribute("data-agents-pad")
+const buttonOf = (f: ReturnType<typeof fixture>, id: string) => f.doc.querySelector(`#${id} [data-agents-toggle] button`) as HTMLButtonElement
+
+test("motion: mounting with the window already shown (load, reload, remount) animates nothing and is final at once", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  assert.equal(cardPad(f), true)
+  assert.equal(dockEl(f).dataset.state, "open")
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: a hidden mount animates nothing", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  assert.equal(cardPad(f), false)
+  assert.equal(dockEl(f), null)
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: the header button after mount glides the chat and slides and fades the window, both ways", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  assert.equal(cardPad(f), true)
+  for (const id of ["agents-dock-glide", "agents-dock-slide", "agents-dock-fade"]) assert.ok(rec.has(id), `open: ${id}`)
+  rec.calls.length = 0
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  assert.equal(cardPad(f), false)
+  for (const id of ["agents-dock-glide", "agents-dock-slide", "agents-dock-fade"]) assert.ok(rec.has(id), `close: ${id}`)
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: switching tabs with the window shown animates nothing, in either direction, and keeps the pad", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  for (let i = 0; i < 4; i++) {
+    pair.switchTab()
+    await f.flush()
+    assert.equal(cardPad(f), true, `switch ${i + 1}`)
+    assert.equal(dockEl(f).dataset.state, "open")
+  }
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: a toggle right after a tab switch animates; the window opened on one tab appears final on the other", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  buttonOf(f, "headerA").click()
+  await f.flush()
+  rec.calls.length = 0
+  pair.switchTab()
+  await f.flush()
+  assert.deepEqual(rec.calls, [])
+  buttonOf(f, "headerB").click()
+  await f.flush()
+  assert.ok(rec.has("agents-dock-glide"))
+  pair.stop(); f.stop(); rec.restore()
+})
+
+test("motion: the right panel opening hides the window with the exit; closing it does not show the window again", async () => {
+  const rec = recordAnimations()
+  const f = fixture()
+  f.setVisible(true)
+  f.start()
+  const pair = twoToggles(f, true)
+  await f.flush()
+  await side(f, true)
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(cardPad(f), false)
+  assert.ok(rec.has("agents-dock-glide") && rec.has("agents-dock-fade"), "the hide animates")
+  rec.calls.length = 0
+  await side(f, false)
+  assert.equal(f.dockStore.visible, false)
+  assert.equal(cardPad(f), false)
+  assert.deepEqual(rec.calls, [])
+  pair.stop(); f.stop(); rec.restore()
 })

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { layout, outputPrice, presses, step, type HostModel } from "./layout"
+import { DEFAULT_RANK, layout, outputPrice, parseRank, presses, step, type HostModel } from "./layout"
 
 const m = (key: string, name: string, section: string): HostModel => ({ key, name, section })
 const names = new Map([["zeta", "Zeta AI"], ["alpha", "alpha labs"], ["mid", "Mid Co"]])
@@ -73,6 +73,26 @@ test("presses takes the shorter way round the host's order", () => {
 
 test("claude-agent models have no catalog price: ranked fable, opus, sonnet, haiku", () => {
   const models = [m("claude-agent:haiku", "Haiku", "recent"), m("claude-agent:opus", "Opus", "claude-agent"), m("claude-agent:fable", "Fable", "claude-agent"), m("claude-agent:sonnet", "Sonnet", "claude-agent")]
-  const [section] = layout({ models, price: new Map(models.map((model) => [model.key, 0])), providerName: (id) => id })
+  const [section] = layout({ models, price: new Map(models.map((model) => [model.key, 0])), providerName: (id) => id, rank: DEFAULT_RANK })
   assert.deepEqual(section!.keys, ["claude-agent:fable", "claude-agent:opus", "claude-agent:sonnet", "claude-agent:haiku"])
+})
+
+test("without a rank option unpriced models fall back to name", () => {
+  const models = [m("claude-agent:opus", "Opus", "claude-agent"), m("claude-agent:fable", "Fable", "claude-agent")]
+  const [section] = layout({ models, price: new Map(), providerName: (id) => id })
+  assert.deepEqual(section!.keys, ["claude-agent:fable", "claude-agent:opus"])
+})
+
+test("the rank option replaces a provider's families and keeps the default for the others", () => {
+  const rank = parseRank({ other: { big: 9, junk: "x" }, "claude-agent": { opus: 1, haiku: 2 } })
+  assert.deepEqual(rank, { "claude-agent": { opus: 1, haiku: 2 }, other: { big: 9 } })
+  const models = [m("claude-agent:opus", "Opus", "claude-agent"), m("claude-agent:haiku", "Haiku", "claude-agent"), m("other:small", "Small", "other"), m("other:big", "Big", "other")]
+  const out = layout({ models, price: new Map(), providerName: (id) => id, rank })
+  assert.deepEqual(out.map((section) => section.keys), [["claude-agent:haiku", "claude-agent:opus"], ["other:big", "other:small"]])
+})
+
+test("a malformed rank option is the default", () => {
+  assert.equal(parseRank(undefined), DEFAULT_RANK)
+  assert.equal(parseRank([1]), DEFAULT_RANK)
+  assert.deepEqual(parseRank({ x: 5 }), DEFAULT_RANK)
 })

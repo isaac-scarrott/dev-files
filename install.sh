@@ -112,6 +112,8 @@ LINKS=(
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
   "$HOME/.config/opencode/command/ship.md|.claude/commands/ship.md"
+  "$HOME/.config/opencode/command/babysit-ci.md|.claude/commands/babysit-ci.md"
+  "$HOME/.config/opencode/command/babysit-comments.md|.claude/commands/babysit-comments.md"
 
   # Codex — shares ~/.codex across CLI, IDE extension, and desktop app.
   # Same canonical AGENTS.md and SKILL.md sources as Claude/OpenCode (zero copies).

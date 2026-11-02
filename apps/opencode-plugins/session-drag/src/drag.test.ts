@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { GHOST_CLASS, GHOST_OFFSET, installSessionDrag, type DragHost } from "./drag"
+import { GHOST_CLASS, GHOST_OFFSET, LABEL_ATTR, LABEL_HOLD, installSessionDrag, type DragHost } from "./drag"
+import { LABEL, styles } from "./styles"
 import type { SessionTarget } from "./reference"
 
 const win = globalThis.window as unknown as Window & typeof globalThis
@@ -168,13 +169,11 @@ test("a sideways move starts a reference drag: ghost, host overlay signal, no na
     const ghost = f.ghost()
     assert.ok(ghost)
     assert.equal(ghost.className, GHOST_CLASS)
-    assert.equal(ghost.dataset.state, "enter")
     assert.equal(ghost.querySelector('[data-slot="session-drag-ghost-title"]')?.textContent, "Fix login")
     assert.equal(ghost.querySelector('[data-slot="session-drag-ghost-icon"]')?.textContent, "icon")
     assert.equal(ghost.style.transform, `translate3d(${26 - GHOST_OFFSET.x}px, ${41 - GHOST_OFFSET.y}px, 0)`)
     assert.equal(doc.documentElement.hasAttribute("data-session-drag"), true)
-    f.flush()
-    assert.equal(ghost.dataset.state, "active")
+    assert.equal(ghost.hasAttribute("data-state"), false, "no enter state: the chip is there from the first frame")
     f.pointer("pointermove", doc.body, 400, 300)
     assert.equal(ghost.style.transform, `translate3d(400px, ${300 - GHOST_OFFSET.y}px, 0)`)
   } finally {
@@ -201,7 +200,7 @@ test("release over the session panel drops: host overlay cleared, ghost gone at 
   }
 })
 
-test("release elsewhere does nothing but fade the ghost out", () => {
+test("release elsewhere does nothing and removes the ghost at once", () => {
   const f = fixture()
   try {
     f.press(f.title, 20, 40)
@@ -210,9 +209,6 @@ test("release elsewhere does nothing but fade the ghost out", () => {
     f.pointer("pointermove", doc.body, 100, 300)
     f.release(doc.body, 100, 300)
     assert.equal(f.calls.drop.length, 0)
-    assert.equal(ghost.dataset.state, "leave")
-    assert.equal(ghost.isConnected, true)
-    ghost.dispatchEvent(new win.Event("transitionend"))
     assert.equal(ghost.isConnected, false)
     assert.equal(f.calls.disposed, 1)
     assert.ok(f.seen.includes("dragleave"))
@@ -230,7 +226,7 @@ test("Escape cancels the drag and the release that follows drops nothing", () =>
     doc.body.dispatchEvent(escape)
     assert.equal(escape.defaultPrevented, true)
     assert.equal(f.seen.includes("keydown"), false, "Escape belongs to the drag, as it does to a native one")
-    assert.equal(f.ghost()?.dataset.state, "leave")
+    assert.equal(f.ghost(), null)
     assert.equal(doc.documentElement.hasAttribute("data-session-drag"), false)
     f.release(f.panel, 400, 300)
     assert.equal(f.calls.drop.length, 0)
@@ -301,4 +297,67 @@ test("uninstall stops listening", () => {
   } finally {
     f.cleanup()
   }
+})
+
+const labelOn = () => doc.documentElement.hasAttribute(LABEL_ATTR)
+const wait = () => new Promise((resolve) => setTimeout(resolve, LABEL_HOLD + 50))
+
+test("the overlay wording is ours only while our drag is active, held through the host's fade, then restored", async () => {
+  for (const end of ["drop", "outside", "escape", "pointercancel", "blur"] as const) {
+    const f = fixture()
+    try {
+      assert.equal(labelOn(), false, `${end}: untouched before the drag`)
+      f.press(f.title, 20, 40)
+      assert.equal(labelOn(), false, `${end}: a press alone does not change it`)
+      f.pointer("pointermove", f.title, 26, 41)
+      assert.equal(labelOn(), true, `${end}: ours during the drag`)
+      if (end === "drop") f.release(f.panel, 400, 300)
+      if (end === "outside") f.release(doc.body, 100, 300)
+      if (end === "escape") doc.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+      if (end === "pointercancel") win.dispatchEvent(new win.Event("pointercancel"))
+      if (end === "blur") win.dispatchEvent(new win.Event("blur"))
+      assert.equal(labelOn(), true, `${end}: held while the overlay fades out`)
+      await wait()
+      assert.equal(labelOn(), false, `${end}: host wording restored`)
+    } finally {
+      f.cleanup()
+    }
+  }
+})
+
+test("a drag that starts inside the hold keeps the label; cleanup restores it at once", async () => {
+  const f = fixture()
+  try {
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 26, 41)
+    f.release(doc.body, 100, 300)
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 26, 41)
+    await wait()
+    assert.equal(labelOn(), true, "the first drag's timer must not clear the second drag's label")
+    f.uninstall()
+    assert.equal(labelOn(), false)
+  } finally {
+    f.cleanup()
+  }
+})
+
+test("the host's own drags never get our wording", () => {
+  const f = fixture()
+  try {
+    const files = new win.DragEvent("dragover", { bubbles: true, cancelable: true })
+    doc.body.dispatchEvent(files)
+    assert.equal(labelOn(), false)
+    f.press(f.title, 20, 40)
+    f.pointer("pointermove", f.title, 20, 80)
+    assert.equal(labelOn(), false, "a vertical (reorder) gesture is not ours")
+  } finally {
+    f.cleanup()
+  }
+})
+
+test("the label styles hit only the host's unslotted label inside the overlay, gated on our attribute", () => {
+  assert.equal(LABEL, "Drop to attach session")
+  assert.match(styles, new RegExp(`html\\[${LABEL_ATTR}\\] \\[data-slot="session-dropzone-content"\\] > div:not\\(\\[data-slot\\]\\) \\{ font-size: 0; line-height: 0; \\}`))
+  assert.ok(styles.includes(`::after { content: "${LABEL}"; display: block; font-size: 15px; line-height: 24px; }`))
 })

@@ -2,6 +2,7 @@ import { Error as ToolError } from "@opencode/plugin/promise/tool"
 import type { Host, SessionInfo } from "./host.js"
 import type { Options } from "./options.js"
 import { METADATA_KEY, ancestors, describe, marker, reachable, running, type SessionSummary } from "./scope.js"
+import { deliver, label, matches, peerMetadata, refOf, relation, wrap, type Relation } from "./peers.js"
 import { clip, finalText, summarize, type MessageSummary } from "./messages.js"
 import { waitForSessions, type WaitResult } from "./wait.js"
 
@@ -30,10 +31,18 @@ export interface Created extends SessionSummary {
 }
 
 export interface SendInput {
-  readonly sessionID: string
+  /** Peer ref, unique title, `title [ref]` label or full session id. */
+  readonly to?: string
+  /** Older spelling of `to`. */
+  readonly sessionID?: string
   readonly text: string
-  readonly delivery?: "queue" | "steer"
   readonly clientRequestId?: string
+}
+
+export interface Peer extends SessionSummary {
+  readonly ref: string
+  readonly name: string
+  readonly relation: Relation
 }
 
 export interface ReadInput {
@@ -124,22 +133,34 @@ export class Orchestrator {
     return { sessions }
   }
 
-  async sendMessage(caller: Caller, input: SendInput): Promise<{ sessionID: string; messageID: string; delivery: "queue" | "steer" }> {
-    const target = await this.target(caller, input.sessionID)
+  async sendMessage(
+    caller: Caller,
+    input: SendInput,
+  ): Promise<{ sessionID: string; to: string; messageID: string; delivered: "now"; notice: string }> {
+    const me = await this.self(caller)
+    const target = await this.resolve(me, input.to ?? input.sessionID)
     if (target.id === caller.sessionID) throw fail("send_message targets other sessions; reply normally in this one")
     const text = input.text?.trim()
     if (!text) throw fail("text must not be empty")
-    const delivery = input.delivery ?? "queue"
+    const notice = `Delivered to ${label(target)}. A reply comes only if it chooses to send one: silence is not agreement.`
+    const sent = { sessionID: target.id, to: label(target), delivered: "now", notice } as const
     const key = input.clientRequestId ? requestKey(caller.sessionID, input.clientRequestId) : undefined
     if (key) {
       const stored = await this.host.storage.get(key)
       if (stored && typeof stored === "object" && "messageID" in stored && typeof stored.messageID === "string") {
-        return { sessionID: target.id, messageID: stored.messageID, delivery }
+        return { ...sent, messageID: stored.messageID }
       }
     }
-    const message = await this.host.session.prompt({ sessionID: target.id, text, delivery })
+    const message = await this.host.session.prompt({ sessionID: target.id, text: deliver(me, text), delivery: "steer", metadata: peerMetadata(me, text) })
     if (key) await this.host.storage.set(key, { messageID: message.id, sessionID: target.id })
-    return { sessionID: target.id, messageID: message.id, delivery }
+    return { ...sent, messageID: message.id }
+  }
+
+  async listPeers(caller: Caller, input: { limit?: number } = {}): Promise<{ you: string; peers: Peer[] }> {
+    const me = await this.self(caller)
+    const limit = Math.min(Math.max(input.limit ?? LIST_LIMIT, 1), LIST_LIMIT)
+    const peers = await this.peers(me, limit)
+    return { you: label(me), peers: peers.map((p) => ({ ...describe(p), ref: refOf(p.id), name: label(p), relation: relation(me, p) })) }
   }
 
   async readSession(caller: Caller, input: ReadInput) {
@@ -322,6 +343,60 @@ export class Orchestrator {
     } catch {
       throw fail(`The calling session ${caller.sessionID} could not be read`)
     }
+  }
+
+  /** Every session this one can message: parent, children, siblings, and project or server sessions when the scope allows. */
+  private async peers(me: SessionInfo, limit: number): Promise<SessionInfo[]> {
+    const found = new Map<string, SessionInfo>()
+    const add = (list: readonly SessionInfo[]) => {
+      for (const info of list) if (info.id !== me.id && !found.has(info.id)) found.set(info.id, info)
+    }
+    if (me.parentID !== undefined) {
+      try {
+        add([await this.host.session.get({ sessionID: me.parentID })])
+      } catch {
+        // The parent is gone.
+      }
+    }
+    add((await this.host.session.list({ parentID: me.id, limit })).data)
+    for (const id of await this.independents(me.id)) {
+      try {
+        add([await this.host.session.get({ sessionID: id })])
+      } catch {
+        // Deleted since it was recorded.
+      }
+    }
+    if (me.parentID !== undefined) add((await this.host.session.list({ parentID: me.parentID, limit })).data)
+    if (this.options.scope === "project") add((await this.host.session.list({ project: me.projectID, limit })).data)
+    if (this.options.scope === "all") add((await this.host.session.list({ limit })).data)
+    return [...found.values()]
+  }
+
+  private async resolve(me: SessionInfo, to: string | undefined): Promise<SessionInfo> {
+    const query = typeof to === "string" ? to.trim() : ""
+    if (!query) throw fail("to is required: a peer ref, a unique title or a session id (see list_peers)")
+    const peers = await this.peers(me, LIST_LIMIT)
+    const hits = peers.filter((p) => matches(p, query))
+    if (hits.length === 1 && hits[0]) return hits[0]
+    if (hits.length > 1) {
+      throw fail(`"${query}" matches ${hits.length} peers; send to one by its ref: ${hits.map((p) => label(p)).join(", ")}`)
+    }
+    // A full id that list_peers cannot show still works when the scope reaches it.
+    if (query.startsWith("ses")) {
+      let target: SessionInfo | undefined
+      try {
+        target = await this.host.session.get({ sessionID: query })
+      } catch {
+        // Fall through to the not-found error.
+      }
+      if (target) {
+        if (!(await reachable(this.host, me, target, this.options.scope))) {
+          throw fail(`Session ${query} is outside this session's scope; list_peers shows who can be messaged`)
+        }
+        return target
+      }
+    }
+    throw fail(`No peer matches "${query}". Call list_peers for the names and refs you can message.`)
   }
 
   private async target(caller: Caller, sessionID: string): Promise<SessionInfo> {

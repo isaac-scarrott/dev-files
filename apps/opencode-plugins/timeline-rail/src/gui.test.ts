@@ -23,19 +23,22 @@ const rect = (top: number, left: number, width: number, height: number) => ({
   toJSON: () => ({}),
 })
 
-// The loader's real pauses are seconds long and the list rebuild is throttled; the tests run at frame speed.
-;(globalThis as { __timelineRailPause?: () => Promise<void> }).__timelineRailPause = async () => undefined
-;(globalThis as { __timelineRailListInterval?: number }).__timelineRailListInterval = 0
-
-function fixture(options: { gutter?: number; desktop?: boolean; pages?: number } = {}) {
+function fixture(options: { gutter?: number; desktop?: boolean } = {}) {
   // Solid delegates events to the document it loaded with, so the tests reuse it.
   const doc = globalThis.document
   doc.body.innerHTML = `<div data-view><div data-slot="session-timeline-scroll"><div data-scrollable><div data-session-title><div data-actions></div></div><div data-rows></div></div></div><div data-slot="session-timeline-visible"></div></div>`
   const frames = new Map<number, FrameRequestCallback>()
+  const bands = new Set<{ deliver(): void }>()
+  const created: string[] = []
+  const ended: string[] = []
+  const watchers = new Set<MutationCallback>()
+  const resizers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element>; fresh: Set<Element> }>()
   let nextFrame = 1
   const gutter = options.gutter ?? 256
   const globals = {
     HTMLElement: globalThis.window.HTMLElement,
+    Element: globalThis.window.Element,
+    getComputedStyle: globalThis.window.getComputedStyle.bind(globalThis.window),
     WheelEvent: globalThis.window.WheelEvent,
     Node: globalThis.window.Node,
     // Solid's Portal checks its mount against HTMLHeadElement.
@@ -46,8 +49,69 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     },
     cancelAnimationFrame: (id: number) => void frames.delete(id),
     ResizeObserver: class {
-      observe() {}
+      constructor(callback: ResizeObserverCallback) {
+        resizers.add({ callback, targets: this.targets, fresh: this.fresh })
+      }
+      targets = new Set<Element>()
+      // The browser reports a newly observed element once, after layout.
+      fresh = new Set<Element>()
+      observe(target: Element) {
+        this.targets.add(target)
+        this.fresh.add(target)
+      }
       unobserve() {}
+      disconnect() {
+        this.targets.clear()
+        this.fresh.clear()
+      }
+    },
+    // The browser's observers, reduced to what the rail asks: an observer on the reading line, told only
+    // when a target's state against the band changes (`flush` delivers), and a child-list observer told by `mount`.
+    IntersectionObserver: class {
+      constructor(callback: IntersectionObserverCallback, init: IntersectionObserverInit) {
+        this.callback = callback
+        this.margin = init.rootMargin ?? ""
+        this.whole = init.threshold === 1
+        bands.add(this)
+        ;(this.whole ? ended : created).push(this.margin)
+      }
+      callback: IntersectionObserverCallback
+      margin: string
+      // Threshold 1: told when the target comes wholly inside the root (the bottom watch).
+      whole: boolean
+      targets = new Map<Element, string | undefined>()
+      observe(target: Element) {
+        this.targets.set(target, undefined)
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target)
+      }
+      disconnect() {
+        this.targets.clear()
+        bands.delete(this)
+      }
+      deliver() {
+        const [top = 0, , bottom = 0] = this.margin.split(" ").map(parseFloat)
+        const band = { top: -top, bottom: VIEWPORT + bottom }
+        const entries = [] as IntersectionObserverEntry[]
+
+        for (const [target, last] of this.targets) {
+          const box = target.getBoundingClientRect()
+          const isIntersecting = this.whole ? box.top >= band.top && box.bottom <= band.bottom : box.bottom >= band.top && box.top <= band.bottom
+          const state = `${isIntersecting}`
+
+          if (state === last) continue
+          this.targets.set(target, state)
+          entries.push({ target, isIntersecting, boundingClientRect: box, rootBounds: band } as unknown as IntersectionObserverEntry)
+        }
+        if (entries.length) this.callback(entries, this as unknown as IntersectionObserver)
+      }
+    },
+    MutationObserver: class {
+      constructor(callback: MutationCallback) {
+        watchers.add(callback)
+      }
+      observe() {}
       disconnect() {}
     },
   }
@@ -69,10 +133,11 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
   const sticky = scroller.querySelector("[data-session-title]") as HTMLElement
   const actions = scroller.querySelector("[data-actions]") as HTMLElement
   const rowsHost = scroller.querySelector("[data-rows]") as HTMLElement
-  Object.defineProperty(sticky, "offsetHeight", { value: INSET })
   view.getBoundingClientRect = () => rect(0, 0, WIDTH, VIEWPORT)
   visible.getBoundingClientRect = () => rect(0, 0, WIDTH, VIEWPORT)
-  const state = { scrollTop: 0, total: 20000 }
+  const state = { scrollTop: 0, total: 20000, header: INSET }
+  rowsHost.getBoundingClientRect = () => rect(-state.scrollTop, 0, WIDTH, state.total)
+  Object.defineProperty(sticky, "offsetHeight", { get: () => state.header })
   const scrolls: { top: number; behavior: ScrollBehavior }[] = []
   Object.defineProperty(scroller, "scrollTop", { get: () => state.scrollTop, set: (value: number) => void (state.scrollTop = value) })
   Object.defineProperty(scroller, "clientHeight", { get: () => VIEWPORT })
@@ -83,21 +148,37 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     state.scrollTop = options.top ?? 0
   }) as HTMLElement["scrollTo"]
 
+  // The host's shape: each row in a keyed wrapper under one container.
   const mount = (specs: { owner: string; y: number; height: number; prompt?: boolean }[]) => {
+    const removed = [...rowsHost.children]
     rowsHost.innerHTML = ""
+    const added: HTMLElement[] = []
     for (const spec of specs) {
+      const wrapper = doc.createElement("div")
+      wrapper.setAttribute("data-timeline-key", `${spec.owner}-${spec.y}`)
       const row = doc.createElement("div")
       row.setAttribute("data-message-id", spec.owner)
       row.setAttribute("data-timeline-row", spec.prompt ? "UserMessage" : "AssistantPart")
-      row.getBoundingClientRect = () => rect(spec.y - state.scrollTop, gutter, WIDTH - 2 * gutter, spec.height)
-      rowsHost.appendChild(row)
+      const box = () => rect(spec.y - state.scrollTop, gutter, WIDTH - 2 * gutter, spec.height)
+      row.getBoundingClientRect = box
+      wrapper.getBoundingClientRect = box
+      wrapper.appendChild(row)
+      rowsHost.appendChild(wrapper)
+      added.push(wrapper)
+    }
+    for (const callback of watchers) callback([{ removedNodes: removed, addedNodes: added }] as unknown as MutationRecord[], undefined as never)
+  }
+  // The scroller's content height changed (the host's rows were measured, a reply streamed).
+  const resized = () => {
+    for (const { callback, targets } of resizers) {
+      if (targets.size) callback([...targets].map((target) => ({ target })) as unknown as ResizeObserverEntry[], undefined as never)
     }
   }
 
   const [messages, setMessages] = createSignal<Message[]>([])
   const [active, setActive] = createSignal(true)
-  const [pages, setPages] = createSignal(options.pages ?? 0)
-  const loads: { aborted: boolean; busy: string | null | undefined }[] = []
+  // The host has older history to give (`more`), and every request for it is counted: the rail must make none.
+  const loads: { aborted: boolean }[] = []
   const session = {
     id: "s",
     server: {
@@ -107,13 +188,9 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
           get: () => ({}),
           message: {
             list: () => messages(),
-            more: () => pages() > 0,
-            loadMore: async (_id: string, load?: { signal?: AbortSignal; beforePublish?: () => void }) => {
-              loads.push({ aborted: load?.signal?.aborted ?? false, busy: doc.querySelector("[data-timeline-rail-strip]")?.getAttribute("aria-busy") })
-              await new Promise((resolve) => setTimeout(resolve, 10))
-              if (load?.signal?.aborted) return
-              load?.beforePublish?.()
-              setPages(pages() - 1)
+            more: () => true,
+            loadMore: async (_id: string, load?: { signal?: AbortSignal }) => {
+              loads.push({ aborted: load?.signal?.aborted ?? false })
             },
           },
         },
@@ -123,7 +200,13 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
   const registry: { slots: any[]; styles: string[] } = { slots: [], styles: [] }
   // The host's IconButton and Tooltip, reduced to what the rail asks of them.
   const ui = {
-    Tooltip: (props: { children: unknown }) => props.children,
+    // The host's trigger is a block div around its child.
+    Tooltip: (props: { children: unknown }) => {
+      const trigger = doc.createElement("div")
+      trigger.setAttribute("data-component", "tooltip-v2-trigger")
+      trigger.append(props.children as Node)
+      return trigger
+    },
     IconButton: (props: { label: string; disabled?: boolean; onClick?: (event: MouseEvent) => void }) => {
       const button = doc.createElement("button")
       button.setAttribute("aria-label", props.label)
@@ -148,6 +231,13 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
       const pending = [...frames.entries()]
       frames.clear()
       for (const [, callback] of pending) callback(0)
+      for (const { callback, fresh } of resizers) {
+        if (!fresh.size) continue
+        const entries = [...fresh].map((target) => ({ target })) as unknown as ResizeObserverEntry[]
+        fresh.clear()
+        callback(entries, undefined as never)
+      }
+      for (const band of [...bands]) band.deliver()
       await Promise.resolve()
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
@@ -165,6 +255,9 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     state,
     scrolls,
     mount,
+    resized,
+    created,
+    ended,
     setMessages,
     setActive,
     active,
@@ -175,7 +268,7 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     reply,
     rail: () => view.querySelector("[data-timeline-rail]") as HTMLElement | null,
     ticks: () => [...view.querySelectorAll("[data-timeline-rail-tick]")] as HTMLElement[],
-    // The indexes of the nodes that carry an attribute (the faint ticks are one gradient, with no node per prompt).
+    // The indexes of the ticks that carry an attribute.
     marked: (attribute: string) =>
       [...view.querySelectorAll(`[data-timeline-rail-tick][${attribute}]`)].map((node) => Number(node.getAttribute("data-index"))).sort((a, b) => a - b),
     // The strip's box is the rail's body: 200px from y=100, as the layout would give it.
@@ -188,6 +281,7 @@ function fixture(options: { gutter?: number; desktop?: boolean; pages?: number }
     at: (fraction: number) => 100 + fraction * 200,
     turn: (which: "Previous turn" | "Next turn") => view.querySelector(`[aria-label="${which}"]`) as HTMLButtonElement,
     card: () => view.querySelector("[data-timeline-rail-card]") as HTMLElement | null,
+    body: () => view.querySelector("[data-timeline-rail-body]") as HTMLElement,
     close: () => {
       globalThis.window.matchMedia = media
       for (const [key, descriptor] of previous) {
@@ -236,70 +330,93 @@ const threeTurns = (f: ReturnType<typeof fixture>) => {
 const Pointer = () => globalThis.window.PointerEvent
 const move = (target: Element, y: number, init: PointerEventInit = {}) =>
   target.dispatchEvent(new (Pointer())("pointermove", { clientY: y, pointerType: "mouse", bubbles: true, ...init }))
-const enter = (target: Element, y: number) =>
-  target.dispatchEvent(new (Pointer())("pointerenter", { clientY: y, pointerType: "mouse" }))
 const key = (target: Element, name: string) =>
   target.dispatchEvent(new globalThis.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }))
-const inView = (f: ReturnType<typeof fixture>) => f.marked("data-view")
+const lit = (f: ReturnType<typeof fixture>) => f.marked("data-active")
+const scrollTo = async (f: ReturnType<typeof fixture>, top: number) => {
+  f.state.scrollTop = top
+  f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
+  await f.flush()
+}
+const many = (f: ReturnType<typeof fixture>, count: number, from = 0) =>
+  Array.from({ length: count }, (_, index) => f.prompt(`m${String(from + index).padStart(4, "0")}`, `question ${from + index}`))
 
-test("an empty rail under two prompts; with more, one tick per prompt, the strip is one labelled target and current follows the scroll", async () => {
+test("nothing under two prompts; then one tick per prompt, one labelled strip, the host's geometry", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    const empty = () => !f.rail() || f.rail()!.hasAttribute("data-empty")
-    assert.equal(empty(), true)
+    assert.equal(f.rail(), null)
     f.setMessages([f.prompt("m1", "only")])
     f.mount([{ owner: "m1", y: 48, height: 60, prompt: true }])
     await f.flush()
-    assert.equal(empty(), true)
+    assert.equal(f.rail(), null, "t3-code renders nothing under TIMELINE_MINIMAP_MIN_ITEMS")
 
     threeTurns(f)
     await f.flush()
     const rail = f.rail()
     assert.ok(rail)
-    assert.equal(rail.hasAttribute("data-empty"), false)
-    assert.equal(rail.style.left, "6px")
     assert.equal(rail.style.top, `${INSET}px`)
     assert.equal(rail.style.height, `${VIEWPORT - INSET}px`)
-    assert.equal((rail.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height"), "max(0px, min(16px, calc(100vh - 18rem)))")
+    assert.equal(rail.hasAttribute("data-persistent"), true, "a 256px gutter is at least 48px")
+    assert.equal(f.body().style.width, "40px", "the strip is the gutter minus 12px, at most 40px")
+    assert.equal(f.body().style.getPropertyValue("--timeline-rail-height"), "max(0px, min(16px, calc(100vh - 18rem)))")
     assert.equal(rail.querySelectorAll("button[data-timeline-rail-strip]").length, 1, "one hit target, not one button per tick")
-    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: first question")
-    assert.deepEqual(f.marked("data-current"), [0])
-
-    f.state.scrollTop = 1200
-    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
-    await f.flush()
-    assert.deepEqual(f.marked("data-current"), [1])
-    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: second question")
+    assert.equal(f.ticks().length, 3)
+    assert.deepEqual(f.ticks().map((tick) => tick.style.top), ["0%", "50%", "100%"])
+    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: User message", "t3-code names the active prompt, and none is active")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("every prompt whose turn is on screen is in view, not just the current one", async () => {
+test("exactly one tick is lit: the prompt whose turn is under the reading line, switching when the next prompt's row reaches it", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
     await f.flush()
-    // At the top only the first turn's rows reach the viewport (m1: 48 to 1108; m2's prompt row starts at 1108).
-    assert.deepEqual(inView(f), [0])
-    f.state.scrollTop = 800
-    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
-    await f.flush()
-    assert.deepEqual(inView(f), [0, 1], "the viewport (800 to 1400) holds the end of turn 1 and the start of turn 2")
-    f.state.scrollTop = 2000
-    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
-    await f.flush()
-    assert.deepEqual(inView(f), [1, 2])
+    assert.deepEqual(lit(f), [0])
+    await scrollTo(f, 800)
+    assert.deepEqual(lit(f), [0], "inside m1's reply: m1 stays lit")
+    // The line is 8px under the 48px header; m2's row is at 1108 - scrollTop.
+    await scrollTo(f, 1108 - 48 - 8 - 1)
+    assert.deepEqual(lit(f), [0], "m2's row is one pixel under the line")
+    await scrollTo(f, 1108 - 48 - 8)
+    assert.deepEqual(lit(f), [1], "m2's row is on the line")
+    await scrollTo(f, 2000)
+    assert.deepEqual(lit(f), [1], "m2's long reply keeps m2 lit; its prompt row is far above")
+    await scrollTo(f, 19400)
+    assert.deepEqual(lit(f), [2], "the very bottom is the last prompt")
+    await scrollTo(f, 0)
+    assert.deepEqual(lit(f), [0])
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("a click jumps to the prompt under the pointer and the current one re-aligns", async () => {
+test("a chat that fits has its last prompt lit; a prompt that streams in is lit at the bottom", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.state.total = VIEWPORT
+    threeTurns(f)
+    await f.flush()
+    assert.deepEqual(lit(f), [2])
+    f.state.total = 20000
+    await scrollTo(f, 19400)
+    f.setMessages([f.prompt("m1", "first question"), f.reply("a1", "first answer"), f.prompt("m2", "second question"), f.prompt("m3", "third"), f.prompt("m4", "fourth")])
+    f.mount([{ owner: "m3", y: 19000, height: 60, prompt: true }, { owner: "m4", y: 19900, height: 60, prompt: true }])
+    await f.flush()
+    assert.deepEqual(lit(f), [3], "at the bottom: the new prompt, though its row is below the line")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a click jumps to the prompt under the pointer", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
@@ -311,12 +428,8 @@ test("a click jumps to the prompt under the pointer and the current one re-align
     await f.flush()
     await new Promise((resolve) => setTimeout(resolve, 320))
     await f.flush()
-    // The host's own ease-out, one write per frame: every write is instant, none goes backwards, the last lands.
-    const tops = f.scrolls.map((scroll) => scroll.top)
-    assert.ok(tops.length > 2, `eased over frames, got ${tops.length} writes`)
-    assert.ok(f.scrolls.every((scroll) => scroll.behavior === "auto"))
-    assert.deepEqual(tops, [...tops].sort((a, b) => a - b))
-    assert.equal(tops.at(-1), 1108 - INSET)
+    // The host's own jump: one native smooth scrollTo to the prompt, no per-frame writes by the plugin.
+    assert.deepEqual(f.scrolls, [{ top: 1108 - INSET, behavior: "smooth" }])
     click(0.5)
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
@@ -326,65 +439,128 @@ test("a click jumps to the prompt under the pointer and the current one re-align
   }
 })
 
-test("scrubbing maps the pointer to an index and the card follows; Escape closes it; touch never opens it", async () => {
+test("the card opens at once on the pointer's prompt, with no count and no delay; it hangs off the tick as t3-code's does", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
     await f.flush()
     const strip = f.strip()
-    enter(strip, f.at(0))
-    await f.flush()
-    assert.equal(f.card(), null, "after the host's open delay, not before")
-    await new Promise((resolve) => setTimeout(resolve, 450))
+    assert.equal(f.card(), null)
+    move(strip, f.at(0))
     await f.flush()
     const card = f.card()
-    assert.ok(card)
-    assert.equal(card.hasAttribute("data-entered"), true, "flipped open a frame after it mounted")
+    assert.ok(card, "mounted by the first move")
     assert.equal(card.querySelector("[data-timeline-rail-card-title]")!.textContent, "first question")
     assert.equal(card.querySelector("[data-timeline-rail-card-snippet]")!.textContent, "first answer")
-    assert.equal(card.querySelector("[data-timeline-rail-card-meta]")!.textContent, "1 of 3")
+    assert.equal(card.querySelector("[data-timeline-rail-card-meta]"), null, "t3-code shows no n-of-N")
+    assert.equal(card.style.top, "0%")
+    assert.equal(card.style.transform, "translateY(0%)", "the first card is flush with the strip's top")
+    assert.equal(f.body().style.width, "22rem", "the hit area widens so the card stays under the pointer")
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: first question")
 
+    move(strip, f.at(0.5))
+    await f.flush()
+    assert.equal(f.card()!.style.transform, "translateY(-50%)")
+    assert.equal(f.card()!.style.top, "50%")
+    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-snippet]"), null, "a turn without a reply shows the prompt alone")
     move(strip, f.at(1))
     await f.flush()
-    assert.equal(f.card(), card, "the open card stays mounted and moves to the next prompt")
-    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "third")
-    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-snippet]"), null)
-    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: third")
+    assert.equal(f.card()!.style.transform, "translateY(-100%)", "the last card is flush with the strip's bottom")
 
-    key(strip, "Escape")
+    strip.dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
     await f.flush()
-    assert.ok(f.card() && !f.card()!.hasAttribute("data-entered"), "exit transition runs while it stays mounted")
-    await new Promise((resolve) => setTimeout(resolve, 120))
-    await f.flush()
-    assert.equal(f.card(), null)
+    assert.equal(f.card(), null, "gone the moment the pointer leaves")
+    assert.equal(f.body().style.width, "40px")
 
-    strip.dispatchEvent(new (Pointer())("pointerenter", { clientY: f.at(0), pointerType: "touch" }))
-    await new Promise((resolve) => setTimeout(resolve, 450))
+    move(strip, f.at(0), { pointerType: "touch" })
     await f.flush()
-    assert.equal(f.card(), null)
+    assert.equal(f.card(), null, "touch never opens it")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("the fisheye is by index distance from the pointer's prompt and clears on leave", async () => {
+test("a pointer over the card keeps its prompt; the card takes no click", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    const messages: Message[] = []
-    for (let index = 0; index < 40; index += 1) messages.push(f.prompt(`m${String(index).padStart(2, "0")}`, `q${index}`))
-    f.setMessages(messages)
-    f.mount([{ owner: "m00", y: 48, height: 60, prompt: true }])
+    threeTurns(f)
+    await f.flush()
+    move(f.strip(), f.at(0))
+    await f.flush()
+    move(f.card()!.querySelector("[data-timeline-rail-card-title]")!, f.at(1))
+    await f.flush()
+    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "first question")
+    f.card()!.dispatchEvent(new globalThis.window.MouseEvent("click", { clientY: f.at(1), detail: 1, bubbles: true }))
+    await f.flush()
+    assert.deepEqual(f.scrolls, [])
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("the fisheye is by index distance from the pointer's prompt, only while the strip is pointed; at rest every tick is the same width", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.setMessages(many(f, 10))
+    f.mount([{ owner: "m0000", y: 48, height: 60, prompt: true }])
     await f.flush()
     const d = () => new Map(f.marked("data-d").map((index) => [index, f.view.querySelector(`[data-index="${index}"]`)!.getAttribute("data-d")]))
-    move(f.strip(), f.at(20 / 39))
+    assert.deepEqual([...d()], [], "at rest no tick is scaled: all equal, the lit one included")
+    assert.deepEqual(lit(f), [0])
+    move(f.strip(), f.at(5 / 9))
     await f.flush()
-    assert.deepEqual([...d()], [[18, "2"], [19, "1"], [20, "0"], [21, "1"], [22, "2"]])
-    f.rail()!.dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
+    assert.deepEqual([...d()], [[3, "2"], [4, "1"], [5, "0"], [6, "1"], [7, "2"]], "centred on the pointer, not on the lit prompt")
+    f.strip().dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
     await f.flush()
-    assert.equal(d().size, 0)
+    assert.deepEqual([...d()], [], "back to equal widths on leave")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("at rest no tick is scaled at any scroll position or active prompt", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    for (const top of [0, 800, 1108 - INSET - 8, 2000, 19400]) {
+      await scrollTo(f, top)
+      assert.equal(lit(f).length, 1)
+      assert.deepEqual(f.marked("data-d"), [], `scrollTop ${top}`)
+    }
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("the pointed tick is lit as well as the active one while the strip is pointed; one lit again on leave", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    f.setMessages(many(f, 10))
+    f.mount([{ owner: "m0000", y: 48, height: 60, prompt: true }])
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
+    move(f.strip(), f.at(5 / 9))
+    await f.flush()
+    assert.deepEqual(lit(f), [0, 5], "the current prompt stays lit; the pointed one joins it")
+    move(f.strip(), f.at(8 / 9))
+    await f.flush()
+    assert.deepEqual(lit(f), [0, 8])
+    move(f.strip(), f.at(0))
+    await f.flush()
+    assert.deepEqual(lit(f), [0], "pointing at the current prompt lights only it")
+    f.strip().dispatchEvent(new (Pointer())("pointerleave", { pointerType: "mouse" }))
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
   } finally {
     dispose()
     f.close()
@@ -400,15 +576,16 @@ test("a drag that starts off the strip passes through; one that starts on it scr
     const strip = f.strip()
     move(strip, f.at(0.5), { buttons: 1 })
     await f.flush()
-    assert.equal(strip.hasAttribute("data-pass"), true, "a button-down arrival does not scrub")
+    assert.equal(f.body().hasAttribute("data-pass"), true, "a button-down arrival does not scrub")
+    assert.equal(f.card(), null)
     globalThis.window.dispatchEvent(new (Pointer())("pointerup", { buttons: 0 }))
     await f.flush()
-    assert.equal(strip.hasAttribute("data-pass"), false)
+    assert.equal(f.body().hasAttribute("data-pass"), false)
 
     strip.dispatchEvent(new (Pointer())("pointerdown", { bubbles: true, buttons: 1, pointerType: "mouse" }))
     move(strip, f.at(1), { buttons: 1 })
     await f.flush()
-    assert.equal(strip.hasAttribute("data-pass"), false)
+    assert.equal(f.body().hasAttribute("data-pass"), false)
     assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: third")
     globalThis.window.dispatchEvent(new (Pointer())("pointerup", { buttons: 0 }))
   } finally {
@@ -417,7 +594,7 @@ test("a drag that starts off the strip passes through; one that starts on it scr
   }
 })
 
-test("the wheel on the rail scrolls the timeline", async () => {
+test("the wheel on the rail scrolls the timeline; ctrl-wheel and horizontal-only wheels are left alone", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
@@ -429,27 +606,32 @@ test("the wheel on the rail scrolls the timeline", async () => {
     f.strip().dispatchEvent(event)
     assert.equal(event.defaultPrevented, true)
     assert.equal(by[0]?.top, 120)
+    f.strip().dispatchEvent(Object.assign(new globalThis.window.WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true }), { ctrlKey: true }))
+    f.strip().dispatchEvent(new globalThis.window.WheelEvent("wheel", { deltaY: 0, deltaX: 40, bubbles: true, cancelable: true }))
+    assert.equal(by.length, 1)
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("keyboard: focus lands on the current prompt; arrows, Home, End move it and open the card; Enter jumps", async () => {
+test("keyboard, as t3-code: focus starts on the current prompt; arrows, Home, End move it; Enter jumps; nothing else", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
     threeTurns(f)
-    f.state.scrollTop = 1200
-    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
-    await f.flush()
+    await scrollTo(f, 1200)
     const strip = f.strip()
     strip.focus()
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: second question", "focus starts from the current prompt")
+    assert.equal(f.card()?.querySelector("[data-timeline-rail-card-title]")?.textContent, "second question", "the card opens with focus, at once")
+    assert.deepEqual(lit(f), [1], "focus starts on the lit prompt")
+    assert.deepEqual(f.marked("data-d"), [0, 1, 2], "the fisheye is centred on the keyboard's prompt")
     key(strip, "ArrowDown")
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: third")
+    assert.deepEqual(lit(f), [1, 2], "the keyboard's prompt is lit with the current one")
     key(strip, "ArrowDown")
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: third", "clamped at the end")
@@ -460,20 +642,29 @@ test("keyboard: focus lands on the current prompt; arrows, Home, End move it and
     key(strip, "End")
     await f.flush()
     assert.equal(strip.getAttribute("aria-label"), "Jump to message: third")
-    assert.equal(f.card()?.querySelector("[data-timeline-rail-card-title]")?.textContent, "third", "the card follows the keyboard instantly")
+    key(strip, "PageUp")
+    key(strip, "Escape")
+    await f.flush()
+    assert.equal(strip.getAttribute("aria-label"), "Jump to message: third", "no PageUp, no Escape")
+    assert.ok(f.card(), "the card stays until the strip loses focus")
     key(strip, "Home")
     key(strip, "Enter")
     await f.flush()
     await new Promise((resolve) => setTimeout(resolve, 100))
     await f.flush()
     assert.ok(f.scrolls.length > 0 && f.state.scrollTop < 1200, "Enter glided to the first prompt")
+    strip.blur()
+    await f.flush()
+    assert.equal(f.card(), null)
+    assert.equal(lit(f).length, 1, "one lit tick again")
+    assert.deepEqual(f.marked("data-d"), [], "and equal widths")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("previous / next turn buttons step from the current prompt and disable at the ends", async () => {
+test("previous / next turn step from the current prompt and disable at the ends; they show only under the pointer", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
@@ -487,133 +678,214 @@ test("previous / next turn buttons step from the current prompt and disable at t
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
     assert.equal(f.turn("Previous turn").disabled, false)
-    f.state.scrollTop = 2168 - INSET
-    f.scroller.dispatchEvent(new globalThis.window.Event("scroll"))
-    await f.flush()
+    await scrollTo(f, 2168 - INSET)
     assert.equal(f.turn("Next turn").disabled, true, "nothing after the last prompt")
     f.turn("Previous turn").click()
     await f.flush()
     await new Promise((resolve) => setTimeout(resolve, 320))
     await f.flush()
     assert.equal(f.state.scrollTop, 1108 - INSET)
+    for (const name of ["Previous turn", "Next turn"] as const) {
+      const trigger = f.turn(name).closest("[data-component='tooltip-v2-trigger']")!
+      const placed = trigger.closest("[data-timeline-rail-turn]")
+      assert.ok(placed && placed.contains(trigger) && placed !== trigger, `${name}: the tooltip trigger sits inside the positioned box, so it takes the chevron's size and place`)
+      assert.equal(placed.querySelector("[data-timeline-rail-turn]"), null)
+    }
+    const style = f.registry.styles[0]!
+    assert.ok(style.includes("[data-timeline-rail-turn]:hover"), "revealed by their own hover")
+    assert.ok(!style.includes("[data-timeline-rail-body]:hover [data-timeline-rail-turn]"), "not by the strip's")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("hundreds of prompts keep one tick each, none bucketed, every index reachable, rail height capped by the window", async () => {
+test("the rail knows only the newest 10 prompts of a long thread, however many the host holds, and never asks for more", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    const messages: Message[] = []
-    const rows: { owner: string; y: number; height: number; prompt?: boolean }[] = []
-    for (let index = 0; index < 600; index += 1) {
-      messages.push(f.prompt(`m${String(index).padStart(3, "0")}`, `question ${index}`))
-      rows.push({ owner: `m${String(index).padStart(3, "0")}`, y: 48 + index * 100, height: 100, prompt: true })
-    }
-    f.setMessages(messages)
-    f.mount(rows)
+    f.setMessages(many(f, 5000))
+    f.mount([{ owner: "m4999", y: 48, height: 60, prompt: true }])
     await f.flush()
-    assert.equal(f.rail()!.querySelectorAll("*").length < 40, true, "no node per prompt: the DOM stays small at 600 prompts")
-    assert.equal((f.rail()!.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height"), "max(0px, min(4792px, calc(100vh - 18rem)))")
-    assert.deepEqual(f.marked("data-current"), [0])
-    move(f.strip(), f.at(0.5))
+    assert.equal(f.ticks().length, 10)
+    assert.equal(f.body().style.getPropertyValue("--timeline-rail-height"), "max(0px, min(72px, calc(100vh - 18rem)))")
+    move(f.strip(), f.at(0))
     await f.flush()
-    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: question 300")
+    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "question 4990", "the oldest tick is the 10th from the end")
     move(f.strip(), f.at(1))
     await f.flush()
-    assert.equal(f.strip().getAttribute("aria-label"), "Jump to message: question 599")
+    assert.equal(f.card()!.querySelector("[data-timeline-rail-card-title]")!.textContent, "question 4999")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "no growth after first paint")
+    assert.equal(f.loads.length, 0, "no request for older history, though the host has more")
   } finally {
     dispose()
     f.close()
   }
 })
 
-test("a narrow gutter, a narrow window or an inactive (cached) timeline shows no rail", async () => {
-  for (const options of [{ gutter: 20 }, { desktop: false }]) {
-    const f = fixture(options)
-    const { dispose } = await mountSlot(f)
-    try {
-      threeTurns(f)
-      await f.flush()
-      assert.equal(f.rail(), null, JSON.stringify(options))
-    } finally {
-      dispose()
-      f.close()
-    }
-  }
+test("a page the host loads on its own stays out; one the user scrolled for joins (up to 20); new prompts join; nothing is requested", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
   try {
-    threeTurns(f)
-    f.setActive(false)
+    f.setMessages(many(f, 30, 100))
+    f.mount([{ owner: "m0129", y: 48, height: 60, prompt: true }])
     await f.flush()
-    assert.equal(f.rail(), null)
-    f.setActive(true)
+    assert.equal(f.ticks().length, 10)
+    f.setMessages(many(f, 40, 90))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "the host's own second page, before any input, does not make the rail grow")
+    f.scroller.dispatchEvent(new globalThis.window.Event("wheel", { bubbles: true }))
+    f.setMessages(many(f, 50, 80))
+    await f.flush()
+    assert.equal(f.ticks().length, 20, "ten more arrived after the user scrolled, and join")
+    f.setMessages(many(f, 100, 30))
+    await f.flush()
+    assert.equal(f.ticks().length, 40, "a page of 50 adds only 20 (t3-code's older page)")
+    f.setMessages(many(f, 101, 30))
+    await f.flush()
+    assert.equal(f.ticks().length, 41, "a new prompt joins")
+    assert.equal(f.loads.length, 0)
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a gutter under 48px shows the rail only while hovered; under 13px, or a narrow window, or a cached timeline, there is none", async () => {
+  const f = fixture({ gutter: 30 })
+  const small = await mountSlot(f)
+  try {
+    threeTurns(f)
     await f.flush()
     assert.ok(f.rail())
+    assert.equal(f.rail()!.hasAttribute("data-persistent"), false)
+    assert.equal(f.body().style.width, "18px")
+    assert.equal(f.body().hasAttribute("data-navigation"), true, "18px reaches the chevrons")
   } finally {
-    dispose()
+    small.dispose()
     f.close()
   }
-})
-
-test("pages the whole history in behind the user, marks the rail busy meanwhile, and stops when it is done", async () => {
-  const f = fixture({ pages: 12 })
-  const { dispose } = await mountSlot(f)
+  const narrow = fixture({ gutter: 24 })
+  const second = await mountSlot(narrow)
   try {
-    threeTurns(f)
-    await f.flush()
-    assert.equal(f.loads.at(-1)?.busy, "true", "the rail says it is loading while a page is in flight")
-    for (let round = 0; round < 80 && f.loads.length < 12; round += 1) await f.flush()
-    await f.flush()
-    assert.equal(f.loads.length, 12, "one request per page, no restarts")
-    assert.equal(f.rail()!.querySelector("[data-timeline-rail-strip]")!.getAttribute("aria-busy"), null)
+    threeTurns(narrow)
+    await narrow.flush()
+    assert.equal(narrow.body().style.width, "12px")
+    assert.equal(narrow.body().hasAttribute("data-navigation"), false, "under 14px the chevrons are out of reach")
   } finally {
-    dispose()
-    f.close()
+    second.dispose()
+    narrow.close()
   }
-})
-
-test("leaving the session or going inactive aborts the history load", async () => {
-  const f = fixture({ pages: 50 })
-  const { dispose } = await mountSlot(f)
+  for (const options of [{ gutter: 12 }, { desktop: false }]) {
+    const g = fixture(options)
+    const { dispose } = await mountSlot(g)
+    try {
+      threeTurns(g)
+      await g.flush()
+      assert.equal(g.rail(), null, JSON.stringify(options))
+    } finally {
+      dispose()
+      g.close()
+    }
+  }
+  const h = fixture()
+  const { dispose } = await mountSlot(h)
   try {
-    threeTurns(f)
-    await f.flush()
-    const before = f.loads.length
-    f.setActive(false)
-    await f.flush()
-    await f.flush()
-    assert.ok(f.loads.length <= before + 1, "at most the page already in flight")
-    const after = f.loads.length
-    await f.flush()
-    assert.equal(f.loads.length, after, "nothing further while inactive")
+    threeTurns(h)
+    h.setActive(false)
+    await h.flush()
+    assert.equal(h.rail(), null)
+    h.setActive(true)
+    await h.flush()
+    assert.ok(h.rail())
   } finally {
     dispose()
-    f.close()
+    h.close()
   }
 })
 
-test("the prompt list is rebuilt at most once per interval while messages change, the last change landing at its end", async () => {
-  const globals = globalThis as { __timelineRailListInterval?: number }
+test("a different session id starts the window over, though the new thread holds the old window's first prompt", async () => {
   const f = fixture()
   const { dispose } = await mountSlot(f)
-  const height = () => (f.rail()!.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height")
   try {
-    globals.__timelineRailListInterval = 150
+    f.setMessages(many(f, 12))
+    f.mount([{ owner: "m0011", y: 48, height: 60, prompt: true }])
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "the newest 10 of 12")
+    ;(f.session as { id: string }).id = "other"
+    f.setMessages(many(f, 30, 2))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "a new session opens on its newest 10, not on the old window's edge (m0002), which would hold 30")
+    ;(f.session as { id: string }).id = "s"
+    f.setMessages(many(f, 31, 2))
+    await f.flush()
+    assert.equal(f.ticks().length, 10, "and back")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("scrolling reads no layout and builds no observer: the browser reports the crossings", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
     threeTurns(f)
     await f.flush()
-    assert.match(height(), /min\(16px/)
-    f.setMessages([f.prompt("m1", "first question"), f.reply("a1", "first answer"), f.prompt("m2", "second question"), f.prompt("m3", "third"), f.prompt("m4", "fourth")])
-    await f.flush()
-    assert.match(height(), /min\(16px/, "inside the interval: still the previous list")
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    await f.flush()
-    assert.match(height(), /min\(24px/, "after the interval: rebuilt with the last change")
+    assert.deepEqual(f.created, ["10000000px 0px -544px 0px"], "one observer, its root everything above the line 8px under the 48px header")
+    let reads = 0
+    const box = f.scroller.getBoundingClientRect
+    f.scroller.getBoundingClientRect = () => (reads++, box())
+    const style = globalThis.getComputedStyle
+    Object.defineProperty(globalThis, "getComputedStyle", { value: (...args: Parameters<typeof style>) => (reads++, style(...args)), configurable: true, writable: true })
+    try {
+      for (let top = 0; top <= 2400; top += 40) await scrollTo(f, top)
+    } finally {
+      Object.defineProperty(globalThis, "getComputedStyle", { value: style, configurable: true, writable: true })
+    }
+    assert.equal(reads, 0, "no rect or style read on the scroll path")
+    assert.equal(f.created.length, 1, "no observer rebuilt by scrolling")
+    assert.deepEqual(f.ended, ["10000000px 0px 2px 0px"], "one bottom watch, its root reaching far above and ending 2px under the viewport's bottom (no spacer here)")
   } finally {
-    globals.__timelineRailListInterval = 0
+    dispose()
+    f.close()
+  }
+})
+
+test("a taller sticky header moves the reading line: the observer is rebuilt with the new band", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    f.state.header = 80
+    f.resized()
+    await f.flush()
+    assert.deepEqual(f.created, ["10000000px 0px -544px 0px", "10000000px 0px -512px 0px"])
+    await scrollTo(f, 1108 - 80 - 8)
+    assert.deepEqual(lit(f), [1], "the next prompt reaches the new line")
+  } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("a row that jumps across the reading line in one frame (a far jump, a layout shift) still switches the lit tick", async () => {
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  try {
+    threeTurns(f)
+    await f.flush()
+    assert.deepEqual(lit(f), [0])
+    await scrollTo(f, 2400)
+    assert.deepEqual(lit(f), [2], "m2's and m3's prompt rows went from below the line to above it without ever touching it")
+    await scrollTo(f, 0)
+    assert.deepEqual(lit(f), [0])
+    await scrollTo(f, 1500)
+    assert.deepEqual(lit(f), [1])
+  } finally {
     dispose()
     f.close()
   }

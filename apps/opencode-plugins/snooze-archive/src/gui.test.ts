@@ -8,10 +8,12 @@ import { delegate, fakeUi } from "./testui"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
-function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = []) {
+// `host`: extra markup inside the vertical sidebar; `bound`: command ids the host's keybind lookup answers for; `dedicated`: the client has archive/unarchive calls.
+interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean; openThrows?: boolean }
+function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = [], extra: Extra = {}) {
   const window = new Window()
   const doc = window.document as unknown as Document
-  doc.body.innerHTML = `<aside><div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></aside>`
+  doc.body.innerHTML = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab><span data-slot="tab-title">Host title</span></div></div></div></div>${extra.host ?? ""}</aside>`
   const globals = { window, document: doc, Node: window.Node, HTMLElement: window.HTMLElement, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {} }
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.assign(globalThis, globals)
@@ -22,7 +24,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [connected, setConnected] = createSignal(true)
   const listeners = new Map<string, Set<(e: any) => void>>()
   const commands = new Map<string, { run(): Promise<void> | void }>()
-  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[] }
+  const calls = { closed: [] as string[], opened: [] as unknown[], updates: [] as unknown[], toasts: [] as any[], list: 0, listInputs: [] as any[], requestSync: 0, metadataReads: 0, removed: [] as unknown[], confirms: [] as any[], dedicated: [] as unknown[] }
   let permissions: unknown[] | undefined = []
   let forms: unknown[] | undefined = []
   let family: string[] | undefined = []
@@ -30,6 +32,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   let metadata: "ready" | "missing" | "no-time" = "ready"
   let sync = async () => {}
   let archiveError = false
+  let listImpl: ((input: any) => any) | undefined
+  let getImpl: ((input: any) => any) | undefined
   let select = ""
   let confirmResult = true
   let removeError = false
@@ -40,10 +44,14 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const server = {
     id: "server", name: "Local", compatible: true, get connected() { return connected() },
     client: { session: {
-      list: async () => { calls.list++; if (archiveError) throw new Error("offline"); return { data: archived ? [info()] : [], cursor: {} } },
-      get: async () => info(),
+      list: async (input: any) => { calls.list++; calls.listInputs.push(input); if (archiveError) throw new Error("offline"); if (listImpl) return listImpl(input); return { data: archived ? [info()] : [], cursor: {} } },
+      get: async (input: any) => getImpl ? getImpl(input) : info(),
       remove: async (input: unknown) => { calls.removed.push(input); if (removeError) throw new Error("server refused") },
       update: async (input: { archived: boolean }) => { calls.updates.push(input); if (archiveError) throw new Error("denied"); archived = input.archived },
+      ...(extra.dedicated ? {
+        archive: async (input: unknown) => { calls.dedicated.push(["archive", input]); archived = true },
+        unarchive: async (input: unknown) => { calls.dedicated.push(["unarchive", input]); archived = false },
+      } : {}),
     } },
     data: {
       on: (name: string, fn: (e: any) => void) => {
@@ -63,6 +71,9 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
   const ctx = {
     ui: fakeUi(doc),
+    options: extra.options ?? {},
+    keybinds: { keybind: (id: string) => extra.bound?.includes(id) ? ["⌘", "K"] : [] },
+    router: { path: () => "/" },
     signal: new AbortController().signal,
     stores: { snoozes: { get value() { return state() }, update: (fn: (draft: { entries: Snooze[] }) => void) => {
       const draft = structuredClone(state()); fn(draft); setState(draft)
@@ -72,7 +83,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value) },
     servers: { list: servers, get: (id: string) => servers().includes(id) ? server : undefined },
     sessions: { current: () => current() },
-    tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => calls.opened.push(args) },
+    tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => { if (extra.openThrows) throw new Error("open failed"); calls.opened.push(args) } },
     dialogs: { confirm: async (options: unknown) => { calls.confirms.push(options); return confirmResult }, select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
   } as unknown as Context
@@ -82,7 +93,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const stop = () => { dispose(); if (typeof cleanup === "function") cleanup() }
   const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
   return {
-    calls, commands, listeners, doc, state, woke: wokeState, addWoke: () => setWokeState({ entries: [{ server: "server", id: "s" }] }), setCurrent: (value: boolean) => setCurrent(value ? session : undefined), start, stop, flush, setServers, setConnected,
+    calls, commands, listeners, doc, state, addSnooze: (entry: Snooze | undefined) => setState({ entries: entry ? [entry] : [] }), woke: wokeState, addWoke: () => setWokeState({ entries: [{ server: "server", id: "s" }] }), setCurrent: (value: boolean) => setCurrent(value ? session : undefined), start, stop, flush, setServers, setConnected,
     permissions: (value: unknown[] | undefined) => { permissions = value },
     forms: (value: unknown[] | undefined) => { forms = value },
     family: (value: string[] | undefined) => { family = value },
@@ -95,6 +106,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     slots, confirm: (value: boolean) => { confirmResult = value }, removeError: (value: boolean) => { removeError = value },
     fail: (value: boolean) => { archiveError = value },
     select: (value: string) => { select = value },
+    listWith: (fn: (input: any) => any) => { listImpl = fn }, getWith: (fn: (input: any) => any) => { getImpl = fn },
+    openArchive: () => { const toggle = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[1]; if (toggle.getAttribute("aria-expanded") !== "true") toggle.click() },
     reopen: () => setTabs([{ key: "tab", session }]),
     emit: (name: string, sessionID = "s") => listeners.get(name)?.forEach((fn) => fn({ created: Date.now() + 1, data: { sessionID } })),
     async close() {
@@ -108,9 +121,12 @@ test("setup cold-starts, hydrates server inventory, tears down and reloads witho
   const f = fixture()
   try {
     f.start(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     f.setServers(["server"]); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
+    assert.equal(f.calls.list, 0, "nothing is fetched until Archived is expanded")
+    f.openArchive(); await f.flush()
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(f.calls.list, 1)
     assert.ok([...f.listeners.values()].every((handlers) => handlers.size === 1))
     f.stop()
@@ -158,21 +174,21 @@ test("new events wake only matching snoozed server/session; archived events do n
 test("archive failure keeps tabs; confirmed archive count and restore use native API", async () => {
   const f = fixture()
   try {
-    f.start(); f.setServers(["server"]); await f.flush()
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
     f.fail(true); await f.commands.get("archive")!.run()
     assert.equal(f.calls.closed.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /denied/)
     f.fail(false); await f.commands.get("archive")!.run(); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived1/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     const restore = f.doc.querySelector<HTMLButtonElement>('button[aria-label="Restore Session"]')!
     restore.click(); await f.flush()
     assert.deepEqual(f.calls.updates.at(-1), { sessionID: "s", archived: false })
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.equal(f.calls.opened.length, 1)
     f.setConnected(false); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived—/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     f.setConnected(true); await f.flush()
-    assert.match(f.doc.body.textContent, /Archived0/)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
   } finally { await f.close() }
 })
 
@@ -199,7 +215,8 @@ test("expired snooze is retained offline, wakes on reconnect; archive failures n
     f.fail(true); f.setConnected(true); await f.flush()
     assert.equal(f.state().entries.length, 0)
     assert.equal(f.calls.opened.length, 1)
-    assert.match(f.doc.body.textContent, /Archived—/)
+    f.openArchive(); await f.flush()
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
     assert.match(f.doc.body.textContent, /offline/)
   } finally { await f.close() }
 })
@@ -475,6 +492,7 @@ test("archived rows: one hover action (Restore); right-click offers Restore and 
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
     assert.deepEqual([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")), ["Restore Session"])
     row.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
@@ -513,6 +531,7 @@ test("clicking an Archived row opens it without unarchiving; refresh and events 
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     assert.deepEqual(f.calls.closed, [], "refresh must not close a tab the user opened")
     const row = f.doc.querySelector<HTMLElement>("[data-sa-row]")!
     const link = row.querySelector<HTMLElement>("a")!
@@ -533,6 +552,7 @@ test("archiving closes the tab at that moment; Restore is the only unarchive and
   const f = fixture()
   try {
     f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     await f.commands.get("archive")!.run(); await f.flush()
     assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: true }])
     assert.deepEqual(f.calls.closed, ["tab"])
@@ -546,6 +566,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
   const f = fixture()
   try {
     f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
     const rightClick = () => (f.doc.querySelector("[data-sa-row]") as HTMLElement).dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
     f.removeError(true); rightClick()
     click([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].find((i) => i.textContent === "Delete…")); await new Promise((r) => setTimeout(r, 5)); await f.flush()
@@ -560,7 +581,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
 })
 
 // A native vertical tab: marks live in `tab-close > tab-status`, which the host marks aria-hidden.
-const nativeTab = `<div data-slot="vertical-tabs"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div>`
+const nativeTab = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div></div></aside>`
 const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-sa-woke-mark]")
 const dueSnooze = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now() - 2_000, until: Date.now() - 1_000, busy: 0, updated: 1 })
 
@@ -667,6 +688,13 @@ test("a pending approval or question outranks the clock: only a CSS precedence, 
   assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
 })
 
+test("the clock owns the status slot: sidebar-repos' last-activity label is hidden and the title fade is the host's while it shows", async () => {
+  const { wokeCss } = await import("./woke")
+  const shown = '[data-sa-woke]:not([data-status="attention"], [data-active="true"])'
+  assert.ok(wokeCss.includes(`${shown} [data-sidebar-time] { display: none; }`), "same condition as the clock itself, so attention and the open tab keep the label rules")
+  assert.ok(wokeCss.includes(`${shown}:not(:hover):not(:has(:focus-visible)) { --sidebar-fade: 30px; }`))
+})
+
 const HOST_MENU = (cls: string, labels: string[]) => `<div role="menu" data-component="menu-v2-content" data-appearance="compact" class="${cls}">${labels.map((l, i) => (l === "-" ? '<div data-slot="menu-v2-separator"></div>' : `<div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">${l}</span></div>`)).join("")}</div>`
 const mount = (f: { doc: Document }, html: string) => { const portal = f.doc.createElement("div"); portal.innerHTML = html; f.doc.body.append(portal); return portal.firstElementChild as HTMLElement }
 const HEADER = ["Rename", "Export…", "-", "Delete…"]
@@ -723,5 +751,327 @@ test("Home row menu: the row's session gets the pair, from a contextmenu or the 
     row.querySelector("button")!.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }))
     const again = mount(f, HOST_MENU("", HEADER)); await new Promise((r) => setTimeout(r, 5)); await f.flush()
     assert.equal(again.querySelectorAll("[data-sa-menu]").length, 2)
+  } finally { await f.close() }
+})
+
+// A server of `total` archived top-level sessions, newest first, paged by index cursors; `mutable` lets a test restore or add some.
+function archiveServer(f: ReturnType<typeof fixture>, total: number) {
+  const infos = new Map<string, any>()
+  const order: string[] = []
+  const make = (id: string, updated: number, archived = true) => ({ id, title: `T ${id}`, time: { created: 1, updated, ...(archived ? { archived: updated } : {}) }, location: { directory: "/repo" } })
+  for (let i = 0; i < total; i++) { const id = `r${i}`; infos.set(id, make(id, 1000 - i)); order.push(id) }
+  f.listWith((input) => {
+    // Keyset cursor: the id of the last row returned, so a restore elsewhere shifts nothing.
+    const start = input.cursor ? order.indexOf(input.cursor) + 1 : 0
+    const live = order.slice(start).filter((id) => infos.get(id).time.archived !== undefined)
+    const data = live.slice(0, input.limit).map((id) => infos.get(id))
+    return { data, cursor: live.length > input.limit ? { next: data.at(-1).id } : {} }
+  })
+  f.getWith((input) => infos.get(input.sessionID))
+  return {
+    restore: (id: string) => { infos.set(id, make(id, infos.get(id).time.updated, false)); f.emit("session.unarchived", id) },
+    archiveNew: (id: string, updated: number) => { infos.set(id, make(id, updated)); order.unshift(id); f.emit("session.archived", id) },
+  }
+}
+const archivedIds = (f: { doc: Document }) => [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="archived"] [data-sa-row]')].map((row) => row.dataset.saRow!.split("\n")[1])
+const moreButton = (f: { doc: Document }, kind: string) => f.doc.querySelector<HTMLButtonElement>(`[data-sa-kind="${kind}"] [data-sa-more]:not([hidden]) button`)
+
+test("Archived loads page by page: 10 first, then 25 per press, no count is shown", async () => {
+  const f = fixture()
+  try {
+    archiveServer(f, 40)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(f.calls.listInputs.length, 0)
+    f.openArchive(); await f.flush()
+    assert.deepEqual(f.calls.listInputs, [{ archived: true, parentID: null, limit: 10, cursor: undefined }])
+    assert.equal(archivedIds(f).length, 10)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
+    assert.equal(moreButton(f, "archived")!.textContent, "Show 25 more")
+    click(moreButton(f, "archived")); await f.flush()
+    assert.deepEqual(f.calls.listInputs.at(-1), { archived: true, parentID: null, limit: 25, cursor: "r9" })
+    assert.equal(archivedIds(f).length, 35)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
+    click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 40)
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
+    assert.equal(moreButton(f, "archived"), null, "nothing left: no button")
+    assert.equal(new Set(archivedIds(f)).size, 40)
+    assert.equal(f.calls.listInputs.length, 3, "no fetch beyond what was asked for")
+  } finally { await f.close() }
+})
+
+test("restore on page 2 loses and duplicates nothing; a new archive lands first; collapse keeps loaded pages", async () => {
+  const f = fixture()
+  try {
+    const server = archiveServer(f, 60)
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
+    click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 35)
+    const calls = f.calls.listInputs.length
+    server.restore("r12"); await f.flush()
+    const ids = archivedIds(f)
+    assert.equal(ids.includes("r12"), false)
+    assert.equal(new Set(ids).size, ids.length, "no duplicate rows")
+    assert.equal(ids.length, 35, "window refilled from the next page")
+    assert.deepEqual(ids, [...Array(36).keys()].filter((i) => i !== 12).map((i) => `r${i}`))
+    assert.equal(f.calls.listInputs.length, calls + 1)
+    // The refill fetched a whole page (25): all 59 are loaded, so the count is exact and the button names what is left.
+    assert.match(f.doc.body.textContent, /Archived(?![\d—+])/)
+    assert.equal(moreButton(f, "archived")!.textContent, "Show 24 more")
+    server.archiveNew("fresh", 2000); await f.flush()
+    assert.equal(archivedIds(f)[0], "fresh")
+    assert.equal(f.calls.listInputs.length, calls + 1, "an event never refetches the archive")
+    const toggle = f.doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[1]
+    toggle.click(); toggle.click(); await f.flush()
+    assert.equal(f.calls.listInputs.length, calls + 1, "re-expanding keeps what was loaded")
+    assert.equal(new Set(archivedIds(f)).size, archivedIds(f).length)
+  } finally { await f.close() }
+})
+
+test("an archived group never opened ignores archive events; refresh reloads the pages shown", async () => {
+  const f = fixture()
+  try {
+    const server = archiveServer(f, 30)
+    f.start(); f.setServers(["server"]); await f.flush()
+    server.archiveNew("fresh", 2000); await f.flush()
+    f.commands.get("refresh")!.run(); await f.flush()
+    assert.equal(f.calls.listInputs.length, 0)
+    f.openArchive(); await f.flush(); click(moreButton(f, "archived")); await f.flush()
+    assert.equal(archivedIds(f).length, 31)
+    assert.equal(archivedIds(f)[0], "fresh")
+    f.calls.listInputs.length = 0
+    await f.commands.get("refresh")!.run(); await f.flush()
+    assert.deepEqual(f.calls.listInputs.map((i) => [i.limit, i.cursor]), [[10, undefined], [25, "r8"]])
+    assert.equal(archivedIds(f).length, 31)
+  } finally { await f.close() }
+})
+
+test("Snoozed paginates rendering only: 10 rows, label shows what remains, count is exact", async () => {
+  const now = Date.now()
+  const entries: Snooze[] = Array.from({ length: 12 }, (_, i) => ({ server: "server", id: `z${i}`, title: `Z${i}`, at: now, until: now + 3_600_000 + i, busy: 0, updated: 1 }))
+  const f = fixture(entries)
+  try {
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-kind="snoozed"] [data-sa-row]').length, 10)
+    assert.match(f.doc.body.textContent, /Snoozed12/)
+    assert.equal(moreButton(f, "snoozed")!.textContent, "Show 2 more")
+    click(moreButton(f, "snoozed")); await f.flush()
+    assert.equal(f.doc.querySelectorAll('[data-sa-kind="snoozed"] [data-sa-row]').length, 12)
+    assert.equal(moreButton(f, "snoozed"), null)
+  } finally { await f.close() }
+})
+
+const HOST_ARCHIVED_GROUP = `<section data-slot="vertical-tabs-archived"><button aria-expanded="false">Archived</button></section>`
+const archivedSection = (f: { doc: Document }) => f.doc.querySelectorAll<HTMLElement>("[data-snooze-archive] section")[1]
+const sidebarRoot = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-snooze-archive]")!
+
+test("archive guard: on 2.2.5 (no host archive UI) auto reads none and every Archive surface stays", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
+    assert.equal(archivedSection(f).hidden, false)
+    assert.equal((f.commands.get("archive") as any).enabled, true)
+    assert.equal(f.doc.querySelectorAll('[data-sa-actions="tab"]').length, 1)
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual([...menu.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Export…", "Snooze", "Archive", "-", "Delete…"])
+  } finally { await f.close() }
+})
+
+test("archive guard: a host archived group stands our Archived group, Archive command, tab button and menu item down; Snooze, Snoozed and Delete stay", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "T", at: 1, until: Date.now() + 3_600_000, updated: 1, busy: 0 }], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(sidebarRoot(f).dataset.saArchive, "theirs")
+    assert.equal(archivedSection(f).hidden, true)
+    assert.equal(f.doc.querySelectorAll("[data-sa-kind=snoozed] [data-sa-row]").length, 1, "Snoozed stays")
+    assert.equal((f.commands.get("archive") as any).enabled, false)
+    assert.equal((f.commands.get("refresh") as any).enabled, false)
+    assert.equal((f.commands.get("snooze") as any).enabled, true)
+    assert.equal(f.doc.querySelectorAll("[data-sa-actions]").length, 0, "the host's own close control is back")
+    const menu = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.deepEqual([...menu.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Export…", "Snooze", "-", "Delete…"])
+    f.doc.querySelector<HTMLButtonElement>("[data-sa-kind=snoozed] [data-sa-row]")!.dispatchEvent(new (f.doc.defaultView as any).MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }))
+    await f.flush()
+    assert.deepEqual([...f.doc.querySelectorAll("[data-sa-popup] [role=menuitem]")].map((i) => i.textContent?.trim()), ["Wake", "Delete…"])
+  } finally { await f.close() }
+})
+
+test("archive guard: standing down fetches nothing from the archive", async () => {
+  const f = fixture([], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    f.openArchive(); await f.flush()
+    assert.equal(f.calls.list, 0)
+  } finally { await f.close() }
+})
+
+test("archive guard: a keybind for session.archive (a stale entry in the host's persisted command catalog, as on a 2.2.5 install that ran an older build) stands nothing down; ours forces our UI; theirs forces standing down", async () => {
+  const bound = fixture([], [], { bound: ["session.archive", "session.unarchive"] })
+  try {
+    bound.setServers(["server"]); bound.start(); await bound.flush()
+    assert.equal(sidebarRoot(bound).dataset.saArchive, "ours"); assert.equal(sidebarRoot(bound).dataset.saStanddown, undefined)
+    assert.equal(archivedSection(bound).hidden, false); assert.equal((bound.commands.get("archive") as any).enabled, true)
+  } finally { await bound.close() }
+  const ours = fixture([], [], { bound: ["session.archive"], host: HOST_ARCHIVED_GROUP, options: { archive: "ours" } })
+  try {
+    ours.setServers(["server"]); ours.start(); await ours.flush()
+    assert.equal(sidebarRoot(ours).dataset.saArchive, "ours"); assert.equal(archivedSection(ours).hidden, false); assert.equal((ours.commands.get("archive") as any).enabled, true)
+  } finally { await ours.close() }
+  const theirs = fixture([], [], { options: { archive: "theirs" } })
+  try {
+    theirs.setServers(["server"]); theirs.start(); await theirs.flush()
+    assert.equal(sidebarRoot(theirs).dataset.saArchive, "theirs"); assert.equal(archivedSection(theirs).hidden, true); assert.equal((theirs.commands.get("archive") as any).enabled, false)
+  } finally { await theirs.close() }
+})
+
+test("archive guard: a native Archive item in a session menu keeps ours out of it and stands our Archive actions down, but the Archived group stays; a later menu without one brings ours back", async () => {
+  const f = fixture()
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const native = mount(f, HOST_MENU("session-options-menu", ["Rename", "Archive", "-", "Delete…"])); await f.flush()
+    assert.deepEqual([...native.children].map((c) => c.getAttribute("data-slot") === "menu-v2-separator" ? "-" : c.textContent), ["Rename", "Archive", "Snooze", "-", "Delete…"])
+    assert.equal(sidebarRoot(f).dataset.saArchive, "ours")
+    assert.equal(sidebarRoot(f).dataset.saStanddown, "menu")
+    assert.equal(archivedSection(f).hidden, false, "a host Archive action does not browse archived sessions")
+    native.parentElement!.remove()
+    const plain = mount(f, HOST_MENU("session-options-menu", HEADER)); await f.flush()
+    assert.equal(plain.querySelectorAll("[data-sa-menu]").length, 2)
+    assert.equal(sidebarRoot(f).dataset.saStanddown, undefined)
+  } finally { await f.close() }
+})
+
+test("archive guard: archived sessions show in tabs while the host owns archive UI, and our sweep leaves them", async () => {
+  const f = fixture([], [], { host: HOST_ARCHIVED_GROUP })
+  try {
+    f.archived(true); f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(f.doc.querySelector("[data-sa-archived-tab]"), null)
+    assert.equal(sidebarRoot(f).dataset.saStanddown, "sidebar")
+    assert.equal((f.commands.get("archive") as any).enabled, false); assert.equal((f.commands.get("refresh") as any).enabled, false)
+  } finally { await f.close() }
+})
+
+test("archive guard: the host's dedicated archive call is used when the client has it", async () => {
+  const f = fixture([], [], { dedicated: true })
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    await f.commands.get("archive")!.run(); await f.flush()
+    assert.deepEqual(f.calls.dedicated, [["archive", { sessionID: "s" }]])
+    assert.deepEqual(f.calls.updates, [])
+  } finally { await f.close() }
+})
+
+// Counts the observers the plugin creates and what reaches them.
+function spyObservers(f: { doc: Document }) {
+  const window = f.doc.defaultView as unknown as { MutationObserver: typeof MutationObserver }
+  const Original = window.MutationObserver
+  const seen = { created: 0, disconnected: 0, callbacks: 0 }
+  window.MutationObserver = class extends Original {
+    constructor(callback: MutationCallback) {
+      seen.created++
+      super((records, observer) => { seen.callbacks++; callback(records, observer) })
+    }
+    disconnect() { seen.disconnected++; super.disconnect() }
+  }
+  return seen
+}
+
+test("one scoped observer serves the guard, tab rows, woke marks, group and session menus; a streaming timeline never reaches it", async () => {
+  const f = fixture([], [{ server: "server", id: "s" }])
+  const seen = spyObservers(f)
+  try {
+    f.doc.body.innerHTML = `<div id="root"><main><section id="timeline"></section></main>${nativeTab}</div>`
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(seen.created, 1, "one MutationObserver for the whole plugin")
+    const timeline = f.doc.getElementById("timeline")!
+    const before = seen.callbacks
+    for (let i = 0; i < 50; i++) { const part = f.doc.createElement("p"); part.textContent = `chunk ${i}`; timeline.append(part); part.setAttribute("data-tab-key", "x") }
+    await new Promise((r) => setTimeout(r, 5))
+    assert.equal(seen.callbacks, before, "mutations outside the sidebar and the body's direct children are not observed")
+    const menu = mount(f, HOST_MENU("session-options-menu", ["Rename", "-", "Delete…"])); await f.flush()
+    assert.equal(menu.querySelectorAll("[data-sa-menu]").length >= 1, true, "a menu portal is extended")
+    menu.append(f.doc.createElement("i")); await new Promise((r) => setTimeout(r, 5))
+    assert.ok(seen.callbacks > before, "a portal's later changes are seen")
+  } finally { await f.close() }
+  assert.equal(seen.disconnected, seen.created, "disconnected on cleanup")
+})
+
+test("a setup that throws after acquiring its deadline timer and listeners still releases them (the host runs owner cleanups, not a returned one)", async () => {
+  const f = fixture([dueSnooze()], [], { openThrows: true })
+  const seen = spyObservers(f)
+  const win = f.doc.defaultView as unknown as Window
+  const added: string[] = []
+  const removed: string[] = []
+  for (const target of [win, f.doc] as unknown as EventTarget[]) {
+    const add = target.addEventListener.bind(target); const remove = target.removeEventListener.bind(target)
+    target.addEventListener = ((type: string, ...rest: [EventListenerOrEventListenerObject]) => { added.push(type); return add(type, ...rest) }) as never
+    target.removeEventListener = ((type: string, ...rest: [EventListenerOrEventListenerObject]) => { removed.push(type); return remove(type, ...rest) }) as never
+  }
+  const intervals = new Set<unknown>()
+  const setIt = win.setTimeout.bind(win); const clearIt = win.clearTimeout.bind(win)
+  win.setTimeout = ((...args: Parameters<typeof setTimeout>) => { const id = setIt(...args); intervals.add(id); return id }) as never
+  win.clearTimeout = ((id: never) => { intervals.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"])
+    assert.throws(() => f.start(), /open failed/)
+    assert.ok(added.length > 0 && intervals.size === 1, "acquired before the throw")
+    f.stop()
+    assert.equal(intervals.size, 0, "interval cleared")
+    assert.deepEqual([...removed].sort(), [...added].sort(), "every listener removed")
+    assert.equal(seen.disconnected, seen.created)
+  } finally { await f.close() }
+})
+
+test("focus checks deadlines; the server is asked again only after the window was away", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }])
+  const win = f.doc.defaultView as unknown as Window
+  const real = Date.now
+  let skew = 0
+  Date.now = () => real() + skew
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    const base = f.calls.requestSync
+    win.dispatchEvent(new (win as any).Event("focus")); await f.flush()
+    assert.equal(f.calls.requestSync, base, "focus without being away does not reconcile")
+    win.dispatchEvent(new (win as any).Event("blur"))
+    skew = 90_000
+    win.dispatchEvent(new (win as any).Event("focus")); await f.flush()
+    assert.ok(f.calls.requestSync > base, "back after a minute away reconciles")
+  } finally { Date.now = real; await f.close() }
+})
+
+test("one timeout waits for the nearest deadline; with nothing snoozed there is none", async () => {
+  const f = fixture()
+  const win = f.doc.defaultView as unknown as Window
+  const live = new Set<unknown>()
+  const setIt = win.setTimeout.bind(win); const clearIt = win.clearTimeout.bind(win)
+  win.setTimeout = ((...args: Parameters<typeof setTimeout>) => { const id = setIt(...args); live.add(id); return id }) as never
+  win.clearTimeout = ((id: never) => { live.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(live.size, 0, "no snoozes: no timer, and no polling")
+    const entry: Snooze = { server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }
+    f.state(); f.addSnooze(entry); await f.flush()
+    assert.equal(live.size, 1, "one timeout waits for the deadline")
+    f.addSnooze(undefined); await f.flush()
+    assert.equal(live.size, 0, "the last snooze clears it")
+  } finally { await f.close() }
+})
+
+test("the remaining-time labels refresh on a 30 s interval only while the Snoozed group is open", async () => {
+  const f = fixture([{ server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 }])
+  const win = f.doc.defaultView as unknown as Window
+  const live = new Set<unknown>()
+  const setIt = win.setInterval.bind(win); const clearIt = win.clearInterval.bind(win)
+  win.setInterval = ((...args: Parameters<typeof setInterval>) => { const id = setIt(...args); live.add(id); return id }) as never
+  win.clearInterval = ((id: never) => { live.delete(id); clearIt(id) }) as never
+  try {
+    f.setServers(["server"]); f.start(); await f.flush()
+    assert.equal(live.size, 0, "closed group: nothing to refresh")
+    const toggle = f.doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[0]
+    toggle.click(); await f.flush()
+    assert.equal(live.size, 1)
+    toggle.click(); await f.flush()
+    assert.equal(live.size, 0)
   } finally { await f.close() }
 })

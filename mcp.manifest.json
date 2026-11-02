@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode | codex. Do NOT put secrets here; use env substitution if ever needed.",
+  "_comment": "Canonical MCP server manifest \u2014 single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode | codex. Do NOT put secrets here; use env substitution if ever needed. agentOnly: OpenCode agent that alone may use the server's tools; gen-mcp denies <server>_* for every other agent.",
   "servers": {
     "paper": {
       "transport": "http",

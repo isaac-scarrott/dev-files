@@ -1,5 +1,5 @@
 // Parity spec for the agents-panel dock window (and its header button) against the native siblings in the harness
-// window: left sidebar open (Side tabs layout), Panel mode on, the dock shown, one session open with running rows.
+// window: right side panel CLOSED, Panel mode on, the dock shown, one session open with running rows.
 // Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/agents-panel/parity.spec.mjs
 
 const DOCK = "[data-agents-dock] > [data-component=menu-v2-content]"
@@ -11,14 +11,13 @@ const showDock = `
   const own = document.querySelector(${JSON.stringify(TOGGLE)});
   if (own.getAttribute("aria-expanded") !== "true") own.click();
 `
-// The host's tab context menu is the nearest native menu surface a harness window can show (the composer's background
+// The menu opens at a fixed point, independent of the tab link's box. The host's tab context menu is the nearest native menu surface a harness window can show (the composer's background
 // activity menu needs a running subagent, which no model can start here).
 const openNativeMenu = `
   ${showDock}
   if (!document.querySelector(${JSON.stringify(NATIVE_MENU)})) {
     const link = document.querySelector(${JSON.stringify(TAB_LINK)});
-    const b = link.getBoundingClientRect();
-    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: b.x + 40, clientY: b.y + b.height / 2 }));
+    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 600, clientY: 300 }));
   }
 `
 const closeNativeMenu = `document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));`
@@ -35,7 +34,7 @@ export default {
       prepare: openNativeMenu,
       cleanup: closeNativeMenu,
       allow: {
-        "width": "the window is a fixed 320px card beside the chat; the menu sizes to its items",
+        "width": "the window is a fixed 288px card beside the chat; the menu sizes to its items",
         "height": "list length differs from the menu's three items",
         "overflow": "the window scrolls its list past its max height",
         "icon": "the window holds row icons; the tab menu's items carry none",
@@ -53,9 +52,10 @@ export default {
       allow: {
         "aria.role": "a row opens a session and stops it with its X: role=button, not menuitem",
         "aria.tabindex": "rows are always tab stops (Enter opens, Delete stops); menu items roam",
-        "width": "the row fills its container: a 320px window against the tab menu's 156px",
+        "width": "the row fills its container: a 288px window against the tab menu's 156px",
         "box.width": "same",
         "icon": "a row leads with the spinner or a console icon; the tab menu's items carry none",
+        "hover.animations": "a running row's spinner loops (the host's radar, 1.8s, linear, infinite); the tab menu's items have no animation",
         "hover.changed-props": "the host highlights an item from Kobalte's pointer handler before the first sampled frame; both declare no transition (decl rows) and the hover style state matches",
       },
       style: { states: ["rest", "hover", "focus"] },
@@ -110,6 +110,12 @@ export default {
       ours: "[data-slot=session-chat-panel]",
       native: "[data-slot=session-chat-panel]",
       na: "the same chat panel moves for both siblings (the dock and the host's review panel), so the spec's open/close hook cannot tell the sides apart; the shift is sampled per frame against the review panel and the sidebar in the hand-off instead",
+    },
+    {
+      name: "header-badge",
+      ours: "[data-agents-badge]",
+      native: "[data-component=tag][data-variant=accent]",
+      na: "no accent tag exists in the harness to measure: the host shows one only as the sidebar toggle's unread dot (needs an unread session) and its Badge only neutral in Settings; the badge is the host's own tag markup (data-component=tag, data-variant=accent) so badge.css styles it, and the harness check read 16px height, 4px padding, 2px radius, 11px/530 tabular, bg-accent on text-contrast, light and dark",
     },
   ],
 }

@@ -1,15 +1,18 @@
-import { Command, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
+import { Command, createKeyed, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import { createEffect, createSignal, untrack } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { actionsCss, labels, type ActionName, type Target } from "./actions"
 import { iconCss } from "./icons"
 import { menuCss } from "./menu"
 import { createSessionMenus } from "./sessionmenu"
-import { archivedActivity, loadArchive, removeSession, setArchived, type ArchivedSession } from "./archive"
+import { appendPage, archivedActivity, dropArchived, emptyPage, loadArchivePage, removeSession, setArchived, upsertArchived, type ArchivedSession, type ArchivePage } from "./archive"
+import { FIRST_PAGE, firstOf, moreLabel, moreStep } from "./page"
 import { tabRowActionCss } from "../../native-ui/src"
-import { createSidebar, css } from "./sidebar"
+import { createSidebar, css, type GroupState } from "./sidebar"
 import { avatarFor } from "./avatar"
 import { createHost } from "./host"
+import { createDomHub } from "./hub"
+import { createGuard, parseArchiveOption } from "./guard"
 import { createTabActions } from "./tabrows"
 import { openInCurrentTab } from "./route"
 import { sessionKey, wakeReason, type Snooze } from "./snooze"
@@ -34,16 +37,47 @@ export default Plugin.define({
   setup(ctx) {
     ctx.add(Style, tabRowActionCss + css + actionsCss + iconCss + menuCss + customCss + wokeCss)
     const host = createHost(ctx.ui)
-    const sidebar = createSidebar(document, host, requestAnimationFrame, cancelAnimationFrame)
+    let disposed = false
+    onCleanup(() => { disposed = true })
+    const hub = createDomHub(document, requestAnimationFrame, cancelAnimationFrame)
+    // Our Archived group and Archive actions yield to a host archive UI (`archive` option: auto, ours, theirs).
+    const guard = createGuard({
+      doc: document, option: parseArchiveOption(ctx.options.archive),
+      path: () => ctx.router.path(), hub,
+    })
+    // `groupDown`: the host has its own archived group. `actionsDown`: the host has any archive UI, an Archive action included.
+    const { groupDown, actionsDown } = guard
+    // Archived loads on first expand and by page; nothing is fetched while the group has never been opened.
+    let archiveOpened = false
+    const sidebar = createSidebar(document, host, hub, {
+      toggled: (kind, open) => {
+        if (kind === "snoozed") { setSnoozedOpen(open); return }
+        if (!open) return
+        archiveOpened = true
+        for (const id of ctx.servers.list()) {
+          const server = ctx.servers.get(id)
+          if (!server?.connected || !server.compatible) continue
+          const state = archives.get(id)
+          if (state?.error) archives.set(id, { ...state, error: undefined })
+          fill(server)
+        }
+        changed()
+      },
+    })
+    const [snoozeLimit, setSnoozeLimit] = createSignal(FIRST_PAGE)
+    const [archiveLimit, setArchiveLimit] = createSignal(FIRST_PAGE)
     const [revision, setRevision] = createSignal(0)
+    const [tick, setTick] = createSignal(0)
+    const [snoozedOpen, setSnoozedOpen] = createSignal(false)
     const changed = () => setRevision((n) => n + 1)
-    const archives = new Map<string, { rows: ArchivedSession[]; error?: string; loading: boolean; complete: boolean }>()
+    const archives = new Map<string, ArchivePage>()
     const subscriptions = new Map<string, { data: ServerRef["data"]; off: (() => void)[] }>()
-    const pendingRefresh = new Set<string>()
-    const refreshing = new Set<string>()
+    onCleanup(() => {
+      subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
+      subscriptions.clear()
+    })
     const actionKeys = new Set<string>()
     const hiddenSnoozes = new Set<string>()
-    let disposed = false
     const entries = () => ctx.stores.snoozes.value.entries
     const wokeEntries = () => ctx.stores.woke.value.entries
     const markWoke = (server: string, id: string) => ctx.stores.woke.update((draft) => { draft.entries = withWoke(draft.entries, server, id) })
@@ -72,28 +106,71 @@ export default Plugin.define({
       const current = untrack(currentSession)
       if (!focus && !opened && !(current?.id === entry.id && current.server.id === entry.server)) markWoke(entry.server, entry.id)
     }
-    const refresh = async (server: ServerRef) => {
-      if (disposed) return
-      if (refreshing.has(server.id)) { pendingRefresh.add(server.id); return }
-      refreshing.add(server.id)
-      const previous = archives.get(server.id)
-      archives.set(server.id, { rows: previous?.rows ?? [], loading: true, complete: false })
+    const loadedTotal = () => ctx.servers.list().reduce((n, id) => n + (archives.get(id)?.rows.length ?? 0), 0)
+    // Fetch the next page of a server's archive while the window wants more rows than are loaded. An error stops the chain until the next press, expand or refresh.
+    const fill = (server: ServerRef) => {
+      if (disposed || !archiveOpened || untrack(groupDown)) return
+      const state = archives.get(server.id)
+      if (state?.busy || state?.error) return
+      if (!state || !state.loaded || state.stale || (state.more && loadedTotal() < untrack(archiveLimit))) void fetchPage(server)
+    }
+    const fetchPage = async (server: ServerRef) => {
+      const state = archives.get(server.id) ?? emptyPage()
+      const first = !state.loaded || state.stale
+      archives.set(server.id, { ...state, busy: true })
       changed()
       try {
-        const rows = await loadArchive(server, ctx.signal)
+        const page = await loadArchivePage(server, first ? undefined : state.next, first ? FIRST_PAGE : 25, ctx.signal)
         if (disposed) return
-        archives.set(server.id, { rows, loading: false, complete: true })
+        const current = archives.get(server.id)
+        if (!current || current.gen !== state.gen) return
+        archives.set(server.id, { ...appendPage(current, page.rows, page.next), busy: false })
       } catch (cause) {
         if (disposed) return
-        archives.set(server.id, { rows: previous?.rows ?? [], loading: false, complete: false, error: String(cause) })
-      } finally {
-        refreshing.delete(server.id)
-        if (!disposed) {
-          changed()
-          if (pendingRefresh.delete(server.id)) void refresh(server)
-        }
+        const current = archives.get(server.id)
+        if (current && current.gen === state.gen) archives.set(server.id, { ...current, busy: false, error: String(cause) })
       }
+      if (disposed) return
+      changed()
+      fill(server)
     }
+    // Reload from the first page, keeping what is shown until it arrives and refilling to the rows already asked for.
+    const refresh = (server: ServerRef) => {
+      const state = archives.get(server.id)
+      if (state) archives.set(server.id, { ...state, stale: true, busy: false, error: undefined, gen: state.gen + 1 })
+      fill(server)
+    }
+    const showApplied = (server: string, change: (state: ArchivePage) => ArchivePage) => {
+      const state = archives.get(server)
+      if (!state?.loaded) return
+      archives.set(server, change(state))
+      changed()
+      const connected = ctx.servers.get(server)
+      if (connected) fill(connected)
+    }
+    const settle = async (server: ServerRef, id: string) => {
+      try {
+        const info = await server.client.session.get({ sessionID: id }, { signal: ctx.signal })
+        if (!disposed) showApplied(server.id, (state) => upsertArchived(state, info))
+      } catch { if (!disposed) refresh(server) }
+    }
+    const loadMoreArchived = () => {
+      const servers = ctx.servers.list().flatMap((id) => { const server = ctx.servers.get(id); return server?.connected && server.compatible ? [server] : [] })
+      const loaded = servers.reduce((n, server) => n + (archives.get(server.id)?.rows.length ?? 0), 0)
+      const step = moreStep(Math.min(untrack(archiveLimit), loaded), loaded, servers.some((server) => archives.get(server.id)?.more))
+      if (step) setArchiveLimit((n) => n + step)
+      for (const server of servers) {
+        const state = archives.get(server.id)
+        if (state?.error) archives.set(server.id, { ...state, error: undefined })
+        fill(server)
+      }
+      changed()
+    }
+    // The host's archive UI went away (or the option changed): the group is back, so it loads what it missed.
+    createEffect(() => {
+      if (groupDown()) return
+      untrack(() => { for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected && server.compatible) fill(server) } })
+    })
     const closeTabs = (server: string, id: string) => {
       for (const tab of ctx.tabs.list()) if (tab.session?.server.id === server && tab.session.id === id) ctx.tabs.close(tab.key)
     }
@@ -102,11 +179,11 @@ export default Plugin.define({
       if (actionKeys.has(key)) return
       actionKeys.add(key)
       try {
-        await setArchived(server, id, archived, ctx.signal)
+        const info = await setArchived(server, id, archived, ctx.signal)
         if (disposed) return
         if (archived) { remove(server.id, id); clearWoke(server.id, id); closeTabs(server.id, id) }
         else ctx.tabs.open({ server: server.id, id }, { focus: true })
-        await refresh(server)
+        showApplied(server.id, (state) => upsertArchived(state, info))
       } catch (cause) { error(cause) }
       finally { actionKeys.delete(key) }
     }
@@ -223,7 +300,7 @@ export default Plugin.define({
         clearWoke(server.id, id)
         hiddenSnoozes.delete(key)
         closeTabs(server.id, id)
-        await refresh(server)
+        showApplied(server.id, (state) => dropArchived(state, id))
       } catch (cause) { error(cause) }
       finally { actionKeys.delete(key) }
     }
@@ -256,13 +333,13 @@ export default Plugin.define({
       const session = currentSession()
       if (session) return snooze(session)
     } }))
-    ctx.add(Command, (): Command => ({ id: "archive", title: "Archive session", section: "session", enabled: !!currentSession(), run: async () => {
+    ctx.add(Command, (): Command => ({ id: "archive", title: "Archive session", section: "session", enabled: !!currentSession() && !actionsDown(), run: async () => {
       const session = currentSession()
       if (session) await archiveAction(session.server, session.id, true)
     } }))
-    ctx.add(Command, { id: "refresh", title: "Refresh archived sessions", run: () => {
-      for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected) void refresh(server) }
-    } })
+    ctx.add(Command, (): Command => ({ id: "refresh", title: "Refresh archived sessions", enabled: !groupDown(), run: () => {
+      for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected && server.compatible) refresh(server) }
+    } }))
     createEffect(() => {
       const tabs = ctx.tabs.list()
       for (const entry of entries()) {
@@ -294,10 +371,10 @@ export default Plugin.define({
           for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
         }
         const off = [
-          data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void refresh(server) }),
-          data.on("session.unarchived", () => void refresh(server)),
-          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void refresh(server) }),
-          data.on("session.renamed", () => void refresh(server)),
+          data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void settle(server, e.data.sessionID) }),
+          data.on("session.unarchived", (e) => showApplied(id, (state) => dropArchived(state, e.data.sessionID))),
+          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); showApplied(id, (state) => dropArchived(state, e.data.sessionID)) }),
+          data.on("session.renamed", (e) => { if (archives.get(id)?.rows.some((row) => row.id === e.data.sessionID)) void settle(server, e.data.sessionID) }),
           data.on("session.execution.started", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("session.execution.succeeded", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("session.execution.failed", (e) => wakeEvent(e.data.sessionID, e.created)),
@@ -306,55 +383,83 @@ export default Plugin.define({
           data.on("form.created", (e) => wakeEvent(e.data.form.sessionID, e.created)),
         ]
         subscriptions.set(id, { data, off })
-        untrack(() => { void refresh(server); entries().filter((e) => e.server === id).forEach((e) => void reconcile(e)) })
+        untrack(() => { refresh(server); entries().filter((e) => e.server === id).forEach((e) => void reconcile(e)) })
       }
       changed()
     })
-    createEffect(() => {
-      revision()
+    // Own effect: the clock ticks and the snooze list changes here without rebuilding the Archived window.
+    const snoozedState = createMemo((): GroupState => {
+      tick()
       const ids = ctx.servers.list()
       const snoozes = entries().filter((entry) => ids.includes(entry.server))
-      const rows = ids.flatMap((id) => (archives.get(id)?.rows ?? []).map((info) => ({
+      const snoozeShown = snoozeLimit()
+      const snoozeStep = moreStep(Math.min(snoozeShown, snoozes.length), snoozes.length, false)
+      return { count: snoozes.length, more: snoozeStep ? { label: moreLabel(snoozeStep), run: () => setSnoozeLimit((n) => n + snoozeStep) } : undefined, rows: snoozes.slice(0, snoozeShown).map((entry) => ({
+        key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
+        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), project: repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), until: formatRemaining(entry.until, Date.now()), detail: `Wakes ${formatWake(entry.until, Date.now())} (${zoneLabel(entry.until)}) · device-local`, action: "Wake", run: () => wake(entry, true),
+        menu: [
+          { label: "Wake", run: () => wake(entry, true) },
+          ...(actionsDown() ? [] : [{ label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) }]),
+          "separator" as const,
+          { label: labels.delete, danger: true, run: () => runAction("delete", { server: entry.server, id: entry.id }) },
+        ],
+      })) }
+    })
+    createKeyed(snoozedState, (state) => sidebar.snoozed(state))
+    const archivedState = createMemo((): { hidden: boolean; why: string[]; group: GroupState } => {
+      revision()
+      const ids = ctx.servers.list()
+      const archiveShown = archiveLimit()
+      // Only the window is turned into rows: the DOM and the work stay proportional to what is visible, not to the archive.
+      const rows = firstOf(ids.map((id) => ({ id, rows: archives.get(id)?.rows ?? [] })), archiveShown).map(({ server: id, row: info }) => ({
         key: sessionKey(id, info.id), title: info.title ?? "Session", project: repoLabel(id, info), detail: `${ctx.servers.get(id)?.name ?? id} · ${info.location.directory}`,
         avatar: avatarOf(id, info), action: "Restore", activeAt: archivedActivity(info.time),
         // Reading an archived session does not unarchive it; only Restore does.
         open: () => openInCurrentTab(document, id, info.id),
-        active: ctx.sessions.current()?.server.id === id && ctx.sessions.current()?.id === info.id,
+        active: () => ctx.sessions.current()?.server.id === id && ctx.sessions.current()?.id === info.id,
         run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) },
         menu: [
           { label: "Restore", run: () => { const server = ctx.servers.get(id); if (server) void archiveAction(server, info.id, false) } },
           "separator" as const,
           { label: labels.delete, danger: true, run: () => { const server = ctx.servers.get(id); if (server) void deleteAction(server, info.id) } },
         ],
-      })))
+      }))
       const errors = ids.flatMap((id) => {
         const server = ctx.servers.get(id)
         const state = archives.get(id)
         return !server?.connected ? [`${server?.name ?? id}: offline`] : !server.compatible ? [`${server.name}: incompatible server version`] : state?.error ? [`${server.name}: ${state.error}`] : []
       })
-      const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.complete && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
-      sidebar.update({ count: snoozes.length, rows: snoozes.map((entry) => ({
-        key: sessionKey(entry.server, entry.id), title: ctx.servers.get(entry.server)?.data.session.get(entry.id)?.title ?? entry.title,
-        avatar: avatarOf(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), project: repoLabel(entry.server, ctx.servers.get(entry.server)?.data.session.get(entry.id), entry.title), until: formatRemaining(entry.until, Date.now()), detail: `Wakes ${formatWake(entry.until, Date.now())} (${zoneLabel(entry.until)}) · device-local`, action: "Wake", run: () => wake(entry, true),
-        menu: [
-          { label: "Wake", run: () => wake(entry, true) },
-          { label: labels.archive, run: () => runAction("archive", { server: entry.server, id: entry.id }) },
-          "separator" as const,
-          { label: labels.delete, danger: true, run: () => runAction("delete", { server: entry.server, id: entry.id }) },
-        ],
-      })) }, { rows, count: complete ? rows.length : undefined, status: errors.length ? errors.join("; ") : complete ? undefined : "Loading complete archived history…" })
+      const complete = ids.length > 0 && ids.every((id) => archives.get(id)?.loaded && ctx.servers.get(id)?.connected && ctx.servers.get(id)?.compatible)
+      const states = ids.map((id) => archives.get(id)).filter((state): state is ArchivePage => !!state)
+      const archivedLoaded = states.reduce((n, state) => n + state.rows.length, 0)
+      const archivedStep = moreStep(rows.length, archivedLoaded, states.some((state) => state.more))
+      return { hidden: groupDown(), why: guard.reasons(), group: {
+        rows, count: null,
+        more: archivedStep ? { label: moreLabel(archivedStep), busy: states.some((state) => state.busy && state.loaded && !state.stale), run: loadMoreArchived } : undefined,
+        status: errors.length ? errors.join("; ") : complete ? undefined : "Loading archived sessions…",
+      } }
+    })
+    createKeyed(archivedState, ({ hidden, why, group }) => {
+      sidebar.archiveUi(hidden, why)
+      sidebar.archived(group)
+      guard.recheck()
     })
     const tabInfo = (key: string) => {
       const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
       if (!session) return
-      return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending, archived: session.server.data.session.get(session.id)?.time?.archived !== undefined }
+      return { target: { server: session.server.id, id: session.id }, title: session.server.data.session.get(session.id)?.title ?? "", disabled: !!session.pending || actionsDown(), archived: !groupDown() && session.server.data.session.get(session.id)?.time?.archived !== undefined }
     }
     const archivedClosing = new Map<string, number>()
+    onCleanup(() => {
+      archivedClosing.forEach((id) => window.clearTimeout(id))
+      archivedClosing.clear()
+    })
     const isViewed = (tab: { key: string; active?: boolean; session?: { server: { id: string }; id: string } }) => {
       const viewing = ctx.sessions.current()
       return !!tab.active || !!(viewing && tab.session && viewing.server.id === tab.session.server.id && viewing.id === tab.session.id)
     }
     const sweepArchivedTabs = () => {
+      if (groupDown()) return
       for (const tab of untrack(() => ctx.tabs.list())) {
         const archived = tab.session?.server.data.session.get(tab.session.id)?.time?.archived !== undefined
         if (archived && !isViewed(tab) && !archivedClosing.has(tab.key)) {
@@ -367,12 +472,12 @@ export default Plugin.define({
       }
     }
     const scheduleArchivedTabSweep = () => { untrack(sweepArchivedTabs) }
-    const tabActions = createTabActions(document, host, requestAnimationFrame, cancelAnimationFrame, tabInfo, { run: runAction })
+    const tabActions = createTabActions(hub, host, tabInfo, { run: runAction })
     const menuSession = (server: ServerRef, id: string, pending = false) => {
       const info = server.data.session.get(id)
       return { target: { server: server.id, id }, disabled: pending, archived: info?.time?.archived !== undefined, subagent: !!info?.parentID }
     }
-    const sessionMenus = createSessionMenus(document, {
+    createSessionMenus(document, hub, {
       tab(key) {
         const session = ctx.tabs.list().find((tab) => tab.key === key)?.session
         return session ? menuSession(session.server, session.id, !!session.pending) : undefined
@@ -391,10 +496,11 @@ export default Plugin.define({
       const server = ctx.servers.get(target.server)
       if (!server) return []
       return presetLines((until) => void snooze({ id: target.id, server }, until), () => void snooze({ id: target.id, server }, "custom"))
-    })
-    const wokeMarks = createWokeMarks(document, requestAnimationFrame, cancelAnimationFrame, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
+    }, { archive: () => !actionsDown(), native: guard.menu })
+    const wokeMarks = createWokeMarks(document, hub, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
     createEffect(() => {
       for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
+      groupDown(); actionsDown()
       // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
       // while viewed and close it (it stays in Recently closed) once the user has moved on. Closing is deferred and
       // re-checked so a tab that is mid-navigation, or about to be viewed again, is never closed under the user.
@@ -406,31 +512,56 @@ export default Plugin.define({
       ctx.tabs.list()
       wokeMarks.sync()
     })
-    const recheck = () => {
-      changed()
+    // Deadlines are checked on every tick. Events keep every connected snooze current, so the server is asked again
+    // only after a stretch when events may have been missed: the window was away, or the timer was suspended (sleep).
+    const RELABEL = 30_000
+    const AWAY = 60_000
+    // setTimeout keeps a 32-bit delay.
+    const LONGEST = 2 ** 31 - 1
+    let awaySince: number | undefined
+    const recheck = (reconcileAll: boolean) => {
+      if (!entries().length) return
+      setTick((n) => n + 1)
       for (const entry of entries()) {
         if (entry.until <= Date.now()) wake(entry)
-        else void reconcile(entry)
+        else if (reconcileAll) void reconcile(entry)
       }
     }
-    const timer = window.setInterval(recheck, 30_000)
+    const resume = () => {
+      const missed = awaySince !== undefined && Date.now() - awaySince >= AWAY
+      awaySince = undefined
+      recheck(missed)
+    }
+    // No polling. One timeout waits for the nearest deadline, and none exists while nothing is snoozed. Events keep every
+    // connected snooze current; the server is asked again only when this fires long after it was due (the machine slept).
+    const nextDeadline = createMemo(() => entries().reduce<number | undefined>((soonest, entry) => soonest === undefined ? entry.until : Math.min(soonest, entry.until), undefined))
+    const [rearm, setRearm] = createSignal(0)
+    createKeyed(() => { const at = nextDeadline(); return at === undefined ? undefined : { at, rearm: rearm() } }, ({ at }) => {
+      const timer = window.setTimeout(() => {
+        const late = Date.now() - at > AWAY
+        if (late || at <= Date.now()) recheck(late)
+        else setRearm((n) => n + 1)
+      }, Math.min(Math.max(0, at - Date.now()), LONGEST))
+      onCleanup(() => window.clearTimeout(timer))
+    }, { equals: (previous, next) => previous.at === next.at && previous.rearm === next.rearm })
+    // "in 2h 5m" is current only while the Snoozed group is open and looked at.
+    createKeyed(() => snoozedOpen() && entries().length > 0, () => {
+      const timer = window.setInterval(() => setTick((n) => n + 1), RELABEL)
+      onCleanup(() => window.clearInterval(timer))
+    })
     // Sleep, resume and clock or time zone changes: the absolute deadline is re-read as soon as the window is back.
-    const visible = () => { if (document.visibilityState !== "hidden") recheck() }
+    const visible = () => {
+      if (document.visibilityState === "hidden") awaySince ??= Date.now()
+      else resume()
+    }
+    const blurred = () => { awaySince ??= Date.now() }
     document.addEventListener("visibilitychange", visible)
-    window.addEventListener("focus", recheck)
+    onCleanup(() => document.removeEventListener("visibilitychange", visible))
+    window.addEventListener("focus", resume)
+    onCleanup(() => window.removeEventListener("focus", resume))
+    window.addEventListener("blur", blurred)
+    onCleanup(() => window.removeEventListener("blur", blurred))
     // Hydrated snoozes keep working even when no session tabs are open.
     for (const entry of entries()) if (entry.until <= Date.now()) wake(entry)
-    return () => {
-      disposed = true
-      clearInterval(timer)
-      document.removeEventListener("visibilitychange", visible)
-      window.removeEventListener("focus", recheck)
-      subscriptions.forEach((sub) => sub.off.forEach((off) => off()))
-      subscriptions.clear()
-      sidebar.dispose()
-      tabActions.dispose()
-      wokeMarks.dispose()
-      sessionMenus.dispose()
-    }
   },
 })

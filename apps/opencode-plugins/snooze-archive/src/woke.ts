@@ -1,4 +1,6 @@
+import { onCleanup } from "solid-js"
 import type { Target } from "./actions"
+import { elementsChanged, type DomHub } from "./hub"
 
 export const WOKE_LABEL = "Woke from snooze"
 // Entries are only inert keys; the cap bounds a store that a deleted-while-closed session can never prune.
@@ -14,7 +16,8 @@ export const withoutWoke = (list: readonly Target[], server: string, id: string)
 // dot. A pending approval or question (`data-status="attention"`) still wins: it needs an answer, the clock only a look.
 // The mark is a sibling of the host's `tab-status` (which is aria-hidden) so it can carry a label; positioning, the
 // hover swap for the close button and the title fade are copied from the host's own rules. The orange is the host's
-// `--v2-orange-800`; the title fade comes from the sidebar-repos link mask, which lists `data-sa-woke`.
+// `--v2-orange-800`. While the clock shows it owns the slot: sidebar-repos' last-activity label (`data-sidebar-time`, same
+// slot) is hidden and the title fade falls back to the host's 30px, as for any status mark. The title fade comes from the sidebar-repos link mask, which lists `data-sa-woke`.
 const NS = "http://www.w3.org/2000/svg"
 
 function markNode(doc: Document) {
@@ -33,8 +36,9 @@ function markNode(doc: Document) {
   return mark
 }
 
-export function createWokeMarks(doc: Document, schedule: (fn: () => void) => number, cancel: (id: number) => void, target: (key: string) => Target | undefined, woke: (target: Target) => boolean) {
+export function createWokeMarks(doc: Document, hub: DomHub, target: (key: string) => Target | undefined, woke: (target: Target) => boolean) {
   const marked = new Set<HTMLElement>()
+  onCleanup(() => { for (const tab of [...marked]) clear(tab) })
   const clear = (tab: HTMLElement) => {
     tab.removeAttribute("data-sa-woke")
     tab.querySelector("[data-sa-woke-mark]")?.remove()
@@ -42,7 +46,7 @@ export function createWokeMarks(doc: Document, schedule: (fn: () => void) => num
   }
   const sync = () => {
     const live = new Set<HTMLElement>()
-    for (const host of doc.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]')) {
+    for (const host of hub.sidebar()?.querySelectorAll<HTMLElement>('[data-slot="vertical-tabs"] [data-tab-key]') ?? []) {
       const key = host.dataset.tabKey
       const session = key ? target(key) : undefined
       const tab = host.querySelector<HTMLElement>("[data-titlebar-tab]")
@@ -55,24 +59,9 @@ export function createWokeMarks(doc: Document, schedule: (fn: () => void) => num
     }
     for (const tab of marked) if (!live.has(tab)) clear(tab)
   }
-  let frame: number | undefined
-  const queue = () => { if (frame === undefined) frame = schedule(() => { frame = undefined; sync() }) }
-  // Tab rows only: the session timeline mutates on every scroll and streamed delta and holds none of them.
-  const ROWS = "[data-tab-key], [data-titlebar-tab-list], [data-titlebar-tab], [data-slot='vertical-tabs-scroll']"
-  const nearRows = (r: MutationRecord) => !!(r.target as Element).closest?.(ROWS) || [...r.addedNodes].some((n) => n.nodeType === 1 && ((n as Element).matches(ROWS) || !!(n as Element).querySelector(ROWS)))
-  const observer = new doc.defaultView!.MutationObserver((records) => {
-    if (records.some((r) => nearRows(r) && !(r.target as Element).closest?.("[data-sa-woke-mark]") && (r.type === "attributes" || [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1 && !(n as Element).matches("[data-sa-woke-mark]"))))) queue()
-  })
-  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tab-key"] })
+  hub.watch((record) => record.type === "attributes" ? record.attributeName === "data-tab-key" : elementsChanged(record), sync)
   sync()
-  return {
-    sync,
-    dispose() {
-      observer.disconnect()
-      if (frame !== undefined) cancel(frame)
-      for (const tab of [...marked]) clear(tab)
-    },
-  }
+  return { sync }
 }
 
 export const wokeCss = `
@@ -80,4 +69,6 @@ export const wokeCss = `
 [data-titlebar-tab][data-sa-woke]:not([data-status="attention"], [data-active="true"]) [data-sa-woke-mark] { display: grid; }
 [data-titlebar-tab][data-sa-woke]:not([data-status="attention"], [data-active="true"]) [data-slot="tab-status"] { display: none; }
 [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-sa-woke-mark] { opacity: 0; }
+[data-titlebar-tab][data-orientation="vertical"][data-sa-woke]:not([data-status="attention"], [data-active="true"]) [data-sidebar-time] { display: none; }
+[data-titlebar-tab][data-orientation="vertical"][data-sa-woke]:not([data-status="attention"], [data-active="true"]):not(:hover):not(:has(:focus-visible)) { --sidebar-fade: 30px; }
 `

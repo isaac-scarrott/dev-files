@@ -1,14 +1,10 @@
-import type { Row } from "./target"
-
 /** What a tick needs to know about its prompt and the reply that followed it. */
 export type Prompt = {
   readonly id: string
   /** The prompt as one line of plain text. */
   readonly title: string
-  /** The start of the reply as plain text; absent when nothing has been said. */
+  /** The turn's final assistant text as plain text; absent when it has none. */
   readonly snippet?: string
-  /** The reply is still streaming and has no text yet. */
-  readonly working: boolean
 }
 
 export type Message = {
@@ -29,96 +25,26 @@ export const ITEM_SPACING = 8
 export const MIN_ITEMS = 2
 /** The rail never grows past the window height minus this (t3-code's `calc(100vh - 18rem)`), whatever else is on screen. */
 export const MAX_HEIGHT_CSS = "calc(100vh - 18rem)"
-/** Index distances beyond this from the pointer are drawn at rest. */
-export const FISHEYE_REACH = 2
 export const TITLE_LIMIT = 200
-export const SNIPPET_LIMIT = 240
+/** Markdown is parsed from this many characters of the reply (t3-code: 1,500, "bound parsing work while long responses stream"). */
+export const SNIPPET_SOURCE = 1500
+/** t3-code's `maxUserTurns`: the prompts a thread holds when it first opens. */
+export const INITIAL_PROMPTS = 10
+/** t3-code's `OLDER_THREAD_USER_TURN_LIMIT`: the most a page of earlier history adds to the rail. */
+export const PAGE_PROMPTS = 20
+/** What a prompt without text is called. */
+export const EMPTY_TITLE = "User message"
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim()
 
-function snippetOf(text: string): string {
-  const plain = stripMarkdown(text)
-
-  return plain.length > SNIPPET_LIMIT ? `${plain.slice(0, SNIPPET_LIMIT)}…` : plain
-}
-
-/**
- * Text-keyed results kept across `prompts` runs. The list is rebuilt on every store write, and while a reply streams
- * that is every delta: without this, each one re-runs the regexes over every reply of the conversation. Two
- * generations, so only text seen by the latest run survives and the cache never outgrows the conversation.
- */
-export type PromptCache = {
-  readonly line: (text: string) => string
-  readonly snippet: (text: string) => string
-  /** Call once per run, after the last lookup. */
-  readonly sweep: () => void
-}
-
-export function createPromptCache(): PromptCache {
-  const make = (compute: (text: string) => string) => {
-    let previous = new Map<string, string>()
-    let current = new Map<string, string>()
-
-    return {
-      get(text: string) {
-        let value = current.get(text) ?? previous.get(text)
-
-        if (value === undefined) value = compute(text)
-        current.set(text, value)
-
-        return value
-      },
-      sweep() {
-        previous = current
-        current = new Map()
-      },
-    }
-  }
-  const lines = make(collapse)
-  const snippets = make(snippetOf)
-
-  return {
-    line: lines.get,
-    snippet: snippets.get,
-    sweep() {
-      lines.sweep()
-      snippets.sweep()
-    },
-  }
-}
-
-const caches = new Map<string, PromptCache>()
-const KEPT_SESSIONS = 6
-
-/** The session's cache, kept past the rail that made it: the rail remounts on every switch back and would re-strip every reply. */
-export function promptCacheFor(sessionID: string): PromptCache {
-  let cache = caches.get(sessionID)
-
-  if (cache) caches.delete(sessionID)
-  else cache = createPromptCache()
-  caches.set(sessionID, cache)
-
-  for (const [id] of caches) {
-    if (caches.size <= KEPT_SESSIONS) break
-    caches.delete(id)
-  }
-
-  return cache
-}
-
-const uncached: PromptCache = { line: collapse, snippet: snippetOf, sweep: () => undefined }
-
-/** The prompt's one-line label: its display text, else what it attached. */
-export function promptLabel(message: Message, line: (text: string) => string = collapse): string {
+/** The prompt's one-line label: its display text, else its text, else "User message" (t3-code's wording). */
+export function promptLabel(message: Message): string {
   const display = message.metadata?.displayText
-  const text = line(typeof display === "string" && display ? display : (message.text ?? ""))
+  const text = collapse(typeof display === "string" && display ? display : (message.text ?? ""))
 
-  if (text) return text.length > TITLE_LIMIT ? `${text.slice(0, TITLE_LIMIT)}…` : text
-  const files = (message.files ?? []).map((file) => (file.mime.startsWith("image/") ? "[image]" : `[${file.name ?? "file"}]`))
-  const agents = (message.agents ?? []).map((agent) => `@${agent.name}`)
-  const parts = [...files, ...agents]
+  if (!text) return EMPTY_TITLE
 
-  return parts.length ? parts.slice(0, 3).join(" ") : "(empty prompt)"
+  return text.length > TITLE_LIMIT ? `${text.slice(0, TITLE_LIMIT)}…` : text
 }
 
 /** Markdown to the plain text a snippet shows: fences, headings, emphasis, links, lists and tables fall away. */
@@ -142,40 +68,87 @@ export function stripMarkdown(text: string): string {
   )
 }
 
+/** The metadata key orchestrator-tools sets on a message another session sent: such a message is not the user's prompt. */
+export const PEER_KEY = "peerMessage"
+
+const isPrompt = (message: Message) => message.type === "user" && message.metadata?.[PEER_KEY] === undefined
+
+/** The user's own prompts the host lists, and only those before a pending revert. Peer messages are not prompts. */
+export function loadedIds(messages: readonly Message[], revertMessageID?: string): string[] {
+  const out: string[] = []
+
+  for (const message of messages) {
+    if (isPrompt(message) && !(revertMessageID && message.id >= revertMessageID)) out.push(message.id)
+  }
+
+  return out
+}
+
+/** A reply's text as the plain text a card shows: its text parts, the first `SNIPPET_SOURCE` characters, markdown stripped. */
+function snippetOf(reply: Message): string | undefined {
+  const text = (reply.content ?? []).flatMap((part) => (part.type === "text" && part.text ? [part.text] : [])).join("\n")
+
+  return (text.trim() ? stripMarkdown(text.slice(0, SNIPPET_SOURCE)) : "") || undefined
+}
+
 /**
- * The prompts the rail shows, in order, with the start of each reply. Candidates follow the host's
- * `visibleUserMessages`: user messages, and only those before a pending revert.
+ * The prompts the rail shows, in order, from `since` on (the whole list when absent), each with the turn's final
+ * assistant text: t3-code's `resolveFinalAssistantTextForTurn`, the last assistant message before the next prompt.
  */
-export function prompts(messages: readonly Message[], revertMessageID?: string, cache: PromptCache = uncached): Prompt[] {
+export function prompts(messages: readonly Message[], revertMessageID?: string, since?: string): Prompt[] {
   const out: Prompt[] = []
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!
 
-    if (message.type !== "user" || (revertMessageID && message.id >= revertMessageID)) continue
-    let snippet: string | undefined
-    let working = false
+    if (!isPrompt(message) || (revertMessageID && message.id >= revertMessageID)) continue
+
+    if (since && message.id < since) continue
+    let last: Message | undefined
 
     for (let next = index + 1; next < messages.length && messages[next]!.type !== "user"; next += 1) {
-      const reply = messages[next]!
-
-      if (reply.type !== "assistant") continue
-      const text = reply.content?.find((part) => part.type === "text" && part.text?.trim())?.text
-
-      if (text) {
-        snippet = cache.snippet(text)
-        break
-      }
-
-      if (reply.time?.completed === undefined && !reply.error) working = true
+      if (messages[next]!.type === "assistant") last = messages[next]
     }
-    const title = promptLabel(message, cache.line)
-    out.push({ id: message.id, title, snippet, working: !snippet && working })
+    const reply = last
+    let snippet: string | undefined | null = null
+
+    out.push({
+      id: message.id,
+      title: promptLabel(message),
+      // Read only when a card shows it: markdown stripping is the costly part of building a prompt.
+      get snippet() {
+        if (snippet === null) snippet = reply ? snippetOf(reply) : undefined
+
+        return snippet
+      },
+    })
   }
 
-  cache.sweep()
-
   return out
+}
+
+/**
+ * The prompts the rail covers, as t3-code's thread window: the newest `INITIAL_PROMPTS` when a thread first shows,
+ * and, when the user has asked for earlier history and a page lands above the window, that page (at most
+ * `PAGE_PROMPTS`) joins it. A page the host loads on its own, before the user touched the timeline, does not: the
+ * host fetches a second page a moment after the first, and a rail that grew with it would load in before the user's
+ * eyes. New prompts at the end join as they arrive. `from` is the window's oldest prompt; `loaded` is the host's list.
+ */
+export type PromptWindow = { readonly from: string; readonly loaded: readonly string[] }
+
+export function promptWindow(previous: PromptWindow | undefined, loaded: readonly string[], asked = true): PromptWindow | undefined {
+  if (loaded.length === 0) return undefined
+
+  if (!previous) return { from: loaded[Math.max(0, loaded.length - INITIAL_PROMPTS)]!, loaded }
+  const head = previous.loaded[0]
+  const added = !asked || head === undefined ? 0 : loaded.indexOf(head)
+  const kept = loaded.indexOf(previous.from)
+  // A prompt that left the list (a revert) hands the window's edge to the next one still listed.
+  const edge = kept !== -1 ? kept : loaded.findIndex((id) => id > previous.from)
+
+  if (edge === -1) return { from: loaded[Math.max(0, loaded.length - INITIAL_PROMPTS)]!, loaded }
+
+  return { from: loaded[Math.max(0, edge - (added > 0 ? Math.min(added, PAGE_PROMPTS) : 0))]!, loaded }
 }
 
 /** The rail strip's height: one `ITEM_SPACING` per gap, capped by the window, never negative. Ticks overlap beyond the cap. */
@@ -199,35 +172,4 @@ export function indexFromPointer(input: { count: number; top: number; height: nu
   const progress = Math.min(1, Math.max(0, (input.y - input.top) / input.height))
 
   return Math.round(progress * (input.count - 1))
-}
-
-/** The ticks whose look depends on an active index: the active one and the neighbours the fisheye reaches. */
-export function fisheyeBand(active: number | undefined, count: number): readonly [number, number] | undefined {
-  if (active === undefined || active < 0 || active >= count) return undefined
-
-  return [Math.max(0, active - FISHEYE_REACH), Math.min(count - 1, active + FISHEYE_REACH)]
-}
-
-/**
- * The prompts whose turns are on screen, as an inclusive index range. A row counts when it intersects `box`; its owner
- * is the prompt of its turn. Rows the host keeps mounted off screen (overscan, the last turn's final row) are ignored.
- */
-export function visibleRange(
-  indexOf: ReadonlyMap<string, number>,
-  rows: readonly Row[],
-  box: { readonly top: number; readonly bottom: number },
-): readonly [number, number] | undefined {
-  let first = Number.POSITIVE_INFINITY
-  let last = -1
-
-  for (const row of rows) {
-    if (row.bottom <= box.top || row.top >= box.bottom) continue
-    const index = indexOf.get(row.owner)
-
-    if (index === undefined) continue
-    first = Math.min(first, index)
-    last = Math.max(last, index)
-  }
-
-  return last === -1 ? undefined : [first, last]
 }

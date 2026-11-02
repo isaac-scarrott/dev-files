@@ -7,9 +7,9 @@ extracted from `app.asar` (`src/renderer/...`) and at `gui-plugins/src/...`.
 ## What it does
 
 - Press a sidebar session row (a live tab, or a snooze-archive Snoozed/Archived row) and move sideways: a chip with
-  the session's title follows the pointer and the host's own "Drop files to add" overlay rises over the session
+  the session's title follows the pointer and the host's own drop overlay (worded "Drop to attach session") rises over the session
   panel. Release inside the panel: a native "Session" chip (title, speech-bubble icon) joins the composer's context
-  row and the prompt takes focus. Release anywhere else, or press Esc: the chip fades out and nothing changes.
+  row and the prompt takes focus. Release anywhere else, or press Esc: the chip disappears and nothing changes.
 - A vertical move is the host's reorder, untouched. A plain click still switches sessions.
 - The chip is a `ComposerNote`: it persists in the session's draft, has the host's remove control, and clicking it
   opens the referenced session (`LinkHandler` → `ctx.tabs.open`).
@@ -84,10 +84,15 @@ route and the explicit id in the prompt.
   rgba(0,0,0,.1), radius 6px, background rgb(243,243,243), colour rgb(23,23,23), gap 8px, height 29.5px; icon 14×14
   rgb(128,128,128)).
 - Overlay and chip are the host's own: the overlay is triggered, not reproduced; the chip is the host's note tile.
-- Motion: enter `opacity 0→1`, `scale .97→1`, 120ms `cubic-bezier(0.23, 1, 0.32, 1)` from a painted first frame
-  (`data-state` enter → active on the next frame); cancel fades opacity out (removed on `transitionend`, 200ms
-  fallback); a drop removes the ghost at once, as the host's file drop and dnd-kit's no-drop-animation do. Only
-  `transform`, `opacity` and `scale` animate. `prefers-reduced-motion: reduce`: scale dropped, opacity kept (CSS only).
+- Motion: none. The ghost appears on the first frame of the drag and is removed in one frame on drop, cancel and Esc.
+  Only its `transform` is written (the pointer position).
+
+## Decisions
+
+- **No enter or exit animation on the ghost = the host's (decided by the user).** The host's file-row drag image is an OS
+  drag image (`setDragImage(image, 0, 12)`): the system draws it at once and removes it at once, with no enter or exit
+  animation. The earlier 120ms `opacity`/`scale .97→1` entrance and the cancel fade were removed. The host's drop overlay
+  does fade (200ms, `transition-opacity duration-200`); the plugin only triggers it and does not restyle it.
 
 ## Rejected
 
@@ -110,20 +115,51 @@ seeded sessions, side-tabs layout):
 | Check | Result |
 | --- | --- |
 | Press, 2px move | no ghost, no navigation |
-| 8px sideways | ghost enter→active next frame (opacity 0→0.94→1), host overlay `data-visible=true` "Drop files to add", active tab unchanged |
+| 8px sideways | ghost enter→active next frame (opacity 0→0.94→1), host overlay `data-visible=true` "Drop to attach session", active tab unchanged |
 | Release over composer | ghost gone at once, overlay cleared, "Billing export job / Session" chip in context row, prompt focused |
 | Vertical drag of last row | dnd-kit overlay row shown, order changed, dragged row became active at the 6px point (as native) |
 | Plain click on titled inactive row | no switch during a 400ms hold; switch 7ms after release (native: on press) |
 | Plain click on draft row (no session) | switch on press, 9ms (untouched) |
 | Release over sidebar | ghost + overlay during, nothing attached after |
-| Esc mid-drag | ghost `leave` at 30ms, gone by 330ms, following release attaches nothing |
+| Esc mid-drag | ghost removed at once (earlier design: `leave` fade, measured live before the change), following release attaches nothing |
 | Archived row (snooze-archive) | ghost, overlay, chip count +1; plain click still reopens the session |
 | Palette "Reference session…" | select dialog lists the other session with its directory; Enter attaches the chip |
-| Reduced motion (emulated) | scale stays 1, opacity fades over 120ms; Esc removal was instant under the earlier JS branch, now the same fade as unreduced (CSS-only, unit/CSS verified after the change, not re-run live) |
+| Reduced motion | nothing animates, so no branch |
 
 ## Known deltas from native
 
 - A plain click on an inactive live tab switches on release instead of on press, because the host's `mousedown`
   navigation is held until the gesture is known. Press-and-hold without moving does not switch.
 - Native file drops are accepted anywhere in the document; this drop counts only inside a session panel.
-- The host's overlay says "Drop files to add" for any text drag; the plugin cannot change its label.
+- The host's overlay says "Drop files to add" (or images/PDFs) for any text drag. While our drag is active the plugin
+  words it "Drop to attach session" instead, by CSS only: `html[data-session-drag-label]` collapses the host label
+  (`[data-slot="session-dropzone-content"] > div:not([data-slot])`, the div after the upload icon) to `font-size: 0;
+  line-height: 0` and draws ours in its `::after` as a 24px 15px block, inheriting the host's weight and colour. Solid
+  keeps owning the text node, so reactive label updates cannot undo it. The attribute is set on drag start and removed
+  200ms after it ends (the overlay's fade-out, so the old wording never flashes back), at once on uninstall. Real file
+  drags and other text drags never set it and keep the host wording. Live (harness, overlay lit by a text `dragover`,
+  attribute toggled): host label box 641,486 117.7x24 -> ours 619.8,486 160.4x24 (same y and height, centre 700),
+  upload icon unmoved, 15px/530/24px, same colour and family; removing the attribute restored the exact original
+  boxes. The gesture wiring (set/hold/restore across drop, release outside, Esc, pointercancel, blur, uninstall,
+  foreign drags) is covered by unit tests; the full pointer gesture was not re-run live (side-tabs layout not set up).
+
+## Decisions
+
+- **Pointer hooks on sidebar rows** are DOM: the host blocks HTML drag and drop from rows and exposes no extension point for tab rows ([host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary)). The attach itself uses public APIs (`composer.attach`, `LinkHandler`, `Command`).
+- **Swallowing the host's mousedown and replaying a synthetic one** keeps a plain click working; it can race a host update, so it is re-verified each release.
+- **`html[data-session-drag] * { cursor: default !important; user-select: none !important }`** is a universal selector, kept because it holds only for the drag's duration.
+- **Motion deviation, awaiting the user's yes**: the ghost fades and scales (`opacity`, `scale .97 to 1`, 120ms, `cubic-bezier(.23,1,.32,1)`). The host's file drag image is an OS drag image with no enter animation; nothing native to copy.
+
+## Performance
+
+Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+
+Standing cost, read from the source (not measured):
+- No observers. Window listeners are removed on cleanup; the label timer is cleared.
+- Four capture listeners on `window` (pointerdown, mousedown, pointermove, pointerup) live for the whole window, not only during a drag.
+
+| Scenario | Bare | With plugin | Delta | Bar | Result |
+| --- | --- | --- | --- | --- | --- |
+| idle | | | | zero callbacks | not measured |
+| streaming reply | | | | within 3% scripting | not measured |
+| 10 session switches | | | | within 3% scripting | not measured |
