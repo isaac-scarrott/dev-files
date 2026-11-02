@@ -4,7 +4,7 @@ The Search models dialog lists providers A to Z and, inside each, models by outp
 
 > **Credit:** the result rows and the sticky-header fade are cloned from [OpenCode](https://github.com/anomalyco/opencode)'s (MIT) own model dialog (2.2.5).
 
-![The model picker with provider sections and models sorted by price](media/demo.gif)
+![The model picker: provider sections A to Z, models sorted by price, then a search](media/demo.gif)
 
 [Full-quality video](media/demo.mp4)
 
