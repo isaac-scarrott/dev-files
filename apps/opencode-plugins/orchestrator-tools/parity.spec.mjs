@@ -43,26 +43,33 @@ const probe = (headerOnly) => `
   };`
 
 
-// Vertical rhythm of an injected row against the host's plain user bubble, probed identically on both sides: over every row of its
-// kind in the timeline, the rounded gap from the previous assistant part to the row and from the row to the next assistant part
-// (a row followed by another user message is in a run: the host's 4px TurnGap, no footer). The probe lists the distinct values; the
-// timeline is virtualised, so a pair whose neighbours are not both mounted (gap outside 0-64px) is skipped.
+// Vertical rhythm of an injected row against the host's plain user bubble, probed identically on both sides over every user row of
+// the timeline (the host's own: its row, hidden footer actions and TurnGap spacers included). Reported, as distinct rounded values:
+//   footer-to-row  the previous assistant row's bottom (its hover-only footer included) to this user row's top
+//   row-height     the user row's height, by what follows it: `end` (an assistant part) or `run` (a TurnGap and another user message)
+//   gap-below      the bubble or header's bottom to the next assistant part's top, by part kind (the part's own margin is in it)
+//   total          this user row's top to the next assistant part's top, by part kind (what the eye sees from row to text)
+//   run            this user row's top to the next user message's top (row height + the 4px TurnGap)
+// The timeline is virtualised, so a pair whose neighbours are not both mounted (a gap outside 0-120px) is skipped.
 const spacing = (which) => `
   const ours = el.matches("[data-slot=injected-head]");
-  const boxes = ours ? [...document.querySelectorAll("[data-injected-row] [data-slot=injected-head]")] : [...document.querySelectorAll("[data-timeline-row=UserMessage]:not([data-injected-host]) [data-slot=user-message-body]")];
+  const rows = [...document.querySelectorAll("[data-timeline-row=UserMessage]")].filter((row) => ours ? row.querySelector("[data-injected-row]") : !row.hasAttribute("data-injected-host"));
   const real = (n) => (getComputedStyle(n).display === "contents" ? [...n.children].flatMap(real) : [n]);
-  const edge = (key, side) => { const row = key?.querySelector("[data-timeline-row]"); if (!row) return null; const kind = row.dataset.timelineRow; if (kind === "TurnGap") return { kind }; const c = row.querySelector("[data-slot=session-turn-assistant-content]"); if (c) { const parts = [...c.children].flatMap(real); return { kind, y: (side === "top" ? parts[0] : parts.at(-1)).getBoundingClientRect()[side] }; } const v = row.querySelector("[data-injected-head], [data-slot=user-message-body]"); return { kind, y: v.getBoundingClientRect()[side] }; };
-  const out = { above: new Set(), below: new Set(), run: new Set() }, add = (set, gap) => { if (gap >= 0 && gap <= 64) set.add(Math.round(gap)); };
-  for (const box of boxes) {
-    const key = box.closest("[data-timeline-key]"), r = box.getBoundingClientRect();
-    let p = key.previousElementSibling; if (edge(p)?.kind === "TurnGap") p = p.previousElementSibling;
-    const before = edge(p, "bottom"); if (before?.kind === "AssistantPart") add(out.above, r.top - before.y);
-    const n = key.nextElementSibling, after = edge(n, "top");
-    if (after?.kind === "AssistantPart") add(out.below, after.y - r.bottom);
-    else if (after?.kind === "TurnGap") { const m = edge(n.nextElementSibling, "top"); if (m?.kind === "UserMessage") add(out.run, m.y - r.bottom); }
+  const info = (key) => { const row = key?.querySelector("[data-timeline-row]"); if (!row) return null; const kind = row.dataset.timelineRow; const c = row.querySelector("[data-slot=session-turn-assistant-content]"); const part = c?.firstElementChild ? real(c.firstElementChild)[0] : null; return { kind, row, part, comp: part?.dataset.component ?? "" }; };
+  const out = { "footer-to-row": new Set(), "row-height": new Set(), "gap-below": new Set(), total: new Set(), run: new Set() };
+  const add = (name, gap, label = "") => { if (gap >= 0 && gap <= 120) out[name].add(label + Math.round(gap)); };
+  for (const row of rows) {
+    const key = row.closest("[data-timeline-key]"), box = row.querySelector(ours ? "[data-slot=injected-head]" : "[data-slot=user-message-body]"), r = row.getBoundingClientRect();
+    if (!box) continue;
+    const b = box.getBoundingClientRect();
+    let p = key.previousElementSibling; if (info(p)?.kind === "TurnGap") p = p.previousElementSibling;
+    const before = info(p); if (before?.kind === "AssistantPart") add("footer-to-row", r.top - before.row.getBoundingClientRect().bottom + (info(key.previousElementSibling)?.kind === "TurnGap" ? 0 : 0));
+    const n = key.nextElementSibling, after = info(n);
+    if (after?.kind === "AssistantPart" && after.part) { const t = after.part.getBoundingClientRect().top; add("gap-below", t - b.bottom, after.comp + "="); add("total", t - r.top, after.comp + "="); add("row-height", r.height, "end="); }
+    else if (after?.kind === "TurnGap") { const m = info(n.nextElementSibling); if (m?.kind === "UserMessage") { add("run", m.row.getBoundingClientRect().top - r.top); add("row-height", r.height, "run="); } }
   }
   const pick = ${JSON.stringify(which)};
-  return pick.map((k) => k + "=" + [...out[k]].sort((a, b) => a - b).join(",")).join(" ");`
+  return pick.map((k) => k + ":" + [...out[k]].sort().join(",")).join(" ");`
 
 // What the host's subagent row measures (2.2.5, harness): 8px 12px padding, 8px radius, title 13px/530, subtitle 13px/440 on 20px lines
 // that share a baseline and the row's centre, 8px between them, content starting at the 12px padding edge.
@@ -116,21 +123,25 @@ export default {
     },
     {
       // An injected message stands in a user turn, so its vertical rhythm is the host user bubble's: the same gap from the assistant part above,
-      // the same 28px (8px margin + the 20px actions footer) to the assistant part below, and in a run of user messages the 4px TurnGap
-      // between rows with no footer. Probed on every row in the timeline, the sides must list the same distinct values.
+      // the same row height (the bubble's 37px plus the 8px margin and 20px actions footer the host reserves under the last message of a run = 65px),
+      // so the same distance from the row top to the next assistant part's top, and in a run the 4px TurnGap between rows with no footer (37px).
+      // Probed on every user row in the timeline, the sides must list the same distinct values.
       name: "spacing-user-turn",
-      ours: ONE,
+      ours: HEAD,
       native: "[data-slot=user-message-body]",
       style: false,
       behaviour: [
-        { name: "gap-above-and-below", check: "scenario", steps: [], probe: spacing(["above", "below"]) },
+        { name: "footer-to-row-and-row-height", check: "scenario", steps: [], probe: spacing(["footer-to-row", "row-height"]) },
+        { name: "row-top-to-next-text", check: "scenario", steps: [], probe: spacing(["total"]) },
+        // The pill is the 36px subagent-row header against the bubble's 37px, so the visible gap under it is 1px more (the row totals above are equal).
+        { name: "gap-below-header", check: "scenario", only: "ours", steps: [], probe: spacing(["gap-below"]), expect: { result: "gap-below:text-part=53,tool-part-wrapper=29" } },
         { name: "gap-in-a-run", check: "scenario", steps: [], probe: spacing(["run"]) },
       ],
     },
     {
       // The row's left edge is the message column's: the same x as the host subagent row, which sits at the column edge in an assistant turn.
       name: "spacing-left-edge",
-      ours: ONE,
+      ours: HEAD,
       native: "[data-component=task-tool-surface]",
       style: false,
       behaviour: [{ name: "left-edge", check: "scenario", steps: [], probe: "return Math.round(el.getBoundingClientRect().left)" }],
