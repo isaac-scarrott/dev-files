@@ -29,7 +29,7 @@ start)
   # and renderer backgrounding are switched off so rAF, timers and measurements behave as if the window were visible.
   # OC_HARNESS_VISIBLE=1 restores a normal foreground window.
   before=$(aerospace list-windows --all --format '%{window-id}' 2>/dev/null | tr '\n' ' ' || true)
-  FLAGS=(--remote-debugging-port="$CDP_PORT" --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --mute-audio)
+  FLAGS=(--remote-debugging-port="$CDP_PORT" --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --mute-audio ${OC_HARNESS_INSPECT:+--inspect=$OC_HARNESS_INSPECT})
   if [ "${OC_HARNESS_VISIBLE:-}" = 1 ]; then
     OPENCODE_DESKTOP_TEST_ROOT="$ROOT" nohup "$APP" "${FLAGS[@]}" > "$ROOT/app.log" 2>&1 &
   else
