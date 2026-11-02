@@ -15,6 +15,8 @@ Start a command in the background and wake the session with its output as it hap
 - `session` can name another session to wake, but only the caller's own tree: itself, its parent, its children and descendants, sessions it created through `orchestrator-tools`, and its siblings (the `parent`/`child`/`sibling` relations `list_peers` shows, the `tree` scope of `send_message`). Anything else is rejected with an error.
 - A noisy monitor pauses with a notice after `maxEventsPerHour` lines; extra lines are counted, not shown.
 
+- In the desktop app a wake is not a raw user bubble: it is a grey row in the style of the host's subagent row with the monitor's name, what happened (`first line · N lines`, `restarted (restart 5)`, `ended`, `lost`, `paused`) and, when opened, the real output in a card below, unescaped, without the tags or the trailer. A Stop button on the row ends the monitor while it still runs. The model still receives the wrapped, escaped text.
+
 ## Context
 OpenCode's background shell only notifies when the command exits. This fills the gap for watchers, dev servers and polling loops.
 
@@ -27,7 +29,9 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/monitor"]
 ```
-Kind: server. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
+Kind: server and GUI. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
+
+The row needs the GUI export: the host decides a plugin's parts when the service starts, so a service started before this package had `./gui-experimental` shows the raw user bubble until `opencode service restart`.
 
 ## Options
 | Option | Default | |
@@ -41,6 +45,9 @@ Kind: server. Restart the background service (quit the app, then `opencode servi
 | `maxBufferBytes` | `65536` | unsent output held per monitor |
 | `killGraceSeconds` | `5` | SIGTERM to SIGKILL |
 | `logDir` | `~/.local/share/opencode/monitor` | `monitor.log` (lifecycle only, never output) |
+
+## Credits
+- [OpenCode](https://github.com/anomalyco/opencode) (MIT): the row's markup values (padding, radius, type, the trailing slot's reveal) follow the desktop app's background-subagent row, from its renderer source (2.2.5); the row itself is `native-ui`'s `InjectedMessageRow`.
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked). Design notes: [DESIGN.md](DESIGN.md).

@@ -137,6 +137,7 @@ export default {
         "row.icon.width": "same",
         "rest.icon.height": "same",
         "row.icon.height": "same",
+        "curve.width": "the same one-frame sampling phase between the two runs reads as up to 0.2px of the slot width at 0ms (it passed in some runs and not others with identical code); the per-frame easing fit in tail-hover-in-per-frame checks the width against the host curve with the phase removed",
         "curve.transform": "the slide is 4px, so a one-frame sampling phase difference between the two runs reads as up to 0.5px; the per-frame easing fit in tail-hover-in-per-frame covers the same motion with the phase removed",
         "rest.overflow": "ours clips with overflow-clip-margin so the button's 4px side padding stays visible; the host's slot holds a bare 16px icon",
         "row.overflow": "same",

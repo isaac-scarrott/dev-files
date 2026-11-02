@@ -43,18 +43,17 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
   let root!: HTMLDivElement
   let preview!: HTMLSpanElement
 
-  // The preview is laid out in both states (hidden when open), but only the closed one tells whether the text is cut off.
-  const measure = () => {
-    if (open()) return
-    setClipped(preview.scrollWidth > preview.clientWidth + 1)
+  // Only a row whose body is the preview itself needs to know whether the preview is cut off. The observer's callback runs after
+  // layout, so reading the widths there forces nothing; measuring on mount instead forced a layout per row while scrolling.
+  // The preview is laid out in both states (hidden when open), but only the closed one tells.
+  if (!props.more) {
+    const measure = () => {
+      if (!open()) setClipped(preview.scrollWidth > preview.clientWidth + 1)
+    }
+    const observer = new ResizeObserver(measure)
+    onCleanup(() => observer.disconnect())
+    queueMicrotask(() => observer.observe(preview))
   }
-  const observer = new ResizeObserver(measure)
-  onCleanup(() => observer.disconnect())
-  queueMicrotask(() => {
-    observer.observe(preview)
-    measure()
-    void document.fonts?.ready.then(measure)
-  })
 
   // The host scrolls to the bottom whenever a row resizes, which would carry the clicked header out from under the pointer.
   // Hold the header at its screen position through the change (the user's decision; the host does not do this for its own

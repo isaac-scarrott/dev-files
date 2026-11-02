@@ -8,7 +8,7 @@ type Located = { readonly id: string; readonly wake: MonitorWake; readonly sessi
 
 const css = `
 [data-monitor-block] { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-[data-monitor-block="event"] { max-height: 360px; overflow: auto; font-family: var(--v2-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); letter-spacing: 0; }
+[data-monitor-block="event"] { max-height: 360px; overflow: auto; font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); letter-spacing: 0; }
 [data-monitor-block="notice"] { color: var(--v2-text-text-muted); }
 [data-monitor-block] + [data-monitor-block] { margin-top: 8px; }
 `
