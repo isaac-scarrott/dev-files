@@ -61,6 +61,16 @@ A wake is shown as the shared injected-message row from `native-ui` (design and 
 - **Stop.** The row offers Stop only while the monitor runs. The GUI half asks the server half (`rpc.ts`: `running({ ids })`, `stop({ id, sessionID })`; ids and booleans only) when the set of monitors on screen changes; a monitor that ends sends its last message, which is when that set changes. The plugin loads once per directory and a monitor lives in the instance of the directory its session runs in, so each call carries the session's `location` (without it the call reaches the default instance, which holds none of them; found and fixed in the harness). `stop` checks the monitor belongs to the calling row's session. If the monitor is already gone the row says so in a toast.
 - **No server half, no button.** Without the RPC the row is still drawn; it just offers no Stop.
 
+## Composer chip (`src/gui.tsx`, `src/chip.ts`, `src/rpc.ts` `list`, `src/control.ts`)
+
+A "N monitors" chip in the row above the composer, from `native-ui`'s `createSessionChip` (design, host facts, motion, the Hidden setting and measurements in [native-ui DESIGN](../native-ui/DESIGN.md#composer-chips-chip-motionts-lane-chipts-lane-chip-rowstsx-session-chiptsx-chip-timets)). Decisions (user, 2026-11-02):
+
+- **Scope: aimed at the session on screen.** The server half answers `list({ sessionID })` with the monitors whose definition wakes that session, whoever started them: `id`, `name`, `state` (`running`, `waiting` between re-arms, `paused`), `events`, `maxEvents`, `expiresAt`, `nextRearmAt`. Numbers and a name only: never the command, the cwd or any output. Like the existing calls it carries the session's `location`, because a monitor lives in the plugin instance of the directory its session runs in. A client without the server half gets an empty list and shows no chip.
+- **Row text.** Name, then `3 of 50 events · re-arms in 12m · expires in 1h 5m` (`monitorStatus`): events against the cap when there is one, `re-arms in` only while waiting between runs, `paused` when the hourly cap paused it, `expires in` always. Spans round up to the minute; the popover's one timer wakes at the next change.
+- **Stop** reuses `stop({ id, sessionID })`, which refuses a session that is not the monitor's own. The row leaves at once; if the monitor was already gone a toast says so.
+- **Icon:** `outline-console`, the injected row's.
+- **No navigation:** the monitor wakes the session on screen by definition, so there is no other target to open.
+
 ## Not done
 - Renewing a TTL without starting a new monitor (decided against: the expiry wake is the prompt to start again).
 
@@ -68,3 +78,6 @@ A wake is shown as the shared injected-message row from `native-ui` (design and 
 `monitor.test.ts` uses a fake clock and fake spawn. `process.test.ts` uses real processes and checks the group kill.
 Live check (private `opencode-cli serve`, isolated XDG dirs, a harness plugin calling the registered tools): wakes land
 as user messages, `monitor.stop` ends sleeping grandchildren, SIGTERM to the server leaves no children.
+
+## Performance
+The chip adds nothing at idle (no timer, observer or request while the popover is closed) and two requests per message change; see the table in [native-ui DESIGN](../native-ui/DESIGN.md#composer-chips-harness-225-monitor--scheduler-loaded-a-session-with-a-running-subagent-a-monitor-and-a-schedule). The `gui-experimental.cjs` bundle grew from 19.1 kB to 30.5 kB.

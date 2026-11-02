@@ -1,6 +1,8 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
 import { createMemo, createSignal, For } from "solid-js"
-import { firstLine, InjectedMessageRow, injectedMessageRowCss, mountInjectedRows } from "../../native-ui/src"
+import { createSessionChip, firstLine, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
+import { monitorDeadlines, monitorStatus } from "./chip"
+import type { MonitorItem } from "./control"
 import { monitorOf, summarize, type MonitorWake } from "./parse"
 import { MonitorControl } from "./rpc"
 
@@ -20,11 +22,48 @@ export default Plugin.define({
     en: {
       stop: "Stop monitor",
       gone: "That monitor is no longer running.",
+      "chip.one": "{{count}} monitor",
+      "chip.other": "{{count}} monitors",
+      "events.one": "{{count}} event",
+      "events.other": "{{count}} events",
+      "eventsOf.other": "{{count}} of {{max}} events",
+      rearm: "re-arms in {{span}}",
+      expires: "expires in {{span}}",
+      paused: "paused",
     },
   },
   setup(ctx) {
     ctx.add(Style, injectedMessageRowCss)
     ctx.add(Style, css)
+    ctx.add(Style, laneChipCss)
+
+    // The monitors aimed at the session on screen, as a chip beside the host's own background-activity capsule.
+    const words = {
+      events: (count: number, max: number | undefined) => (max !== undefined ? ctx.t("eventsOf.other", { count: String(count), max: String(max) }) : ctx.plural("events", count)),
+      rearm: (span: string) => ctx.t("rearm", { span }),
+      expires: (span: string) => ctx.t("expires", { span }),
+      get paused() {
+        return ctx.t("paused")
+      },
+    }
+    createSessionChip<MonitorItem>(ctx, {
+      id: "monitors",
+      icon: "outline-console",
+      rowIcon: () => <ctx.ui.Icon name="outline-console" size="small" />,
+      label: (count) => ctx.plural("chip", count),
+      get actionLabel() {
+        return ctx.t("stop")
+      },
+      get gone() {
+        return ctx.t("gone")
+      },
+      load: async (session, signal) =>
+        ((await session.server.client.rpc(MonitorControl).list({ sessionID: session.id }, { signal, location: session.location })) as { items: MonitorItem[] }).items,
+      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: monitorStatus(item, now, words) })),
+      deadlines: monitorDeadlines,
+      act: async (session, item) =>
+        ((await session.server.client.rpc(MonitorControl).stop({ id: item.id, sessionID: session.id }, { location: session.location })) as { stopped: boolean }).stopped,
+    })
 
     // The same text is parsed once, not on every change of the message store.
     const parsed = new Map<string, { text: string; wake: MonitorWake | undefined }>()

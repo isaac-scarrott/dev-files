@@ -47,6 +47,7 @@ export default Plugin.define({
     const handlers = monitorControl(monitors)
     const control = await ctx.rpc.register(MonitorControl, {
       running: (input) => handlers.running(input as Parameters<typeof handlers.running>[0]),
+      list: (input) => handlers.list(input as Parameters<typeof handlers.list>[0]),
       stop: (input) => handlers.stop(input as Parameters<typeof handlers.stop>[0]),
     })
 

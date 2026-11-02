@@ -44,6 +44,7 @@ export default Plugin.define({
         const handlers = monitorControl(monitors);
         const control = await ctx.rpc.register(MonitorControl, {
             running: (input) => handlers.running(input),
+            list: (input) => handlers.list(input),
             stop: (input) => handlers.stop(input),
         });
         const abort = new AbortController();

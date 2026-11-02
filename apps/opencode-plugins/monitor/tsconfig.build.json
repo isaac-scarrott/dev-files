@@ -10,5 +10,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/gui.tsx", "src/parse.ts"]
+  "exclude": ["src/**/*.test.ts", "src/gui.tsx", "src/parse.ts", "src/chip.ts"]
 }
