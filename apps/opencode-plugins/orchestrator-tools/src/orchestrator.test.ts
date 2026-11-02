@@ -7,6 +7,7 @@ import { deliver, TRAILER, wrap } from "./peers.js"
 import { INSTRUCTIONS } from "./instructions.js"
 import { LIST_PEERS_DESCRIPTION, SEND_MESSAGE_DESCRIPTION } from "./tools.js"
 import { waitForSessions } from "./wait.js"
+import { fake as fakeOf } from "../../test-utils/fake"
 
 type Event = { type: string; data: Record<string, unknown> }
 
@@ -19,6 +20,9 @@ interface Fake {
   emit(event: Event): void
   session(partial: Partial<SessionInfo> & { id: string }): SessionInfo
 }
+
+/** A branded id from a plain string; the host brands session and project ids. */
+const id = (value: string) => value as SessionInfo["id"]
 
 function session(partial: Partial<SessionInfo> & { id: string }): SessionInfo {
   const now = Date.now()
@@ -39,7 +43,7 @@ function fake(seed: SessionInfo[] = []): Fake {
   const storage = new Map<string, unknown>()
   const listeners = new Set<(event: Event) => void>()
   let n = 0
-  const host = {
+  const host = fakeOf<Host>({
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         const s = sessions.get(sessionID)
@@ -128,9 +132,9 @@ function fake(seed: SessionInfo[] = []): Fake {
         calls.push({ name: "assert", input })
       },
     },
-  }
+  })
   return {
-    host: host as unknown as Host,
+    host,
     sessions,
     messages,
     calls,
@@ -170,7 +174,7 @@ test("a child gets only the prompt and context, never the caller's messages", as
 })
 
 test("a session outside the tree is out of scope; project scope widens it", async () => {
-  const f = fake([idle("ses_a"), idle("ses_other", { parentID: "ses_elsewhere" as any }), idle("ses_elsewhere")])
+  const f = fake([idle("ses_a"), idle("ses_other", { parentID: id("ses_elsewhere") }), idle("ses_elsewhere")])
   await assert.rejects(make(f).readSession(caller("ses_a"), { sessionID: "ses_other" }), /outside this session's scope/)
   await assert.rejects(make(f).interruptSession(caller("ses_a"), { sessionID: "ses_other" }), /outside/)
   await assert.rejects(make(f).sendMessage(caller("ses_a"), { sessionID: "ses_other", text: "hi" }), /outside/)
@@ -179,7 +183,7 @@ test("a session outside the tree is out of scope; project scope widens it", asyn
 })
 
 test("all scope reaches a session in another project; project scope does not", async () => {
-  const f = fake([idle("ses_a"), idle("ses_far", { projectID: "prj_other" as any })])
+  const f = fake([idle("ses_a"), idle("ses_far", { projectID: id("prj_other") })])
   await assert.rejects(make(f, { scope: "project" }).sendMessage(caller("ses_a"), { sessionID: "ses_far", text: "hi" }), /outside/)
   await make(f, { scope: "all" }).sendMessage(caller("ses_a"), { sessionID: "ses_far", text: "hi" })
   assert.ok(f.calls.some((c) => c.name === "prompt" && (c.input as any).sessionID === "ses_far"))
@@ -189,12 +193,12 @@ test("all scope reaches a session in another project; project scope does not", a
 test("descendants, siblings and independents the caller created are in scope", async () => {
   const f = fake([
     idle("ses_root"),
-    idle("ses_a", { parentID: "ses_root" as any }),
-    idle("ses_b", { parentID: "ses_root" as any }),
-    idle("ses_a_child", { parentID: "ses_a" as any }),
-    idle("ses_a_grandchild", { parentID: "ses_a_child" as any }),
+    idle("ses_a", { parentID: id("ses_root") }),
+    idle("ses_b", { parentID: id("ses_root") }),
+    idle("ses_a_child", { parentID: id("ses_a") }),
+    idle("ses_a_grandchild", { parentID: id("ses_a_child") }),
     idle("ses_free", { metadata: { orchestrator: { creator: "ses_a", mode: "independent", depth: 1 } } as any }),
-    idle("ses_free_child", { parentID: "ses_free" as any }),
+    idle("ses_free_child", { parentID: id("ses_free") }),
   ])
   const o = make(f)
   for (const id of ["ses_b", "ses_a_child", "ses_a_grandchild", "ses_free", "ses_free_child"]) {
@@ -205,7 +209,7 @@ test("descendants, siblings and independents the caller created are in scope", a
 })
 
 test("depth limit counts ancestors", async () => {
-  const f = fake([idle("ses_0"), idle("ses_1", { parentID: "ses_0" as any }), idle("ses_2", { parentID: "ses_1" as any })])
+  const f = fake([idle("ses_0"), idle("ses_1", { parentID: id("ses_0") }), idle("ses_2", { parentID: id("ses_1") })])
   await assert.rejects(make(f, { maxDepth: 2 }).createSessions(caller("ses_2"), { sessions: [{ prompt: "x" }] }), /Depth limit/)
   const ok = await make(f, { maxDepth: 2 }).createSessions(caller("ses_1"), { sessions: [{ prompt: "x" }] })
   assert.equal(ok.sessions[0]?.parentID, "ses_1")
@@ -214,7 +218,7 @@ test("depth limit counts ancestors", async () => {
 })
 
 test("fan-out and concurrency limits", async () => {
-  const f = fake([idle("ses_p"), idle("ses_c1", { parentID: "ses_p" as any }), running("ses_c2", { parentID: "ses_p" as any })])
+  const f = fake([idle("ses_p"), idle("ses_c1", { parentID: id("ses_p") }), running("ses_c2", { parentID: id("ses_p") })])
   await assert.rejects(make(f, { maxChildren: 2 }).createSessions(caller("ses_p"), { sessions: [{ prompt: "x" }] }), /maxChildren/)
   await assert.rejects(make(f, { maxChildren: 3 }).createSessions(caller("ses_p"), { sessions: [{ prompt: "x" }, { prompt: "y" }] }), /maxChildren/)
   await assert.rejects(make(f, { maxConcurrent: 1 }).createSessions(caller("ses_p"), { sessions: [{ prompt: "x" }] }), /maxConcurrent/)
@@ -250,7 +254,7 @@ test("clientRequestId reuses the session, and forgets it once the session is gon
 })
 
 test("send_message is idempotent per clientRequestId and refuses the caller itself", async () => {
-  const f = fake([idle("ses_p"), idle("ses_c", { parentID: "ses_p" as any })])
+  const f = fake([idle("ses_p"), idle("ses_c", { parentID: id("ses_p") })])
   const o = make(f)
   const a = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", clientRequestId: "m1" })
   const b = await o.sendMessage(caller("ses_p"), { sessionID: "ses_c", text: "go", clientRequestId: "m1" })
@@ -261,12 +265,12 @@ test("send_message is idempotent per clientRequestId and refuses the caller itse
 })
 
 test("waiting on the caller itself is refused", async () => {
-  const f = fake([running("ses_p"), running("ses_c", { parentID: "ses_p" as any })])
+  const f = fake([running("ses_p"), running("ses_c", { parentID: id("ses_p") })])
   await assert.rejects(make(f).waitForSessions(caller("ses_p"), { sessionIDs: ["ses_c", "ses_p"] }), /running the call/)
 })
 
 test("interrupt targets a reachable session and never the caller", async () => {
-  const f = fake([idle("ses_p"), running("ses_c", { parentID: "ses_p" as any })])
+  const f = fake([idle("ses_p"), running("ses_c", { parentID: id("ses_p") })])
   const o = make(f)
   assert.deepEqual(await o.interruptSession(caller("ses_p"), { sessionID: "ses_c" }), { sessionID: "ses_c", interrupted: true })
   assert.deepEqual(f.calls.at(-1), { name: "interrupt", input: { sessionID: "ses_c" } })
@@ -274,7 +278,7 @@ test("interrupt targets a reachable session and never the caller", async () => {
 })
 
 test("read_session pages from the end and caps size", async () => {
-  const f = fake([idle("ses_p"), idle("ses_c", { parentID: "ses_p" as any })])
+  const f = fake([idle("ses_p"), idle("ses_c", { parentID: id("ses_p") })])
   const assistant = (id: string, text: string): MessageInfo =>
     ({ id, type: "assistant", time: { created: 1 }, agent: "build", model: {}, content: [{ type: "text", text }, { type: "tool", name: "read", state: { status: "completed" } }] }) as any
   f.messages.set("ses_c", [
@@ -369,7 +373,7 @@ test("delegate_task returns the child's final text", async () => {
 })
 
 test("list_sessions covers children, independents and siblings; project needs the option", async () => {
-  const f = fake([idle("ses_root"), idle("ses_p", { parentID: "ses_root" as any }), idle("ses_sib", { parentID: "ses_root" as any }), idle("ses_c", { parentID: "ses_p" as any })])
+  const f = fake([idle("ses_root"), idle("ses_p", { parentID: id("ses_root") }), idle("ses_sib", { parentID: id("ses_root") }), idle("ses_c", { parentID: id("ses_p") })])
   const o = make(f)
   await o.createSessions(caller("ses_p"), { sessions: [{ prompt: "x", mode: "independent" }] })
   const children = await o.listSessions(caller("ses_p"), {})
@@ -398,9 +402,9 @@ test("options are validated", () => {
 const tree = () =>
   fake([
     idle("ses_00parent1", { title: "Lead" }),
-    idle("ses_00childaaa", { title: "Worker A", parentID: "ses_00parent1" as any }),
-    running("ses_00childbbb", { title: "Worker B", parentID: "ses_00parent1" as any }),
-    idle("ses_00grandkid", { title: "Grand", parentID: "ses_00childaaa" as any }),
+    idle("ses_00childaaa", { title: "Worker A", parentID: id("ses_00parent1") }),
+    running("ses_00childbbb", { title: "Worker B", parentID: id("ses_00parent1") }),
+    idle("ses_00grandkid", { title: "Grand", parentID: id("ses_00childaaa") }),
   ])
 
 const sentText = (f: Fake) => (f.calls.filter((c) => c.name === "prompt").at(-1)?.input as any).text as string
@@ -443,7 +447,7 @@ test("send_message resolves ref, title, label and full id, and wraps with the se
 
 test("unknown and ambiguous names fail with candidates", async () => {
   const f = tree()
-  f.sessions.set("ses_zzzzdupe1", idle("ses_zzzzdupe1", { title: "Worker B", parentID: "ses_00parent1" as any }))
+  f.sessions.set("ses_zzzzdupe1", idle("ses_zzzzdupe1", { title: "Worker B", parentID: id("ses_00parent1") }))
   const o = make(f)
   await assert.rejects(o.sendMessage(caller("ses_00childaaa"), { to: "nobody", text: "x" }), /No peer matches "nobody".*list_peers/)
   await assert.rejects(o.sendMessage(caller("ses_00childaaa"), { to: "Worker B", text: "x" }), /matches 2 peers.*\[childbbb\].*\[zzzdupe1\]/s)
