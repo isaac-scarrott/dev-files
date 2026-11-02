@@ -45,7 +45,7 @@ ${j}[data-open="true"] [data-slot="injected-preview"] { visibility: hidden; }
    does. With the triangle in front of an action the slot is 34px. */
 ${_} {
   position: relative; flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 2px; box-sizing: border-box; height: 20px;
-  width: 0; margin-inline: 0; opacity: 0; color: var(--v2-text-text-faint); transform: translate(-4px); overflow: clip; overflow-clip-margin: 4px;
+  width: 0; margin-inline: 0; opacity: 0; color: var(--v2-text-text-faint); transform: translate(-4px); overflow: clip; overflow-clip-margin: 4px; pointer-events: none;
   transition: width 150ms, margin-inline-start 150ms, opacity 150ms, color 150ms, transform 150ms;
 }
 :root[data-motion="reduce"] ${_}, :root[data-motion="reduce"] ${k} [data-slot="injected-arrow"] svg, :root[data-motion="reduce"] ${k} .injected-action { transition: none; }
@@ -55,7 +55,7 @@ ${k} [data-slot="injected-arrow"] { display: flex; flex: none; align-items: cent
 ${k} [data-slot="injected-arrow"] svg { transform: rotate(-90deg); transition: transform 150ms ease; }
 ${j}[data-open="true"] [data-slot="injected-arrow"] svg { transform: rotate(0); }
 ${j}:not([data-expandable="true"]) [data-slot="injected-arrow"] { display: none; }
-${k} .injected-action { position: relative; flex: none; z-index: 1; margin: -2px -4px; transform: translate(8px); transition: transform 150ms; color: var(--v2-text-text-faint); }
+${k} .injected-action { position: relative; flex: none; z-index: 1; pointer-events: auto; margin: -2px -4px; transform: translate(8px); transition: transform 150ms; color: var(--v2-text-text-faint); }
 ${j} ${B} .injected-action, ${j}[data-open="true"] .injected-action { transform: none; }
 @media (hover: none) { ${_} { opacity: 1; transform: none; width: 16px; margin-inline: 2px 0; } ${k} .injected-action { transform: none; } ${j}[data-expandable="true"][data-action] ${_} { width: 34px; } }
 /* The content card below the header: the host's card surface, selectable text. */
