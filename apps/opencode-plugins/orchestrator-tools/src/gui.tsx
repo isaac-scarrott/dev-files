@@ -1,6 +1,6 @@
 import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
 import { createMemo } from "solid-js"
-import { AgentIcon, drawnIconCss, firstLine, hasMore, InjectedMessageRow, injectedMessageRowCss, mountInjectedRows } from "../../native-ui/src"
+import { RobotIcon, drawnIconCss, firstLine, hasMore, InjectedMessageRow, injectedMessageRowCss, mountInjectedRows } from "../../native-ui/src"
 import { escapeMarkup, peerOf, type PeerMessage } from "./card.js"
 
 type Located = { readonly id: string; readonly peer: PeerMessage; readonly server: string }
@@ -41,7 +41,7 @@ export default Plugin.define({
         <InjectedMessageRow
           ui={ctx.ui}
           kind="peer"
-          icon={<AgentIcon />}
+          icon={<RobotIcon />}
           title={located.peer.title}
           preview={firstLine(located.peer.text)}
           more={hasMore(located.peer.text)}

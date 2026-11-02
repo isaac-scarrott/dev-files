@@ -19,7 +19,7 @@ export { LaneChipRows, laneChipCss, CLOCK_PLACEHOLDER, type LaneChipRow, type La
 export { createSessionChip, type SessionChipOptions } from "./session-chip"
 export { messageSignature } from "./chip-signature"
 export { span, nextChange, MINUTE } from "./chip-time"
-export { AgentIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { RobotIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
 
 import { tabRowActionCss } from "./tab-row-action"
 import { popoverCss } from "./popover"
