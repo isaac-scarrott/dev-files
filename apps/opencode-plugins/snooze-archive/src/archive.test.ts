@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { ServerRef } from "@opencode/plugin/gui"
+import { fake } from "../../test-utils/fake"
 import { appendPage, dropArchived, emptyPage, loadArchivePage, setArchived, upsertArchived, type ArchivedSession, type ArchivePage } from "./archive"
 
 const row = (id: string, updated: number, archived: number | null = 1) => ({ id, time: { created: 1, updated, ...(archived === null ? {} : { archived }) } }) as unknown as ArchivedSession
@@ -9,17 +10,17 @@ const ids = (state: ArchivePage) => state.rows.map((r) => r.id)
 
 test("loadArchivePage asks for exactly one page and drops rows that are not archived", async () => {
   const calls: unknown[] = []
-  const server = { client: { session: { list: async (input: unknown) => {
+  const server = fake<ServerRef>({ client: { session: { list: async (input: unknown) => {
     calls.push(input)
     return { data: [row("a", 5), row("active", 4, null)], cursor: { next: "p2" } }
-  } } } } as unknown as ServerRef
+  } } } })
   const result = await loadArchivePage(server, undefined, 10, new AbortController().signal)
   assert.deepEqual(result.rows.map((r) => r.id), ["a"])
   assert.equal(result.next, "p2")
   assert.deepEqual(calls, [{ archived: true, parentID: null, limit: 10, cursor: undefined }])
 })
 test("a repeated cursor rejects rather than looping", async () => {
-  const server = { client: { session: { list: async () => ({ data: [], cursor: { next: "same" } }) } } } as unknown as ServerRef
+  const server = fake<ServerRef>({ client: { session: { list: async () => ({ data: [], cursor: { next: "same" } }) } } })
   await assert.rejects(loadArchivePage(server, "same", 25, new AbortController().signal), /repeated/)
 })
 test("appendPage joins pages without duplicates; a stale page replaces", () => {
@@ -50,17 +51,17 @@ test("native archive and restore send exact authoritative update and verify get"
   for (const archived of [true, false]) {
     const calls: unknown[] = []
     const signal = new AbortController().signal
-    const server = { client: { session: {
+    const server = fake<ServerRef>({ client: { session: {
       update: async (...args: unknown[]) => { calls.push(args) },
       get: async () => ({ time: archived ? { archived: 10 } : {} }),
-    } } } as unknown as ServerRef
+    } } })
     await setArchived(server, "session", archived, signal)
     assert.deepEqual(calls, [[{ sessionID: "session", archived }, { signal }]])
   }
 })
 test("archive write errors and unconfirmed server state remain failures", async () => {
   const signal = new AbortController().signal
-  const server = { client: { session: { update: async () => { throw new Error("denied") }, get: async () => ({ time: {} }) } } } as unknown as ServerRef
+  const server = fake<ServerRef>({ client: { session: { update: async () => { throw new Error("denied") }, get: async () => ({ time: {} }) } } })
   await assert.rejects(setArchived(server, "s", true, signal), /denied/)
   server.client.session.update = async () => {}
   await assert.rejects(setArchived(server, "s", true, signal), /confirm/)
@@ -85,7 +86,7 @@ test("a dedicated archive/unarchive call is preferred when the client has one; a
       get: async () => ({ time: archived ? { archived: 10 } : {} }),
     }
     if (dedicated !== "none") for (const name of ["archive", "unarchive"]) session[name] = async () => { calls.push([name]); if (dedicated === "fails") throw new Error("bad shape"); archived = name === "archive" }
-    const server = { client: { session } } as unknown as Parameters<typeof setArchived>[0]
+    const server = fake<Parameters<typeof setArchived>[0]>({ client: { session } })
     await setArchived(server, "s", true, signal); await setArchived(server, "s", false, signal)
     return calls
   }

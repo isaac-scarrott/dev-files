@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "lint": "node lint.mjs",
-    "lint:update": "node lint.mjs --update"
+    "lint:update": "node lint.mjs --update",
+    "smoke": "node smoke.mjs"
   }
 }

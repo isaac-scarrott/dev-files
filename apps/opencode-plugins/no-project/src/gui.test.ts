@@ -3,6 +3,7 @@ import { test } from "node:test"
 import { createRoot, createSignal } from "solid-js"
 import { Window } from "happy-dom"
 import plugin from "./gui"
+import { fake } from "../../test-utils/fake"
 
 // The plugin binds to the window's document in setup.
 const window = new Window()
@@ -28,8 +29,8 @@ function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean;
     } } },
   }
   const server = { id: "sidecar", builtin: true, client }
-  const ctx = {
-    options: { directory: options.directory },
+  const ctx = fake<Context>({
+    options: { directory: options.directory as string },
     signal: controller.signal,
     t: (key: string) => key,
     sessions: { current: () => options.current ? { server: { ...server, id: "other" } } : undefined },
@@ -41,9 +42,9 @@ function fixture(options: { exists?: boolean; fail?: boolean; current?: boolean;
       close: (key: string) => tabCalls.push(`close ${key}`),
     },
     ui: { Icon: () => document.createElement("svg") },
-    toast: { show: (input: unknown) => toasts.push(input) },
-    add: (_: unknown, item: (typeof commands)[number]) => { commands.push(item) },
-  } as unknown as Context
+    toast: { show: (input) => { toasts.push(input) } },
+    add: (_, item) => { commands.push(item as (typeof commands)[number]); return () => {} },
+  })
   createRoot(() => { plugin.setup!(ctx) })
   return { commands, calls, drafts, toasts, tabCalls, abort: () => controller.abort() }
 }

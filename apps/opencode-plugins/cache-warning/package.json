@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --conditions=browser --import tsx --import ./test/register.mjs --test src/*.test.ts",
-    "smoke": "node -e \"import('./dist/server.js').then((m) => { if (!m.default?.id || typeof m.default.setup !== 'function') throw new Error('missing plugin export') })\""
+    "smoke": "node --conditions=browser test/smoke.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.5",

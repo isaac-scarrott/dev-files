@@ -5,11 +5,12 @@ import { Window } from "happy-dom"
 import plugin from "./gui"
 import type { Snooze } from "./snooze"
 import { delegate, fakeUi } from "./testui"
+import { fake } from "../../test-utils/fake"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
 // `host`: extra markup inside the vertical sidebar; `bound`: command ids the host's keybind lookup answers for; `dedicated`: the client has archive/unarchive calls.
-interface Extra { options?: Record<string, unknown>; host?: string; bound?: string[]; dedicated?: boolean; openThrows?: boolean }
+interface Extra { options?: Context["options"]; host?: string; bound?: string[]; dedicated?: boolean; openThrows?: boolean }
 function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: string }[] = [], extra: Extra = {}) {
   const window = new Window()
   const doc = window.document as unknown as Document
@@ -69,7 +70,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const session = { id: "s", server, pending: false }
   const [current, setCurrent] = createSignal<typeof session | undefined>(session)
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
-  const ctx = {
+  const ctx = fake<Context>({
     ui: fakeUi(doc),
     options: extra.options ?? {},
     keybinds: { keybind: (id: string) => extra.bound?.includes(id) ? ["⌘", "K"] : [] },
@@ -80,13 +81,13 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     } }, woke: { get value() { return wokeState() }, update: (fn: (draft: { entries: { server: string; id: string }[] }) => void) => {
       const draft = structuredClone(wokeState()); fn(draft); setWokeState(draft)
     } } },
-    add: (_: unknown, item: any) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value) },
+    add: (_, item) => { const value = typeof item === "function" ? item() : item; if (value.at) slots.push(value); else if (value.id) commands.set(value.id, value); return () => {} },
     servers: { list: servers, get: (id: string) => servers().includes(id) ? server : undefined },
     sessions: { current: () => current() },
     tabs: { list: tabs, close: (key: string) => { calls.closed.push(key); setTabs((list) => list.filter((tab) => tab.key !== key)) }, open: (...args: unknown[]) => { if (extra.openThrows) throw new Error("open failed"); calls.opened.push(args) } },
     dialogs: { confirm: async (options: unknown) => { calls.confirms.push(options); return confirmResult }, select: async () => select || String(Date.now() + 3_600_000), prompt: async () => "30m" },
     toast: { show: (toast: unknown) => { calls.toasts.push(toast); return { dismiss() {} } } },
-  } as unknown as Context
+  })
   let cleanup: ReturnType<NonNullable<typeof plugin.setup>>
   let dispose = () => {}
   const start = () => createRoot((stop) => { dispose = stop; cleanup = plugin.setup!(ctx) })

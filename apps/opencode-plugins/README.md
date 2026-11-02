@@ -47,3 +47,11 @@ Develop with the `opencode-gui-plugins` skill in `../../.claude/skills/`.
 `pnpm lint` (in this folder) enforces the core team's GUI plugin rules: no `createEffect`/`createRenderEffect`/`createComputed`, no module-level `let`/`var`/`Map`/`Set`/`WeakMap`/signal/store, no `@/`, `@opencode/app` or `@opencode/desktop` imports, and no hand-made `<style>` element (use `ctx.add(Style, css)`). Tests, `blindfold` and `dist` are skipped.
 
 Today's violations are recorded per file in `lint-baseline.json`; the gate fails only when a file goes over its count. After fixing some, run `pnpm lint:update` to shrink the baseline (never grow it). The pre-commit hook runs it when `apps/opencode-plugins/*.ts(x)` is staged (~50ms). No dependencies: one Node script, `lint.mjs`.
+
+## Smoke
+
+`pnpm smoke` (in this folder) runs each plugin's `test/smoke.mjs` under a 30 s wall-clock limit and prints a table. Each smoke requires the plugin's **built** `dist/gui-experimental.cjs` the way the host does (the SDK's shared modules served to the bundle, a happy-dom window, an empty app as `ctx`), runs `setup` under a Solid root, and checks that it contributed to the expected registries, then runs its cleanup and `dispose` and checks that no timer, interval, frame, observer or document/window listener is left. Where a `dist/server.js` exists it must export a plugin definition. Build first (`pnpm build` in the plugin); a stale or missing bundle fails. Run one plugin with `pnpm smoke` inside it or `node smoke.mjs <name>`.
+
+The harness is `test-utils/gui-smoke.mjs`; it has no dependencies of its own and takes Solid and happy-dom from the plugin's `node_modules`. Needed host members beyond the empty defaults go in the `host` option (see `usage-resume/test/smoke.mjs`). Not covered yet: `monitor`, `scheduler`, `native-ui` (a library) and the vendored `blindfold`; `claude-proxy` is server-only.
+
+`test-utils/fake.ts` is `fake<T>(partial)`: a partial of a host type that is checked field by field against `T`, for unit-test fakes of `Context` and its parts.
