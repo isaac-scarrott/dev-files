@@ -111,3 +111,26 @@ A plugin that needs the whole conversation (the timeline rail's ticks) makes the
 5. Repeat until every plugin is inside the bars, then run all plugins together once more.
 
 The report carries one table per kind: plugin x scenario with delta, bar and PASS or FAIL; switching latency; footprint after the switch scenario.
+
+## Memory and reload growth (`scripts/leak.mjs`)
+
+`node leak.mjs [--plugins a,b] [--reloads 50] [--every 10] [--switches 0]` loads GUI plugins from a throwaway copy of their bundles, opens the realistic thread, touches every copy `--reloads` times (the host hot-reloads each one) and prints, after a forced GC: renderer JS heap, DOM nodes, listeners, documents, plugin style tags, live intervals, service and app RSS, and "loading plugin" log lines. `--switches N` presses Ctrl+Tab N times at the end. Compare against a no-op plugin (`PERF_PLUGINS_ROOT` pointing at a directory holding `fixtures/null-plugin`): anything the null plugin also does is the host's.
+
+Measured 2026-11-02, OpenCode 2.2.5, all 14 GUI plugins (the whole set), 50 reloads:
+
+| | start | after 50 reloads |
+|---|---|---|
+| renderer JS heap | 28.4 MB | 30.0 MB |
+| DOM nodes / listeners / documents | 3071 / 471 / 2 | 3089 / 469 / 2 |
+| plugin style tags, live intervals | 23, 2 | 23, 2 |
+| service RSS | 744 MB | 961 MB |
+| app (Electron) RSS | 538 MB | 728 MB |
+| "loading plugin" log lines | 42 | 2170 (about 42 per reload: one per plugin) |
+
+Per plugin, 40 reloads each, the no-op plugin grows the service by +93 MB and the app by +18 MB; every real plugin lands between +62 and +97 MB and +17 and +37 MB, so the differences are noise. Renderer heap, nodes and listeners are flat for each. Reading: GUI plugin dispose is clean; about 2 MB of service memory and 0.5 MB of app memory are kept per reload whatever the plugin is, which is the host's (module re-import and script cache).
+
+Server instances scale with directories, not sessions: seeding sessions in D directories and opening one tab in each gives 7 "loading plugin" lines per directory with the six server plugins loaded (1 per directory with none), and the host alone grows the service by about 410 MB for 12 directories (about 35 MB each); the six server plugins together are within noise of that. A hot reload re-loads every plugin in every directory instance, so reload churn multiplies by the directory count (a worker-per-directory workflow of 40 directories logs about 280 lines per reload).
+
+Switching: 400 Ctrl+Tab switches between a draft and the long thread grow heap by 9 MB, nodes by 2.1k and listeners by about 650 with all plugins and by 8-9 MB, 2.5k and 315 with the no-op plugin; the host keeps recently viewed timelines, so growth plateaus (listeners +389 at 150 switches, +631 at 400). No plugin-owned growth separates from the host's.
+
+Not found, so not fixed: unreleased intervals, observers or subscriptions in any plugin's dispose; unbounded plugin caches (the per-session prompt cache is capped at six, the text-width cache clears at 2000 entries, the injected-row `parsed` map is pruned each pass; `no-project`'s `known` map is bounded by the session count and pruned on delete). Not measured: the harness cannot run a real model, so streaming growth over hours, snapshot git spawns and the service's own database and event buffers are untested here.
