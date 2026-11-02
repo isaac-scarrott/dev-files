@@ -99,10 +99,67 @@ const HOVER_PROBE = `
   }
   return { growth: r(g), chevronFromRight: r(end.x), settledOpacity: end.op, widthFollowsEase: best.w < 0.1, opacityFollowsEase: best.o < 0.1, chevronFollowsEase: best.x < 0.1 };`
 
+// Rows picked by width on both sides, so the hover checks compare like with like whatever order the session lists them in: the widest
+// (a row at its cap, text longer than the column) and the narrowest (it grows on hover). Ours has an expandable and a plain kind.
+// The seeded session needs host subagent rows and peer messages of both lengths, one short peer message with a second line (an
+// expandable row that still fits).
+const TAG_ROWS = `(() => {
+  document.querySelectorAll("[data-parity-long], [data-parity-short], [data-parity-short-expandable]").forEach((e) => { for (const a of ["data-parity-long", "data-parity-short", "data-parity-short-expandable"]) e.removeAttribute(a); });
+  const pick = (list, widest) => list.reduce((a, b) => (!a || (widest ? b.getBoundingClientRect().width > a.getBoundingClientRect().width : b.getBoundingClientRect().width < a.getBoundingClientRect().width) ? b : a), null);
+  const peers = [...document.querySelectorAll("${PEER}[data-expandable=true] ${HEAD}")];
+  const hosts = [...document.querySelectorAll("[data-component=task-tool-surface]")];
+  pick(peers, true)?.setAttribute("data-parity-long", "");
+  pick(hosts, true)?.setAttribute("data-parity-long", "");
+  pick(hosts, false)?.setAttribute("data-parity-short", "");
+  pick(peers, false)?.setAttribute("data-parity-short-expandable", "");
+})()`
+const scrollAndTag = `(async () => { await ${scroll}; ${TAG_ROWS} })()`
+
+// Per-frame hover-in on a full-width row. The host's row does not grow: its title+preview clip box (overflow hidden, text cut mid-glyph,
+// no ellipsis) gives up the slot's width, and the chevron stays on the row's right edge, moving 4px. Samples, every frame: the row's
+// width, the chevron's distance from the row's right edge, the clip box's right edge from the row's right edge and the slot's opacity.
+const LONG_START = `
+  window.__hf = [];
+  const s = el, ours = s.matches("[data-slot=injected-head]");
+  const chev = ours ? s.querySelector(".injected-action svg") : s.querySelector("[data-component=task-tool-action] svg");
+  const slot = ours ? s.querySelector("[data-slot=injected-tail]") : s.querySelector("[data-component=task-tool-action]");
+  const text = ours ? s.querySelector("[data-slot=injected-preview]") : s.querySelector("[data-slot=basic-tool-tool-subtitle]");
+  let clip = text.parentElement; while (clip !== s && getComputedStyle(clip).overflowX !== "hidden") clip = clip.parentElement;
+  window.__clip = clip;
+  const t0 = performance.now();
+  const tick = () => { const o = s.getBoundingClientRect(), c = chev.getBoundingClientRect(), k = clip.getBoundingClientRect(); window.__hf.push({ t: performance.now() - t0, w: o.width, x: o.right - c.right, k: o.right - k.right, op: +getComputedStyle(slot).opacity }); if (performance.now() - t0 < 800) requestAnimationFrame(tick); };
+  tick();`
+const LONG_PROBE = `
+  const f = window.__hf, f0 = f[0], end = f.at(-1), ours = el.matches("[data-slot=injected-head]");
+  const ease = (x) => { if (x <= 0) return 0; if (x >= 1) return 1; let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2, bx = 3 * (1 - m) * (1 - m) * m * 0.25 + 3 * (1 - m) * m * m * 0.25 + m * m * m; if (bx < x) lo = m; else hi = m; } const m = (lo + hi) / 2; return 3 * (1 - m) * (1 - m) * m * 0.1 + 3 * (1 - m) * m * m * 1 + m * m * m; };
+  const first = f.findIndex((x, i) => i && (x.k !== f0.k || x.op !== f0.op));
+  const gx = end.x - f0.x, gk = end.k - f0.k, r = (n) => Math.round(n * 10) / 10;
+  let best = { x: 9, k: 9, o: 9 };
+  for (let shift = -16; shift <= 16; shift += 2) {
+    const start = f[first - 1].t + shift; let x = 0, k = 0, o = 0;
+    for (const p of f) { const u = ease((p.t - start) / 150); x = Math.max(x, Math.abs((p.x - f0.x) / gx - u)); k = Math.max(k, Math.abs((p.k - f0.k) / gk - u)); o = Math.max(o, Math.abs(p.op - u)); }
+    if (x + k + o < best.x + best.k + best.o) best = { x, k, o };
+  }
+  const text = ours ? el.querySelector("[data-slot=injected-preview]") : el.querySelector("[data-component=basic-tool-tool-subtitle], [data-slot=basic-tool-tool-subtitle]");
+  const clip = window.__clip, cs = getComputedStyle(clip), parent = el.closest("[data-timeline-row]").getBoundingClientRect();
+  // our triangle is the one addition: it makes the slot, and so the clip box's give, 18px larger
+  const triangle = ours && el.closest("[data-injected-row]").dataset.expandable === "true" && el.closest("[data-injected-row]").hasAttribute("data-action") ? 18 : 0;
+  return {
+    rowGrowth: r(end.w - f0.w),
+    capGap: r(parent.width - el.getBoundingClientRect().width),
+    chevronFromRight: r(end.x), chevronTravel: r(gx),
+    gapBeforeSlotAtRest: r(f0.k),
+    clipGivesUp: r(gk - triangle),
+    clipBox: cs.overflowX + "/" + cs.textOverflow,
+    textCutByClipBox: text.scrollWidth <= text.clientWidth + 1 && window.__clip.scrollWidth > window.__clip.clientWidth,
+    settledOpacity: end.op,
+    chevronFollowsEase: best.x < 0.1, clipFollowsEase: best.k < 0.1, opacityFollowsEase: best.o < 0.1,
+  };`
+
 export default {
   name: "orchestrator-tools-peer-row",
   viewport: "1300x1500",
-  prepare: scroll,
+  prepare: scrollAndTag,
   elements: [
     {
       name: "peer-row",
@@ -182,7 +239,7 @@ export default {
       // has none), every frame must match; the triangle's 18px extra is checked separately below.
       name: "tail-reveal",
       ours: `${ONE} [data-slot=injected-tail]`,
-      native: "[data-component=task-tool-action]",
+      native: "[data-component=task-tool-surface][data-parity-short] [data-component=task-tool-action]",
       row: "[data-slot=injected-head], [data-component=task-tool-surface]",
       style: { states: ["rest", "row"], props: ["width", "opacity", "transform", "margin", "transition", "overflow"] },
       allow: {
@@ -196,8 +253,6 @@ export default {
         "curve.transform": "the slide is 4px, so a one-frame sampling phase difference between the two runs reads as up to 0.5px; the per-frame easing fit in tail-hover-in-per-frame covers the same motion with the phase removed",
         "rest.overflow": "ours clips with overflow-clip-margin so the button's 4px side padding stays visible; the host's slot holds a bare 16px icon",
         "row.overflow": "same",
-        "rest.margin": "ours cancels the row's 8px flex gap with a negative margin (the host's surface has no gap): the net space is 0 at rest and 2px when open on both",
-        "row.margin": "same",
       },
       motion: [{ name: "tail-reveal", from: "rest", to: "row", props: ["opacity", "transform", "width"], duration: 400, tolerance: 0.12 }],
       behaviour: [
@@ -207,8 +262,8 @@ export default {
     {
       // With the expand triangle in front the slot is 18px wider than a bare chevron (16 triangle + 2 gap): the same motion, a larger distance.
       name: "tail-reveal-with-triangle",
-      ours: { selector: ROW, index: 0 },
-      native: "[data-component=task-tool-surface]",
+      ours: `${HEAD}[data-parity-short-expandable]`,
+      native: "[data-component=task-tool-surface][data-parity-short]",
       style: false,
       behaviour: [{
         name: "tail-hover-in-per-frame",
@@ -217,6 +272,21 @@ export default {
         steps: [`js:${HOVER_START}`, "hover", "wait:800"],
         probe: HOVER_PROBE,
         expect: { result: { growth: 36, chevronFromRight: 12, settledOpacity: 1, widthFollowsEase: true, opacityFollowsEase: true, chevronFollowsEase: true } },
+      }],
+    },
+    {
+      // A row at its cap. The host's `max-width: calc(100% - 24px)` row does not grow on hover: its clip box shrinks by the slot (16 + 2px) and cuts
+      // the text mid-glyph, with the chevron riding the row's right edge for 4px. Ours has the same cap, clip box and slot at the row's end; the
+      // expand triangle (ours only) makes the slot, and the clip box's give, 18px more, which the probe takes out.
+      name: "long-row-hover",
+      ours: `${HEAD}[data-parity-long]`,
+      native: "[data-component=task-tool-surface][data-parity-long]",
+      style: false,
+      behaviour: [{
+        name: "long-row-hover-in-per-frame",
+        check: "scenario",
+        steps: [`js:${LONG_START}`, "hover", "wait:800"],
+        probe: LONG_PROBE,
       }],
     },
     {

@@ -41,18 +41,23 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
   const [clipped, setClipped] = createSignal(false)
   const expandable = () => (props.more ?? false) || clipped()
   let root!: HTMLDivElement
-  let preview!: HTMLSpanElement
+  let main!: HTMLSpanElement
+  let tail!: HTMLSpanElement
 
-  // Only a row whose body is the preview itself needs to know whether the preview is cut off. The observer's callback runs after
-  // layout, so reading the widths there forces nothing; measuring on mount instead forced a layout per row while scrolling.
-  // The preview is laid out in both states (hidden when open), but only the closed one tells.
+  // Only a row whose body is the preview itself needs to know whether the text is cut off. Like the host's, the clip box (`main`)
+  // cuts the text mid-glyph, and the trailing slot takes room from it on hover, so the width compared is the one at rest: the box
+  // plus what the slot has taken so far. The observer's callback runs after layout, so reading the widths there forces nothing;
+  // measuring on mount instead forced a layout per row while scrolling. The text is laid out in both states (hidden when open),
+  // but only the closed one tells.
   if (!props.more) {
     const measure = () => {
-      if (!open()) setClipped(preview.scrollWidth > preview.clientWidth + 1)
+      if (open()) return
+      const taken = tail.getBoundingClientRect().width + parseFloat(getComputedStyle(tail).marginInlineStart)
+      setClipped(main.scrollWidth > main.clientWidth + taken + 1)
     }
     const observer = new ResizeObserver(measure)
     onCleanup(() => observer.disconnect())
-    queueMicrotask(() => observer.observe(preview))
+    queueMicrotask(() => observer.observe(main))
   }
 
   // The host scrolls to the bottom whenever a row resizes, which would carry the clicked header out from under the pointer.
@@ -72,13 +77,15 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
   }
 
   return (
-    <div ref={root} data-injected-row="" data-kind={props.kind} data-open={open()} data-expandable={expandable()}>
+    <div ref={root} data-injected-row="" data-kind={props.kind} data-open={open()} data-expandable={expandable()} data-action={props.action ? "" : undefined}>
       <div data-slot="injected-head">
         <button type="button" data-slot="injected-trigger" aria-expanded={open()} aria-controls={id} aria-label={props.title} onClick={toggle} />
         <span data-slot="injected-icon" aria-hidden="true">{props.icon}</span>
-        <span data-slot="injected-title" title={props.title}>{props.title}</span>
-        <span ref={preview} data-slot="injected-preview">{props.preview}</span>
-        <span data-slot="injected-tail">
+        <span ref={main} data-slot="injected-main">
+          <span data-slot="injected-title" title={props.title}>{props.title}</span>
+          <span data-slot="injected-preview">{props.preview}</span>
+        </span>
+        <span ref={tail} data-slot="injected-tail">
           <span data-slot="injected-arrow" aria-hidden="true"><props.ui.Icon name="fill-triangle-down" size="small" /></span>
           <Show when={props.action}>
             {(action) => (
@@ -116,7 +123,7 @@ ${ROW} { display: flex; flex-direction: column; align-items: flex-start; box-siz
 ${FOLLOWED} ${ROW} { padding-bottom: 1px; }
 ${HEAD} {
   position: relative; box-sizing: border-box; display: flex; align-items: flex-start; gap: 8px;
-  width: fit-content; max-width: 100%; min-width: 0; padding: 8px 12px;
+  width: fit-content; max-width: calc(100% - 24px); min-width: 0; padding: 8px 12px;
   border-radius: 8px; background: var(--v2-background-bg-layer-02);
   font: 440 13px/20px var(--v2-font-family-sans, inherit); letter-spacing: -0.04px; color: var(--v2-text-text-base);
 }
@@ -127,27 +134,36 @@ ${HEAD} [data-slot="injected-trigger"]:focus-visible { outline: none; }
 /* 16px box centred on the 20px line; a drawn icon's ink starts 5px inside the box (the host's dithered agent icon fills it), so the box sits 5px left of the 12px content edge for the arrow-like ones. */
 ${HEAD} [data-slot="injected-icon"] { position: relative; flex: none; width: 16px; height: 16px; margin: 2px 0; color: var(--v2-text-text-faint); pointer-events: none; }
 ${HEAD} [data-slot="injected-icon"] > * { display: block; width: 16px; height: 16px; }
-${HEAD} [data-slot="injected-title"] { position: relative; flex: 0 1 auto; min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 530; pointer-events: none; }
-${HEAD} [data-slot="injected-preview"] { position: relative; flex: 1 1 0%; min-width: 0; height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; user-select: none; }
+/* Title and preview sit in one clip box, as in the host's row: both keep their natural width and the box cuts them mid-glyph (no ellipsis)
+   when the row is at its cap (the container less 24px). The trailing slot takes its width from the box, so a full-width row does not
+   grow on hover, its text is cut 18px earlier, and the chevron stays on the row's right edge. */
+${HEAD} [data-slot="injected-main"] { position: relative; flex: 1 1 auto; display: flex; gap: 8px; min-width: 0; overflow: hidden; pointer-events: none; }
+${HEAD} [data-slot="injected-title"] { flex: none; white-space: nowrap; font-weight: 530; }
+${HEAD} [data-slot="injected-preview"] { flex: none; height: 20px; overflow: hidden; white-space: nowrap; user-select: none; }
 /* Open: the preview keeps its width but is not drawn (and leaves the accessibility tree), so the header is the same box as closed. */
 ${ROW}[data-open="true"] [data-slot="injected-preview"] { visibility: hidden; }
-/* The trailing slot is the host task-tool-action, copied: collapsed it takes no room (width 0, and a negative margin cancels the row's
-   8px gap), and on hover or focus it grows, fades in and slides from 4px left over 150ms ease. The 24px button's 4px side padding hangs
-   outside the 16px slot (overflow-clip-margin), so its icon sits exactly where the host's chevron does. With the triangle in front the slot is 34px. */
+/* The trailing slot is the host task-tool-action, copied: the last item of the row, so the chevron rides the row's right edge. Collapsed
+   it has no width and leaves the row's 8px gap (the host's info row has the same gap: a row rests 8px wider than its text, a full-width one cuts its text 8px short of the slot), and on hover or focus it grows to 16px plus a 2px margin, fades in and slides from
+   4px left over 150ms ease. The host centres a bare 16px chevron in its slot, so the chevron travels 4px (1154 to 1150 at 1300px) while
+   the slot grows from the row's right edge. Ours keeps the action last (end-aligned, so a 34px slot with the triangle in front of it
+   ends in the same place) and moves it 8px over the same 150ms, which makes the same 4px path whatever the slot's width. The 24px
+   button's 4px side padding hangs outside the 16px slot (overflow-clip-margin), so its icon sits exactly where the host's chevron
+   does. With the triangle in front of an action the slot is 34px. */
 ${TAIL} {
-  position: relative; flex: none; display: flex; align-items: center; gap: 2px; box-sizing: border-box; height: 20px;
-  width: 0; margin-inline: -8px 0; opacity: 0; color: var(--v2-text-text-faint); transform: translate(-4px); overflow: clip; overflow-clip-margin: 4px;
+  position: relative; flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 2px; box-sizing: border-box; height: 20px;
+  width: 0; margin-inline: 0; opacity: 0; color: var(--v2-text-text-faint); transform: translate(-4px); overflow: clip; overflow-clip-margin: 4px;
   transition: width 150ms, margin-inline-start 150ms, opacity 150ms, color 150ms, transform 150ms;
 }
-:root[data-motion="reduce"] ${TAIL}, :root[data-motion="reduce"] ${HEAD} [data-slot="injected-arrow"] svg { transition: none; }
-${ROW} ${SLOT}, ${ROW}[data-open="true"] [data-slot="injected-tail"] { opacity: 1; transform: none; width: 16px; margin-inline: -6px 0; }
-${ROW}[data-expandable="true"] ${SLOT}, ${ROW}[data-open="true"] [data-slot="injected-tail"] { width: 34px; margin-inline: -6px 0; }
+:root[data-motion="reduce"] ${TAIL}, :root[data-motion="reduce"] ${HEAD} [data-slot="injected-arrow"] svg, :root[data-motion="reduce"] ${HEAD} .injected-action { transition: none; }
+${ROW} ${SLOT}, ${ROW}[data-open="true"] [data-slot="injected-tail"] { opacity: 1; transform: none; width: 16px; margin-inline: 2px 0; }
+${ROW}[data-expandable="true"][data-action] ${SLOT}, ${ROW}[data-open="true"][data-action] [data-slot="injected-tail"] { width: 34px; margin-inline: 2px 0; }
 ${HEAD} [data-slot="injected-arrow"] { display: flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 20px; color: var(--v2-text-text-faint); pointer-events: none; }
 ${HEAD} [data-slot="injected-arrow"] svg { transform: rotate(-90deg); transition: transform 150ms ease; }
 ${ROW}[data-open="true"] [data-slot="injected-arrow"] svg { transform: rotate(0); }
 ${ROW}:not([data-expandable="true"]) [data-slot="injected-arrow"] { display: none; }
-${HEAD} .injected-action { position: relative; flex: none; z-index: 1; margin: -2px -4px; transition: none; color: var(--v2-text-text-faint); }
-@media (hover: none) { ${TAIL} { opacity: 1; transform: none; width: 16px; margin-inline: -6px 0; } ${ROW}[data-expandable="true"] ${TAIL} { width: 34px; } }
+${HEAD} .injected-action { position: relative; flex: none; z-index: 1; margin: -2px -4px; transform: translate(8px); transition: transform 150ms; color: var(--v2-text-text-faint); }
+${ROW} ${SLOT} .injected-action, ${ROW}[data-open="true"] .injected-action { transform: none; }
+@media (hover: none) { ${TAIL} { opacity: 1; transform: none; width: 16px; margin-inline: 2px 0; } ${HEAD} .injected-action { transform: none; } ${ROW}[data-expandable="true"][data-action] ${TAIL} { width: 34px; } }
 /* The content card below the header: the host's card surface, selectable text. */
 ${BODY} {
   box-sizing: border-box; align-self: stretch; margin-top: 4px; padding: 12px 14px; min-width: 0;
