@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 // Seed a throwaway OpenCode server with a long session plus a subagent child, with no model calls.
-// Usage: node seed-session.mjs <baseUrl> <password> <projectDir> [turns=40]
+// Usage: node seed-session.mjs <baseUrl> <password> <projectDir> [turns=40] [--realistic]
+//   --realistic: a thread shaped like a real heavy one (reasoning, tool calls with large outputs and diffs, subagent
+//   children, a few images, long markdown with code); `turns` is then the assistant message count. Synthetic stand-ins
+//   only; the shape comes from aggregate counts and byte sizes of real threads, never their content.
 // Uses POST /api/experimental/session/import; /synthetic only queues inbox items and never renders.
 import { randomBytes } from "node:crypto"
 
-const [base, password, directory, turns = "40"] = process.argv.slice(2)
+const argv = process.argv.slice(2)
+const realistic = argv.includes("--realistic")
+const [base, password, directory, turns = "40"] = argv.filter((a) => !a.startsWith("--"))
 if (!password || !directory) throw new Error("usage: seed-session.mjs <baseUrl> <password> <projectDir> [turns]")
 
 const headers = {
@@ -40,6 +45,76 @@ const messages = (label) => {
 const send = async (info, msgs) => {
   const res = await fetch(base + "/api/experimental/session/import", { method: "POST", headers, body: JSON.stringify({ info, messages: msgs, location: { directory } }) })
   if (!res.ok) throw new Error(`import ${res.status} ${await res.text()}`)
+}
+
+
+// ---------- realistic mode ----------
+// mulberry32: the same seed gives the same thread, so runs compare
+let rngState = 0x5eed
+const rnd = () => { rngState = (rngState + 0x6d2b79f5) | 0; let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+const pick = (xs) => xs[Math.floor(rnd() * xs.length)]
+/** Size with a long tail: median ~ `median`, rare values up to `cap`. */
+const size = (median, cap) => Math.min(cap, Math.max(40, Math.round(median * Math.exp((rnd() + rnd() + rnd() - 1.5) * 2.2))))
+const WORDS = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua".split(" ")
+const prose = (n) => { let o = ""; while (o.length < n) o += pick(WORDS) + (rnd() < 0.08 ? ". " : " "); return o.slice(0, n) }
+const codeLine = () => `${"  ".repeat(Math.floor(rnd() * 4))}${pick(["const", "let", "return", "if (", "await", "export function", "import"])} ${pick(WORDS)}_${Math.floor(rnd() * 99)}(${pick(WORDS)}, ${Math.floor(rnd() * 1000)}) // ${pick(WORDS)}`
+const code = (n) => { let o = ""; while (o.length < n) o += codeLine() + "\n"; return o.slice(0, n) }
+const markdown = (n) => { let o = ""; while (o.length < n) o += rnd() < 0.3 ? "```ts\n" + code(200 + Math.floor(rnd() * 600)) + "```\n\n" : rnd() < 0.2 ? `- ${prose(60)}\n- ${prose(50)}\n\n` : `${prose(200 + Math.floor(rnd() * 300))}\n\n`; return o.trim() }
+const diff = (n) => { let o = `@@ -${1 + Math.floor(rnd() * 200)},12 +${1 + Math.floor(rnd() * 200)},14 @@\n`; while (o.length < n) o += `${pick([" ", "+", "-"])}${codeLine()}\n`; return o.slice(0, n) }
+// A valid 1x1 PNG: the import wants raw base64; what matters is that the row renders an attachment
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+const imageData = () => PNG
+
+const tool = (name, input, text, metadata = {}, status = "completed") => {
+  const t = Date.now() - Math.floor(rnd() * 1e6)
+  return { type: "tool", id: id("prt"), name, executed: true, native: {}, time: { created: t, ran: t + 5, completed: t + 40 },
+    state: { status, input, metadata, content: [{ type: "text", text }], ...(status === "error" ? { error: { type: "unknown", message: text.slice(0, 200) } } : {}) } }
+}
+const toolPart = (childIds) => {
+  const r = rnd()
+  if (r < 0.2) return tool("read", { path: `/src/${pick(WORDS)}/${pick(WORDS)}.ts`, offset: 0, limit: 2000 }, code(size(3500, 220000)), { truncated: rnd() < 0.05 })
+  if (r < 0.38) return tool(pick(["shell", "bash"]), { command: `${pick(["pnpm test", "git diff --stat", "rg -n " + pick(WORDS), "ls -la", "node build.mjs"])}`, timeout: 120000 }, code(size(2200, 49000)), { exit: rnd() < 0.9 ? 0 : 1, truncated: false }, rnd() < 0.03 ? "error" : "completed")
+  if (r < 0.52) { const patch = diff(size(4500, 40000)); const file = `/src/${pick(WORDS)}/${pick(WORDS)}.ts`
+    return tool("edit", { path: file, oldString: code(size(300, 4000)), newString: code(size(400, 4000)) }, "Edit applied successfully.", { files: [{ file, patch, status: "modified", additions: 1 + Math.floor(rnd() * 30), deletions: Math.floor(rnd() * 20) }], truncated: false }) }
+  if (r < 0.6) return tool("write", { path: `/src/${pick(WORDS)}.ts`, content: code(size(3000, 30000)) }, "Wrote file successfully.")
+  if (r < 0.75) return tool("grep", { pattern: pick(WORDS), path: "/src", include: "*.ts" }, code(size(1200, 15000)), { matches: Math.floor(rnd() * 80), truncated: false })
+  if (r < 0.8) return tool("glob", { pattern: "**/*.ts" }, code(size(800, 8000)))
+  if (r < 0.9 && childIds.length) { const sessionID = childIds.shift(); return tool("subagent", { agent: "explore", sessionID, description: prose(40), background: false, prompt: prose(300) }, prose(size(2500, 6000)), { sessionID, status: "completed", truncated: false }) }
+  if (r < 0.95) return tool("todowrite", { todos: Array.from({ length: 5 }, (_, i) => ({ content: prose(50), status: i < 3 ? "completed" : "pending", priority: "medium" })) }, "Updated todos.")
+  return tool("webfetch", { url: "https://example.com/" + pick(WORDS), format: "markdown" }, markdown(size(9000, 54000)))
+}
+
+function realisticMessages(label, assistants, childIds) {
+  const out = []
+  let t = Date.now() - assistants * 4000
+  const turns = Math.max(1, Math.round(assistants / 8))   // a prompt every ~8 assistant messages, as in real threads
+  const per = assistants / turns
+  let made = 0
+  for (let u = 0; u < turns; u++) {
+    const files = u % 17 === 5 ? [{ data: imageData(), mime: "image/png", name: "screenshot.png", source: { type: "inline" } }] : []
+    out.push({ id: id("msg"), type: "user", time: { created: (t += 1000) }, text: rnd() < 0.1 ? markdown(size(1500, 60000)) : `${label} request ${u + 1}: ${prose(size(160, 900))}`, ...(files.length ? { files } : {}) })
+    const n = u === turns - 1 ? assistants - made : Math.round(per)
+    for (let a = 0; a < n; a++, made++) {
+      const content = []
+      if (rnd() < 0.8) content.push({ type: "reasoning", text: prose(size(1500, 40000)), time: { created: t, completed: t + 50 } })
+      for (let k = rnd() < 0.7 ? 1 : 2; k > 0 && rnd() < 0.97; k--) content.push(toolPart(childIds))
+      if (rnd() < 0.15 || content.length === 0) content.push({ type: "text", text: markdown(size(1200, 10000)) })
+      out.push({ id: id("msg"), type: "assistant", agent: "build", model, finish: "stop", time: { created: (t += 1500), completed: (t += 500) }, content })
+    }
+  }
+  return out
+}
+
+if (realistic) {
+  const assistants = Number(turns)
+  const parent = session("Seeded long session")
+  const children = Array.from({ length: Math.max(3, Math.round(assistants / 25)) }, (_, i) => session(`Seeded subagent ${i + 1}`, parent.id))
+  const childIds = children.map((c) => c.id)
+  const msgs = realisticMessages("parent", assistants, [...childIds])
+  await send(parent, msgs)
+  for (const c of children) await send(c, realisticMessages("child", Math.max(4, size(24, 200)), []).slice(0, 400))
+  console.log(JSON.stringify({ parent: parent.id, children: children.length, messages: msgs.length, bytes: JSON.stringify(msgs).length }))
+  process.exit(0)
 }
 
 const parent = session("Seeded long session")

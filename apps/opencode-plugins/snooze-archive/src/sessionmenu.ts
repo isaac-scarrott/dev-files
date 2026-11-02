@@ -54,7 +54,10 @@ export function createSessionMenus(doc: Document, surfaces: Surfaces, handlers: 
     undo.set(content, extendNative(content, lines))
   }
   const scan = (root: ParentNode) => root.querySelectorAll<HTMLElement>(MENU).forEach(inspect)
-  const observer = new doc.defaultView!.MutationObserver((records) => {
+  // Menus portal to the body; the timeline mutates on every scroll and streamed delta, and scanning its subtrees for a menu is all cost.
+  const TIMELINE = "[data-slot='session-timeline-scroll']"
+  const observer = new doc.defaultView!.MutationObserver((all) => {
+    const records = all.filter((record) => !(record.target as Element).closest?.(TIMELINE))
     for (const record of records) for (const node of record.addedNodes) {
       if (node.nodeType !== 1) continue
       const el = node as HTMLElement

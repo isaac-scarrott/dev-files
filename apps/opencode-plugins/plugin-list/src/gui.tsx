@@ -83,9 +83,18 @@ export default Plugin.define({
     }
 
     let open = false
+    // Only the Plugins panel appearing, disappearing or re-rendering matters. The check is per record and cheap: this
+    // runs for every DOM change of the app, and the panel lookup it guards scans the whole document.
+    const element = (node: Node) => (node.nodeType === 1 ? (node as Element) : node.parentElement)
+    const own = (node: Node) => !!element(node)?.closest("[data-plugin-list-row], [data-plugin-list]")
+    const carriesPanel = (node: Node) => node.nodeType === 1 && ((node as Element).matches(PANEL) || !!(node as Element).querySelector(PANEL))
+    const concerns = (record: MutationRecord) => {
+      if ([record.target, ...record.addedNodes, ...record.removedNodes].every(own)) return false
+      if (element(record.target)?.closest(PANEL)) return true
+      return [...record.addedNodes, ...record.removedNodes].some(carriesPanel)
+    }
     const observer = new MutationObserver((records) => {
-      const own = (node: Node) => !!(node.nodeType === 1 ? (node as Element) : node.parentElement)?.closest("[data-plugin-list-row], [data-plugin-list]")
-      if (!records.some((record) => ![record.target, ...record.addedNodes, ...record.removedNodes].every(own))) return
+      if (!records.some(concerns)) return
       const present = !!document.querySelector(PANEL)
       if (present && !open) void load()
       open = present

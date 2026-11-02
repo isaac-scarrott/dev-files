@@ -23,6 +23,10 @@ const rect = (top: number, left: number, width: number, height: number) => ({
   toJSON: () => ({}),
 })
 
+// The loader's real pauses are seconds long and the list rebuild is throttled; the tests run at frame speed.
+;(globalThis as { __timelineRailPause?: () => Promise<void> }).__timelineRailPause = async () => undefined
+;(globalThis as { __timelineRailListInterval?: number }).__timelineRailListInterval = 0
+
 function fixture(options: { gutter?: number; desktop?: boolean; pages?: number } = {}) {
   // Solid delegates events to the document it loaded with, so the tests reuse it.
   const doc = globalThis.document
@@ -587,6 +591,29 @@ test("leaving the session or going inactive aborts the history load", async () =
     await f.flush()
     assert.equal(f.loads.length, after, "nothing further while inactive")
   } finally {
+    dispose()
+    f.close()
+  }
+})
+
+test("the prompt list is rebuilt at most once per interval while messages change, the last change landing at its end", async () => {
+  const globals = globalThis as { __timelineRailListInterval?: number }
+  const f = fixture()
+  const { dispose } = await mountSlot(f)
+  const height = () => (f.rail()!.querySelector("[data-timeline-rail-body]") as HTMLElement).style.getPropertyValue("--timeline-rail-height")
+  try {
+    globals.__timelineRailListInterval = 150
+    threeTurns(f)
+    await f.flush()
+    assert.match(height(), /min\(16px/)
+    f.setMessages([f.prompt("m1", "first question"), f.reply("a1", "first answer"), f.prompt("m2", "second question"), f.prompt("m3", "third"), f.prompt("m4", "fourth")])
+    await f.flush()
+    assert.match(height(), /min\(16px/, "inside the interval: still the previous list")
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await f.flush()
+    assert.match(height(), /min\(24px/, "after the interval: rebuilt with the last change")
+  } finally {
+    globals.__timelineRailListInterval = 0
     dispose()
     f.close()
   }

@@ -28,7 +28,7 @@ start)
   echo $! > "$ROOT/app.pid"
   for _ in $(seq 60); do [ -s "$ROOT/state/opencode/service.json" ] && curl -sf "http://127.0.0.1:$CDP_PORT/json/version" >/dev/null && break; sleep 1; done
   password=$(node -e 'console.log(require(process.argv[1]).password)' "$ROOT/state/opencode/service.json")
-  node "$HERE/seed-session.mjs" "http://127.0.0.1:$SVC_PORT" "$password" "$ROOT/project" 40
+  node "$HERE/seed-session.mjs" "http://127.0.0.1:$SVC_PORT" "$password" "$ROOT/project" "${OC_HARNESS_TURNS:-40}" ${OC_HARNESS_REALISTIC:+--realistic}
   echo "cdp: http://127.0.0.1:$CDP_PORT  pid: $(cat "$ROOT/app.pid")  root: $ROOT"
   ;;
 stop)

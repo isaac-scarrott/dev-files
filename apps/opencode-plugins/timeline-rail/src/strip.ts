@@ -42,8 +42,8 @@ export function createStrip(host: HTMLElement) {
     found.style.setProperty("--i", String(index))
     host.appendChild(found)
     pool.set(index, found)
-    // Its first style is the resting one, so the state it is about to get animates in.
-    void found.offsetWidth
+    // Its first style is the resting one (the stylesheet's @starting-style), so the state it is about to get animates in
+    // without a forced layout: reading a size here costs a whole-page layout per new tick while the timeline scrolls.
 
     return found
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { fisheyeBand, indexFromPointer, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
+import { createPromptCache, fisheyeBand, indexFromPointer, promptLabel, prompts, railHeightStyle, stripMarkdown, topPercent, visibleRange, type Message } from "./rail"
 
 const user = (id: string, text: string, extra: Partial<Message> = {}): Message => ({ id, type: "user", text, ...extra })
 const reply = (id: string, text: string | undefined, extra: Partial<Message> = {}): Message => ({
@@ -133,4 +133,13 @@ test("visible range: owners of rows that intersect the box; off-screen rows and 
   assert.deepEqual(visibleRange(indexOf, [row("b", 100, 200), row("x", 200, 300)], box), [1, 1])
   assert.equal(visibleRange(indexOf, [row("d", 900, 1000)], box), undefined)
   assert.equal(visibleRange(indexOf, [], box), undefined)
+})
+
+test("prompts with a cache match the uncached result across runs, including a reply that grows", () => {
+  const cache = createPromptCache()
+  const chat = (tail: string) => [user("m1", "  one\n"), reply("a1", "**first** reply"), user("m2", "two"), reply("a2", tail)]
+
+  for (const tail of ["he", "hello `x`", "hello `x` world", "hello `x` world"]) {
+    assert.deepEqual(prompts(chat(tail), undefined, cache), prompts(chat(tail)))
+  }
 })

@@ -36,10 +36,82 @@ export const SNIPPET_LIMIT = 240
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim()
 
+function snippetOf(text: string): string {
+  const plain = stripMarkdown(text)
+
+  return plain.length > SNIPPET_LIMIT ? `${plain.slice(0, SNIPPET_LIMIT)}…` : plain
+}
+
+/**
+ * Text-keyed results kept across `prompts` runs. The list is rebuilt on every store write, and while a reply streams
+ * that is every delta: without this, each one re-runs the regexes over every reply of the conversation. Two
+ * generations, so only text seen by the latest run survives and the cache never outgrows the conversation.
+ */
+export type PromptCache = {
+  readonly line: (text: string) => string
+  readonly snippet: (text: string) => string
+  /** Call once per run, after the last lookup. */
+  readonly sweep: () => void
+}
+
+export function createPromptCache(): PromptCache {
+  const make = (compute: (text: string) => string) => {
+    let previous = new Map<string, string>()
+    let current = new Map<string, string>()
+
+    return {
+      get(text: string) {
+        let value = current.get(text) ?? previous.get(text)
+
+        if (value === undefined) value = compute(text)
+        current.set(text, value)
+
+        return value
+      },
+      sweep() {
+        previous = current
+        current = new Map()
+      },
+    }
+  }
+  const lines = make(collapse)
+  const snippets = make(snippetOf)
+
+  return {
+    line: lines.get,
+    snippet: snippets.get,
+    sweep() {
+      lines.sweep()
+      snippets.sweep()
+    },
+  }
+}
+
+const caches = new Map<string, PromptCache>()
+const KEPT_SESSIONS = 6
+
+/** The session's cache, kept past the rail that made it: the rail remounts on every switch back and would re-strip every reply. */
+export function promptCacheFor(sessionID: string): PromptCache {
+  let cache = caches.get(sessionID)
+
+  if (cache) caches.delete(sessionID)
+  else cache = createPromptCache()
+  caches.set(sessionID, cache)
+
+  for (const [id] of caches) {
+    if (caches.size <= KEPT_SESSIONS) break
+    caches.delete(id)
+  }
+
+  return cache
+}
+
+const uncached: PromptCache = { line: collapse, snippet: snippetOf, sweep: () => undefined }
+
 /** The prompt's one-line label: its display text, else what it attached. */
-export function promptLabel(message: Message): string {
+export function promptLabel(message: Message, line: (text: string) => string = collapse): string {
   const display = message.metadata?.displayText
-  const text = collapse(typeof display === "string" && display ? display : (message.text ?? ""))
+  const text = line(typeof display === "string" && display ? display : (message.text ?? ""))
 
   if (text) return text.length > TITLE_LIMIT ? `${text.slice(0, TITLE_LIMIT)}…` : text
   const files = (message.files ?? []).map((file) => (file.mime.startsWith("image/") ? "[image]" : `[${file.name ?? "file"}]`))
@@ -74,7 +146,7 @@ export function stripMarkdown(text: string): string {
  * The prompts the rail shows, in order, with the start of each reply. Candidates follow the host's
  * `visibleUserMessages`: user messages, and only those before a pending revert.
  */
-export function prompts(messages: readonly Message[], revertMessageID?: string): Prompt[] {
+export function prompts(messages: readonly Message[], revertMessageID?: string, cache: PromptCache = uncached): Prompt[] {
   const out: Prompt[] = []
 
   for (let index = 0; index < messages.length; index += 1) {
@@ -88,19 +160,20 @@ export function prompts(messages: readonly Message[], revertMessageID?: string):
       const reply = messages[next]!
 
       if (reply.type !== "assistant") continue
-      const text = reply.content?.find((part) => part.type === "text" && part.text && collapse(part.text))?.text
+      const text = reply.content?.find((part) => part.type === "text" && part.text?.trim())?.text
 
       if (text) {
-        const plain = stripMarkdown(text)
-        snippet = plain.length > SNIPPET_LIMIT ? `${plain.slice(0, SNIPPET_LIMIT)}…` : plain
+        snippet = cache.snippet(text)
         break
       }
 
       if (reply.time?.completed === undefined && !reply.error) working = true
     }
-    const title = promptLabel(message)
+    const title = promptLabel(message, cache.line)
     out.push({ id: message.id, title, snippet, working: !snippet && working })
   }
+
+  cache.sweep()
 
   return out
 }

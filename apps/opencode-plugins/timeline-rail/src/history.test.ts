@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Window } from "happy-dom"
-import { loadHistory, QUIET_MS, type HistoryHost } from "./history"
+import { loadHistory, PAGE_GAP_MS, QUIET_MS, START_DELAY_MS, type HistoryHost } from "./history"
 
 const box = (top: number) => ({ top, bottom: top + 100, left: 0, right: 800, width: 800, height: 100, x: 0, y: top, toJSON: () => ({}) })
 
@@ -114,4 +114,14 @@ test("a failed page ends the run quietly and clears the loading state", async ()
   await loadHistory(f.host, new AbortController().signal)
   assert.equal(f.state.loads, 1)
   assert.deepEqual(f.loading, [true, false])
+})
+
+test("the loader waits before the first page and between pages, and a pause that is aborted ends the run", async () => {
+  const { host, state } = fixture({ pages: 3 })
+  const pauses: number[] = []
+  const paced: HistoryHost = { ...host, pause: async (ms) => void pauses.push(ms) }
+
+  await loadHistory(paced, new AbortController().signal)
+  assert.equal(state.loads, 3)
+  assert.deepEqual(pauses, [START_DELAY_MS, PAGE_GAP_MS, PAGE_GAP_MS])
 })

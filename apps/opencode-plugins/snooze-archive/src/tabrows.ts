@@ -30,8 +30,11 @@ export function createTabActions(doc: Document, shell: Host, schedule: (fn: () =
   }
   let frame: number | undefined
   const queue = () => { if (frame === undefined) frame = schedule(() => { frame = undefined; sync() }) }
+  // Tab rows only: the session timeline mutates on every scroll and streamed delta and holds none of them.
+  const ROWS = "[data-tab-key], [data-titlebar-tab-list], [data-titlebar-tab], [data-slot='vertical-tabs-scroll']"
+  const nearRows = (r: MutationRecord) => !!(r.target as Element).closest?.(ROWS) || [...r.addedNodes].some((n) => n.nodeType === 1 && ((n as Element).matches(ROWS) || !!(n as Element).querySelector(ROWS)))
   const observer = new doc.defaultView!.MutationObserver((records) => {
-    if (records.some((r) => !(r.target as Element).closest?.("[data-sa-actions]") && (r.type === "attributes" || [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1 && !(n as Element).matches("[data-sa-actions]"))))) queue()
+    if (records.some((r) => nearRows(r) && !(r.target as Element).closest?.("[data-sa-actions]") && (r.type === "attributes" || [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeType === 1 && !(n as Element).matches("[data-sa-actions]"))))) queue()
   })
   observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tab-key", "data-slot"] })
   sync()

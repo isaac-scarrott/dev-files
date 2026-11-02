@@ -1,9 +1,10 @@
 import { Plugin, Slot, Style, type SlotMap, type Ui } from "@opencode/plugin/gui"
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js"
+import { $RAW } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { loadHistory, type HistoryHost } from "./history"
 import { inset, jumpTo, readRows, unpin, type Host } from "./jump"
-import { indexFromPointer, MIN_ITEMS, prompts, railHeightStyle, topPercent, visibleRange, type Message } from "./rail"
+import { indexFromPointer, MIN_ITEMS, promptCacheFor, prompts, railHeightStyle, topPercent, visibleRange, type Message } from "./rail"
 import { createStrip } from "./strip"
 import { currentPrompt } from "./target"
 import { tweenScroll } from "./tween"
@@ -22,6 +23,10 @@ const SKIP_DELAY = 300
 const CLOSE_MOTION = 90
 /** Previous / next turn by this many prompts with PageUp / PageDown. */
 const PAGE = 5
+/** The timeline counts as scrolling until it has been still this long (ms). */
+const SCROLL_QUIET = 160
+/** Longest a streaming reply goes without the prompt list being rebuilt (ms). */
+const LIST_INTERVAL = 250
 
 type Geometry = { readonly top: number; readonly height: number; readonly left: number; readonly show: boolean }
 
@@ -30,7 +35,34 @@ const reducedMotion = () =>
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false
 
+/** Waits `ms`, then for an idle moment (at most 400ms more); resolves early when aborted. */
+const pauseIdle = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", done)
+      resolve()
+    }
+
+    signal.addEventListener("abort", done, { once: true })
+    timer = setTimeout(() => (typeof requestIdleCallback === "function" ? requestIdleCallback(done, { timeout: 400 }) : done()), ms)
+    if (signal.aborted) done()
+  })
+
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+/**
+ * The conversation read without store proxies. Walking every message, part and field of a long thread through proxies is
+ * most of what rebuilding the prompt list costs; the raw objects are the store's own data, mutated in place as it
+ * changes, so this read is current and tracks nothing (the rebuild is driven by `stamp`).
+ */
+function unproxied(messages: readonly Message[]): readonly Message[] {
+  const raw = (value: object): object => (value as { [$RAW]?: object })[$RAW] ?? value
+  const list = raw(messages) as readonly Message[]
+
+  return list === messages ? messages.map((message) => raw(message) as Message) : list
+}
 
 /** The session view root: the element the scroller, the jump-to-latest pill and the visible-area box share. */
 function viewOf(scroller: HTMLElement) {
@@ -77,9 +109,45 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
   const [desktop, setDesktop] = createSignal(true)
   const session = () => props.input.session
   const data = () => session().server.data.session
-  const list = createMemo(() =>
-    prompts(data().message.list(session().id) as readonly Message[], data().get(session().id)?.revert?.messageID),
+  const messages = () => data().message.list(session().id) as readonly Message[]
+  // What the list depends on, read cheaply: the count and the newest message's text length and state. Streaming writes
+  // only the newest message, so a delta re-reads one message instead of subscribing to, and walking, every message of
+  // the conversation through the store (which cost more than the rail's own work). An edit to an older message shows
+  // at the next new message.
+  const stamp = createMemo(() => {
+    const all = messages()
+    const last = all[all.length - 1]
+    const parts = last?.content
+
+    return `${all.length}|${last?.id}|${parts?.length}|${parts?.[parts.length - 1]?.text?.length}|${last?.time?.completed}|${last?.error ? 1 : 0}`
+  })
+  const cache = promptCacheFor(session().id)
+  // The list is rebuilt at most once per LIST_INTERVAL while a reply streams (first change at once, the rest trailing):
+  // the ticks and the card only need the newest snippet, and every rebuild walks the whole conversation.
+  const [version, setVersion] = createSignal(0)
+  let rebuild: ReturnType<typeof setTimeout> | undefined
+  let rebuiltAt = Number.NEGATIVE_INFINITY
+  const bump = () => {
+    rebuild = undefined
+    rebuiltAt = performance.now()
+    setVersion((value) => value + 1)
+  }
+  createEffect(
+    on(stamp, () => {
+      if (rebuild !== undefined) return
+      const wait = ((globalThis as { __timelineRailListInterval?: number }).__timelineRailListInterval ?? LIST_INTERVAL) - (performance.now() - rebuiltAt)
+
+      if (wait <= 0) bump()
+      else rebuild = setTimeout(bump, wait)
+    }, { defer: true }),
   )
+  onCleanup(() => clearTimeout(rebuild))
+  const list = createMemo(() => {
+    version()
+    const revert = data().get(session().id)?.revert?.messageID
+
+    return untrack(() => prompts(unproxied(messages()), revert, cache))
+  })
   const ids = createMemo(() => list().map((prompt) => prompt.id))
   // A memo: the cursor changes with every page, and the history effect must rerun only when "more" itself flips.
   const more = createMemo(() => data().message.more(session().id))
@@ -162,9 +230,10 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const target: HistoryHost = {
       scroller: root,
       more: () => data().message.more(session().id),
-      loadMore: ({ signal, beforePublish }) => data().message.loadMore(session().id, { signal, beforePublish }),
+      loadMore: ({ signal, beforePublish }) => data().message.loadMore(session().id, { signal, beforePublish, all: true }),
       frame,
       idle,
+      pause: (globalThis as { __timelineRailPause?: typeof pauseIdle }).__timelineRailPause ?? pauseIdle,
       inset: () => inset(root),
       loading: setPaging,
       drift: (globalThis as { __timelineRailDrift?: (px: number) => void }).__timelineRailDrift,
@@ -207,6 +276,20 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     pending = requestAnimationFrame(refresh)
   }
 
+  // Ticks animate for the pointer, not for scrolling: a fast scroll creates and retires a transforming tick every frame,
+  // and the compositor layers that costs halve the frame rate. Transitions are off while the timeline scrolls.
+  let scrolling: ReturnType<typeof setTimeout> | undefined
+  const onScroll = () => {
+    if (container && scrolling === undefined) container.setAttribute("data-scrolling", "")
+    clearTimeout(scrolling)
+    scrolling = setTimeout(() => {
+      scrolling = undefined
+      container?.removeAttribute("data-scrolling")
+    }, SCROLL_QUIET)
+    schedule()
+  }
+  onCleanup(() => clearTimeout(scrolling))
+
   onCleanup(() => {
     if (pending !== undefined) cancelAnimationFrame(pending)
   })
@@ -216,7 +299,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     const parent = view()
 
     if (!root || !parent) return
-    root.addEventListener("scroll", schedule, { passive: true })
+    root.addEventListener("scroll", onScroll, { passive: true })
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : undefined
     observer?.observe(parent)
     const visible = parent.querySelector("[data-slot='session-timeline-visible']")
@@ -224,7 +307,7 @@ function Rail(props: { input: SlotMap["session.header"]; ui: HostUi }) {
     if (visible) observer?.observe(visible)
     schedule()
     onCleanup(() => {
-      root.removeEventListener("scroll", schedule)
+      root.removeEventListener("scroll", onScroll)
       observer?.disconnect()
     })
   })
@@ -669,9 +752,17 @@ const CSS = `
 [data-timeline-rail-tick][data-d="0"]::after { opacity: 0.6; }
 [data-timeline-rail-tick][data-view]::after,
 [data-timeline-rail-tick][data-current]::after { opacity: 1; }
+@starting-style {
+  [data-timeline-rail-tick] { transform: scale(0.3333, 1); }
+  [data-timeline-rail-tick]::before,
+  [data-timeline-rail-tick]::after { opacity: 0; }
+}
 [data-timeline-rail][data-armed] [data-timeline-rail-tick] { transition: transform 150ms var(--timeline-rail-ease); }
 [data-timeline-rail][data-armed] [data-timeline-rail-tick]::before,
 [data-timeline-rail][data-armed] [data-timeline-rail-tick]::after { transition: opacity 150ms var(--timeline-rail-ease); }
+[data-timeline-rail][data-scrolling] [data-timeline-rail-tick],
+[data-timeline-rail][data-scrolling] [data-timeline-rail-tick]::before,
+[data-timeline-rail][data-scrolling] [data-timeline-rail-tick]::after { transition: none !important; }
 @media (hover: hover) and (pointer: fine) {
   [data-timeline-rail-strip]:hover [data-timeline-rail-base] { opacity: 0.8; }
 }

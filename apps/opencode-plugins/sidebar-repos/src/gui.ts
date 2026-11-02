@@ -250,9 +250,18 @@ export default Plugin.define({
       const element = node.nodeType === 1 ? node as Element : node.parentElement
       return !!element?.closest("[data-sidebar-repo], [data-sidebar-status-icon], [data-sidebar-time]")
     }
+    // The observer sits on the whole document (the sidebar mounts anywhere), but only the sidebar's own changes matter:
+    // the timeline mutates on every scroll and streamed delta, and each of those used to cost a full row pass.
+    const SIDEBAR = "[data-tab-key], [data-titlebar-tab-list], [data-titlebar-tab], [data-slot='vertical-tabs-scroll'], [data-action='vertical-tabs-home']"
+    const inSidebar = (node: Node) => {
+      const element = node.nodeType === 1 ? node as Element : node.parentElement
+      return !!element?.closest(SIDEBAR)
+    }
+    const bringsSidebar = (node: Node) => node.nodeType === 1 && ((node as Element).matches(SIDEBAR) || !!(node as Element).querySelector(SIDEBAR))
     const observer = new MutationObserver((records) => {
       if (records.some((record) => {
         if (owned(record.target)) return false
+        if (!inSidebar(record.target) && !(record.type === "childList" && [...record.addedNodes].some(bringsSidebar))) return false
         if (record.type === "attributes") return true
         return [...record.addedNodes, ...record.removedNodes].some((node) => !owned(node))
       })) refresh()

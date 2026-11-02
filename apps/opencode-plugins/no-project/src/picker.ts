@@ -190,9 +190,11 @@ export function attachPicker(doc: Document, config: PickerRow): () => void {
   }
 
   const onMove = (event: MouseEvent) => {
-    const row = mine()
+    // The cheap tests first: a document-wide lookup per mouse move costs more than everything else here.
     const target = (event.target as Element | null)?.closest?.(OPTION)
-    if (!row || !target || (event.movementX === 0 && event.movementY === 0)) return
+    if (!target || (event.movementX === 0 && event.movementY === 0)) return
+    const row = mine()
+    if (!row) return
     if (target === row) enter()
     else leave(true)
   }
@@ -215,7 +217,12 @@ export function attachPicker(doc: Document, config: PickerRow): () => void {
     if ((event.target as Element | null)?.closest?.("[data-no-project-row]")) event.preventDefault()
   }
 
-  const bodyObserver = new win.MutationObserver(() => { if (dialog() || mine()) schedule() })
+  // Only changes in or around the palette dialog or our row matter; the rest of the app mutates constantly.
+  const near = (node: Node) => !!(node.nodeType === 1 ? (node as Element) : node.parentElement)?.closest?.(`${DIALOG}, [data-no-project-row]`)
+  const carries = (node: Node) => node.nodeType === 1 && ((node as Element).matches(DIALOG) || !!(node as Element).querySelector(DIALOG))
+  const bodyObserver = new win.MutationObserver((records) => {
+    if (records.some((record) => near(record.target) || [...record.addedNodes, ...record.removedNodes].some((node) => near(node) || carries(node))) && (dialog() || mine())) schedule()
+  })
   bodyObserver.observe(doc.body, { childList: true, subtree: true })
   doc.addEventListener("keydown", onKey, true)
   doc.addEventListener("mousemove", onMove, true)
