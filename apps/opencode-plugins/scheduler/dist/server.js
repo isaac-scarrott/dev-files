@@ -17,6 +17,7 @@ export default Plugin.define({
         const handlers = scheduleControl(hub);
         const control = await ctx.rpc.register(ScheduleControl, {
             active: (input) => handlers.active(input),
+            pending: (input) => handlers.pending(input),
             cancel: (input) => handlers.cancel(input),
         });
         return async () => {

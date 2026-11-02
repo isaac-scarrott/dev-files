@@ -12,6 +12,10 @@ Shared components that look and behave like OpenCode Desktop's own sidebar rows,
 
 - `InjectedMessageRow` and `mountInjectedRows`: a message an app injected into a session (peer, monitor wake, scheduled run) as the host subagent row's grey header with a card below when opened; used by `orchestrator-tools`, `monitor` and `scheduler`. Register `injectedMessageRowCss` with `ctx.add(Style, ...)`.
 
+- `createSessionChip`, `createLaneChip` and `LaneChipRows`: a chip in the row above the composer (the host's `ComposerPill`) that counts things aimed at the session on screen, opens a popover of two-line rows with an action each, and collapses in and out while the row moves with it; used by `monitor` and `scheduler`. Register `laneChipCss` with `ctx.add(Style, ...)`.
+
+![Chips entering and leaving the row above the composer, the host's capsule sliding with them](media/lane-chips.gif)
+
 ## Context
 GUI plugins that draw their own rows and menus drift from the app. These components copy the host's markup from the installed 2.2.5 renderer source, and `parity.spec.mjs` checks them against the real elements. It tracks 2.2.5 and may break on a host update.
 
