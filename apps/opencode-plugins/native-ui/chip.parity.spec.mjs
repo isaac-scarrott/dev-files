@@ -60,7 +60,7 @@ export default {
     // Opening the host's activity panel dismisses a pill's popover and the reverse (Kobalte closes a popup on focus outside), so
     // the two never stand side by side and the runner cannot measure both at once. They were measured one after the other
     // with the same computed-style properties (DESIGN.md, "Popover rows against the host's activity panel").
-    { name: "monitor-popover", ours: OUR_PANEL, native: NATIVE_PANEL, na: "the host's pill popover and its activity panel cannot be open together; compared in sequence in DESIGN.md: radius, surface, shadow, padding and border equal, width 320 against max-content" },
-    { name: "monitor-row", ours: "[data-lane-chip-row]", native: `${NATIVE_PANEL} [data-component="menu-v2-item"]`, na: "as above; row padding, radius, colours and type compared in sequence in DESIGN.md; the row is two lines by design (name over a muted status), so height differs" },
+    { name: "monitor-popover", ours: OUR_PANEL, native: NATIVE_PANEL, na: "the host's pill popover and its activity panel cannot be open together; compared in sequence (apps/opencode-plugins/native-ui/DESIGN.md, chip popover): panel width, min and max width, max-height, scroll owner, no open motion, z-index, surface, shadow, padding, border and radius equal" },
+    { name: "monitor-row", ours: "[data-lane-chip-row]", native: `${NATIVE_PANEL} [data-component="menu-v2-item"]`, na: "as above; row height 28, padding, radius, hover, cursor, user-select, name and trailing-text type compared in sequence; the name truncates here (the host's summary does), because the trailing text is the status" },
   ],
 }

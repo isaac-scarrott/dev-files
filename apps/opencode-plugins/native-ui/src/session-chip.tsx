@@ -44,6 +44,16 @@ interface Loaded<Item> {
 }
 
 export function createSessionChip<Item extends { readonly id: string }>(ctx: ChipContext, options: SessionChipOptions<Item>): void {
+  // How the popover was opened, from the last input before it: the host does not say.
+  let lastInput: "pointer" | "keyboard" = "pointer"
+  const noteKey = () => (lastInput = "keyboard")
+  const notePointer = () => (lastInput = "pointer")
+  document.addEventListener("keydown", noteKey, true)
+  document.addEventListener("pointerdown", notePointer, true)
+  onCleanup(() => {
+    document.removeEventListener("keydown", noteKey, true)
+    document.removeEventListener("pointerdown", notePointer, true)
+  })
   const [stamp, setStamp] = createSignal(0)
   const refresh = () => setStamp((value) => value + 1)
   // Items the user just removed stay out of any answer that was asked before the removal.
@@ -101,13 +111,14 @@ export function createSessionChip<Item extends { readonly id: string }>(ctx: Chi
           ui={ctx.ui}
           rows={options.rows(items(), now())}
           icon={options.rowIcon}
+          keyboardOpen={() => lastInput === "keyboard"}
           actionLabel={options.actionLabel}
-          onAction={(id, keyboard) => {
+          onAction={(id) => {
             const item = items().find((candidate) => candidate.id === id)
             const session = ctx.sessions.current()
             if (!item || !session) return
-            // The chip and its popover go with the last item, taking focus with them: a keyboard user lands in the prompt, as the host's own capsule does.
-            if (keyboard && items().length === 1) input.screen.composer.focus()
+            // The chip and its popover go with the last item, taking focus with them: the prompt gets it, as with the host's own capsule.
+            if (items().length === 1) input.screen.composer.focus()
             // Out of the list at once; any answer asked before the server finished stays without it, the next one is the truth.
             setRemoved((current) => new Map(current).set(id, Infinity))
             const done = (ok: boolean) => {
