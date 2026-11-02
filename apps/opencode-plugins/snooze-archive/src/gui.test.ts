@@ -688,6 +688,13 @@ test("a pending approval or question outranks the clock: only a CSS precedence, 
   assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
 })
 
+test("the clock owns the status slot: sidebar-repos' last-activity label is hidden and the title fade is the host's while it shows", async () => {
+  const { wokeCss } = await import("./woke")
+  const shown = '[data-sa-woke]:not([data-status="attention"], [data-active="true"])'
+  assert.ok(wokeCss.includes(`${shown} [data-sidebar-time] { display: none; }`), "same condition as the clock itself, so attention and the open tab keep the label rules")
+  assert.ok(wokeCss.includes(`${shown}:not(:hover):not(:has(:focus-visible)) { --sidebar-fade: 30px; }`))
+})
+
 const HOST_MENU = (cls: string, labels: string[]) => `<div role="menu" data-component="menu-v2-content" data-appearance="compact" class="${cls}">${labels.map((l, i) => (l === "-" ? '<div data-slot="menu-v2-separator"></div>' : `<div role="menuitem" tabindex="-1" data-component="menu-v2-item"><span data-slot="menu-v2-item-content">${l}</span></div>`)).join("")}</div>`
 const mount = (f: { doc: Document }, html: string) => { const portal = f.doc.createElement("div"); portal.innerHTML = html; f.doc.body.append(portal); return portal.firstElementChild as HTMLElement }
 const HEADER = ["Rename", "Export…", "-", "Delete…"]
