@@ -1,8 +1,4 @@
 {
-  "agents-panel/src/dock.ts|no-module-state": 1,
-  "agents-panel/src/gui.tsx|no-effect": 1,
-  "agents-panel/src/panel.tsx|no-effect": 2,
-  "agents-panel/src/toggle.tsx|no-effect": 9,
   "native-ui/src/header-icon-button.tsx|no-effect": 1,
   "native-ui/src/header-icon-button.tsx|no-module-state": 1,
   "native-ui/src/popover.tsx|no-effect": 1,

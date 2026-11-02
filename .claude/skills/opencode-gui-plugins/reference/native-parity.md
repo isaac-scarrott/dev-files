@@ -66,9 +66,6 @@ Final numbers, native-ui spec against OpenCode 2.2.5 in the harness: full run 26
 | snooze-archive | snoozed/archived group rows and header | sidebar session row and the host's group heading | none yet: 45px vs 52px, padding, line-height, badge placement |
 | snooze-archive | time menu | `menu-v2-content` compact | none yet |
 | snooze-archive | Custom dialog | `ctx.ui.Dialog` size fit, `Button`, `IconButton`, `TextInput` | none yet |
-| agents-panel | header toggle button | Session details button (`HeaderIconButton`) | none yet |
-| agents-panel | floating popover | Session details popover (`Popover` + `SummaryCard`) | none yet |
-| agents-panel | agent rows | `menu-v2-item` compact | none yet |
 | message-jump | pill with IconButtons | composer pill, `ghost-muted small` | none yet |
 | visual-replies | card and buttons | `tool-part-wrapper` card, `IconButton` | none yet |
 | no-project | command only | `Command` registry (no UI) | not applicable |

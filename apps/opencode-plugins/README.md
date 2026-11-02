@@ -10,13 +10,12 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 
 | Package | What it does | Kind |
 | --- | --- | --- |
-| [`agents-panel`](agents-panel) | Header button listing running subagents and shells: a floating window beside the chat when the sidebar is closed, a popover when open. Opt in with Settings → Timeline → Background activity → Panel | GUI |
 | [`blindfold`](blindfold) | Vendored vimtor/opencode-blindfold 0.5.0: agents use secrets without seeing them | server, TUI, GUI |
 | [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction; the cache window (5m or 1h) is read from Claude Code's transcript | GUI + server |
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |
 | [`monitor`](monitor) | `monitor`, `list_monitors`, `stop_monitor`: run a command in the background and wake the session with its output lines (batched, escaped, untrusted-data trailer); optional re-arm; wakes show as a grey row with a Stop button | server, GUI |
-| [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive`, `orchestrator-tools`, `monitor` and `scheduler` import it (`agents-panel` carries copies of the spinner files); the shared injected-message row | library |
+| [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive`, `orchestrator-tools`, `monitor` and `scheduler` import it; the shared injected-message row | library |
 | [`no-project`](no-project) | "No project" row in the project picker and `/no-project`: a draft in its own scratch folder, swept when unused | GUI + server |
 | [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions; a peer's message shows as a grey row | server, GUI |
 | [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep; runs show as a grey row with a Cancel button | server, GUI |

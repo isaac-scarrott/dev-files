@@ -8,7 +8,7 @@ Shared components that look and behave like OpenCode Desktop's own sidebar rows,
 ## What it does
 - Exports session tab rows, tab close and row-action buttons, menu content and items (with a submenu chevron and keyboard highlight), a popover, a summary card, project avatars, a progress spinner, a header icon button and a drawn clock icon.
 - Uses the host's own class names and data attributes, so the app's CSS styles them. `nativeUiCss` adds the little the host does not provide.
-- Imported by relative path and bundled into the importing plugin's build; `snooze-archive` (row styles) and `agents-panel` (the spinner) do, and `snooze-archive/src/menu.ts` re-implements part of the menu. It is not a plugin and is not registered. `demo/` is a separate demo GUI plugin.
+- Imported by relative path and bundled into the importing plugin's build; `snooze-archive` (row styles) does, and `snooze-archive/src/menu.ts` re-implements part of the menu. It is not a plugin and is not registered. `demo/` is a separate demo GUI plugin.
 
 - `InjectedMessageRow` and `mountInjectedRows`: a message an app injected into a session (peer, monitor wake, scheduled run) as the host subagent row's grey header with a card below when opened; used by `orchestrator-tools`, `monitor` and `scheduler`. Register `injectedMessageRowCss` with `ctx.add(Style, ...)`.
 
