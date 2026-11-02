@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import type { Claims } from "./claims.js"
 import { nextCron, parseCron } from "./cron.js"
 import type { Host, SessionInfo } from "./host.js"
 import type { Options } from "./options.js"
@@ -67,6 +68,8 @@ const NAME_CHARS = 60
 const MAX_FAILURES = 3
 const RETRY_MS = 60_000
 const MAX_PROMPT_CHARS = 20_000
+/** A slot claimed this long ago whose job still sits unchanged in storage was claimed by an instance that died before saving. */
+const STALE_CLAIM_MS = 60_000
 
 export const emptyState = (): State => ({ jobs: [], ended: [] })
 
@@ -102,18 +105,27 @@ export class Scheduler {
     private readonly log: (message: string) => void,
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
     private readonly anyHost: () => Host | undefined,
+    private readonly claims: Claims,
   ) {}
 
-  static async create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined): Promise<Scheduler> {
+  static async create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined, claims: Claims): Promise<Scheduler> {
     const stored = (await storage.get(STATE_KEY).catch(() => undefined)) as Partial<State> | undefined
     const state: State = { ...emptyState(), ...stored }
-    return new Scheduler(options, clock, storage, state, log, anyHost)
+    return new Scheduler(options, clock, storage, state, log, anyHost, claims)
   }
 
   private locked<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.queue.then(fn, fn)
     this.queue = run.catch(() => {})
     return run
+  }
+
+  /** Other instances share the stored state and save over it; reread it before acting so nothing runs on a stale copy. */
+  private async refresh(): Promise<void> {
+    const stored = (await this.storage.get(STATE_KEY).catch(() => undefined)) as Partial<State> | undefined
+    if (!stored) return
+    this.state.jobs = stored.jobs ?? []
+    this.state.ended = stored.ended ?? []
   }
 
   private save(): Promise<void> {
@@ -140,6 +152,7 @@ export class Scheduler {
 
   add(host: Host, caller: SessionInfo, input: AddInput): Promise<{ job: Job }> {
     return this.locked(async () => {
+      await this.refresh()
       const now = this.clock.now()
       const prompt = typeof input.prompt === "string" ? input.prompt.trim() : ""
       if (!prompt) throw new Error("prompt must not be empty")
@@ -210,6 +223,7 @@ export class Scheduler {
 
   cancel(id: string): Promise<{ cancelled: Job | undefined }> {
     return this.locked(async () => {
+      await this.refresh()
       const job = this.state.jobs.find((j) => j.id === id.trim())
       if (!job) return { cancelled: undefined }
       this.end(job, "cancelled")
@@ -221,10 +235,36 @@ export class Scheduler {
   /** Fire every active job that is due. After sleep or a restart the first call catches up: a missed recurring job fires once. */
   tick(): Promise<void> {
     return this.locked(async () => {
+      await this.refresh()
       const now = this.clock.now()
       const due = this.state.jobs.filter((j) => j.status === "active" && j.nextRun <= now).sort((a, b) => a.nextRun - b.nextRun)
-      for (const job of due) await this.fire(job, now).catch((error) => this.log(`${job.id}: ${String(error)}`))
+      for (const job of due) await this.claimed(job, now).catch((error) => this.log(`${job.id}: ${String(error)}`))
     })
+  }
+
+  /**
+   * Exactly once per (job, slot) however many instances tick: the slot is claimed in shared storage before anything is
+   * sent or saved, and a loser does nothing. The winner rereads the job, since another instance may have finished it
+   * between this tick's read and the claim.
+   */
+  private async claimed(due: Job, now: number): Promise<void> {
+    const slot = due.nextRun
+    const claim = await this.claims.claim(`${due.id}@${slot}`)
+    await this.refresh()
+    const job = this.state.jobs.find((j) => j.id === due.id)
+    if (!job || job.status !== "active" || job.nextRun !== slot) return
+    if (claim.won) return this.fire(job, now)
+    // The slot was claimed, yet the stored job never moved on: its claimant died between claiming and saving.
+    if (claim.ageMs > STALE_CLAIM_MS) return this.skip(job, now)
+  }
+
+  /** Advance a job past a slot whose claimant died, without sending: a crash skips a run rather than repeating it. */
+  private async skip(job: Job, now: number): Promise<void> {
+    const next = this.nextFor(job, now)
+    this.log(`${job.id} "${job.name}": slot ${isoLocal(job.nextRun)} was claimed but never delivered; skipped`)
+    if (next === undefined) this.end(job, "run interrupted before delivery")
+    else job.nextRun = next
+    await this.save()
   }
 
   private async fire(job: Job, now: number): Promise<void> {

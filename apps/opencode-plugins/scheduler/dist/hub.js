@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileClaims } from "./claims.js";
 import { Scheduler } from "./scheduler.js";
 let shared;
 /**
@@ -12,7 +14,7 @@ export async function acquire(host, options, clock, log) {
             hosts,
             started: false,
             stopped: false,
-            scheduler: Scheduler.create(options, clock, host.storage, log, () => hosts.values().next().value),
+            scheduler: Scheduler.create(options, clock, host.storage, log, () => hosts.values().next().value, fileClaims(path.join(options.logDir, "claims"), clock.now, log)),
         };
         shared = entry;
     }
@@ -27,7 +29,10 @@ export async function acquire(host, options, clock, log) {
         clearTimeout(entry.timer);
         const due = scheduler.nextDueAt();
         const delay = due === undefined ? tickMs : Math.min(tickMs, Math.max(due - clock.now(), 0) + 25);
-        entry.timer = setTimeout(() => void scheduler.tick().finally(arm), delay);
+        entry.timer = setTimeout(() => {
+            if (!entry.stopped)
+                void scheduler.tick().finally(arm);
+        }, delay);
     };
     if (!entry.started) {
         entry.started = true;

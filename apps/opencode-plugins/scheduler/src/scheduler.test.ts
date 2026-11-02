@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Host, SessionInfo } from "./host.js"
+import { memoryClaims } from "./claims.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import { emptyState, Scheduler, STATE_KEY, type AddInput } from "./scheduler.js"
 import { resolveTarget } from "./targets.js"
@@ -24,6 +25,8 @@ interface Rig {
   now: number
   failPrompt: boolean
   reload(): Promise<Scheduler>
+  /** Another scheduler instance over the same storage, host and claims. */
+  instance(): Promise<Scheduler>
 }
 
 async function rig(overrides: Partial<Options> = {}, seed: SessionInfo[] = [session({ id: "ses_aaaaaaaa11111111", title: "Main" })]): Promise<Rig> {
@@ -58,8 +61,9 @@ async function rig(overrides: Partial<Options> = {}, seed: SessionInfo[] = [sess
     },
   } as unknown as Host
   const options: Options = { ...DEFAULTS, logDir: "/unused", ...overrides }
-  const make = () => Scheduler.create(options, { now: () => state.now }, host.storage, (m) => logs.push(m), () => host)
-  const out = Object.assign(state, { host, scheduler: await make(), reload: async () => (out.scheduler = await make()) })
+  const held = new Map<string, number>()
+  const make = () => Scheduler.create(options, { now: () => state.now }, host.storage, (m) => logs.push(m), () => host, memoryClaims(() => state.now, held))
+  const out = Object.assign(state, { host, scheduler: await make(), reload: async () => (out.scheduler = await make()), instance: make })
   return out
 }
 
@@ -301,4 +305,72 @@ test("nextDueAt reports the earliest active job", async () => {
   await add(r, { prompt: "a", at: "+3h" })
   await add(r, { prompt: "b", at: "+1h" })
   assert.equal(r.scheduler.nextDueAt(), T0 + 3_600_000)
+})
+
+test("N instances over one store, one due cron tick: exactly one delivery", async () => {
+  const r = await rig()
+  const { job } = await add(r, { prompt: "weekly gap research", cron: "25 9 * * 1" })
+  const instances = [r.scheduler, ...(await Promise.all([1, 2, 3, 4, 5].map(() => r.instance())))]
+  r.now = job.nextRun + 30
+  await Promise.all(instances.map((s) => s.tick()))
+  assert.equal(r.prompts.length, 1)
+  assert.equal((r.storage.get(STATE_KEY) as any).jobs[0].nextRun > job.nextRun, true)
+  await Promise.all(instances.map((s) => s.tick()))
+  assert.equal(r.prompts.length, 1)
+})
+
+test("N instances, one-off: one delivery, and every instance agrees it is gone", async () => {
+  const r = await rig()
+  await add(r, { prompt: "once", at: "+1h" })
+  const instances = [r.scheduler, await r.instance(), await r.instance()]
+  r.now = T0 + 61 * MIN
+  await Promise.all(instances.map((s) => s.tick()))
+  assert.equal(r.prompts.length, 1)
+  for (const s of instances) {
+    await s.tick()
+    assert.equal(s.list().jobs.length, 0)
+  }
+  assert.equal(r.prompts.length, 1)
+})
+
+test("a stale instance does not resend a slot another instance already delivered", async () => {
+  const r = await rig()
+  const { job } = await add(r, { prompt: "p", every: "1h" })
+  const stale = await r.instance()
+  r.now = job.nextRun + 1000
+  await r.scheduler.tick()
+  assert.equal(r.prompts.length, 1)
+  // The stale copy still holds the old slot in memory; nothing reaches it from the claim map or storage but the reread.
+  await stale.tick()
+  assert.equal(r.prompts.length, 1)
+})
+
+test("restart between claim and save: the slot is not delivered twice and the job moves on after the claim goes stale", async () => {
+  const r = await rig()
+  const { job } = await add(r, { prompt: "p", cron: "25 9 * * 1" })
+  const slot = job.nextRun
+  // A dead instance claimed the slot but never saved or sent.
+  const held = new Map<string, number>([[`${job.id}@${slot}`, slot]])
+  const next = await Scheduler.create({ ...DEFAULTS, logDir: "/unused" }, { now: () => r.now }, r.host.storage, (m) => r.logs.push(m), () => r.host, memoryClaims(() => r.now, held))
+  r.now = slot + 10_000
+  await next.tick()
+  assert.equal(r.prompts.length, 0)
+  assert.equal(next.list().jobs[0]!.nextRun, slot)
+  r.now = slot + 5 * MIN
+  await next.tick()
+  assert.equal(r.prompts.length, 0)
+  assert.equal(next.list().jobs[0]!.nextRun > r.now, true)
+  assert.ok(r.logs.some((l) => /never delivered; skipped/.test(l)))
+})
+
+test("overdue after sleep: a week of missed cron slots delivers one run", async () => {
+  const r = await rig()
+  const { job } = await add(r, { prompt: "p", cron: "25 9 * * 1" })
+  const instances = [r.scheduler, await r.instance()]
+  r.now = job.nextRun + 21 * 24 * 3_600_000
+  await Promise.all(instances.map((s) => s.tick()))
+  await Promise.all(instances.map((s) => s.tick()))
+  assert.equal(r.prompts.length, 1)
+  assert.equal(r.prompts[0].metadata.scheduledTask.scheduled, job.nextRun)
+  assert.equal(r.scheduler.list().jobs[0]!.nextRun > r.now, true)
 })

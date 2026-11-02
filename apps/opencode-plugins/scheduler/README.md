@@ -6,7 +6,7 @@ Tools that let an agent schedule a prompt for later, once or on a repeat, and wa
 - `schedule_task` takes a prompt and exactly one of `at` (ISO time or `+2h`), `every` (`30m`, `2h`, `1d`) or `cron` (5 fields, your local time zone). It wakes the calling session, or another one by ref or title.
 - `list_schedules` shows each task's id, name, kind, next and last run and target, plus recently ended tasks and why they ended.
 - `cancel_schedule` removes a task by id.
-- Tasks are saved, so they survive restarts and sleep. A run missed while the app was closed or the machine slept fires once when it is back, and the message says how late it was. Recurring tasks reschedule from the moment they ran.
+- Tasks are saved, so they survive restarts and sleep. A run missed while the app was closed or the machine slept fires once when it is back (never one per missed slot), and the message says how late it was. Each scheduled slot is delivered at most once even when the server loads several plugin instances or restarts; a crash between claiming and sending skips that run rather than repeating it. Recurring tasks reschedule from the moment they ran.
 - The wake arrives in the session straight away, idle or busy, as `<scheduled-task name="..." id="..." scheduled="...">prompt</scheduled-task>` plus a short note that it came from a scheduler, not from you at that moment.
 - A task whose session was archived or deleted is dropped and the reason is listed. A task that fires more than 10 times in an hour is paused with a notice in its session.
 
@@ -36,7 +36,7 @@ Pass them with `{ "package": "/path/to/scheduler", "options": { ... } }`.
 | `tickSeconds` | `30` | longest wait before due tasks are looked at (also how fast a woken machine catches up) |
 | `lateSeconds` | `90` | a run later than this is reported as late |
 | `scope` | `"tree"` | which sessions `session` may name: the caller's tree, `"project"` or `"all"` |
-| `logDir` | `~/.local/share/opencode/scheduler` | `scheduler.log` (prompts are never logged) |
+| `logDir` | `~/.local/share/opencode/scheduler` | `scheduler.log` (prompts are never logged) and `claims/`, one empty file per delivered slot (pruned after 30 days) |
 
 Per task, `maxRuns` stops a recurring task after that many runs.
 
