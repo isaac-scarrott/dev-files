@@ -186,3 +186,26 @@ test("a clipped end fades with the host's 16px tab-title ramp, only while the te
   const css = injectedMessageRowCss
   assert.match(css, /\[data-clipped="true"\] \[data-slot="injected-main"\] \{\s*-webkit-mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);\s*mask-image: linear-gradient\(to right, black 0, black calc\(100% - 16px\), transparent 100%\);/)
 })
+
+// A real click lands on the topmost element under the pointer. The trigger button fills the head under everything else, so every
+// other part of the header must let the pointer through (pointer-events: none) and only the action button takes it. The tail slot
+// once had the default, which put an invisible box over the triangle and swallowed its clicks (regression, 2026-11-02).
+test("every header part passes clicks through to the trigger; only the action button takes them", () => {
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.[\]]/g, "\\$&")
+    const match = injectedMessageRowCss.match(new RegExp(`\\[data-slot="injected-head"\\] ${escaped} \\{([^}]*)\\}`))
+    assert.ok(match, `a rule for ${selector}`)
+    return match![1]
+  }
+  for (const slot of ["injected-icon", "injected-main", "injected-tail", "injected-arrow"]) {
+    assert.match(rule(`[data-slot="${slot}"]`), /pointer-events: none/, `${slot} lets the pointer through`)
+  }
+  assert.match(injectedMessageRowCss, /\.injected-action \{[^}]*pointer-events: auto/)
+  // the trigger is the head's first child and fills it; the parts sit above it in paint order, so none may be hit-testable but the action
+  assert.match(rule('[data-slot="injected-trigger"]'), /position: absolute; inset: 0/)
+  const host = dom()
+  mount(host, { action: { icon: "chevron-right" as any, label: "Open session", onClick() {} } })
+  const head = host.querySelector("[data-slot=injected-head]")!
+  assert.equal(head.firstElementChild?.getAttribute("data-slot"), "injected-trigger")
+  assert.deepEqual([...head.children].map((child) => child.getAttribute("data-slot")), ["injected-trigger", "injected-icon", "injected-main", "injected-tail"])
+})

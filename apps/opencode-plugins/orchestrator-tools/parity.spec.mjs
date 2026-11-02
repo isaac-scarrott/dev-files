@@ -290,6 +290,30 @@ export default {
       }],
     },
     {
+      // Every part of the header toggles on a real mouse click (CDP mousePressed/mouseReleased at the part's centre), at rest and with the
+      // trailing slot open, on a full-width row and a short one. The triangle once did not: the tail slot sat above the trigger button
+      // with the default pointer-events and took its clicks (regression after the head was restructured, 2026-11-02). The probe also
+      // reports what is topmost at the point, so a future overlay shows by name.
+      name: "click-targets",
+      ours: `${HEAD}[data-parity-long]`,
+      native: "[data-component=task-tool-surface][data-parity-long]",
+      style: false,
+      behaviour: ["[data-slot=injected-icon]", "[data-slot=injected-title]", "[data-slot=injected-arrow]"].flatMap((part) =>
+        [false, true].map((hovered) => ({
+          name: `click-${part.slice(11, -1)}${hovered ? "-hovered" : "-rest"}`,
+          check: "scenario",
+          only: "ours",
+          steps: [
+            ...(hovered ? [{ do: "hover", target: part }, "wait:400"] : []),
+            { do: "click", target: part },
+            "wait:500",
+          ],
+          probe: `const row = el.closest("[data-injected-row]"); return { open: row.dataset.open }`,
+          expect: { result: { open: "true" } },
+          after: "document.querySelectorAll('[data-injected-row][data-open=true] [data-slot=injected-trigger]').forEach((trigger) => trigger.click())",
+        }))),
+    },
+    {
       // The go-to-session affordance: the host's row shows a bare 16px chevron-right (`task-tool-action`, rgb 128 = text-faint)
       // that fades in on hover. Ours is the same catalog icon inside a 24px ghost button, centred on the same x from the row's
       // right edge (20px) and the same y; the button's box is the only difference, so the compared element is the icon.
