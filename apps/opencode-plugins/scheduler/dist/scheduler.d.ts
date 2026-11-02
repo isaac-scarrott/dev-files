@@ -1,3 +1,4 @@
+import type { Claims } from "./claims.js";
 import type { Host, SessionInfo } from "./host.js";
 import type { Options } from "./options.js";
 export type Kind = "once" | "every" | "cron";
@@ -60,12 +61,15 @@ export declare class Scheduler {
     private readonly log;
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
     private readonly anyHost;
+    private readonly claims;
     private queue;
     constructor(options: Options, clock: Clock, storage: Host["storage"], state: State, log: (message: string) => void, 
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
-    anyHost: () => Host | undefined);
-    static create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined): Promise<Scheduler>;
+    anyHost: () => Host | undefined, claims: Claims);
+    static create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined, claims: Claims): Promise<Scheduler>;
     private locked;
+    /** Other instances share the stored state and save over it; reread it before acting so nothing runs on a stale copy. */
+    private refresh;
     private save;
     private end;
     /** Earliest time an active job is due, or undefined when nothing is waiting. */
@@ -83,6 +87,14 @@ export declare class Scheduler {
     }>;
     /** Fire every active job that is due. After sleep or a restart the first call catches up: a missed recurring job fires once. */
     tick(): Promise<void>;
+    /**
+     * Exactly once per (job, slot) however many instances tick: the slot is claimed in shared storage before anything is
+     * sent or saved, and a loser does nothing. The winner rereads the job, since another instance may have finished it
+     * between this tick's read and the claim.
+     */
+    private claimed;
+    /** Advance a job past a slot whose claimant died, without sending: a crash skips a run rather than repeating it. */
+    private skip;
     private fire;
     private failed;
     private notice;
