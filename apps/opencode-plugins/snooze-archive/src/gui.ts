@@ -1,6 +1,6 @@
 import { Command, createKeyed, Plugin, Store, Style, type ServerRef } from "@opencode/plugin/gui"
 import { Schema } from "effect"
-import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { actionsCss, labels, type ActionName, type Target } from "./actions"
 import { iconCss } from "./icons"
 import { menuCss } from "./menu"
@@ -166,11 +166,6 @@ export default Plugin.define({
       }
       changed()
     }
-    // The host's archive UI went away (or the option changed): the group is back, so it loads what it missed.
-    createEffect(() => {
-      if (groupDown()) return
-      untrack(() => { for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected && server.compatible) fill(server) } })
-    })
     const closeTabs = (server: string, id: string) => {
       for (const tab of ctx.tabs.list()) if (tab.session?.server.id === server && tab.session.id === id) ctx.tabs.close(tab.key)
     }
@@ -340,53 +335,6 @@ export default Plugin.define({
     ctx.add(Command, (): Command => ({ id: "refresh", title: "Refresh archived sessions", enabled: !groupDown(), run: () => {
       for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected && server.compatible) refresh(server) }
     } }))
-    createEffect(() => {
-      const tabs = ctx.tabs.list()
-      for (const entry of entries()) {
-        if (hiddenSnoozes.has(sessionKey(entry.server, entry.id)) && tabs.some((tab) => tab.session?.id === entry.id && tab.session.server.id === entry.server)) {
-          // Opening a sleeping session through Home or Recently closed is an explicit early wake.
-          wake(entry, false, false, true)
-        }
-      }
-    })
-    // Opening the session by any route (tab click, palette, keyboard, Home) makes it the mounted one.
-    createEffect(() => {
-      const session = currentSession()
-      if (session) clearWoke(session.server.id, session.id)
-    })
-    createEffect(() => {
-      const ids = new Set(ctx.servers.list())
-      for (const [id, sub] of subscriptions) if (!ids.has(id)) { sub.off.forEach((off) => off()); subscriptions.delete(id); archives.delete(id) }
-      for (const id of ids) {
-        const server = ctx.servers.get(id)
-        if (!server?.connected || !server.compatible) {
-          subscriptions.get(id)?.off.forEach((off) => off())
-          subscriptions.delete(id)
-          continue
-        }
-        const data = server.data
-        if (subscriptions.get(id)?.data === data) continue
-        subscriptions.get(id)?.off.forEach((off) => off())
-        const wakeEvent = (sessionID: string, created: number) => {
-          for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
-        }
-        const off = [
-          data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void settle(server, e.data.sessionID) }),
-          data.on("session.unarchived", (e) => showApplied(id, (state) => dropArchived(state, e.data.sessionID))),
-          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); showApplied(id, (state) => dropArchived(state, e.data.sessionID)) }),
-          data.on("session.renamed", (e) => { if (archives.get(id)?.rows.some((row) => row.id === e.data.sessionID)) void settle(server, e.data.sessionID) }),
-          data.on("session.execution.started", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("session.execution.succeeded", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("session.execution.failed", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("session.inbox.enqueued", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("permission.asked", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("form.created", (e) => wakeEvent(e.data.form.sessionID, e.created)),
-        ]
-        subscriptions.set(id, { data, off })
-        untrack(() => { refresh(server); entries().filter((e) => e.server === id).forEach((e) => void reconcile(e)) })
-      }
-      changed()
-    })
     // Own effect: the clock ticks and the snooze list changes here without rebuilding the Archived window.
     const snoozedState = createMemo((): GroupState => {
       tick()
@@ -498,20 +446,6 @@ export default Plugin.define({
       return presetLines((until) => void snooze({ id: target.id, server }, until), () => void snooze({ id: target.id, server }, "custom"))
     }, { archive: () => !actionsDown(), native: guard.menu })
     const wokeMarks = createWokeMarks(document, hub, (key) => tabInfo(key)?.target, (target) => isWoke(wokeEntries(), target.server, target.id))
-    createEffect(() => {
-      for (const tab of ctx.tabs.list()) tab.session?.server.data.session.get(tab.session.id)?.title
-      groupDown(); actionsDown()
-      // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
-      // while viewed and close it (it stays in Recently closed) once the user has moved on. Closing is deferred and
-      // re-checked so a tab that is mid-navigation, or about to be viewed again, is never closed under the user.
-      scheduleArchivedTabSweep()
-      tabActions.sync()
-    })
-    createEffect(() => {
-      wokeEntries()
-      ctx.tabs.list()
-      wokeMarks.sync()
-    })
     // Deadlines are checked on every tick. Events keep every connected snooze current, so the server is asked again
     // only after a stretch when events may have been missed: the window was away, or the timer was suspended (sleep).
     const RELABEL = 30_000
@@ -563,5 +497,76 @@ export default Plugin.define({
     onCleanup(() => window.removeEventListener("blur", blurred))
     // Hydrated snoozes keep working even when no session tabs are open.
     for (const entry of entries()) if (entry.until <= Date.now()) wake(entry)
+    // Reactive syncs start after setup's own first pass: the due wake above, and the timer and listeners, come first.
+    // The host's archive UI went away (or the option changed): the group is back, so it loads what it missed.
+    const groupUp = createMemo(() => !groupDown())
+    createKeyed(groupUp, () => {
+      for (const id of ctx.servers.list()) { const server = ctx.servers.get(id); if (server?.connected && server.compatible) fill(server) }
+    })
+    // Opening a sleeping session through Home or Recently closed is an explicit early wake. The source also reads what
+    // `wake` checks (connection, archived), so a session opened while its server was down wakes on reconnect.
+    const openedSleepers = createMemo(() => {
+      const tabs = ctx.tabs.list()
+      const opened = entries().filter((entry) => hiddenSnoozes.has(sessionKey(entry.server, entry.id)) && tabs.some((tab) => tab.session?.id === entry.id && tab.session.server.id === entry.server))
+      for (const entry of opened) {
+        const server = ctx.servers.get(entry.server)
+        void server?.data.session.get(entry.id)?.time?.archived
+        void server?.connected
+      }
+      return opened.length ? opened : undefined
+    })
+    createKeyed(openedSleepers, (opened) => { for (const entry of opened) wake(entry, false, false, true) })
+    // Opening the session by any route (tab click, palette, keyboard, Home) makes it the mounted one.
+    createKeyed(() => { const session = currentSession(); return session && { session } }, ({ session }) => clearWoke(session.server.id, session.id))
+    // Reads what the subscriptions depend on: the server list and each server's connection and data.
+    const serverLinks = createMemo(() => ctx.servers.list().map((id) => {
+      const server = ctx.servers.get(id)
+      return [id, server?.connected && server.compatible ? server.data : undefined] as const
+    }))
+    createKeyed(serverLinks, () => {
+      const ids = new Set(ctx.servers.list())
+      for (const [id, sub] of subscriptions) if (!ids.has(id)) { sub.off.forEach((off) => off()); subscriptions.delete(id); archives.delete(id) }
+      for (const id of ids) {
+        const server = ctx.servers.get(id)
+        if (!server?.connected || !server.compatible) {
+          subscriptions.get(id)?.off.forEach((off) => off())
+          subscriptions.delete(id)
+          continue
+        }
+        const data = server.data
+        if (subscriptions.get(id)?.data === data) continue
+        subscriptions.get(id)?.off.forEach((off) => off())
+        const wakeEvent = (sessionID: string, created: number) => {
+          for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
+        }
+        const off = [
+          data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void settle(server, e.data.sessionID) }),
+          data.on("session.unarchived", (e) => showApplied(id, (state) => dropArchived(state, e.data.sessionID))),
+          data.on("session.deleted", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); showApplied(id, (state) => dropArchived(state, e.data.sessionID)) }),
+          data.on("session.renamed", (e) => { if (archives.get(id)?.rows.some((row) => row.id === e.data.sessionID)) void settle(server, e.data.sessionID) }),
+          data.on("session.execution.started", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("session.execution.succeeded", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("session.execution.failed", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("session.inbox.enqueued", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("permission.asked", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("form.created", (e) => wakeEvent(e.data.form.sessionID, e.created)),
+        ]
+        subscriptions.set(id, { data, off })
+        refresh(server)
+        entries().filter((e) => e.server === id).forEach((e) => void reconcile(e))
+      }
+      changed()
+    })
+    // Tab rows read `tabInfo` (title, pending, archived), so the source reads it for every tab; each change re-syncs.
+    const tabRows = createMemo(() => ({ rows: ctx.tabs.list().map((tab) => tabInfo(tab.key)), groupDown: groupDown(), actionsDown: actionsDown() }))
+    createKeyed(tabRows, () => {
+      // An archived session lives in the Archived group, shown active while viewed. Opening it creates a host tab; hide it
+      // while viewed and close it (it stays in Recently closed) once the user has moved on. Closing is deferred and
+      // re-checked so a tab that is mid-navigation, or about to be viewed again, is never closed under the user.
+      scheduleArchivedTabSweep()
+      tabActions.sync()
+    })
+    const wokeRows = createMemo(() => ({ woke: wokeEntries(), rows: ctx.tabs.list().map((tab) => tabInfo(tab.key)) }))
+    createKeyed(wokeRows, () => wokeMarks.sync())
   },
 })
