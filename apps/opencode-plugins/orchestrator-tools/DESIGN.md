@@ -282,3 +282,18 @@ Same method; isolated harness, 3 plugins loaded (`orchestrator-tools`, `monitor`
 | 10 switches | 17 to 23 (busy 236 to 246) | 34 to 36 (busy about 266) | 35 to 38 | within 3% | +2.5 busy points |
 
 What was done about it, in order of effect: one `MutationObserver` per window shared by the three plugins (a `Symbol.for` key on `window`, removed with the last user): callbacks and records fell from 4x bare to 2x; no measuring on mount (a `scrollWidth` read per row forced a layout per row: 370ms self time in 5s of scrolling, now none), and none at all for a row whose body is known to differ from its preview. The sampling profile of the mixed scroll (200µs) then shows 13ms of self time in the plugin bundles over 5s, and the same total and the same host functions (`keys`, `rt`, `N`, `ot`) as bare; the remaining +30 to +40 ms/s of `ScriptDuration` sits in host code that runs when a row's height changes under the virtualiser, so it follows the number of injected rows on screen. Building the trailing slot lazily on first hover was tried and removed: no change in the numbers, and it broke the per-frame hover parity (the slot's icon is not there at rest). Open: the standing cost of the three message-store walks (one per plugin) on a switch, same as the `peers` memo noted above.
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 323 | 13 | 0 | -1 | 16.6 (16.5) | PASS |
+| type | 150 | 147 | -3 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 151 | 20 | 0 | -1 | 9.3 (10.1) | **FAIL** |
+| stream | 253 | 264 | 11 | 0 | 0 | 9.3 (9.9) | PASS |
+| hover | 176 | 180 | 4 | 0 | -1 | 9.2 (9.9) | PASS |
+| idle | 85 | 78 | -7 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 380 | 7 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 47 | -1 | | | | PASS |

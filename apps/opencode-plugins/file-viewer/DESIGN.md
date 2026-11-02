@@ -74,6 +74,21 @@ Harness, 300-turn seeded session (virtualised timeline, 30 code spans visible), 
 
 The remaining 174 observer callbacks in bare and lazy are the host's own. Lazy and no-watcher scroll identically (1258 vs 1262, within the 1227–1314 spread of runs), so the watcher's cost is zero within noise and meets the 3% bar in `performance.md`. The ~4% gap between any build with the plugin and bare is the plugin being loaded at all (the host's plugin layer and the `LinkHandler`, present on `master` before this module); it also changes the DOM (62 fewer nodes) and the heap by 2 MB. Not explained yet, outside this module. The observer version cost +11% script, a jank frame per scroll and nearly doubled the frame p95; that is what this design removes.
 
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 312 | 2 | 0 | -2 | 16.6 (16.5) | PASS |
+| type | 150 | 152 | 2 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 132 | 1 | 0 | -2 | 9.3 (10.1) | PASS |
+| stream | 253 | 249 | -5 | 0 | 0 | 9.2 (9.9) | PASS |
+| hover | 176 | 173 | -3 | 0 | -1 | 9.2 (9.9) | PASS |
+| idle | 85 | 83 | -2 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 366 | -7 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 46 | -2 | | | | PASS |
+
 ## Modules
 
 | File | Job |

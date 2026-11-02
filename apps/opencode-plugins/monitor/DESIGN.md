@@ -81,3 +81,18 @@ as user messages, `monitor.stop` ends sleeping grandchildren, SIGTERM to the ser
 
 ## Performance
 The chip adds nothing at idle (no timer, observer or request while the popover is closed) and two requests per message change; see the table in [native-ui DESIGN](../native-ui/DESIGN.md#composer-chips-harness-225-monitor--scheduler-loaded-a-session-with-a-running-subagent-a-monitor-and-a-schedule). The `gui-experimental.cjs` bundle grew from 19.1 kB to 30.5 kB.
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 325 | 15 | 0 | -1 | 16.7 (16.5) | PASS |
+| type | 150 | 153 | 3 | 0 | -1 | 9.1 (9.8) | PASS |
+| switch | 131 | 152 | 21 | 0 | -1 | 9.2 (10.1) | **FAIL** |
+| stream | 253 | 252 | -1 | 0 | 0 | 9.3 (9.9) | PASS |
+| hover | 176 | 168 | -8 | 0 | -1 | 9.2 (9.9) | PASS |
+| idle | 85 | 81 | -4 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 370 | -3 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 48 | -1 | | | | PASS |

@@ -29,7 +29,7 @@ start)
   # and renderer backgrounding are switched off so rAF, timers and measurements behave as if the window were visible.
   # OC_HARNESS_VISIBLE=1 restores a normal foreground window.
   before=$(aerospace list-windows --all --format '%{window-id}' 2>/dev/null | tr '\n' ' ' || true)
-  FLAGS=(--remote-debugging-port="$CDP_PORT" --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --mute-audio)
+  FLAGS=(--remote-debugging-port="$CDP_PORT" --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --mute-audio ${OC_HARNESS_INSPECT:+--inspect=$OC_HARNESS_INSPECT})
   if [ "${OC_HARNESS_VISIBLE:-}" = 1 ]; then
     OPENCODE_DESKTOP_TEST_ROOT="$ROOT" nohup "$APP" "${FLAGS[@]}" > "$ROOT/app.log" 2>&1 &
   else
@@ -49,7 +49,7 @@ start)
   fi
   for _ in $(seq 60); do [ -s "$ROOT/state/opencode/service.json" ] && curl -sf "http://127.0.0.1:$CDP_PORT/json/version" >/dev/null && break; sleep 1; done
   password=$(node -e 'console.log(require(process.argv[1]).password)' "$ROOT/state/opencode/service.json")
-  node "$HERE/seed-session.mjs" "http://127.0.0.1:$SVC_PORT" "$password" "$ROOT/project" 40
+  node "$HERE/seed-session.mjs" "http://127.0.0.1:$SVC_PORT" "$password" "$ROOT/project" "${OC_HARNESS_TURNS:-40}" ${OC_HARNESS_REALISTIC:+--realistic}
   echo "cdp: http://127.0.0.1:$CDP_PORT  pid: $(cat "$ROOT/app.pid")  root: $ROOT"
   ;;
 stop)

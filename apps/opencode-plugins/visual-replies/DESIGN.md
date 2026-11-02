@@ -84,3 +84,20 @@ Says what the tools are for, one `index.html`, inline everything, no network (fo
 `seed.mjs` imports one session with every placement shape (direct create and update, Code Mode with a returned id, matched by window, deleted by the agent, a link page, the attack page). `attack.mjs` is the hostile page. `drive.mjs` seeds, drives the isolated app over CDP, runs 28 checks (cards after a virtual-timeline scroll, update row text and parity, no card in an error state, sandbox flags, listener silence, listener liveness, link confirm flow, panel and live re-theme, update row opens panel, Cmd+R, session switch, no duplicates, nothing of ours animating) and writes screenshots. `prompt-check.mjs` is a stub model that records the request, proving the hook with the flag on and off. Run with the skill's `desktop-harness.sh` (fresh root, `experimental.artifacts: true`).
 
 Register by absolute path in `~/.config/opencode/opencode.json` `plugins`; `experimental.artifacts: true` too. Checks: `pnpm typecheck && pnpm test && pnpm build`.
+
+## Performance
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 342 | 32 | 0 | 0 | 16.6 (16.5) | PASS |
+| type | 150 | 149 | -0 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 143 | 12 | 0 | -1 | 9.3 (10.1) | PASS |
+| stream | 253 | 279 | 26 | 0 | 0 | 9.2 (9.9) | PASS |
+| hover | 176 | 182 | 6 | 0 | 0 | 9.2 (9.9) | PASS |
+| idle | 85 | 88 | 2 | 0 | 0 | 9.2 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 383 | 10 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 46 | -3 | | | | PASS |

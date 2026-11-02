@@ -163,3 +163,18 @@ not traced. The remaining cost is rendering the tray and its forecast on each sw
 The first readings (106 to 132 ms) came from searching the document for the lane on every one of the 45 settle frames
 (`querySelectorAll` showed in the profile); checking `isConnected` instead removed it. Heap growth was not charted. The cleanup removes the tray's node, its observer and its Solid root (at once when
 `ctx.signal` aborted or the session changed; after the retract otherwise).
+
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 330 | 20 | 0 | 0 | 16.6 (16.5) | PASS |
+| type | 150 | 157 | 7 | 0 | -1 | 9.2 (9.8) | PASS |
+| switch | 131 | 140 | 9 | 0 | -1 | 9.2 (10.1) | PASS |
+| stream | 253 | 255 | 2 | 0 | 0 | 9.2 (9.9) | PASS |
+| hover | 176 | 183 | 7 | 0 | 0 | 9.2 (9.9) | PASS |
+| idle | 85 | 81 | -4 | 0 | 0 | 9.3 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 372 | -1 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 46 | -2 | | | | PASS |

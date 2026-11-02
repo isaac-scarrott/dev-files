@@ -123,6 +123,21 @@ The vertical session sidebar ends with collapsed **Snoozed** and **Archived** gr
 - **Pages.** Each group shows its first 10 rows. Below them a **Show N more** row (the sidebar's own secondary row, as "New session": a chevron and a muted label; N is 25, or what remains when that is fewer) adds the next 25, until none are left and the button goes away. Pages stay loaded and shown when a group is collapsed. **Archived loads lazily**: nothing is fetched until the group is first expanded, which asks for 10 (`session.list { archived: true, parentID: null, limit: 10 }`); each press asks the server for the next 25 by cursor, only when the rows loaded do not already cover it, and nothing is fetched in the background. Only the visible window is turned into rows, so the DOM stays proportional to what is shown (about 18 nodes per row). The server returns no total, so the Archived count is the number loaded with a **+** while a next page exists, and exact once the last page has arrived; it is `—` until the first page is in (so also before the first expand). With several servers the window is their rows merged newest update first, each server keeping its own order. **Snoozed** is on this device: all entries are known, so only rendering is paged and its count is exact.
 - **Events keep the window right without refetching.** `session.archived` fetches that one session and inserts it where the server's order puts it (newest first), or leaves it for the page that holds it when it belongs past the loaded tail; `session.unarchived`, `session.deleted` and Restore/Delete drop the row; `session.renamed` updates a loaded row. A row removed from page 2 pulls the next loaded row in; when that leaves fewer rows than the window, the next page is fetched. Rows are keyed by session id, so none is duplicated or lost across pages. Events before the first expand change nothing (the first page will include them). **Refresh archived sessions** reloads from the first page and refills up to the rows already shown. A failed page shows the error in the group's status line and the button retries. Counts show `—` while loading, disconnected, incompatible or failed. Subagent sessions are never listed.
 
+### Realistic thread, 2026-11-02 (`scripts/perf.mjs`)
+
+650 assistant messages with reasoning, tool output, diffs, 26 subagent children, injected rows and attachments; Side tabs; stub model. Median of 3 runs; delta is against the `null` plugin (the host's cost of loading any plugin). Script ms is main-thread scripting in the scenario window.
+
+| Scenario | Floor script ms | With plugin | Delta | New long tasks | New frames over 20 ms | Frame p95 ms (floor) | Result |
+|---|---|---|---|---|---|---|---|
+| scroll | 310 | 322 | 12 | 0 | -2 | 16.6 (16.5) | PASS |
+| type | 150 | 168 | 18 | 0 | -1 | 9.9 (9.8) | PASS |
+| switch | 131 | 138 | 7 | 0 | -1 | 10.0 (10.1) | PASS |
+| stream | 253 | 272 | 18 | 0 | 0 | 9.8 (9.9) | PASS |
+| hover | 176 | 177 | 1 | 0 | -1 | 9.8 (9.9) | PASS |
+| idle | 85 | 79 | -6 | 0 | 0 | 9.8 (9.9) | PASS |
+| open thread (settled, ms) | 372 | 368 | -4 | | | | PASS |
+| reopen thread (settled, ms) | 48 | 49 | 0 | | | | PASS |
+
 ## Decisions: standing down for a host archive UI
 
 Settled with the user ("Yes, small guard now"), 2026-11-01. Option `archive: "auto" | "ours" | "theirs"`, default `auto`, read from `ctx.options` once per setup (a config change reloads the plugin). The decision is `src/guard.ts`; `gui.ts` reads two reactive decisions, `groupDown()` and `actionsDown()` (see below).
@@ -204,3 +219,17 @@ Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/r
 - Not measured: a real model stream, two windows, light/dark, 5,000 archived rows. Idle was measured with snoozes present but the group closed.
 
 Standing cost now: one observer (zero callbacks while nothing in the sidebar or a portal changes), one deadline `setTimeout` while snoozes exist, an interval only while the Snoozed group is open.
+
+### Sidebar scale (`perf.mjs --sidebar`), 2026-11-02
+
+150 live tabs, 600 archived sessions, 12 projects; floor is the `null` plugin plus the `sidebar-seed` fixture; two runs.
+
+| Scenario | Floor | With plugin | Result |
+|---|---|---|---|
+| Archived group expand (first page, 10 rows), settle ms | | 18 (max 43), 36 ms script | PASS |
+| ten row clicks, script ms | 233 | 231 | PASS |
+| sidebar list scroll, script ms | 183-194 | 278-306 | FAIL (+100 ms, +50%) |
+| hover sweep after expanding Archived, style ms | 410-440 | 3790-3850, 93 frames over 20 ms against 82-89 | FAIL |
+| cold load | 13.9 s | 15.1 s | PASS |
+
+The hover cost appears only after the Archived group has been expanded once, and stays after it is collapsed again. Disabling the plugin's whole stylesheet, or dropping its `:has(:focus-visible)` or `tab-row-action` rules, does not remove it (style 3.7-3.9 s in every variant), so it is not those rules; style recalc counts equal the floor's (about 300) while each costs about nine times as much, and the page has 6k more nodes. Not found. Paging ("more") did not load further rows in the harness (10 rows before and after four clicks); the selector for the button needs checking before expand cost at 500+ rows can be claimed.
