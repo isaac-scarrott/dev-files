@@ -126,8 +126,8 @@ test("the row keeps the host's spacing, type and trailing-slot reveal, and holds
   assert.ok(source.includes("holdTop(scroller, header, root"))
 })
 
-// A user turn's footprint (native-ui DESIGN, "Injected-row spacing"): 28px below the last row of a run, none between rows of a run.
+// A user turn's footprint (native-ui DESIGN, "Injected-row spacing"): the host's 65px user row (36 + 29) for the last row of a run, 37px inside a run (36 + 1).
 test("the row reserves the host user bubble's footer below it, except inside a run of user messages", () => {
-  assert.match(injectedMessageRowCss, /\[data-injected-row\] \{[^}]*padding-bottom: 28px;/)
-  assert.match(injectedMessageRowCss, /\[data-timeline-key\^="user-message:"\]:has\(\+ \[data-timeline-key\^="turn-gap:"\] \+ \[data-timeline-key\^="user-message:"\]\) \[data-injected-row\] \{ padding-bottom: 0; \}/)
+  assert.match(injectedMessageRowCss, /\[data-injected-row\] \{[^}]*padding-bottom: 29px;/)
+  assert.match(injectedMessageRowCss, /\[data-timeline-key\^="user-message:"\]:has\(\+ \[data-timeline-key\^="turn-gap:"\] \+ \[data-timeline-key\^="user-message:"\]\) \[data-injected-row\] \{ padding-bottom: 1px; \}/)
 })
