@@ -1,0 +1,102 @@
+[data-blindfold-request] {
+  width: 100%;
+  min-width: 0;
+}
+[data-blindfold-card] {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--v2-text-text-base);
+}
+[data-blindfold-card] > [data-slot='card'] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-01);
+}
+[data-blindfold-card] [data-slot='head'] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-text-base);
+  font-weight: 500;
+}
+[data-blindfold-card] [data-slot='head'] svg {
+  flex: none;
+  color: var(--v2-text-text-muted);
+}
+[data-blindfold-card] [data-slot='reason'] {
+  margin: 0;
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+}
+[data-blindfold-card] [data-slot='fields'] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+[data-blindfold-card] [data-slot='label'] {
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+  padding-bottom: 4px;
+}
+[data-blindfold-card] [data-slot='input'] {
+  position: relative;
+}
+[data-blindfold-card] [data-slot='input'] > :first-child {
+  width: 100%;
+}
+[data-blindfold-card] [data-slot='input'] input {
+  width: 100%;
+  box-sizing: border-box;
+}
+[data-blindfold-card] [data-slot='input']:has([data-slot='reveal']) input {
+  padding-inline-end: 34px;
+}
+[data-blindfold-card] [data-slot='reveal'] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 4px;
+  display: flex;
+  align-items: center;
+}
+[data-blindfold-card] [data-slot='hint'] {
+  min-height: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--v2-text-text-muted);
+}
+[data-blindfold-card] [data-slot='hint'][data-level='warn'] {
+  color: var(--v2-state-fg-warning);
+}
+[data-blindfold-card] [data-slot='hint'][data-level='invalid'] {
+  color: var(--v2-state-fg-danger);
+}
+[data-blindfold-card] [data-slot='foot'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+[data-blindfold-card] [data-slot='note'] {
+  color: var(--v2-text-text-faint);
+  font-size: 12px;
+  line-height: 16px;
+}
+[data-blindfold-card] [data-slot='actions'] {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+[data-blindfold-card] [data-blindfold-row='declined'],
+[data-blindfold-card] [data-blindfold-row='expired'] {
+  opacity: 0.7;
+}
+/* The answered row is information, not a control: the host's trigger markup for its look, without its press. */
+[data-blindfold-row] [data-slot='collapsible-trigger'] {
+  pointer-events: none;
+}

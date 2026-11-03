@@ -102,4 +102,3 @@ export class Redactor {
             .sort((a, b) => b.text.length - a.text.length);
     }
 }
-//# sourceMappingURL=redact.js.map

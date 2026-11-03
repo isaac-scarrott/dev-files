@@ -33,12 +33,3 @@ humanlayer/skills main plugins/show-me/skills/show-me/SKILL.md .claude/skills/sh
 # mattpocock/skills — engineering (moved from in-progress)
 mattpocock/skills main skills/engineering/pr/SKILL.md .claude/skills/pr/SKILL.md
 mattpocock/skills main skills/engineering/retro/SKILL.md .claude/skills/retro/SKILL.md
-# blindfold gui.ts and tui.ts: the success toast ("Secret stored.") is dropped; the user's own action is silent when it succeeds, the closing dialog is the answer.
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/plugin/src/server.ts apps/opencode-plugins/blindfold/plugin/src/server.ts
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/plugin/src/redact.ts apps/opencode-plugins/blindfold/plugin/src/redact.ts
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/plugin/src/rpc.ts apps/opencode-plugins/blindfold/plugin/src/rpc.ts
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/plugin/src/tui.ts apps/opencode-plugins/blindfold/plugin/src/tui.ts | sed '/toast\.show({ variant: "success"/d'
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/plugin/src/gui.ts apps/opencode-plugins/blindfold/plugin/src/gui.ts | sed '/toast\.show({ variant: "success"/d'
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/README.md apps/opencode-plugins/blindfold/README.upstream.md
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df packages/opencode-blindfold/LICENSE apps/opencode-plugins/blindfold/LICENSE
-vimtor/opencode-plugins 9d1e94769ae9b8636c9d58a734697124ff2787df LICENSE apps/opencode-plugins/blindfold/LICENSE.root

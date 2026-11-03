@@ -11,6 +11,32 @@ const reply = {
     required: ["accepted"],
     additionalProperties: false,
 };
+const requestedSchema = {
+    type: "object",
+    properties: {
+        requestID: { type: "string" },
+        sessionID: { type: "string" },
+        callID: { type: "string" },
+        messageID: { type: "string" },
+        reason: { type: "string" },
+        fields: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    name: { type: "string" },
+                    label: { type: "string" },
+                    kind: { enum: ["text", "email", "secret"] },
+                    masked: { type: "boolean" },
+                },
+                required: ["name", "label", "kind", "masked"],
+                additionalProperties: false,
+            },
+        },
+    },
+    required: ["requestID", "sessionID", "callID", "messageID", "reason", "fields"],
+    additionalProperties: false,
+};
 export const Blindfold = Rpc.define({
     id: "blindfold",
     methods: {
@@ -19,31 +45,32 @@ export const Blindfold = Rpc.define({
                 type: "object",
                 properties: {
                     requestID: { type: "string" },
-                    value: { type: "string", minLength: 1 },
+                    values: { type: "object", additionalProperties: { type: "string", minLength: 1 } },
                 },
-                required: ["requestID", "value"],
+                required: ["requestID", "values"],
                 additionalProperties: false,
             },
             output: reply,
         },
         ack: { input: request, output: reply },
+        // What is still waiting, so a window that reloaded while a card was open shows it again.
+        list: {
+            input: { type: "object", properties: {}, additionalProperties: false },
+            output: { type: "object", properties: { requests: { type: "array", items: requestedSchema } }, required: ["requests"], additionalProperties: false },
+        },
         cancel: { input: request, output: reply },
     },
     events: {
         requested: {
+            schema: requestedSchema,
+        },
+        resolved: {
             schema: {
                 type: "object",
-                properties: {
-                    requestID: { type: "string" },
-                    sessionID: { type: "string" },
-                    name: { type: "string" },
-                    reason: { type: "string" },
-                },
-                required: ["requestID", "sessionID", "name", "reason"],
+                properties: { requestID: { type: "string" }, status: { enum: ["submitted", "cancelled", "timeout", "unavailable"] } },
+                required: ["requestID", "status"],
                 additionalProperties: false,
             },
         },
-        resolved: { schema: request },
     },
 });
-//# sourceMappingURL=rpc.js.map

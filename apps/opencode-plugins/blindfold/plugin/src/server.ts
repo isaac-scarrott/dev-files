@@ -2,13 +2,13 @@ import { execFile, type ExecFileException } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { Plugin } from "@opencode/plugin"
 import { Error as ToolError, type Result } from "@opencode/plugin/promise/tool"
+import { MAX_FIELDS, NAME_PATTERN, parseFields, type Field } from "./fields.js"
 import { Redactor } from "./redact.js"
 import { Blindfold } from "./rpc.js"
 
 const NAMESPACE = "blindfold"
 const GET_TOOL = "get"
 const GET_TOOL_IDS = new Set([`${NAMESPACE}_${GET_TOOL}`, `${NAMESPACE}.${GET_TOOL}`])
-const NAME_PATTERN = "^[A-Z_][A-Z0-9_]*$"
 const PROMPT_TIMEOUT = 10 * 60_000
 const ACK_TIMEOUT = 5_000
 const ONEPASSWORD_PREFIX = "op://"
@@ -16,15 +16,17 @@ const ONEPASSWORD_PREFIX = "op://"
 const ONEPASSWORD_TIMEOUT = 2 * 60_000
 const ONEPASSWORD_ACCOUNT = "my.1password.com"
 
-type Answer = { status: "submitted"; value: string } | { status: "cancelled" | "timeout" | "unavailable" }
-type Pending = { finish: (answer: Answer) => void; acknowledge: () => void }
+type Asked = { sessionID: string; callID: string; messageID: string; reason: string; fields: Field[] }
+type Answer = { status: "submitted"; values: Record<string, string> } | { status: "cancelled" | "timeout" | "unavailable" }
+type Pending = { request: Asked & { requestID: string }; names: string[]; finish: (answer: Answer) => void; acknowledge: () => void }
 
-function failure(name: string, status: Exclude<Answer["status"], "submitted">) {
-  if (status === "cancelled") return `The user declined to provide ${name}.`
-  if (status === "timeout") return `Timed out waiting for the user to provide ${name}.`
+function failure(names: string[], status: Exclude<Answer["status"], "submitted">) {
+  const what = names.join(", ")
+  if (status === "cancelled") return `The user declined to provide ${what}.`
+  if (status === "timeout") return `Timed out waiting for the user to provide ${what}.`
   return [
-    `No OpenCode TUI with opencode-blindfold responded, so the user could not be asked for ${name}.`,
-    "Ask the user to add opencode-blindfold to plugins in ~/.config/opencode/cli.json and restart the TUI.",
+    `No OpenCode window or TUI with blindfold responded, so the user could not be asked for ${what}.`,
+    "Ask the user to check that blindfold is in plugins in ~/.config/opencode/opencode.json (and cli.json for the TUI).",
   ].join(" ")
 }
 
@@ -111,8 +113,10 @@ async function readOnePassword(name: string, reference: string, account: string 
 
 function instructions(settings: Settings) {
   const call = settings.codemode.enabled ? "`tools.blindfold.get({ name, reason })` in Code Mode" : "the `blindfold_get` tool"
+  const shape = settings.codemode.enabled ? "an object of the values keyed by name" : "a confirmation"
   return [
     `When a task needs a secret such as an API key, token, or password, call ${call}; it asks the user privately if the secret isn't stored yet.`,
+    `When a step needs several inputs at once, such as a login, ask for them in one request, \`get({ fields: [{ name: "EMAIL" }, { name: "PASSWORD" }], reason })\`, which returns ${shape}; a field is masked unless its kind is \`text\` or \`email\`, and a name like PASSWORD or TOKEN is always masked.`,
     settings.secrets.size > 0 ? `The user has configured these secrets: ${[...settings.secrets.keys()].join(", ")}.` : undefined,
     "Never ask the user to paste secrets into the chat.",
     "Secret values are redacted from tool output, so you won't see them even if you print them; you'll see `[REDACTED:NAME]` instead.",
@@ -129,9 +133,9 @@ function shellUsage(settings: Settings) {
 
 function getDescription(settings: Settings) {
   return [
-    "Get a secret such as an API token or password. If it isn't stored yet, the user is asked to enter it privately.",
+    "Get a secret such as an API token or password, or several inputs at once with `fields` (each `{ name, label?, kind?: text | email | secret }`, e.g. EMAIL and PASSWORD). If one isn't stored yet, the user is asked to enter it in a card in the chat.",
     settings.codemode.enabled
-      ? "Returns the value to the running code only; use it directly, e.g. in a fetch header."
+      ? "Returns the value (or, with `fields`, an object of values keyed by name) to the running code only; use it directly, e.g. in a fetch header."
       : "The value is never returned to you.",
     ...shellUsage(settings),
   ].filter(Boolean).join(" ")
@@ -157,10 +161,12 @@ export default Plugin.define({
 
     const rpc = await ctx.rpc.register(Blindfold, {
       submit: async (input) => {
-        const { requestID, value } = input as { requestID: string; value: string }
+        const { requestID, values } = input as { requestID: string; values: Record<string, string> }
         const request = pending.get(requestID)
-        if (!request || value === "") return { accepted: false }
-        request.finish({ status: "submitted", value })
+        // Exactly the asked names, each non-empty: the values are the whole answer.
+        const complete = request && request.names.length === Object.keys(values).length && request.names.every((name) => typeof values[name] === "string" && values[name] !== "")
+        if (!request || !complete) return { accepted: false }
+        request.finish({ status: "submitted", values })
         return { accepted: true }
       },
       ack: async (input) => {
@@ -169,6 +175,7 @@ export default Plugin.define({
         request.acknowledge()
         return { accepted: true }
       },
+      list: async () => ({ requests: [...pending.values()].map((item) => item.request) }),
       cancel: async (input) => {
         const request = pending.get((input as { requestID: string }).requestID)
         if (!request) return { accepted: false }
@@ -177,7 +184,7 @@ export default Plugin.define({
       },
     })
 
-    function ask(request: { sessionID: string; name: string; reason: string }) {
+    function ask(request: Asked, signal?: AbortSignal) {
       const requestID = randomUUID()
       return new Promise<Answer>((resolve) => {
         let acknowledged = false
@@ -185,12 +192,17 @@ export default Plugin.define({
           if (!pending.delete(requestID)) return
           clearTimeout(timer)
           clearTimeout(ackTimer)
+          signal?.removeEventListener("abort", abort)
           resolve(answer)
-          void rpc.events.emit("resolved", { requestID }).catch(() => undefined)
+          void rpc.events.emit("resolved", { requestID, status: answer.status }).catch(() => undefined)
         }
+        // The run was stopped: the card must not stay open for a call nobody is waiting on.
+        const abort = () => finish({ status: "cancelled" })
         const timer = setTimeout(() => finish({ status: acknowledged ? "timeout" : "unavailable" }), PROMPT_TIMEOUT)
         const ackTimer = setTimeout(() => finish({ status: "unavailable" }), ACK_TIMEOUT)
         pending.set(requestID, {
+          request: { requestID, ...request },
+          names: request.fields.map((field) => field.name),
           finish,
           acknowledge: () => {
             acknowledged = true
@@ -198,40 +210,52 @@ export default Plugin.define({
           },
         })
         rpc.events.emit("requested", { requestID, ...request }).catch(() => finish({ status: "unavailable" }))
+        if (signal?.aborted) abort()
+        else signal?.addEventListener("abort", abort, { once: true })
       })
     }
 
-    // The TUI shows one dialog at a time and a new prompt closes the open one, so prompts must not overlap.
-    let queue: Promise<unknown> = Promise.resolve()
-    function serial<T>(task: () => Promise<T>) {
-      const next = queue.then(task, task)
-      queue = next.catch(() => undefined)
+    // A session's prompts are asked one at a time (the TUI shows one dialog and a new prompt closes the open one), but a
+    // card waiting in one session does not hold up another session's.
+    const queues = new Map<string, Promise<unknown>>()
+    function serial<T>(sessionID: string, task: () => Promise<T>) {
+      const next = (queues.get(sessionID) ?? Promise.resolve()).then(task, task)
+      const tail = next.catch(() => undefined)
+      queues.set(sessionID, tail)
+      void tail.then(() => queues.get(sessionID) === tail && queues.delete(sessionID))
       return next
     }
 
-    async function obtain(request: { sessionID: string; name: string; reason: string; replace?: boolean }) {
-      const { name, reason, replace } = request
-      if (!new RegExp(NAME_PATTERN).test(name)) throw new Error(`Secret name must match ${NAME_PATTERN}`)
-      const stored = redactor.get(name)
-      if (stored !== undefined && !replace) return stored
-      return serial(async () => {
-        // Another call may have stored it while this one waited.
-        const stored = redactor.get(name)
-        if (stored !== undefined && !replace) return stored
-        const value = await resolve({ sessionID: request.sessionID, name, reason })
-        redactor.set(name, value)
-        return value
+    type Wanted = { field: Field; replace?: boolean }
+
+    /** The stored values of the fields, asking the user once for those that are missing or to be replaced. */
+    async function obtain(request: { sessionID: string; callID: string; messageID: string; reason: string; wanted: Wanted[]; replace?: boolean; signal?: AbortSignal }) {
+      const { wanted, replace } = request
+      const missing = (item: Wanted) => redactor.get(item.field.name) === undefined || replace || item.replace
+      const read = () => Object.fromEntries(wanted.map(({ field }) => [field.name, redactor.get(field.name)!]))
+      if (!wanted.some(missing)) return read()
+      return serial(request.sessionID, async () => {
+        // Another call may have stored them while this one waited.
+        const asking = wanted.filter(missing)
+        if (asking.length === 0) return read()
+        const prompted: Field[] = []
+        const resolved: Record<string, string> = {}
+        for (const { field } of asking) {
+          if (settings.secrets.has(field.name)) resolved[field.name] = await configured(field.name)
+          else prompted.push(field)
+        }
+        if (prompted.length > 0) {
+          const answer = await ask({ sessionID: request.sessionID, callID: request.callID, messageID: request.messageID, reason: request.reason, fields: prompted }, request.signal)
+          if (answer.status !== "submitted") throw new Error(failure(prompted.map((field) => field.name), answer.status))
+          Object.assign(resolved, answer.values)
+        }
+        for (const [name, value] of Object.entries(resolved)) redactor.set(name, value)
+        return read()
       })
     }
 
-    async function resolve(request: { sessionID: string; name: string; reason: string }) {
-      const { name } = request
-      const source = settings.secrets.get(name)
-      if (source === undefined) {
-        const answer = await ask(request)
-        if (answer.status !== "submitted") throw new Error(failure(name, answer.status))
-        return answer.value
-      }
+    async function configured(name: string) {
+      const source = settings.secrets.get(name)!
       if (source === "") throw new Error(`${name} is empty in the opencode-blindfold secrets option, for example because its {env:...} variable isn't set.`)
       if (source.startsWith(ONEPASSWORD_PREFIX)) return readOnePassword(name, source, settings.onepassword.account)
       return source
@@ -249,25 +273,55 @@ export default Plugin.define({
           type: "object",
           properties: {
             name: NAME_INPUT,
-            reason: { type: "string", minLength: 1, description: "Why the secret is needed, shown to the user if it must be entered" },
-            replace: { type: "boolean", description: "Ask the user again even if the secret is already stored" },
+            fields: {
+              type: "array",
+              minItems: 1,
+              maxItems: MAX_FIELDS,
+              description: "Several inputs asked in one card, instead of `name`; returns an object keyed by name",
+              items: {
+                type: "object",
+                properties: {
+                  name: NAME_INPUT,
+                  label: { type: "string", description: "What the user sees above the input; defaults to the name" },
+                  kind: { enum: ["text", "email", "secret"], description: "text and email are shown as typed, secret is masked. Defaults from the name (PASSWORD, TOKEN, KEY, SECRET => secret; EMAIL, USER, LOGIN => shown)" },
+                  replace: { type: "boolean", description: "Ask again for this field even if it is stored" },
+                },
+                required: ["name"],
+                additionalProperties: false,
+              },
+            },
+            reason: { type: "string", minLength: 1, description: "Why it is needed, shown to the user if it must be entered" },
+            replace: { type: "boolean", description: "Ask the user again even if it is already stored" },
           },
-          required: ["name"],
           additionalProperties: false,
         },
+        // Code Mode hands `output` to the running code: a string for one name, an object keyed by name for `fields`. Declared
+        // only there, because a tool that declares an output must return it, and a regular tool returns no value.
+        ...(settings.codemode.enabled ? { output: { oneOf: [{ type: "string" }, { type: "object", additionalProperties: { type: "string" } }] } } : {}),
         // In Code Mode the value reaches only the running code. As a regular tool the result enters the chat,
         // so it confirms the secret is stored without returning it.
         options: settings.codemode.enabled
           ? { namespace: NAMESPACE, codemode: true, pinned: true }
           : { namespace: NAMESPACE, codemode: false },
         async execute(input, context) {
-          const { name, reason, replace } = input as { name: string; reason?: string; replace?: boolean }
-          await context.progress({ title: `Secret ${name}` })
-          const value = await obtain({ sessionID: context.sessionID, name, reason: reason ?? `The agent needs ${name}.`, replace })
-          if (settings.codemode.enabled) return { content: value }
+          const { reason, replace } = input as { reason?: string; replace?: boolean }
+          const wanted = parseFields(input as { name?: unknown; fields?: unknown })
+          const names = wanted.map(({ field }) => field.name)
+          const single = (input as { name?: string }).name !== undefined
+          await context.progress({ title: `Secret ${names.join(", ")}` })
+          const values = await obtain({
+            sessionID: context.sessionID,
+            callID: context.id,
+            messageID: context.messageID,
+            reason: reason ?? `The agent needs ${names.join(", ")}.`,
+            wanted,
+            replace,
+            signal: context.signal,
+          })
+          if (settings.codemode.enabled) return single ? { content: values[names[0]!]!, output: values[names[0]!]! } : { content: JSON.stringify(values), output: values }
           return {
-            content: `Secret ${name} is stored. Blindfold secrets available: ${redactor.names().join(", ")}.`,
-            metadata: { title: `Secret ${name}`, name },
+            content: `Secret ${names.join(", ")} ${names.length === 1 ? "is" : "are"} stored. Blindfold secrets available: ${redactor.names().join(", ")}.`,
+            metadata: { title: `Secret ${names.join(", ")}`, names },
           }
         },
       })

@@ -109,7 +109,7 @@ Not mapped: subagent sessions' `done` (host skips `parentID`; the parent's run c
 | usage-resume | Gave up (attempt cap) | `error` | the session | `usage-resume:giveup:<sid>` | T, M, S | silent |
 | orchestrator-tools (server) | Peer message received | `info` | recipient session | `orchestrator-tools:peer:<messageID>` | M | injected row (stays) |
 | orchestrator-tools | (not built today: `notify_when_idle`) | `done` | the awaited session | | covered by host `done` | n/a |
-| blindfold | Secret requested | `needs-you`, persistent | the session | `blindfold:secret:<name>` | T, M, S (later; check its dialog first) | dialog |
+| blindfold | Secret requested | `needs-you`, persistent | the session | `blindfold:secret:<name>` | T, M, S (later) | inline card in the thread (blindfold fork; it already toasts "Needs ...", with Show, when its session is off screen) |
 | cache-warning | none today ("Not done: no notification or sound") | | | | stays out | |
 | claude-proxy, file-viewer, model-picker, session-drag, timeline-rail, sidebar-repos, visual-replies, no-project | none | | | | | |
 
@@ -212,7 +212,7 @@ Idle cost zero: no timer, interval, poll or observer of its own. Work happens on
 | scheduler | **done (M1)**: `events.notify` on `ScheduleControl`; emits error (dropped after 3 failed deliveries), warning (loop-guard pause), info (ran its last run, session archived or deleted). GUI: `acquirePublisher` + `notifyFromServer` |
 | usage-resume | server: emit limit / resume scheduled / resumed / gave-up via its existing Rpc; the timeline `synthetic` notices stay (they are the record) |
 | orchestrator-tools | server: emit `info` per peer message (it already knows the recipient) |
-| blindfold | later: `needs-you` for a pending secret, after reading how its dialog is shown |
+| blindfold | later: `needs-you` for a pending secret, its request is now an inline card, not a dialog |
 | others | none |
 
 Each migration is an additive `events.notify` plus a few `emit` calls; nothing is removed, so an old `notifications` plugin and a new source (or the reverse) still work.

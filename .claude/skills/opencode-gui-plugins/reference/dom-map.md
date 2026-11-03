@@ -51,6 +51,10 @@ A fixed jump pill uses viewport coordinates from `getBoundingClientRect()`. Keep
 
 Source evidence: `app/src/session/timeline/virtualizer.tsx`, `ui/src/components/scroll-view.tsx`, `session-ui/src/timeline/session-timeline-row.tsx`, `session-ui/src/message/message-content.tsx`.
 
+### A running tool call, and a card placed under it (blindfold)
+
+While a tool call runs, the host shows it inside `[data-component="collapsed-tool-group"][data-timeline-part-ids="<callID>,<partID>"]` (the "Used 1 Execute" row; the call's own id is the first), inside `[data-slot="session-turn-assistant-content"]`, which carries `aria-hidden="true"` while the turn works. A node inserted inside it is out of the accessibility tree, so place injected UI after the outermost `aria-hidden` ancestor (same column, `session-turn-message-container`). Cached timelines of other sessions stay mounted: take the `session-timeline-scroll` that has layout boxes, and check `ctx.sessions.current()`. Rows unmount when scrolled away (wheel up; setting `scrollTop` is undone by the follow-bottom behaviour while the turn runs): keep state in a Solid root outside the DOM and re-place the same node when its row returns. A tool that declares an `output` schema must return `output` (Code Mode); one that does not must not. See `apps/opencode-plugins/blindfold/DESIGN.md` and `src/anchor.ts`.
+
 ## Theme tokens observed in 2.2.5
 
 - Surfaces: `--v2-background-bg-base`, `--v2-background-bg-layer-01` through `-04`.
