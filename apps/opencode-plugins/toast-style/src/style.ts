@@ -33,7 +33,7 @@ ${CARD_STRONG}${STATE.removed}${STATE.notSwiped} { transition: transform 160ms $
 ${CARD_STRONG}${STATE.removed}${STATE.notSwiped}${STATE.front} { --y: translateY(6px) scale(0.98); opacity: 0; }
 
 /* Every toast, whoever raised it: the glyph shares the title's row; the text and the buttons use the full width. */
-${CARD} { column-gap: 4px; row-gap: 0; }
+${CARD} { column-gap: 6px; row-gap: 0; }
 ${CARD} > ${CONTENT} { display: contents; }
 ${CARD} ${TITLE} { grid-area: 1 / 1; min-width: 0; }
 ${CARD}${HAS_GLYPH} ${TITLE} { grid-column: 2; }

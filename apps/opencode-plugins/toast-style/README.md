@@ -6,7 +6,7 @@ Every toast in the app, whoever raises it, in one quiet card: the app's own font
 
 ## What it does
 - **The app's own font and motion back.** solid-sonner's stylesheet loads after the app's and wins the cascade, so toasts render in the system font, move 400ms on `ease` and peek 12px. This plugin restores Inter, 280ms `cubic-bezier(.2,0,0,1)` (opacity 160ms), and sets the peek to 8px with a 4% step.
-- **One layout for every toast.** The glyph shares the title's row (16px glyph, 4px gap, title); the description (two lines, then an ellipsis) and the buttons start at the card's left edge and use its full width. No empty strip under the glyph. A toast without a glyph is the same card with the title at the left.
+- **One layout for every toast.** The glyph shares the title's row (16px glyph, 6px gap, title); the description (two lines, then an ellipsis) and the buttons start at the card's left edge and use its full width. No empty strip under the glyph. A toast without a glyph is the same card with the title at the left.
 - **Buttons.** The first is the app's neutral button; later ones are quiet (the app's ghost-muted look). A waiting request (the `notifications` glyph) gets the app's contrast button, and the key that opens it (`⌘I`) on the front card when another plugin sets it.
 - **Exit and reduced motion.** A card leaves with a 160ms fade, 6px down and 2% smaller; with reduced motion nothing moves and the fade is 120ms.
 - **"+N more".** Past three visible cards a small chip above the collapsed stack counts the hidden ones; it goes while the stack is fanned out on hover.
