@@ -20,7 +20,7 @@ export { createSessionChip, type SessionChipOptions } from "./session-chip"
 export { messageSignature } from "./chip-signature"
 export { span, nextChange, MINUTE } from "./chip-time"
 export { RobotIcon, ClockIcon, HeartbeatIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
-export { heartbeatIconCss, heartbeatChipCss, heartbeatGlintKeyframes, heartbeatGoneKeyframes, heartbeatMasks, HEARTBEAT_LIVE_PLACEHOLDER, HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_TRACE, HEARTBEAT_FLAT, HEARTBEAT_LOOP, HEARTBEAT_POINTS, HEARTBEAT_GLINT, HEARTBEAT_ANIMATIONS, syncHeartbeats, type HeartbeatState } from "./heartbeat"
+export { heartbeatIconCss, heartbeatChipCss, heartbeatMasks, HEARTBEAT_LIVE_PLACEHOLDER, HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_TRACE, HEARTBEAT_FLAT, HEARTBEAT_LOOP, syncHeartbeats, type HeartbeatState } from "./heartbeat"
 
 import { tabRowActionCss } from "./tab-row-action"
 import { popoverCss } from "./popover"
