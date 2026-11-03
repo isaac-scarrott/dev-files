@@ -88,8 +88,8 @@ export function BlindfoldPage(props: PageInput) {
             <For each={data()?.rules} fallback={empty(ctx.t("page.noRules"))}>
               {(rule) =>
                 row(
-                  rule.origin ? ctx.t("page.ruleOrigin", { field: rule.field, site: site(rule.origin) }) : ctx.t("page.ruleName", { name: rule.name ?? rule.field }),
-                  ctx.t("page.ruleFrom", { account: data()?.accounts.find((account) => account.id === rule.account)?.label ?? rule.account, item: rule.itemTitle ?? "" }),
+                  rule.origin ? ctx.t("page.ruleOrigin", { field: rule.field.charAt(0).toUpperCase() + rule.field.slice(1), site: site(rule.origin) }) : ctx.t("page.ruleName", { name: rule.name ?? rule.field }),
+                  ctx.t(rule.itemTitle ? "page.ruleFromItem" : "page.ruleFrom", { account: data()?.accounts.find((account) => account.id === rule.account)?.label ?? rule.account, item: rule.itemTitle ?? "" }),
                   <div data-action={`blindfold-revoke-${rule.id}`}>
                     <ctx.ui.Button onClick={() => void props.revoke(rule.id)}>{ctx.t("page.revoke")}</ctx.ui.Button>
                   </div>,

@@ -287,6 +287,38 @@ test("reads op:// secrets from 1Password once, on first use", async () => {
   expect(op.calls()).toHaveLength(2)
 })
 
+test("op reads never use the 1Password app: the integration is off in the child's environment, whatever the service has", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "blindfold-openv-"))
+  const log = join(dir, "env")
+  writeFileSync(join(dir, "op"), `#!/bin/sh\necho "bio=$OP_BIOMETRIC_UNLOCK_ENABLED" >> "${log}"\nprintf "zen-secret-123"\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${dir}:${path}`
+  process.env.OP_BIOMETRIC_UNLOCK_ENABLED = "true"
+  try {
+    const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
+    expect(await tools.get("get")!.execute({ name: "ZEN_KEY" }, context)).toEqual({ content: "zen-secret-123", output: "zen-secret-123" })
+    expect(readFileSync(log, "utf8").trim()).toBe("bio=false")
+  } finally {
+    process.env.PATH = path
+    delete process.env.OP_BIOMETRIC_UNLOCK_ENABLED
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("a signed-out op explains that blindfold does not use the app, and points at the service account", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "blindfold-opout-"))
+  writeFileSync(join(dir, "op"), `#!/bin/sh\necho "[ERROR] 2026/11/03 00:00:00 You are not currently signed in." >&2\nexit 1\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${dir}:${path}`
+  try {
+    const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
+    await expect(tools.get("get")!.execute({ name: "ZEN_KEY" }, context)).rejects.toThrow("blindfold does not use the 1Password app; set up a service account in blindfold-providers")
+  } finally {
+    process.env.PATH = path
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test("falls back to the personal 1Password account when several are signed in", async () => {
   using op = await fakeOnePassword({ accounts: 2 })
   const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
@@ -330,6 +362,12 @@ test("explains when the 1Password CLI isn't installed", async () => {
   } finally {
     process.env.PATH = path
   }
+})
+
+test("rejects invalid rules and audit options", async () => {
+  await expect(harness({ rules: {} })).rejects.toThrow("rules option must be a list")
+  await expect(harness({ rules: [{ tag: "x", account: "a" }] })).rejects.toThrow("tag rules are not supported")
+  await expect(harness({ audit: { file: 3 } })).rejects.toThrow("audit.file option must be a path or false")
 })
 
 test("rejects invalid options and empty secrets", async () => {
