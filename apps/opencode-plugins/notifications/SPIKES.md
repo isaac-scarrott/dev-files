@@ -47,4 +47,23 @@ Private harness (`desktop-harness.sh`, root `/private/tmp/oc-harness-notify4`, `
 | 15 | Real scheduler failure | **toast with Open** | the stored job's session id was corrupted in the harness database; three failed reads one minute apart ended in `Scheduled task dropped · "sched-fail" could not be delivered 3 times in a row` with *Open*, in the focused window |
 | 16 | Permission | **persistent toast, retracted** | a `shell` call that asks (`rm -rf`): `Permission needed` toast (the host's own sound played too); *Allow once* removed it. With the host command *Auto-accept permissions for this project* on, no `Permission needed` toast appeared (mutation observer over 3.5 s); only the host's own "Auto-accepting permissions" toast |
 
-Not observed: a real banner (recorders stand in for the OS), a really focused window (emulated as above), a natural failed `session.prompt` (it accepted a prompt even with the project directory moved away; the scheduler failure above is a failed `session.get`), the Permissions/Questions toggles (not reachable from a plugin).
+### M4 real banners (2026-11-03, 2.2.5)
+
+Same private harness, **no stubs**: the page's `Notification` and `Audio.play` wrapped by pass-through loggers (they call the real ones), `BrowserWindow.blur()` after a reload so `document.hasFocus()` is really false (a Playwright session leaves `hasFocus` true until the page is reloaded; an input event over CDP refocuses it, so the prompt goes through the harness HTTP API instead of the composer). OS side read with `/usr/bin/log show --predicate 'process == "usernoted" OR process == "NotificationCenter"'` (`log` alone is shadowed by the zsh builtin). The notification database (`group.com.apple.usernoted/db2`) and `~/Library/DoNotDisturb` are *Operation not permitted* without Full Disk Access; `screencapture` works; `NotificationCenter` has no accessibility windows, so banner text cannot be read from the screen.
+
+**The user's Mac was in a Focus mode: every `ai.opencode.desktop` request ended in `muted by DND suppression: delay` and `Not playing sound ... isMuted: true`. No banner was ever on screen, so a visible banner and its OS sound are not provable here; the state was read, never changed.**
+
+| # | Question | Result | Evidence |
+|---|---|---|---|
+| 17 | Does the page reach the OS | **yes, 1:1** | 4 page `Notification`s in the two-window run ↔ exactly 4 `usernoted` `Adding new request` lines for `ai.opencode.desktop` (`req:"n#oc://renderer#…"`), each followed by `Presenting … as banner (["badge","sound","alert"])` |
+| 18 | Text and options | **as sent** | `Monitor stopped` / `"harness test clean-error" exited with code 4`, `silent:true`; the host's own `Permission required` and `Response ready` (body `hello`) use the same path. OS content is `<private>` in the log, so title and body are the constructor arguments, not read off a banner |
+| 19 | Latency | **22 ms to the constructor, 234 ms to the `show` event, ~0.17 s to `usernoted`** | monitor exit `1793719877473` → `Notification` `…877495` → `show` `…877707`; `usernoted` request 133–171 ms after the exit in other runs. The pipeline's presented/muted line followed 0.4–10 s later (OS-side) |
+| 20 | Toggles, real path | **as designed** | both off: only the host's `Permission required`; errors only: `Monitor stopped` + permission; agent only: `Response ready` + permission, no `Monitor stopped` |
+| 21 | Two windows | **one banner** | second window open, both blurred: window 1 made all 4, window 2 none |
+| 22 | Window focused | **none** | document focus held through a CDP focus emulation kept open for the run: 0 `Notification`s for the crash (host `main isFocused` gate still unverified for real) |
+| 23 | Sound path | **three clips, host-side** | `HTMLMediaElement.play` per event: error clip `3358337002` 1–21 ms before `Monitor stopped`, agent clip `410237981` for `Response ready`, permission clip `2831508080`; played whatever the banner toggles said, also with focus held. Not heard (`--mute-audio`, Focus) |
+| 24 | Click opens the session | **not provable** | no banner to click: no screen banner under Focus, no accessibility windows, no database access. Row 12 (`onclick` handler) stands |
+
+Not observed: a banner on screen, an OS-played sound, a click on a banner, real window focus for the main-process gate. Notifications left in Notification Center history (muted) could not be cleared without UI interaction.
+
+Not observed in the earlier recorder run: a real banner (recorders stand in for the OS), a really focused window (emulated as above), a natural failed `session.prompt` (it accepted a prompt even with the project directory moved away; the scheduler failure above is a failed `session.get`), the Permissions/Questions toggles (not reachable from a plugin).
