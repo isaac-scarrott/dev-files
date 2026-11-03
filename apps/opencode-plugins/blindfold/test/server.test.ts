@@ -54,9 +54,9 @@ async function harness(options: Record<string, unknown> = {}) {
   return { tools, hooks, emitted, handlers: () => handlers, store, cleanup, unreachable: () => { unreachable = true } }
 }
 
-test("registers a single get tool, in Code Mode when enabled", async () => {
+test("registers get and fill, in Code Mode when enabled", async () => {
   const { tools } = await harness()
-  expect([...tools.keys()]).toEqual(["get"])
+  expect([...tools.keys()]).toEqual(["get", "fill"])
   const get = tools.get("get")!
   expect(get.options).toEqual({ namespace: "blindfold", codemode: true, pinned: true })
   expect(get.description).toContain("the user is asked to enter it in a card in the chat")
@@ -479,7 +479,7 @@ test("rejects a bad field list", async () => {
   await expect(get({ fields: [] })).rejects.toThrow("non-empty")
   await expect(get({ fields: [{ name: "EMAIL" }, { name: "EMAIL" }] })).rejects.toThrow("EMAIL is listed twice")
   await expect(get({ fields: [{ name: "email" }] })).rejects.toThrow("Secret name must match")
-  await expect(get({ fields: [{ name: "EMAIL", kind: "password" }] })).rejects.toThrow("kind must be text, email or secret")
+  await expect(get({ fields: [{ name: "EMAIL", kind: "password" }] })).rejects.toThrow("kind must be text, email, secret or otp")
   await expect(get({ fields: Array.from({ length: 9 }, (_, i) => ({ name: `F_${i}` })) })).rejects.toThrow("At most 8 fields")
 })
 
