@@ -10,7 +10,8 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 
 | Package | What it does | Kind |
 | --- | --- | --- |
-| [`blindfold`](blindfold) | Fork of vimtor/opencode-blindfold 0.5.0: agents use a secret, or a whole login, without seeing it; one inline card in the chat asks for several fields at once | server, TUI, GUI |
+| [`blindfold`](blindfold) | Fork of vimtor/opencode-blindfold 0.5.0: agents use a secret, or a whole login, without seeing it; one inline card in the chat asks for several fields at once, or offers a login from a password manager (Allow, Always allow, Deny; account choice; unlock in the card) and fills it into a page without the agent holding it; Settings, Blindfold lists and revokes saved rules | server, TUI, GUI |
+| [`blindfold-providers`](blindfold-providers) | 1Password (service account, no app dialog) and Bitwarden (API key + master password) as named accounts behind blindfold's card: in-memory sessions that lock when idle, origin fences, no secret in any command line; `node check.mjs` tests each account with the real CLI | server |
 | [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction; the cache window (5m or 1h) is read from Claude Code's transcript | GUI + server |
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |

@@ -13,6 +13,9 @@ Agents ask for a secret, or a whole login, in a card inside the chat. You type i
 - **Light checks, never your value back.** An email that cannot be one (no `@`, spaces inside) blocks Submit and says so; one with no domain ending only warns; a secret with a leading or trailing space warns. The message never repeats what you typed.
 - **Quiet when done.** After you answer, the card becomes one line, `Secrets provided  EMAIL and PASSWORD`, with no values and no toast. Declined or expired requests show as a muted line. Only a failure toasts.
 - **Redaction covers every field.** Each value, and its JSON, URL, base64 and hex forms, becomes `[REDACTED:NAME]` in tool results, errors, messages, system prompts and raw provider requests.
+- **Password managers, with three choices** (with [blindfold-providers](../blindfold-providers)). `get({ fields, origin })` offers a login kept in 1Password or Bitwarden: the card says "Use EMAIL and PASSWORD for accounts.google.com from Personal (1Password)?" and you choose **Allow** (once), **Always allow** (a saved rule for that site, account and field) or **Deny** (the agent gets a denial, never a value). Two accounts hold the login: you choose, and Always allow remembers the account. A locked account shows "Work (Bitwarden) is locked" with masked inputs right in the card. A field no vault holds is typed, as before. Approving, remembering and unlocking never toast.
+- **Fill without the agent holding the value.** `blindfold.fill({ tabID, origin, fields })` returns a placeholder script; passed to `browser.evaluate`, it is swapped for the real one after the call is recorded, so the value never reaches the model, the agent's code or the session database. The page's fields are filled and masked (discs) along with any echo of the value, and the fill is refused on any other origin.
+- **Rules you can see and revoke.** Settings, **Blindfold** (or the command "Blindfold: manage rules") lists the accounts with Lock, the saved Always-allow rules with Revoke, and the last uses. The audit trail (one JSON line per use, names only) is in `~/.local/share/opencode/blindfold/audit.jsonl`.
 - **If the session is not on screen**, a toast says the agent is waiting and offers **Show**. A card survives scrolling a long thread, a page reload (it reappears, empty) and a switch of session.
 
 ## Context
@@ -26,7 +29,7 @@ Register this checkout by absolute path in `~/.config/opencode/opencode.json` (s
 Kind: server, TUI and GUI in one package. Restart the background service (`opencode service restart`) for the first load; Cmd+R reloads the GUI.
 
 ## Options
-Unchanged from upstream; the shown values are the defaults.
+`shell`, `codemode`, `secrets` and `1password` are upstream's; `rules` and `audit` are ours. The shown values are the defaults.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -34,13 +37,15 @@ Unchanged from upstream; the shown values are the defaults.
 | `shell.approve` | `true` | Each such command needs your approval |
 | `codemode.enabled` | `true` | `blindfold.get` runs in Code Mode and returns the value to the code only |
 | `secrets` | none | Names the user provides up front: a plain value or `op://` reference per name |
-| `1password.account` | none | Account for `op://` reads when several are signed in |
+| `1password.account` | none | Account for `op://` reads when several are signed in. These reads never use the 1Password app (`OP_BIOMETRIC_UNLOCK_ENABLED=false`): they need a service account token or a signed-in session, and an unlocked blindfold-providers account serves them first |
+| `rules` | none | `[{ "origin": "*.example.com", "account": "work" }, { "name": "GH_TOKEN", "account": "personal", "ref": "op://Agent/GitHub/token" }]`: which account may serve a site (a host pattern; `*.d` is `d` and its subdomains) or a secret name. A rule that names a site keeps every other account out of it; an account fenced by `allowedOrigins` never serves another site. Tag rules are not supported |
+| `audit.file` | `~/.local/share/opencode/blindfold/audit.jsonl` | where uses are logged (names, accounts, outcomes; never values); `false` keeps only the last 50 in memory |
 
 ## Development
 `pnpm typecheck && pnpm test && pnpm build` (dist is tracked), `pnpm smoke`. Design notes: [DESIGN.md](DESIGN.md).
 
 ### Harness
-`harness/` drives the card in the private desktop harness with a stub model (no real secret ever; the values in the scripts are fake):
+`harness/` drives the card in the private desktop harness with a stub model (no real secret ever; the values in the scripts are fake). `harness/run-providers.sh` runs the whole provider scenario (stand-in `op`, `bw` and `security`, the in-app browser, 41 checks) in one command and stops everything after:
 
 ```sh
 node harness/stub-model.mjs        # BF_CODE_FILE=<file with the Code Mode snippet> BF_STUB_LOG=<follow-up request log>

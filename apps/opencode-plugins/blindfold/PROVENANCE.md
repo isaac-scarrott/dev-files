@@ -25,6 +25,7 @@ upstream changes by reading its commits and porting what is wanted.
 - `submit` carries `values` (an object); `requested` carries `fields`, `callID` and `messageID`; `resolved` carries a
   status; the new `list` method.
 - Closing the request when the run is stopped, and a prompt queue per session.
+- The provider layer: rules, broker, saved rules, audit, the three-choice card with account choice and unlock, the settings page, `fill` and its hook, form-urlencoded redaction, `op read` without the app integration (`rules.ts`, `broker.ts`, `fill*.ts`, `audit.ts`, `legacy-op.ts`, `providers-contract.ts`, `page.tsx`).
 - One prompt per field in the TUI (`tui.ts`), with no success toast.
 - `package.json` (private, pnpm, `@opencode/plugin` 2.2.5), `tsconfig*.json`, `vite.config.ts`, `.npmrc`,
   `pnpm-workspace.yaml`, the harness, the parity spec.
