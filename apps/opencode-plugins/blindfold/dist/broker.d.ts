@@ -28,6 +28,7 @@ export type Ask = {
     field: Field;
     item?: string;
     origin?: string;
+    via?: "get" | "fill";
 };
 export type Planned = {
     source: Source;

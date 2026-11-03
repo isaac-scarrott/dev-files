@@ -89,7 +89,7 @@ export function BlindfoldPage(props: PageInput) {
               {(rule) =>
                 row(
                   rule.origin ? ctx.t("page.ruleOrigin", { field: rule.field.charAt(0).toUpperCase() + rule.field.slice(1), site: site(rule.origin) }) : ctx.t("page.ruleName", { name: rule.name ?? rule.field }),
-                  ctx.t(rule.itemTitle ? "page.ruleFromItem" : "page.ruleFrom", { account: data()?.accounts.find((account) => account.id === rule.account)?.label ?? rule.account, item: rule.itemTitle ?? "" }),
+                  ctx.t(rule.itemTitle ? "page.ruleFromItem" : "page.ruleFrom", { account: data()?.accounts.find((account) => account.id === rule.account)?.label ?? rule.account, item: rule.itemTitle ?? "" }) + (rule.via === "fill" ? ctx.t("page.ruleFillOnly") : ""),
                   <div data-action={`blindfold-revoke-${rule.id}`}>
                     <ctx.ui.Button onClick={() => void props.revoke(rule.id)}>{ctx.t("page.revoke")}</ctx.ui.Button>
                   </div>,

@@ -19,6 +19,11 @@ export type SavedRule = {
     itemTitle?: string;
     /** The item field: `username`, `password`, `otp` or a label. */
     field: string;
+    /**
+     * What it was saved for. A `fill` rule lets the value go to a page only; a `get` rule (or none) also lets it go to the
+     * agent's code, so it covers a fill as well, never the other way round.
+     */
+    via?: "get" | "fill";
     created: number;
 };
 /** Reads the `rules` option. Throws a message that names the rule. */
@@ -36,13 +41,10 @@ export type Use = {
     item?: string;
     origin?: string;
     name?: string;
+    via?: "get" | "fill";
 };
 /** A saved rule that covers this use, or undefined. An origin use needs the same origin; a name use the same name. */
 export declare function covering(saved: readonly SavedRule[], use: Use): SavedRule | undefined;
-export type RuleStore = {
-    get(key: string): Promise<unknown>;
-    set(key: string, value: never): Promise<void>;
-};
 /** The saved rules, kept in the plugin's storage. Only ids, origins, account ids and field names are written. */
 export declare function savedRules(store: {
     get(key: string): Promise<unknown>;

@@ -16,6 +16,11 @@ export type SavedRule = {
   itemTitle?: string
   /** The item field: `username`, `password`, `otp` or a label. */
   field: string
+  /**
+   * What it was saved for. A `fill` rule lets the value go to a page only; a `get` rule (or none) also lets it go to the
+   * agent's code, so it covers a fill as well, never the other way round.
+   */
+  via?: "get" | "fill"
   created: number
 }
 
@@ -55,19 +60,18 @@ export function permitted(origin: string, accounts: readonly AccountInfo[], rule
 /** The rule from the options for a secret name, if any. */
 export const nameRule = (name: string, rules: readonly ConfigRule[]) => rules.find((rule) => rule.name === name)
 
-export type Use = { account: string; field: string; item?: string; origin?: string; name?: string }
+export type Use = { account: string; field: string; item?: string; origin?: string; name?: string; via?: "get" | "fill" }
 
 /** A saved rule that covers this use, or undefined. An origin use needs the same origin; a name use the same name. */
 export function covering(saved: readonly SavedRule[], use: Use): SavedRule | undefined {
   return saved.find((rule) => {
     if (rule.account !== use.account || rule.field !== use.field) return false
+    if (rule.via === "fill" && use.via !== "fill") return false
     if (rule.item !== undefined && rule.item !== use.item) return false
     if (use.origin !== undefined) return rule.origin === use.origin
     return rule.name !== undefined && rule.name === use.name
   })
 }
-
-export type RuleStore = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<void> }
 
 const KEY = "rules.v1"
 
@@ -83,8 +87,8 @@ export function savedRules(store: { get(key: string): Promise<unknown>; set(key:
     async add(use: Use & { itemTitle?: string }): Promise<SavedRule> {
       const rules = await load()
       const same = covering(rules, use)
-      if (same && same.item === use.item) return same
-      const rule: SavedRule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, created: now() }
+      if (same && same.item === use.item && (same.via ?? "get") === (use.via ?? "get")) return same
+      const rule: SavedRule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, created: now() }
       await store.set(KEY, [...rules, rule])
       return rule
     },

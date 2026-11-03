@@ -268,6 +268,31 @@ test("work stays inside its fence: a fenced account is not offered for another s
   }
 })
 
+test("Always allow on a fill does not make a get silent; the other way round it does", async () => {
+  const p = providers()
+  try {
+    await p.unlockPersonal()
+    const run = await harness(options())
+    const filled = await opened(run, "fill", { tabID: "tab_1", origin: "https://github.com", fields: [{ name: "PASSWORD" }], reason: "x" })
+    await run.handlers().submit({ requestID: filled.request.requestID, values: {}, remember: true })
+    await filled.result
+    const rules = ((await run.handlers().overview({})) as { rules: any[] }).rules
+    assert.deepEqual(rules.map((rule) => rule.via), ["fill"])
+    // The same site and field through get: the value would reach the agent's code, so it asks.
+    const get = await opened(run, "get", { name: "PASSWORD", origin: "https://github.com", reason: "x" }, 1)
+    assert.equal(get.request.fields[0].source.candidates[0].covered, false)
+    await run.handlers().submit({ requestID: get.request.requestID, values: {}, remember: true })
+    await get.result
+    // Now a get rule exists too, and it covers a fill.
+    const before = requests(run).length
+    const again = (await run.tools.get("fill")!.execute({ tabID: "tab_1", origin: "https://github.com", fields: [{ name: "PASSWORD" }] } as never, context)) as { output: { script: string } }
+    assert.match(again.output.script, /blindfold:fill/)
+    assert.equal(requests(run).length, before, "silent")
+  } finally {
+    await p.stop()
+  }
+})
+
 test("a name rule maps GITHUB_TOKEN to a vault reference; approved once, shell commands can name it like a configured secret", async () => {
   const p = providers()
   try {

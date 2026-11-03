@@ -335,7 +335,7 @@ export default Plugin.define({
             return Object.fromEntries(request.wanted.map(({ field }) => [field.name, resolved[field.name] ?? redactor.get(field.name)]));
         }
         async function withProviders(request, missing) {
-            const asks = request.wanted.map((item) => ({ name: item.field.name, field: item.field, item: item.item, origin: request.origin }));
+            const asks = request.wanted.map((item) => ({ name: item.field.name, field: item.field, item: item.item, origin: request.origin, via: request.via }));
             let plans = await broker.plan(asks);
             const providerAsks = () => asks.filter((item) => plans.get(item.name)?.source.state === "choose");
             const typed = () => request.wanted.filter((item) => plans.get(item.field.name)?.source.state !== "choose" && missing(item));
@@ -384,7 +384,7 @@ export default Plugin.define({
                     else
                         redactor.track(item.name, read.value);
                     if (answer.remember) {
-                        await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameRule(item.name, settings.rules)?.ref ? undefined : request.origin, name: item.name });
+                        await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameRule(item.name, settings.rules)?.ref ? undefined : request.origin, name: item.name, via: request.via });
                         changed();
                     }
                     log(planned, item.name, answer.auto ? "rule" : answer.remember ? "always" : "allowed", key);

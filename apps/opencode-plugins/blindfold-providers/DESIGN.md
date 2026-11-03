@@ -309,6 +309,9 @@ that would send the swapped text somewhere) it stays inert. Typed fallback value
   tokens. Kept in the service log (and optionally a JSONL under `~/.local/share/opencode/blindfold/audit.jsonl`).
 - **Wrong value.** The card's provider row has "Use another" / "Forget for this site"; a typed value can be replaced
   (`replace: true`, as today). A login that fails is the agent's signal to call `get` with `replace`.
+- **`get` versus `fill`.** For `fill` the page script checks the page's own origin, so a wrong claim fills nothing. For `get`
+  the origin is the agent's claim and the value goes to its code: you approve a card that names the site and the account, and
+  that is the whole check. An Always allow saved on a `fill` covers fills only; one saved on a `get` covers both. Prefer `fill` for pages.
 - **Residual risks.** A malicious page can read a filled field's `value` (true of any autofill). `bw serve` is not used
   (unauthenticated localhost). R1 remains exfiltratable for typed values.
 

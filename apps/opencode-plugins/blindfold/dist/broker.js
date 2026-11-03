@@ -39,7 +39,7 @@ export function createBroker(deps) {
         let searched = false;
         const add = (account, state, methods, found) => {
             const key = found ? `${account.id}:${found.item.id}` : account.id;
-            const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name };
+            const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name, via: ask.via };
             const covered = state === "ready" && covering(saved, use) !== undefined;
             candidates.push({ key, account: account.id, label: account.label, state, methods, ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered });
             if (found)

@@ -24,6 +24,11 @@ node "$HERE/harness-config.mjs" "$OC_HARNESS_ROOT" 0.25
 sleep 8
 perl -e 'alarm 600; exec @ARGV' node "$HERE/drive-providers.mjs" "${1:-/private/tmp/bf-run/shots-prov}"
 CODE=$?
+# BF_PARITY=1: the parity spec of the answered row against the host's own tool row, on the session the driver left open.
+if [ -n "${BF_PARITY:-}" ] && [ $CODE -eq 0 ]; then
+  OC_PW_ROOT=${BF_PW:-/private/tmp/bf-pw} perl -e 'alarm 300; exec @ARGV' node "$SKILL/parity.mjs" --spec "$HERE/../parity.spec.mjs" --cdp "$BF_CDP" --out /private/tmp/bf-run/parity
+  CODE=$?
+fi
 "$SKILL/desktop-harness.sh" stop
 pkill -f "$OC_HARNESS_ROOT/desktop/cli/" 2>/dev/null
 kill $STUB $PAGE 2>/dev/null

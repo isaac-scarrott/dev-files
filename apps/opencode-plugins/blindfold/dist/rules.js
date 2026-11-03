@@ -46,6 +46,8 @@ export function covering(saved, use) {
     return saved.find((rule) => {
         if (rule.account !== use.account || rule.field !== use.field)
             return false;
+        if (rule.via === "fill" && use.via !== "fill")
+            return false;
         if (rule.item !== undefined && rule.item !== use.item)
             return false;
         if (use.origin !== undefined)
@@ -66,9 +68,9 @@ export function savedRules(store, id, now = Date.now) {
         async add(use) {
             const rules = await load();
             const same = covering(rules, use);
-            if (same && same.item === use.item)
+            if (same && same.item === use.item && (same.via ?? "get") === (use.via ?? "get"))
                 return same;
-            const rule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, created: now() };
+            const rule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, created: now() };
             await store.set(KEY, [...rules, rule]);
             return rule;
         },

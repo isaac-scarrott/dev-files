@@ -46,13 +46,23 @@ test("a saved rule covers the same origin, account, field and item, and nothing 
   assert.equal(nameRule("GH", parseRules([{ name: "GH", account: "a" }]))?.account[0], "a")
 })
 
+test("a fill rule covers fills only; a get rule covers both", () => {
+  const base = { id: "r", origin: "https://x.test", account: "a", field: "password", created: 1 }
+  const use = { account: "a", field: "password", origin: "https://x.test" }
+  assert.ok(covering([{ ...base, via: "fill" }], { ...use, via: "fill" }))
+  assert.equal(covering([{ ...base, via: "fill" }], { ...use, via: "get" }), undefined, "a fill approval is not an approval to hand the value to the agent's code")
+  assert.equal(covering([{ ...base, via: "fill" }], use), undefined)
+  assert.ok(covering([{ ...base, via: "get" }], { ...use, via: "fill" }))
+  assert.ok(covering([base], { ...use, via: "fill" }) && covering([base], { ...use, via: "get" }), "a rule without via is a get rule")
+})
+
 test("saved rules add once, list and revoke through a store", async () => {
   const memory = new Map<string, unknown>()
   let n = 0
   const rules = savedRules({ get: async (key) => memory.get(key), set: async (key, value) => void memory.set(key, value) }, () => `id${++n}`, () => 5)
   const use = { account: "work", field: "password", item: "bw2", itemTitle: "Google (work)", origin: "https://accounts.google.com" }
   const first = await rules.add(use)
-  assert.deepEqual(first, { id: "id1", origin: "https://accounts.google.com", name: undefined, account: "work", item: "bw2", itemTitle: "Google (work)", field: "password", created: 5 })
+  assert.deepEqual(first, { id: "id1", origin: "https://accounts.google.com", name: undefined, account: "work", item: "bw2", itemTitle: "Google (work)", field: "password", via: undefined, created: 5 })
   assert.equal((await rules.add(use)).id, "id1", "an equal rule is not saved twice")
   await rules.add({ ...use, field: "username" })
   assert.equal((await rules.list()).length, 2)

@@ -69,6 +69,7 @@ export default Plugin.define({
       "page.ruleName": "{{name}}",
       "page.ruleFrom": "From {{account}}",
       "page.ruleFromItem": "From {{account}} · {{item}}",
+      "page.ruleFillOnly": " · fill only",
       "page.revoke": "Revoke",
       "page.recent": "Recent use",
       "page.noRecent": "Nothing used yet in this session.",

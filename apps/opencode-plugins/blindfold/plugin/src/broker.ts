@@ -18,7 +18,7 @@ export type Candidate = {
 export type Source = { state: "choose" | "unavailable"; candidates: Candidate[]; selected?: string; hint?: string }
 
 /** A field the agent asked for, with the part of a vault item it names. */
-export type Ask = { name: string; field: Field; item?: string; origin?: string }
+export type Ask = { name: string; field: Field; item?: string; origin?: string; via?: "get" | "fill" }
 
 export type Planned = { source: Source; refs: Map<string, { item: ItemRef; field: FieldRef }>; itemField: string }
 
@@ -63,7 +63,7 @@ export function createBroker(deps: BrokerDeps) {
     let searched = false
     const add = (account: Account, state: "ready" | "locked", methods: UnlockMethod[], found?: { item: ItemRef; field: FieldRef }) => {
       const key = found ? `${account.id}:${found.item.id}` : account.id
-      const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name }
+      const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name, via: ask.via }
       const covered = state === "ready" && covering(saved, use) !== undefined
       candidates.push({ key, account: account.id, label: account.label, state, methods, ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered })
       if (found) refs.set(key, found)
