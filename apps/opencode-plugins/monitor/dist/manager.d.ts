@@ -1,5 +1,6 @@
 import { type Registry } from "./handoff.js";
 import type { Options } from "./options.js";
+import type { Notify } from "./notify.js";
 import type { Clock, Spawn } from "./process.js";
 export interface Store {
     get(key: string): Promise<unknown>;
@@ -30,6 +31,8 @@ export interface ManagerDeps {
     readonly origin: string;
     /** Where monitors wait between a plugin reload's old and new instance; shared by every instance in the process. */
     readonly registry: Registry;
+    /** Tells the user (through the hub) about what they would not otherwise see. */
+    readonly notify?: Notify;
 }
 export interface StartInput {
     readonly command: string;
@@ -83,6 +86,7 @@ export declare class Monitors {
      * the first wake says so. The rest are forgotten and their session is told once that they are gone.
      */
     restore(): Promise<void>;
+    private tell;
     private announceLost;
     /**
      * Service shutdown ends every process. A plugin reload (the module loaded again in the same process) leaves them

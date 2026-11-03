@@ -76,6 +76,8 @@ export interface NotifyContext {
   }
   /** Lets the fallback toast offer Open. Absent: the toast has no action. */
   readonly tabs?: { open(session: { server: string; id: string }, options?: { focus?: boolean }): void }
+  /** Lets `notifyFromServer` name the server a server half's notification belongs to: the desktop's own. */
+  readonly servers?: { list(): readonly string[]; get(id: string): { readonly builtin: boolean } | undefined }
 }
 
 /** Provided by the `notifications` plugin. */
@@ -177,18 +179,19 @@ export const defaultKey = (source: string, kind: NotifyKind, target?: NotifyTarg
 /**
  * Reads anything that claims to be a notification: an RPC event from a server half, a message from a newer or older plugin.
  * Unknown kinds become `info` (quiet is the safe default), unknown fields are dropped, text is clipped, and the result has
- * every field set. Returns undefined when there is nothing to show (no title) or the shape is not an object.
+ * every field set. Returns undefined when there is nothing to show (no title) or the shape is not an object. `server` names
+ * the server a payload without `target.server` belongs to: a server half does not know the host's id for its own server.
  */
-export function normalize(raw: unknown, source: string, now: number = Date.now()): Notification | undefined {
+export function normalize(raw: unknown, source: string, now: number = Date.now(), server?: string): Notification | undefined {
   if (typeof raw !== "object" || raw === null) return undefined
   const input = raw as Record<string, unknown>
   const title = text(input.title)
   if (!title) return undefined
   const kind: NotifyKind = isKind(input.kind) ? input.kind : "info"
   const rawTarget = input.target as Record<string, unknown> | undefined
-  const server = text(rawTarget?.server)
+  const targetServer = text(rawTarget?.server) ?? server
   const session = text(rawTarget?.session)
-  const target = server && session ? { server, session } : undefined
+  const target = targetServer && session ? { server: targetServer, session } : undefined
   const rawAction = input.action as Record<string, unknown> | undefined
   const message = text(rawAction?.message)
   const action: NotifyAction | undefined =
@@ -240,7 +243,20 @@ function fallback(ctx: NotifyContext, notification: Notification): NotifyOutcome
  */
 export function notify(ctx: NotifyContext, input: NotifyInput): NotifyOutcome {
   const notification = normalize(input, ctx.id)
-  if (!notification) return "none"
+  return notification ? deliver(ctx, notification) : "none"
+}
+
+/**
+ * A plugin's GUI half passes on what its server half emitted as `notify` (see `serverNotificationSchema`): the same path as
+ * `notify`, with the target's server filled in from the desktop's own server, which is the one that runs plugins.
+ */
+export function notifyFromServer(ctx: NotifyContext, raw: unknown): NotifyOutcome {
+  const server = ctx.servers?.list().find((id) => ctx.servers?.get(id)?.builtin)
+  const notification = normalize(raw, ctx.id, Date.now(), server)
+  return notification ? deliver(ctx, notification) : "none"
+}
+
+function deliver(ctx: NotifyContext, notification: Notification): NotifyOutcome {
   const sink = activeSink()
   if (sink) {
     try {
@@ -284,7 +300,7 @@ export const serverNotificationSchema = {
     body: { type: "string" },
     key: { type: "string" },
     persistent: { type: "boolean" },
-    target: { type: "object", properties: { server: { type: "string" }, session: { type: "string" } }, required: ["server", "session"], additionalProperties: false },
+    target: { type: "object", properties: { server: { type: "string" }, session: { type: "string" } }, required: ["session"], additionalProperties: false },
     action: { type: "object", properties: { type: { type: "string" }, message: { type: "string" } }, required: ["type"], additionalProperties: false },
   },
   required: ["kind", "title"],

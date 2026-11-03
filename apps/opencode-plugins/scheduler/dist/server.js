@@ -11,17 +11,22 @@ export default Plugin.define({
     async setup(ctx) {
         const options = parseOptions(ctx.options);
         const log = createLog(options.logDir, clock.now);
-        const { hub, release } = await acquire(ctx, options, clock, log);
+        // Registered below; until then (and after the cleanup starts) there is nowhere to send.
+        let control;
+        const notify = (notification) => void control?.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`));
+        const { hub, release } = await acquire(ctx, options, clock, log, notify);
         const tools = await ctx.tool.transform((editor) => registerTools(editor, ctx, hub, options));
         // The desktop row's Cancel button.
         const handlers = scheduleControl(hub);
-        const control = await ctx.rpc.register(ScheduleControl, {
+        control = await ctx.rpc.register(ScheduleControl, {
             active: (input) => handlers.active(input),
             pending: (input) => handlers.pending(input),
             cancel: (input) => handlers.cancel(input),
         });
         return async () => {
-            await control.dispose();
+            const registered = control;
+            control = undefined;
+            await registered?.dispose();
             await tools.dispose();
             release();
         };

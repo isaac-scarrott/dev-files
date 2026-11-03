@@ -1,4 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc";
+import { notificationSchema } from "./notify.js";
 const id = { type: "string", minLength: 1 };
 const num = { type: "number" };
 /** What the desktop asks of the scheduler: which of these repeating tasks are still scheduled, what is scheduled for a session, and cancel one. Ids, names, numbers and booleans only. */
@@ -44,6 +45,9 @@ export const ScheduleControl = Rpc.define({
             output: { type: "object", properties: { cancelled: { type: "boolean" } }, required: ["cancelled"], additionalProperties: false },
         },
     },
-    events: {},
+    events: {
+        /** Something the user should hear about: a task that could not be delivered, one that was paused. */
+        notify: { schema: notificationSchema },
+    },
 });
 //# sourceMappingURL=rpc.js.map

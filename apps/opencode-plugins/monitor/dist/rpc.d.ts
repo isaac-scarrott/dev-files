@@ -116,5 +116,47 @@ export declare const MonitorControl: {
             };
         };
     };
-    readonly events: {};
+    readonly events: {
+        /** Something the user should hear about: a monitor that crashed or stopped waking its session. */
+        readonly notify: {
+            readonly schema: {
+                readonly type: "object";
+                readonly properties: {
+                    readonly kind: {
+                        readonly type: "string";
+                    };
+                    readonly title: {
+                        readonly type: "string";
+                    };
+                    readonly severity: {
+                        readonly type: "string";
+                    };
+                    readonly body: {
+                        readonly type: "string";
+                    };
+                    readonly key: {
+                        readonly type: "string";
+                    };
+                    readonly persistent: {
+                        readonly type: "boolean";
+                    };
+                    readonly at: {
+                        readonly type: "number";
+                    };
+                    readonly target: {
+                        readonly type: "object";
+                        readonly properties: {
+                            readonly session: {
+                                readonly type: "string";
+                            };
+                        };
+                        readonly required: readonly ["session"];
+                        readonly additionalProperties: false;
+                    };
+                };
+                readonly required: readonly ["kind", "title"];
+                readonly additionalProperties: true;
+            };
+        };
+    };
 };

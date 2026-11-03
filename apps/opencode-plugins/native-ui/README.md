@@ -14,6 +14,8 @@ Shared components that look and behave like OpenCode Desktop's own sidebar rows,
 
 - `createSessionChip`, `createLaneChip` and `LaneChipRows`: a chip in the row above the composer (the host's `ComposerPill`) that counts things aimed at the session on screen, opens a popover of one-line rows (name, trailing status, an action in its place on hover) that matches the host's own subagent popover, with arrow-key navigation, and collapses in and out while the row moves with it; used by `monitor` and `scheduler`. Register `laneChipCss` with `ctx.add(Style, ...)`.
 
+- `notify-contract.ts` (import it by file path, it has no imports): the alerts hub convention. `notify(ctx, {kind, title, ...})` publishes a notification of kind `done`, `needs-you`, `error` or `info` to the [`notifications`](../notifications) plugin when it is installed, else shows the plugin's own toast with an Open button (`info` stays quiet); `notifyFromServer` does the same for what a server half emitted as the RPC event `notify`; `acquirePublisher` announces a source for the Settings page. The registry is on `globalThis` under a versioned `Symbol.for` key and survives hot reloads. Server bundles copy its payload shape instead of importing it.
+
 ![Chips entering and leaving the row above the composer, the host's capsule sliding with them](media/lane-chips.gif)
 
 ## Context

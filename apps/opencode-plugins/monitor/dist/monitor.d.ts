@@ -1,4 +1,5 @@
 import { type Handoff } from "./handoff.js";
+import type { Notify } from "./notify.js";
 import type { Options } from "./options.js";
 import type { Clock, Spawn } from "./process.js";
 import type { RunState } from "./state.js";
@@ -32,6 +33,8 @@ export interface Deps {
     readonly saveState: (monitor: Monitor, state: RunState) => Promise<void>;
     /** The monitor is over for good; the manager forgets it. */
     readonly finished: (monitor: Monitor, reason: string) => void;
+    /** Tells the user (through the hub) about what they would not otherwise see; never decides how. */
+    readonly notify?: Notify;
 }
 export type State = "running" | "waiting" | "ended";
 /** A restore: the previous run state (restartCount already counting this restart) and the note for the first wake. */
@@ -69,6 +72,8 @@ export declare class Monitor {
     private closing;
     private chain;
     private failures;
+    /** The command died on its own: the crash was reported as an error, so ending it is not news again. */
+    private crashed;
     private readonly matcher;
     constructor(def: Definition, deps: Deps);
     /**
@@ -94,6 +99,7 @@ export declare class Monitor {
     private save;
     private heartbeat;
     nextRunAt(): number | undefined;
+    private tell;
     /** Ends the monitor on request or because its session went away. No wake. */
     stop(reason: string): Promise<void>;
     /** After a handover: waits for wakes still being delivered, then records the last-alive time. */

@@ -1,5 +1,6 @@
 import type { Claims } from "./claims.js";
 import type { Host, SessionInfo } from "./host.js";
+import type { Notify } from "./notify.js";
 import type { Options } from "./options.js";
 export type Kind = "once" | "every" | "cron";
 export interface Job {
@@ -62,15 +63,20 @@ export declare class Scheduler {
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
     private readonly anyHost;
     private readonly claims;
+    /** Tells the user (through the hub) about what they would not otherwise see; never decides how. */
+    private readonly notify;
     private queue;
     constructor(options: Options, clock: Clock, storage: Host["storage"], state: State, log: (message: string) => void, 
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
-    anyHost: () => Host | undefined, claims: Claims);
-    static create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined, claims: Claims): Promise<Scheduler>;
+    anyHost: () => Host | undefined, claims: Claims, 
+    /** Tells the user (through the hub) about what they would not otherwise see; never decides how. */
+    notify?: Notify);
+    static create(options: Options, clock: Clock, storage: Host["storage"], log: (message: string) => void, anyHost: () => Host | undefined, claims: Claims, notify?: Notify): Promise<Scheduler>;
     private locked;
     /** Other instances share the stored state and save over it; reread it before acting so nothing runs on a stale copy. */
     private refresh;
     private save;
+    private tell;
     private end;
     /** Earliest time an active job is due, or undefined when nothing is waiting. */
     nextDueAt(): number | undefined;

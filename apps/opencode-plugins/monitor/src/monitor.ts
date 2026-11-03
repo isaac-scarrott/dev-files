@@ -1,5 +1,6 @@
 import { Port, type Handoff } from "./handoff.js"
 import { LineSplitter } from "./lines.js"
+import type { Notify, Outgoing } from "./notify.js"
 import type { Options } from "./options.js"
 import type { Child, Clock, Spawn } from "./process.js"
 import type { RunState } from "./state.js"
@@ -33,6 +34,8 @@ export interface Deps {
   readonly saveState: (monitor: Monitor, state: RunState) => Promise<void>
   /** The monitor is over for good; the manager forgets it. */
   readonly finished: (monitor: Monitor, reason: string) => void
+  /** Tells the user (through the hub) about what they would not otherwise see; never decides how. */
+  readonly notify?: Notify
 }
 
 export type State = "running" | "waiting" | "ended"
@@ -76,6 +79,8 @@ export class Monitor {
   private closing = false
   private chain: Promise<void> = Promise.resolve()
   private failures = 0
+  /** The command died on its own: the crash was reported as an error, so ending it is not news again. */
+  private crashed = false
   private readonly matcher: RegExp | undefined
 
   constructor(readonly def: Definition, private readonly deps: Deps) {
@@ -216,6 +221,14 @@ export class Monitor {
     return this.state === "waiting" ? this.nextRearmAt : undefined
   }
 
+  private tell(what: Pick<Outgoing, "kind" | "title" | "severity" | "body"> & { key: string }): void {
+    try {
+      this.deps.notify?.({ ...what, key: `monitor:${what.key}:${this.def.id}`, target: { session: this.def.sessionID }, at: this.deps.clock.now() })
+    } catch (error) {
+      this.deps.log(`${this.def.id} (${this.def.name}): could not notify: ${String(error)}`)
+    }
+  }
+
   /** Ends the monitor on request or because its session went away. No wake. */
   async stop(reason: string): Promise<void> {
     if (this.closing) return
@@ -297,6 +310,10 @@ export class Monitor {
       return
     }
     if (this.def.rearmMinutes === undefined) {
+      if (code !== 0) {
+        this.crashed = true
+        this.tell({ kind: "error", title: "Monitor stopped", body: `"${this.def.name}" ${how}`, key: "error" })
+      }
       void this.end(`the command ${how}`)
       return
     }
@@ -326,6 +343,7 @@ export class Monitor {
       if (!this.paused) {
         this.paused = true
         this.notes.push(`Paused: more than ${options.maxEventsPerHour} lines in an hour. Lines are dropped, and counted, until the rate falls.`)
+        this.tell({ kind: "error", severity: "warning", title: "Monitor paused", body: `"${this.def.name}" produced more than ${options.maxEventsPerHour} lines in an hour`, key: "paused" })
         this.deps.log(`${this.def.id} (${this.def.name}): paused after ${options.maxEventsPerHour} events in an hour`)
       }
       this.dropped += 1
@@ -379,6 +397,7 @@ export class Monitor {
       } catch (error) {
         this.failures += 1
         this.deps.log(`${this.def.id} (${this.def.name}): could not wake ${this.def.sessionID}: ${String(error)}`)
+        if (this.failures >= MAX_DELIVERY_FAILURES && !this.closing) this.tell({ kind: "error", title: "Monitor stopped", body: `"${this.def.name}" could not wake its session ${MAX_DELIVERY_FAILURES} times in a row`, key: "error" })
         if (this.failures >= MAX_DELIVERY_FAILURES && !this.closing) void this.stop(`session ${this.def.sessionID} did not accept ${MAX_DELIVERY_FAILURES} wakes in a row`)
       }
     })
@@ -392,6 +411,7 @@ export class Monitor {
     await this.terminate()
     this.state = "ended"
     this.deps.log(`${this.def.id} (${this.def.name}): ${reason}`)
+    if (!this.crashed) this.tell({ kind: "info", title: "Monitor ended", body: `"${this.def.name}": ${reason}`, key: "ended" })
     this.flush([`Monitor ended: ${reason}.`])
     await this.chain
     this.deps.finished(this, reason)

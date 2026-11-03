@@ -1,10 +1,11 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, onCleanup } from "solid-js"
 import { ClockIcon, CLOCK_PLACEHOLDER, createSessionChip, drawnIconCss, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
 import { scheduleDeadlines, scheduleStatus } from "./chip"
 import type { ScheduleItem } from "./control"
 import { scheduledOf, type ScheduledRun } from "./message"
 import { ScheduleControl } from "./rpc"
+import { acquirePublisher, notifyFromServer } from "../../native-ui/src/notify-contract"
 
 type Located = { readonly id: string; readonly run: ScheduledRun; readonly session: SessionRef }
 
@@ -35,6 +36,13 @@ export default Plugin.define({
     ctx.add(Style, injectedMessageRowCss)
     ctx.add(Style, css)
     ctx.add(Style, laneChipCss)
+
+    // What the server half has to tell the user goes through the shared hub: the `notifications` plugin when it is installed, else a toast of our own.
+    onCleanup(acquirePublisher(ctx.id))
+    createKeyed(
+      () => ctx.client,
+      (client) => void onCleanup(client.rpc(ScheduleControl).events.on("notify", (event) => void notifyFromServer(ctx, event.data), { signal: ctx.signal })),
+    )
 
     // The tasks aimed at the session on screen, as a chip beside the host's own background-activity capsule. The pill API takes
     // catalog icons only and the catalog has no clock, so the chip names a placeholder icon that laneChipCss draws as the clock.

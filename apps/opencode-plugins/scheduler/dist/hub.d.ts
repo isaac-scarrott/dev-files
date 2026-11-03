@@ -1,4 +1,5 @@
 import type { Host, SessionInfo } from "./host.js";
+import type { Notify } from "./notify.js";
 import type { Options } from "./options.js";
 import { Scheduler, type AddInput, type Clock } from "./scheduler.js";
 /** What the tools talk to: one scheduler for the whole process, with a timer that keeps it ticking. */
@@ -12,7 +13,7 @@ export interface Hub {
  * would each fire every due job and overwrite each other's state, so instances share one scheduler and one timer; any
  * live instance's host can reach every session. The last instance out stops the timer.
  */
-export declare function acquire(host: Host, options: Options, clock: Clock, log: (message: string) => void): Promise<{
+export declare function acquire(host: Host, options: Options, clock: Clock, log: (message: string) => void, notify?: Notify): Promise<{
     hub: Hub;
     release(): void;
 }>;

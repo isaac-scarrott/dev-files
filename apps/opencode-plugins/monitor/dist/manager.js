@@ -109,6 +109,7 @@ export class Monitors {
                 const monitor = this.create(def);
                 const restartCount = (previous?.restartCount ?? 0) + 1;
                 log(`${def.id} (${def.name}): restored after a restart (restart ${restartCount})`);
+                this.tell(def, { kind: "info", title: "Monitor restarted", body: `"${def.name}" was started again after OpenCode restarted`, key: `state:${restartCount}` });
                 monitor.start({
                     state: { ...previous, seq: previous?.seq ?? 0, restartCount, aliveAt: now, events: previous?.events ?? 0 },
                     note: `This monitor was restarted automatically after OpenCode restarted (restart ${restartCount}). ${downtimeWindow(previous?.aliveAt, now)} Output produced while it was down was not seen.`,
@@ -116,7 +117,16 @@ export class Monitors {
             }
         }
     }
+    tell(def, what) {
+        try {
+            this.deps.notify?.({ ...what, key: `monitor:${what.key}:${def.id}`, target: { session: def.sessionID }, at: this.deps.clock.now() });
+        }
+        catch (error) {
+            this.deps.log(`${def.id} (${def.name}): could not notify: ${String(error)}`);
+        }
+    }
     async announceLost(def, previous) {
+        this.tell(def, { kind: "info", title: "Monitor lost", body: `"${def.name}" was lost when OpenCode restarted`, key: "lost" });
         const now = this.deps.clock.now();
         // Continues the monitor's own seq, so this notice is never confused with an earlier wake.
         const seq = (previous?.seq ?? 0) + 1;
@@ -173,6 +183,7 @@ export class Monitors {
             log,
             saveState: (done, state) => this.write(done.def.id, () => store.set(STATE_PREFIX + done.def.id, JSON.parse(JSON.stringify(state)))),
             deliver: (sessionID, text, meta) => sessions.prompt(sessionID, text, meta),
+            notify: this.deps.notify,
             finished: (done) => {
                 if (this.running.get(done.def.id) === done)
                     this.running.delete(done.def.id);

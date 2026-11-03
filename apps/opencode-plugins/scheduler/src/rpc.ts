@@ -1,4 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc"
+import { notificationSchema } from "./notify.js"
 
 const id = { type: "string", minLength: 1 } as const
 
@@ -47,5 +48,8 @@ export const ScheduleControl = Rpc.define({
       output: { type: "object", properties: { cancelled: { type: "boolean" } }, required: ["cancelled"], additionalProperties: false },
     },
   },
-  events: {},
+  events: {
+    /** Something the user should hear about: a task that could not be delivered, one that was paused. */
+    notify: { schema: notificationSchema },
+  },
 })

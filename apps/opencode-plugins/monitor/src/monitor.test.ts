@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { normalize } from "../../native-ui/src/notify-contract.js"
 import { LineSplitter } from "./lines.js"
+import type { Outgoing } from "./notify.js"
 import { PARK_MS, beginShutdown, newRegistry } from "./handoff.js"
 import { Monitors, type ManagerDeps } from "./manager.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
@@ -957,4 +959,64 @@ test("a service shutdown after a handover ends the parked process; a shutdown di
   const live = await t.next("mon_live").start(t.input)
   assert.ok(live.pid)
   assert.equal(t.deps.registry.shuttingDown, true)
+})
+
+function withTold() {
+  const t = setup()
+  const told: Outgoing[] = []
+  const deps = { ...t.deps, notify: (n: Outgoing) => void told.push(n) }
+  return { ...t, told, deps, monitors: new Monitors(deps) }
+}
+
+test("a command that dies with a non-zero code raises one error for its session; a clean exit is info", async () => {
+  const t = withTold()
+  await t.monitors.start(t.input)
+  t.sp.exit(t.sp.runs[0]!, 3)
+  await t.clock.advance(0)
+  assert.equal(t.told.length, 1)
+  assert.equal(t.told[0]!.kind, "error")
+  assert.match(t.told[0]!.key!, /^monitor:error:mon_1$/)
+  assert.deepEqual(t.told[0]!.target, { session: "ses_1" })
+  assert.equal(normalize(t.told[0], "monitor", 1, "sidecar")!.action?.type, "open-session")
+
+  await t.monitors.start(t.input)
+  t.sp.exit(t.sp.runs[1]!, 0)
+  await t.clock.advance(0)
+  assert.deepEqual(t.told.slice(1).map((n) => [n.kind, n.key]), [["info", "monitor:ended:mon_2"]])
+})
+
+test("stopping a monitor on request tells no one: the user just did it", async () => {
+  const t = withTold()
+  await t.monitors.start(t.input)
+  await t.monitors.stop("mon_1")
+  await t.clock.advance(10_000)
+  assert.deepEqual(t.told, [])
+})
+
+test("the hourly cap raises a warning-level error", async () => {
+  const t = withTold()
+  const capped = new Monitors({ ...t.deps, options: { ...t.deps.options, maxEventsPerHour: 3 } })
+  await capped.start(t.input)
+  t.sp.out(t.sp.runs[0]!, "1\n2\n3\n4\n5\n")
+  await t.clock.advance(5000)
+  assert.deepEqual(t.told.map((n) => [n.kind, n.severity, n.key]), [["error", "warning", "monitor:paused:mon_1"]])
+})
+
+test("a restart and a loss are info, once each", async () => {
+  const t = withTold()
+  await t.monitors.start(t.input)
+  await t.monitors.start({ ...t.input, name: "plain", ttlMinutes: 1 })
+  t.clock.t += 120_000
+  const second = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
+  await second.restore()
+  assert.deepEqual(t.told.map((n) => n.key).sort(), ["monitor:lost:mon_2", "monitor:state:1:mon_1"])
+})
+
+test("a notifier that throws never breaks a monitor", async () => {
+  const t = setup()
+  const m = new Monitors({ ...t.deps, notify: () => { throw new Error("rpc down") } })
+  await m.start(t.input)
+  t.sp.exit(t.sp.runs[0]!, 2)
+  await t.clock.advance(0)
+  assert.equal(m.count, 0)
 })

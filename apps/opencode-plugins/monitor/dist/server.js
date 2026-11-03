@@ -38,16 +38,20 @@ export default Plugin.define({
                 await ctx.session.prompt({ sessionID: sessionID, text, delivery: "steer", metadata: { [METADATA_KEY]: meta } });
             },
         };
-        const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000) });
+        // Registered below; until then (and after the cleanup starts) there is nowhere to send.
+        let control;
+        const notify = (notification) => void control?.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`));
+        const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000), notify });
         const tools = await ctx.tool.transform((editor) => registerTools(editor, monitors, ctx, options));
-        await monitors.restore();
         // The desktop row's Stop button. A monitor belongs to one session, and only that session's row may stop it.
         const handlers = monitorControl(monitors);
-        const control = await ctx.rpc.register(MonitorControl, {
+        control = await ctx.rpc.register(MonitorControl, {
             running: (input) => handlers.running(input),
             list: (input) => handlers.list(input),
             stop: (input) => handlers.stop(input),
         });
+        // After the control is registered, so what restore announces (restarted, lost) can be sent.
+        await monitors.restore();
         const abort = new AbortController();
         const listen = async () => {
             while (!abort.signal.aborted) {
@@ -68,7 +72,9 @@ export default Plugin.define({
         log(`loaded for ${ctx.location.directory}; logs in ${options.logDir}`);
         return async () => {
             abort.abort();
-            await control.dispose();
+            const registered = control;
+            control = undefined;
+            await registered?.dispose();
             await tools.dispose();
             await monitors.dispose();
         };
