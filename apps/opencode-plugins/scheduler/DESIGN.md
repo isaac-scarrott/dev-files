@@ -24,7 +24,7 @@ A "N schedules" chip in the row above the composer, from `native-ui`'s `createSe
 - **Row = the host's one-line row** (user, 2026-11-02; supersedes the two-line row): name at the start, the status as the muted trailing text where the host shows the elapsed time (hidden on hover, where Cancel takes its place), the drawn clock as the glyph (no spinner: nothing is running). No count heading. Details in [native-ui DESIGN](../native-ui/DESIGN.md).
 - **Row text.** The status is `every 2h · next in 1h 47m · 2 of 6 runs` (`scheduleStatus`): the schedule as written (`once` for a one-off), the next run or `paused`, and runs so far against `maxRuns` for repeating tasks. A one-off is listed until it has run, and can be cancelled before.
 - **Cancel** reuses `cancel({ id, sessionID })`, which refuses a session that is not the task's own.
-- **Icon:** the clock. The pill API takes catalog icons only; see the placeholder in native-ui DESIGN.
+- **Icon:** the clock, as a gauge (user, 2026-11-03; details in native-ui DESIGN, "Schedule clock gauge"). The chip's hand is the soonest next run among this session's schedules that are counting down, a row's hand is that row's own, the timeline row rests at 12. Full scale 60 minutes (300 degrees), so "now" and "paused" are 12 and "an hour or more" is not. One soft tick under a minute, one lap when a run fires, no loop; the angle follows a shared once-a-minute tick and each answer of `pending`. The pill API takes catalog icons only; see the placeholder in native-ui DESIGN.
 - **No navigation:** a task wakes the session on screen by definition, so there is no other target to open.
 
 ## Time

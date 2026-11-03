@@ -15,11 +15,13 @@ export { unescapeMarkup, firstLine, hasMore } from "./injected-text"
 export { holdTop, scrollerOf } from "./anchor"
 export { createLaneChip, type LaneChip, type LaneChipOptions, type LaneChipSession } from "./lane-chip"
 export { CHIP_EASE, CHIP_MS, domMotion, reducedMotion, type ChipMotion, type ChipRun } from "./chip-motion"
-export { LaneChipRows, laneChipCss, CLOCK_PLACEHOLDER, type LaneChipRow, type LaneChipRowsProps } from "./lane-chip-rows"
+export { LaneChipRows, laneChipCss, type LaneChipRow, type LaneChipRowsProps } from "./lane-chip-rows"
 export { createSessionChip, type SessionChipOptions } from "./session-chip"
 export { messageSignature } from "./chip-signature"
 export { span, nextChange, MINUTE } from "./chip-time"
-export { RobotIcon, ClockIcon, HeartbeatIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { RobotIcon, HeartbeatIcon, drawnIconCss } from "./icons"
+export { ClockGaugeIcon, createChipClock, createMinuteTick, useMinute, clockGaugeIconCss, clockGaugeChipCss, clockMasks, CLOCK_PLACEHOLDER, type ClockGaugeIconProps, type MinuteTick } from "./clock-gauge"
+export { clockPose, soonestPose, gaugeTurn, fired, anyFired, GAUGE_MINUTES, GAUGE_SWEEP, type ClockInput, type ClockPose, type ClockState } from "./clock-pose"
 export { heartbeatIconCss, heartbeatChipCss, heartbeatMasks, HEARTBEAT_LIVE_PLACEHOLDER, HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_TRACE, HEARTBEAT_FLAT, HEARTBEAT_LOOP, syncHeartbeats, type HeartbeatState } from "./heartbeat"
 
 import { tabRowActionCss } from "./tab-row-action"
@@ -27,9 +29,10 @@ import { popoverCss } from "./popover"
 import { drawnIconCss } from "./icons"
 import { spinnerCss } from "./spinner"
 import { heartbeatIconCss } from "./heartbeat"
+import { clockGaugeIconCss } from "./clock-gauge"
 
 /** Everything the library needs beyond the host's own CSS. Register once: `ctx.add(Style, nativeUiCss)`. */
-export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, heartbeatIconCss, spinnerCss].join("\n")
+export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, heartbeatIconCss, clockGaugeIconCss, spinnerCss].join("\n")
 
 export { createDomHub, elementsChangedBut, SIDEBAR, type DomHub } from "./dom-hub"
 export { createTabMarks, tabMarkNode, iconSymbol, tabMarkCss, TAB_MARK_OWN, type TabMarkSpec, type TabMarkSeverity, type TabMarksOptions } from "./tab-marks"

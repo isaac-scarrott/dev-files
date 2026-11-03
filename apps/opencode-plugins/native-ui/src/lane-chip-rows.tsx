@@ -2,6 +2,8 @@ import { createMemo, For, onMount, type JSX } from "solid-js"
 import type { Ui } from "@opencode/plugin/gui"
 import { HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_LIVE_PLACEHOLDER, heartbeatChipCss, heartbeatIconCss } from "./heartbeat"
 import { spinnerCss } from "./spinner"
+import { CLOCK_PLACEHOLDER, clockGaugeChipCss, clockGaugeIconCss } from "./clock-gauge"
+import type { ClockInput } from "./clock-pose"
 
 // The rows inside a composer chip's popover, built to read and behave like the host's own activity rows (the "1 subagent"
 // popover): one 28px line, the name at the start, the status as the muted trailing text where the host shows the elapsed time,
@@ -18,6 +20,8 @@ export interface LaneChipRow {
   status: string
   /** The item is alive but not at work (a paused monitor): its glyph rests instead of beating. */
   resting?: boolean
+  /** What a schedule row's clock shows: this row's own time to next run. */
+  clock?: ClockInput
 }
 
 export interface LaneChipRowsProps {
@@ -145,21 +149,15 @@ export function LaneChipRows(props: LaneChipRowsProps) {
   )
 }
 
-/** The icon an `IconName` pill uses where the catalog has no clock (the pill API takes catalog names only): a rarely used one,
- * whose glyph this CSS hides and draws as the same clock `ClockIcon` is. Scoped to plugin pills, so no host chip is touched. */
-export const CLOCK_PLACEHOLDER = "outline-rotate-clockwise" as const
-
-const clockMask = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round'><circle cx='8' cy='8' r='6'/><path d='M8 4.5V8l2.5 1.5'/></svg>")`
-
 const OURS = [HEARTBEAT_LIVE_PLACEHOLDER, HEARTBEAT_FLAT_PLACEHOLDER, CLOCK_PLACEHOLDER].map((name) => `[data-slot="session-plugin-pill"]:has(use[href$="icon-${name}"])`).join(", ")
 
 export const laneChipCss = `
 ${spinnerCss}
 ${heartbeatIconCss}
 ${heartbeatChipCss}
+${clockGaugeIconCss}
+${clockGaugeChipCss}
 ${OURS} { transition-duration: 150ms; }
-[data-slot="session-plugin-pill"]:has(use[href$="icon-${CLOCK_PLACEHOLDER}"]) > svg { display: none; }
-[data-slot="session-plugin-pill"]:has(use[href$="icon-${CLOCK_PLACEHOLDER}"])::before { content: ""; flex: none; width: 14px; height: 14px; background: var(--v2-icon-icon-muted); -webkit-mask: ${clockMask} center / 14px 14px no-repeat; mask: ${clockMask} center / 14px 14px no-repeat; }
 [data-composer-pill-panel][data-slot="session-plugin-pill-popover"] { animation: none; width: max-content; min-width: 240px; max-width: min(360px, 100vw - 56px); max-height: 270px; overflow-y: auto; }
 [data-composer-pill-panel][data-slot="session-plugin-pill-popover"] > :not([data-lane-chip-rows]) { display: none; }
 [data-popper-positioner]:has([data-slot="session-plugin-pill-popover"]) { z-index: 60 !important; }
