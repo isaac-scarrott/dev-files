@@ -1,0 +1,258 @@
+{
+  "s0_control": {
+    "state": {
+      "lengths": {
+        "email": 23,
+        "password": 19,
+        "workspace": 19,
+        "code": 6
+      },
+      "synced": {
+        "email": true,
+        "password": true,
+        "workspace": true,
+        "code": true
+      },
+      "sent": ""
+    },
+    "ocrLeaks": {
+      "email": "full",
+      "password": "full",
+      "workspace": "full",
+      "code": "full"
+    }
+  },
+  "s1_set0": {
+    "reports": [
+      {
+        "ok": true,
+        "name": "EMAIL",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "email",
+          "id": "identifierId",
+          "role": "combobox"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 1
+      },
+      {
+        "ok": true,
+        "name": "PASSWORD",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "password",
+          "id": "password"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      },
+      {
+        "ok": true,
+        "name": "WORKSPACE",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "text",
+          "id": "workspace"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      },
+      {
+        "ok": true,
+        "name": "TOTP",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "text",
+          "id": "totp"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      }
+    ],
+    "fillMs": 8,
+    "state": {
+      "lengths": {
+        "email": 23,
+        "password": 19,
+        "workspace": 19,
+        "code": 6
+      },
+      "synced": {
+        "email": true,
+        "password": true,
+        "workspace": true,
+        "code": true
+      },
+      "sent": ""
+    },
+    "after": {
+      "masked": [
+        "identifierId",
+        "password",
+        "workspace",
+        "totp",
+        "echo"
+      ],
+      "passwordType": "text",
+      "security": "disc",
+      "echoSecurity": "disc"
+    },
+    "ocrLeaks": {
+      "email": "none",
+      "password": "none",
+      "workspace": "partial",
+      "code": "none"
+    },
+    "ocrSample": [
+      "Sign in (spike)",
+      "Email or phone",
+      "Enter your password",
+      "Show password",
+      "Workspace (plain text input)",
+      "Enter code"
+    ]
+  },
+  "s1_set1": {
+    "reports": [
+      {
+        "ok": true,
+        "name": "EMAIL",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "email",
+          "id": "identifierId",
+          "role": "combobox"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 1
+      },
+      {
+        "ok": true,
+        "name": "PASSWORD",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "password",
+          "id": "password"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      },
+      {
+        "ok": true,
+        "name": "WORKSPACE",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "text",
+          "id": "workspace"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      },
+      {
+        "ok": true,
+        "name": "TOTP",
+        "origin": "http://127.0.0.1:47321",
+        "field": {
+          "tag": "input",
+          "type": "text",
+          "id": "totp"
+        },
+        "filledLength": true,
+        "echoesMaskedNow": 0
+      }
+    ],
+    "fillMs": 6,
+    "state": {
+      "lengths": {
+        "email": 23,
+        "password": 19,
+        "workspace": 19,
+        "code": 6
+      },
+      "synced": {
+        "email": true,
+        "password": true,
+        "workspace": true,
+        "code": true
+      },
+      "sent": ""
+    },
+    "after": {
+      "masked": [
+        "identifierId",
+        "password",
+        "workspace",
+        "totp",
+        "echo"
+      ],
+      "passwordType": "text",
+      "security": "disc",
+      "echoSecurity": "disc"
+    },
+    "ocrLeaks": {
+      "email": "none",
+      "password": "none",
+      "workspace": "partial",
+      "code": "none"
+    },
+    "ocrSample": [
+      "Sign in (spike)",
+      "Email or phone",
+      "Enter your password",
+      "Show password",
+      "Workspace (plain text input)",
+      "Enter code"
+    ]
+  },
+  "s1_pixel_identical_across_values": {
+    "#identifierId": true,
+    "#password": true,
+    "#workspace": true,
+    "#totp": true,
+    "#echo": true
+  },
+  "s2_origin_mismatch": {
+    "report": {
+      "ok": false,
+      "name": "EMAIL",
+      "origin": "http://127.0.0.1:47321",
+      "reason": "origin",
+      "topOrigin": "http://127.0.0.1:47321"
+    },
+    "state": {
+      "lengths": {
+        "email": 0,
+        "password": 0,
+        "workspace": 0,
+        "code": 0
+      },
+      "synced": {
+        "email": true,
+        "password": true,
+        "workspace": true,
+        "code": true
+      },
+      "sent": ""
+    }
+  },
+  "s3_page_leaks": {
+    "consoleLines": 1,
+    "postCaptured": 1,
+    "redaction": {
+      "consoleStillHasValue": false,
+      "postBodyStillHasPlainValue": [],
+      "postBodyStillHasFormEncodedValue": [
+        "password"
+      ],
+      "postBodyRedactedShape": "email=[REDACTED:EMAIL]&password=<not redacted>&workspace=[REDACTED:WORKSPACE]&code=[REDACTED:TOTP]"
+    }
+  }
+}
