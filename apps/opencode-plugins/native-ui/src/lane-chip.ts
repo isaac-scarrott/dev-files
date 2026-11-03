@@ -11,6 +11,8 @@ export interface LaneChipOptions {
   /** The pill's id within the plugin. */
   id: string
   icon: IconName
+  /** The icon while the session's items are all at rest (`settle`'s `resting`); `icon` when absent. */
+  restIcon?: IconName
   /** The capsule's text and accessible name for a count, e.g. "2 monitors". */
   label(count: number): string
   menu: NonNullable<ComposerPill["menu"]>
@@ -31,8 +33,9 @@ export interface LaneChip {
   /**
    * Reports how many items the session has. A change the user is watching (same routing visit, the count already known)
    * moves the chip; anything else (a session just opened, a first answer) sets it at rest.
+   * `resting`: none of the items is at work; the chip then wears `restIcon`.
    */
-  settle(session: LaneChipSession, count: number): void
+  settle(session: LaneChipSession, count: number, resting?: boolean): void
 }
 
 const pillsIn = (doc: Document) => (title: string) =>
@@ -58,6 +61,7 @@ export function createLaneChip(options: LaneChipOptions): LaneChip {
   const find = options.find ?? pillsIn(document)
   // What each session's chip shows. While a chip leaves it keeps its old count, so it keeps its text until it is gone.
   const [shown, setShown] = createStore<Record<string, number>>({})
+  const [resting, setResting] = createStore<Record<string, boolean>>({})
   const known = new Map<string, Known>()
   const moving = new Map<string, Moving>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -68,7 +72,7 @@ export function createLaneChip(options: LaneChipOptions): LaneChip {
     moving.clear()
   })
 
-  const view = (count: number) => ({ label: options.label(count), title: options.label(count), icon: options.icon })
+  const view = (count: number, rest: boolean) => ({ label: options.label(count), title: options.label(count), icon: rest ? (options.restIcon ?? options.icon) : options.icon })
 
   // The capsule is in the document only after the host has rendered the new count, which it does synchronously when the
   // store changes; a microtask is before the next paint, so the chip never shows at full size for a frame first.
@@ -110,8 +114,10 @@ export function createLaneChip(options: LaneChipOptions): LaneChip {
     })
   }
 
-  const settle = (session: LaneChipSession, count: number) => {
+  const settle = (session: LaneChipSession, count: number, rest = false) => {
     const key = session.key
+    // Not part of the move: the icon changes in place, on the chip's own transition.
+    if (count > 0) setResting(key, rest)
     const before = known.get(key)
     known.set(key, { count, visit: session.visit })
     const watching = before !== undefined && before.visit === session.visit && before.count !== count
@@ -162,7 +168,7 @@ export function createLaneChip(options: LaneChipOptions): LaneChip {
       order: options.order,
       show: (input) => {
         const count = shown[input.session.key] ?? 0
-        return count > 0 ? view(count) : undefined
+        return count > 0 ? view(count, resting[input.session.key] ?? false) : undefined
       },
       menu: options.menu,
     },

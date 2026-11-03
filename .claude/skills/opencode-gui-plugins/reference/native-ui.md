@@ -28,6 +28,7 @@ Every component that renders a host control takes `ui: ctx.ui` (through `host.ui
 | `SummaryCard`, `SummaryHeading`, `SummaryRows`, `SummaryRow` | `gui-plugins/src/details` and its `style[data-plugin=details]` | the cards inside Session details |
 | `HeaderIconButton` | `gui-plugins/src/details/popover.tsx` trigger | the Session details button (`ghost-muted large`) |
 | `ProgressSpinner` | `ui/src/components/spinner.tsx` (Soft Radar) and `spinner-radar.ts` | the busy ring in `[data-slot=tab-status]` |
+| `HeartbeatIcon`, `heartbeatIconCss`, `heartbeatChipCss`, `syncHeartbeats` | drawn: an ECG trace, states `live` (opacity beat, one shared phase), `still`, `flat` (300ms settle); the monitors' glyph | catalog icons (none has a pulse) |
 | `ClockIcon`, `drawnIconCss` | drawn in the catalog's style ([icons.md](icons.md)) | catalog icons |
 
 ### SessionTabRow

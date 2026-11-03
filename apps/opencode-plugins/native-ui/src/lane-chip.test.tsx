@@ -27,7 +27,7 @@ function setup() {
   let dispose!: () => void
   const lane = createRoot((d) => {
     dispose = d
-    return createLaneChip({ id: "monitors", icon: "outline-console", label: (n) => `${n} monitors`, menu: () => null as never, motion, find: () => [chip] })
+    return createLaneChip({ id: "monitors", icon: "outline-wave-audio", restIcon: "outline-dots", label: (n) => `${n} monitors`, menu: () => null as never, motion, find: () => [chip] })
   })
   const input = (key: string) => ({ session: { key } }) as unknown as ComposerPillProps
   const shows = (key: string) => lane.pill.show(input(key))?.label
@@ -136,4 +136,18 @@ test("ending the plugin cancels what is moving", async () => {
   t.lane.settle({ key: "a", visit: t.visit }, 0)
   t.dispose()
   assert.equal(t.runs[0]!.cancelled, true)
+})
+
+test("the chip wears its rest icon while every item rests, with no motion for the change", async () => {
+  const t = setup()
+  const icon = (key: string) => t.lane.pill.show({ session: { key } } as unknown as ComposerPillProps)?.icon
+  t.lane.settle({ key: "a", visit: t.visit }, 2)
+  assert.equal(icon("a"), "outline-wave-audio")
+  t.lane.settle({ key: "a", visit: t.visit }, 2, true)
+  await t.flush()
+  assert.equal(icon("a"), "outline-dots")
+  assert.equal(t.runs.length, 0)
+  t.lane.settle({ key: "a", visit: t.visit }, 2, false)
+  assert.equal(icon("a"), "outline-wave-audio")
+  t.dispose()
 })
