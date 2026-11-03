@@ -43,7 +43,7 @@ Only when more than the headline credit applies: one bullet per source, `<Projec
 
 ## Credit
 
-The credit sits above the fold: the blockquote right under the one-line description, before the hero media (a tall GIF pushes everything below it off screen). It is optional: leave it out when nothing was borrowed, never pad it. A vendored plugin (blindfold) keeps its upstream README as `README.upstream.md` and ours leads with the credit.
+The credit sits above the fold: the blockquote right under the one-line description, before the hero media (a tall GIF pushes everything below it off screen). It is optional: leave it out when nothing was borrowed, never pad it. A fork (blindfold) names the upstream project, version, commit and licence in the credit and in `PROVENANCE.md`, and keeps the licence files.
 
 
 Find borrowed material by reading the plugin's `DESIGN.md` and source comments for named projects (t3-code, Emil Kowalski's skills, native OpenCode source). Credit each at the grain it was used. t3-code is MIT (pingdotgg/t3code).

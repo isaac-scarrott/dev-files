@@ -1,4 +1,4 @@
 import { gui } from "@opencode/plugin/gui/vite"
 import { defineConfig } from "vite"
 
-export default defineConfig({ plugins: [gui({ entry: "plugin/src/gui.ts" })] })
+export default defineConfig({ plugins: [gui({ entry: "plugin/src/gui.tsx" })] })

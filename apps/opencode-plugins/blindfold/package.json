@@ -1,6 +1,6 @@
 {
-  "name": "opencode-blindfold",
-  "version": "0.5.0",
+  "name": "blindfold",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "main": "./dist/server.js",
@@ -26,8 +26,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "bun --conditions=browser test",
-    "smoke": "bun -e \"Promise.all([import('./dist/server.js'), import('./dist/tui.js')]).then((modules) => { for (const m of modules) if (!m.default?.id || typeof m.default.setup !== 'function') throw new Error('missing V2 plugin export') })\" && bun --conditions=import -e \"if (typeof require('./dist/gui-experimental.cjs').default?.setup !== 'function') throw new Error('missing GUI plugin export')\""
+    "test": "node --conditions=browser --import tsx --test test/*.test.ts test/*.test.tsx",
+    "smoke": "node --conditions=browser test/smoke.mjs"
   },
   "license": "MIT",
   "dependencies": {
@@ -35,8 +35,9 @@
     "solid-js": "1.9.10"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.0",
     "@types/node": "^22.20.5",
+    "happy-dom": "^21.0.4",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
     "vite-plugin-solid": "^2.11.15"

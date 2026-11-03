@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const baselinePath = join(root, "lint-baseline.json")
-const SKIP_DIRS = new Set(["node_modules", "dist", "media", "test", "blindfold"])
+const SKIP_DIRS = new Set(["node_modules", "dist", "media", "test"])
 
 const RULES = {
   "no-effect": "createEffect/createRenderEffect/createComputed: use createKeyed/createLatest or derive instead",

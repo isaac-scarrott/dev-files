@@ -2,13 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "declaration": true,
-    "declarationMap": true,
-    "emitDeclarationOnly": false,
     "noEmit": false,
     "outDir": "dist",
-    "rootDir": "plugin/src",
-    "sourceMap": true
+    "rootDir": "plugin/src"
   },
-  "include": ["plugin/src/**/*.ts"],
-  "exclude": ["plugin/src/gui.ts"]
+  "include": [
+    "plugin/src/server.ts",
+    "plugin/src/tui.ts"
+  ]
 }
