@@ -1,0 +1,194 @@
+# notifications: design
+
+Status: **design, not built.** One optional GUI plugin plus a tiny shared helper. Evidence for every claim marked ✔ is in [SPIKES.md](SPIKES.md); ▸ is read from the 2.2.5 source (`/tmp` extraction of `app.asar` source maps, equal to tag `v2.2.5`). The contract is built and tested: [`native-ui/src/notify-contract.ts`](../native-ui/src/notify-contract.ts) (13 tests).
+
+## Decisions
+
+Settled by the user (2026-11-03):
+
+1. **Shared hub convention + one optional `notifications` plugin.** Every plugin stays independently installable and publishes through `notify(ctx, n)` from `native-ui` (relative import, bundled, no package dependency). With a sink installed the call goes to the hub; without one the plugin shows its own toast. The `notifications` plugin owns settings, de-duplication, the focus rule, system notifications and go-to-next.
+2. **One model, no plugin-specific shapes.** A notification is `{kind, severity, target session, title, body?, source, key, action, persistent}`. Kinds: `done`, `needs-you`, `error`, `info`. Host session state maps into the same kinds with no plugin-specific code. Peer messages are `info`.
+3. **Defaults.** `needs-you` and `error` interrupt (toast, plus system notification when no window is focused). `done` interrupts only when the session is not on screen. `info` is a quiet mark only. Every kind is overridable in Settings.
+4. **Focus rule.** Suppress toast, system notification and mark for the session on screen in the focused window, except `error` and `needs-you`.
+5. **Delivery.** Toast (severity colour, Open button), mark on the target session's tab/row, system notification when no window is focused, and a command *Go to next notification* (needs-you, then error, then done; opens the session, clears its mark).
+
+Decided here from the evidence (flagged for review where marked **Q**):
+
+6. **The host already notifies for its own session events, so the hub never duplicates them.** `shell/notifications/notification.tsx` ▸ listens to `session.execution.succeeded|failed`, `permission.asked`, `form.created` and already sends the system notification and sound (Settings › Notifications, cross-window once via `navigator.locks`), for root sessions with an open tab. For host-derived events the hub contributes only the in-app toast, the focus rule and go-to-next; the system channel for those kinds is **delegated to the host's own settings** (the page shows them read-only with a link). Plugin-sourced notifications get the hub's own system channel. **Q1**
+7. **Marks: use the host's, add our own only where the host has none.** No API sets the host's unread/attention mark ✔(1). But most things already produce one: `done` and `error` end a turn (server `idle > viewed` → unread dot); `needs-you` is a pending permission/form (→ attention); a monitor or schedule wake, a peer message, a usage-limit resume all start a turn that ends the same way. The hub draws its own mark (generalised from `snooze-archive/src/woke.ts`) only for what wakes no turn: snooze woke, schedule failed/ended, monitor ended/paused, usage-limit notices, `info` generally. Clearing a host mark is `ctx.client.session.view` ✔(2) (opening the session does it anyway).
+8. **System notifications from a plugin use its own main-process channel (option C), not `ctx.attention`.** `ctx.attention.notify` follows the host's *Agent* and *Errors* toggles, which default **off** ✔(3), and turning them on would also switch on the host's own done/error notifications. Option C: `main(ctx)` + Ipc, Electron `Notification({silent:true})` shown only when no `BrowserWindow` is focused, click → Ipc event → open the session. One process, so cross-window de-duplication is a `Map`. Unproven; spike is the first task of M4. Fallback if it fails: the renderer's `new Notification` with `document.hasFocus()` and `navigator.locks` (the host's own mechanism). **Q2**
+9. **Sound is separate and off by default.** The plugin always passes `sound:false` and never plays one unless a kind's *Sound* cell is on (✔(3): the host plays sounds even for a focused window, which is exactly the "background test run" noise to avoid). Do-not-disturb silences every channel but the marks. **Q3**
+10. **Server halves publish by RPC event** (✔(5)): each adds `events: { notify: { schema: serverNotificationSchema } }` to its Rpc definition and calls `reg.events.emit("notify", n)`. The `notifications` plugin reads every `rpc.<id>.notify` event from `ctx.client.event.subscribe` ✔ without importing a definition; a plugin with a GUI half may instead call `notify(ctx, …)` itself. No new channel, no synthetic messages.
+11. **Boundary: feedback is not a notification.** A toast that answers the user's own click (`snooze-archive` "Session action failed", `monitor`/`scheduler` "no longer running", `no-project` "failed", `usage-resume` "saveFailed", `blindfold` stored) stays a direct `ctx.toast`. Notifications are asynchronous events about a session the user is not looking at.
+12. **No default on `mod+enter`; default `mod+shift+u`, rebindable.** See Keystroke. **Q4**
+
+## Keystroke: what Cmd+Enter does in 2.2.5
+
+Re-extracted from the installed app; checked in the harness ✔(7).
+
+| Where | Behaviour | Source |
+|---|---|---|
+| Composer | `Enter` (no shift, not composing) submits; **`⌘/Ctrl+Enter` submits with the opposite delivery**: while a turn runs it steers if Settings › *Follow-up behavior* is *queue* (default is *steer*, so ⌘⏎ queues), and the "Steer ⌘⏎ / Queue ⌘⏎" hint button shows only while a turn runs and the draft is non-empty | `composer/editor/editor.tsx:341-346, 456, 1389-1420`, `session/composer/queue.ts:497-506`, `settings/general/general.tsx:124` |
+| Question dock (classic + experimental) | `⌘/Ctrl+Enter` advances / submits (`aria-keyshortcuts="Meta+Enter Control+Enter"`) | `requests/question-keys.ts:40`, `session-question-dock-classic.tsx:473`, `…experimental.tsx:1276` |
+| MCP elicitation dock | `⌘/Ctrl+Enter` submits | `requests/session-elicitation-dock.tsx:123` |
+| Line-comment editor | `Mod+Enter` = alternate submit | `ui/src/data-display/line-comment/line-comment.tsx:105` |
+| Settings › Shortcuts | no row; `mod+enter` is not a command keybind (not in the command table) | `settings/keybinds/keybinds.tsx` |
+| Electron menu / macOS | no accelerator `Cmd+Enter`; no system-wide macOS binding | `shell/commands/desktop-menu.ts` (Cmd+, N, Shift+N, Shift+W, Shift+B, Ctrl+\`, Cmd+0 only) |
+
+The decisive fact: the host's global shortcut handler is a **capture listener on `document`** and it skips editable targets only for *unmodified* keys (`shell/commands/command.tsx:508-545`). A plugin `Command` bound to `mod+enter` therefore runs first even inside the composer and calls `stopPropagation` ✔: the composer's ⌘⏎ (steer/queue) and the docks' ⌘⏎ would stop working. Declining (`run` returns `false`) or `scope` (a CSS selector for the event target, `runtime/plugin/commands.tsx:54`) avoids it, but then the shortcut only works when focus is *outside* the composer, which is where the user is while working.
+
+**Recommendation:** do not use `mod+enter`. Register the `Command` `go-to-next` with `bind: "mod+shift+u"` (`u` for unseen; no host or macOS binding found: host table uses `mod+shift+` b, o, t, l, r, a, f, x, d, n, `.`; `mod+u` is attach). It is rebindable in Settings › Shortcuts, appears in the palette and on the titlebar item. The host already has `session.next.unseen` (`shift+alt+arrowdown`): cycles tabs that show the host's unread dot, in tab order, with no priority. Ours adds priority order, kinds the host does not mark, and sessions without a tab. If the user still wants ⌘⏎: bind it with a guard that returns `false` when `document.activeElement` is inside `[data-component="composer-editor"]`, a dock, a dialog or any input, so it works only from a neutral focus. Not recommended.
+
+## Inventory
+
+Delivery columns are the **defaults**; every cell is overridable. T = toast, M = mark, S = system. `focus` = the focus rule applies (`on-screen+focused → suppressed`; `error`/`needs-you` ignore it).
+
+### Host-derived (no plugin code; one mapper in `notifications`)
+
+| Event (how detected) | Kind | Target | Key | Default | Clears on |
+|---|---|---|---|---|---|
+| `session.execution.succeeded` on a root session (`data.on`), not while a direct child still runs (host's `hasRunningChild`) | `done` | the session | `host:done:<sid>` | T only if not on screen; M = host unread dot (native); S = host's (Q1) | opening the session (`session.view`) |
+| `session.execution.failed` | `error` | the session (root of a subagent) | `host:error:<sid>` | T always; M = host unread dot; S = host's | opening it |
+| `permission.asked` (not when the project auto-approves: `settings.permissions.autoApproves`) | `needs-you`, persistent | root session (or the subagent tab if open) | `host:perm:<requestID>` | T persistent always; M = host attention (native); S = host's | `permission.replied` (same id) |
+| `form.created` with `form.metadata.kind` ∈ `question`, `mcp-elicitation`, `websearch.provider` | `needs-you`, persistent | same | `host:form:<formID>` | as above | `form.replied` / `form.cancelled` |
+| Startup / reconnect | reconcile | `data.session.list()` + `permission.sync(id)`/`form.sync(id)` for sessions with unread or pending requests | | marks and persistent toasts rebuilt without events (events are ephemeral) | |
+
+Not mapped: subagent sessions' `done` (host skips `parentID`; the parent's run covers it), `session.execution.started`, `inbox.enqueued` (used only to detect user activity for de-dupe).
+
+### Plugin-sourced (each emits `notify`)
+
+| Plugin | Event | Kind | Target | Key | Default | Today |
+|---|---|---|---|---|---|---|
+| snooze-archive | Woke from snooze (attention / new work / completed / deadline) | `info` | the session | `snooze-archive:woke:<sid>` | M (its clock mark, kept); no T | mark only |
+| scheduler (server) | Run fired | `info` | target session | `scheduler:run:<jobId>@<slot>` | none (the wake starts a turn → host `done`); counted in Settings log only | silent |
+| scheduler | Job dropped after 3 failed deliveries / `delivery failed` | `error` | target session | `scheduler:failed:<jobId>` | T, M, S | silent (log) |
+| scheduler | Ended: reached `maxRuns`, ran once, target archived or deleted | `info` | target (if it still exists) | `scheduler:ended:<jobId>` | M | silent |
+| scheduler | Loop guard paused a job | `error` (warning severity) | target | `scheduler:loop:<jobId>` | T, M | non-waking synthetic notice |
+| monitor (server) | Started / restarted after a service restart / lost at restart | `info` | woken session | `monitor:state:<id>:<seq>` | M | wake message with a notice |
+| monitor | Ended (exit, TTL, `maxEvents`, stop) | `info` | woken session | `monitor:ended:<id>` | M | wake message |
+| monitor | Non-zero exit, 3 failed wakes, paused by the rate cap | `error` (warning for the cap) | woken session | `monitor:error:<id>` | T, M, S | wake message / silent |
+| usage-resume (server) | Usage limit hit, session stalled | `error` | the session | `usage-resume:limit:<sid>` | T, M, S; **merged** with the host's `execution.failed` error for the same session (see De-dupe) | `retry` hook + timeline notice |
+| usage-resume | Resume scheduled "Resumes 14:05" / resumed | `info` | the session | `usage-resume:resume:<sid>` | M | `session.synthetic` notice, `resume:false` |
+| usage-resume | Gave up (attempt cap) | `error` | the session | `usage-resume:giveup:<sid>` | T, M, S | silent |
+| orchestrator-tools (server) | Peer message received | `info` | recipient session | `orchestrator-tools:peer:<messageID>` | M | injected row (stays) |
+| orchestrator-tools | (not built today: `notify_when_idle`) | `done` | the awaited session | | covered by host `done` | n/a |
+| blindfold | Secret requested | `needs-you`, persistent | the session | `blindfold:secret:<name>` | T, M, S (later; check its dialog first) | dialog |
+| cache-warning | none today ("Not done: no notification or sound") | | | | stays out | |
+| claude-proxy, file-viewer, model-picker, session-drag, timeline-rail, sidebar-repos, visual-replies, no-project | none | | | | | |
+
+A wake (monitor, scheduler, peer, usage-resume resume) ends as a normal turn, so its outcome arrives as the host-derived `done`/`error` for free. The `info` notification marks the moment *before* that and the events that start no turn.
+
+## The model
+
+`native-ui/src/notify-contract.ts` (built):
+
+```ts
+type NotifyKind = "done" | "needs-you" | "error" | "info"
+interface Notification { v; kind; severity; target?: {server, session}; title; body?; source; key; action?: {type:"open-session"} | {type:"open-message", message}; persistent; at }
+notify(ctx, input): "hub" | "fallback" | "none"      // never throws
+clearNotification(ctx, key)
+acquirePublisher(source): release                     // setup/cleanup, ref-counted per source
+provideSink(sink): release                            // notifications plugin only; newest sink with a known major answers
+normalize(raw, source): Notification | undefined      // for foreign payloads: unknown kind → info, fields clipped
+serverNotificationSchema, sourceOfEvent(type)         // server halves
+```
+
+- **Registry**: `globalThis[Symbol.for("opencode-plugins.notify.v1")] = { v, publishers: Map<source, refs>, sinks: NotifySink[] }`, created on first use, deleted at zero references (✔ reload test). Module state is normally banned by the host idioms; this is the same sanctioned exception as the injected rows' shared observer.
+- **Versioning**: the major is in the key. A future v2 sink also registers under the v1 key with `accepts: [1, 2]` and reads v1 messages; a v1 publisher meeting a sink that accepts only `[2]` finds no sink and falls back to its toast. Within a major: fields only get added; readers ignore unknown fields and map unknown kinds to `info`.
+- **Fallback** (no sink): `needs-you`/`error`/`done` → the plugin's own `ctx.toast` (variant error/success/default, persistent for `needs-you`, *Open* when `ctx.tabs` and a target exist); `info` → nothing (it would be new noise). The same key replaces the previous fallback toast; `clearNotification` dismisses it.
+- **Server half**: emits the RPC event; the sink creates the Notification with `source = <rpc id>`. `normalize` rejects an event without a title and clips the rest. Server halves cannot see window focus, so they never decide delivery.
+- **Load order**: a notification published before the sink installs is shown as a fallback toast; none are queued (a queue would leak across reloads). The sink installs in `setup`, synchronously, so only a plugin that loads earlier and publishes during its own `setup` is affected.
+
+## Delivery matrix (defaults)
+
+| Kind | Toast | Mark | System | Sound | Focus rule |
+|---|---|---|---|---|---|
+| `needs-you` | yes, persistent until answered | yes | yes, when no window focused | off | ignored: always |
+| `error` | yes | yes | yes, when no window focused | off | ignored: always |
+| `done` | only if the session is not on screen (or the window is unfocused: then no toast, mark + system off) | yes | off | off | applies |
+| `info` | off | yes | off | off | applies |
+
+"On screen" = the session of the active tab (`ctx.tabs.list()` `active`) in a window with `document.hasFocus()`. With no focused window nothing is "on screen": toasts are skipped (nobody sees them), marks and system notifications carry the message, and the toast is not replayed. Toasts show only in the focused window. Rule order: DND → per-source mute → focus rule → cell → channel.
+
+## De-dupe, throttle, replace
+
+All in the sink, in this order:
+
+1. **Replace**: same `(source, key)` replaces the live toast and mark entry; never stacks.
+2. **Burst collapse**: the same `(source, key)` or the same `(source, kind, session)` within 2 s is one (the scheduler fired six identical wakes in one incident; every server instance of a plugin also emits).
+3. **Cross-source merge per session**: within 10 s, a plugin `error` for a session absorbs the host's `execution.failed` `error` for it (the more specific title wins; usage-resume "Usage limit reached, resumes 14:05" replaces "Run failed"). Higher kind wins the one mark per session: `needs-you > error > done > info`.
+4. **Per-source rate**: more than 5 toasts per source per minute → the rest become one "N more from <source>" toast; marks still update. System notifications: max 1 per session per 30 s, 6 per minute overall.
+5. **Cross-window**: toasts only in the focused window; system notifications come from `main`, so there is one by construction. The host's `opencode:notification-*` localStorage claim is not touched.
+6. **Retract**: `needs-you` clears on its `replied`/`cancelled` event or on `clearNotification`; others clear when the session is opened (focused window, tab active) or by *Clear*.
+
+## Marks
+
+- Host kinds: nothing drawn; the host's dot/ring is the mark. Opening clears it.
+- Plugin kinds with no turn: a small mark in the vertical tab's trailing status slot, copied from `woke.ts` (sibling of the host's `tab-status`, shown only when the host shows no attention/busy/unread), severity-coloured, `role="img"` with `aria-label`; one per session (highest kind). Top-tab layout: the same mark in the tab's status slot. Home rows: none (Home shows the host's unread). The mark mounts through the shared sidebar observer of the existing plugins (no second observer); its writes are filtered by `data-notify-mark`.
+- The titlebar item (`TitlebarItem`) shows the count of pending `needs-you` + `error` and opens go-to-next; absent at zero.
+
+## Go to next notification
+
+`Command` `go-to-next` (`mod+shift+u`, rebindable; palette; titlebar item). Order: all `needs-you` (oldest first), then `error`, then `done` (including host-derived unread roots from `data.session.list()` whose `idle > viewed`). It opens the session with `ctx.tabs.open(..., {focus:true})`, then clears the notification and calls `session.view`. If the target is the session on screen it advances to the next one. When nothing is pending it shows a quiet toast "Nothing waiting". Does not decline the key: the shortcut has no meaning inside the composer.
+
+## Settings page
+
+A `SettingsPage` (`id: "alerts"`, title "Alerts"; the host's *Notifications* page cannot be extended and the name is taken). Built from the host's `SettingsList`/row conventions through `ctx.ui` (`Switch`, a `Select`):
+
+- **Delivery**: rows per kind (Needs you, Error, Done, Info) × columns Toast · Mark · System · Sound; each cell a `Switch`, plus *When the session is on screen* (Hide / Show) for `done` and `info`. Host-derived rows show a read-only System/Sound cell: "Uses Settings › Notifications" with a link (`ctx.layout.settings("notifications")`). **Q1**
+- **Quiet**: Do not disturb (switch; optional "until I turn it off"); *Mute a source* (one row per announced publisher from `publishers()` plus sources seen on the event stream).
+- **Shortcut**: the effective `go-to-next` binding via `ctx.ui.Keybind` and a link to Shortcuts.
+- Stored in `Store.global`: `{ cells: Record<kind, {toast,mark,system,sound}>, onScreen: {done,info}, dnd, muted: string[] }`, defaults as in the matrix. `entries` list every row so search finds them.
+
+## Accessibility
+
+Toasts are the host's (live region). The mark has an `aria-label`; the persistent toast and the titlebar item are keyboard reachable; go-to-next is a command, so it works from the palette. Severity is conveyed by icon and text as well as colour. Reduced motion: no animation of ours.
+
+## Performance bar
+
+Idle cost zero: no timer, interval, poll or observer of its own. Work happens on events the host already emits (`data.on` per server, one `client.event.subscribe` iterator, `tabs.list()` memo). The mark observer is the one shared sidebar observer and does nothing while no mark is live. The sink does O(1) work per notification. Toast timers are the host's. Measure with `scripts/perf.mjs` (null-plugin baseline) on the *idle*, *switch* and *stream* scenarios and a notification burst (200 events/s for 5 s) before M3 is done; PASS = within the bars in `performance.md`.
+
+## Failure modes and degradation
+
+| Missing / failing | Behaviour |
+|---|---|
+| `notifications` plugin not installed | each plugin's own toast (`needs-you`/`error`/`done`), `info` silent; host's own notifications unaffected |
+| A source plugin not installed | its row is missing from *Mute a source*; nothing else changes |
+| Sink throws | that call falls back to a toast; the next call tries the sink again |
+| Server half with no GUI half | still reaches the hub through the generic `rpc.*.notify` reader; without the `notifications` plugin it is invisible (server has no toast API) |
+| Window opened after an ephemeral event | reconcile from `data.session` + `sync` at startup/reconnect; non-persistent toasts are not replayed |
+| `ctx.client` event stream drops | the iterator is restarted with backoff by `createKeyed`; marks keep their state; a reconcile runs on reconnect |
+| Main-process channel unavailable (web, failed load) | system channel off, a quiet row in Settings says so; toasts and marks continue |
+| Two windows | one focused-window toast, one system notification (main), marks derived per window from the same data |
+| Version mismatch | by major in the registry key; a publisher with no compatible sink falls back |
+| Two instances of one server plugin (per project location) | duplicates collapse by rule 2 |
+| Plugin reload | publishers re-acquire; the sink reinstalls; live toasts of the old run close with it (host behaviour) |
+
+## Migration plan
+
+| Plugin | Change |
+|---|---|
+| native-ui | adds `notify-contract.ts` (done) and, in M3, the mark component generalised from `woke.ts` |
+| snooze-archive | woke: `notify(ctx, {kind:"info", key, target})` and keep drawing its clock only when no sink is present; user-action toasts unchanged |
+| monitor | server: add `events.notify` to `MonitorControl`; emit on start/restart/lost/ended/error. GUI: the "no longer running" toast unchanged |
+| scheduler | server: add `events.notify` to the existing Rpc in `src/rpc.ts` (`active`, `cancel`, `pending`); emit failed/ended/loop-guard |
+| usage-resume | server: emit limit / resume scheduled / resumed / gave-up via its existing Rpc; the timeline `synthetic` notices stay (they are the record) |
+| orchestrator-tools | server: emit `info` per peer message (it already knows the recipient) |
+| blindfold | later: `needs-you` for a pending secret, after reading how its dialog is shown |
+| others | none |
+
+Each migration is an additive `events.notify` plus a few `emit` calls; nothing is removed, so an old `notifications` plugin and a new source (or the reverse) still work.
+
+## Build plan
+
+Every milestone ends in something the user can see.
+
+1. **M1 Hub + plugin skeleton + settings.** `notifications` package, sink, Settings › *Alerts* matrix persisted, `info`/`error` toasts from the sink. Migrate **scheduler** and **monitor** server halves. *Visible*: a scheduled job that fails to deliver shows a toast with *Open*; flipping the cell in Settings turns it off. Unit tests for the policy functions (matrix, focus rule, de-dupe).
+2. **M2 Host-derived signals.** `data.on` mapper, startup reconcile, persistent `needs-you` toasts cleared on `replied`/`cancelled`, focus rule. *Visible*: a question in a background session raises a toast that disappears when answered; the session on screen raises none for `done`.
+3. **M3 Marks + go-to-next + titlebar item.** Shared mark in native-ui (parity spec against the host status slot), command and `mod+shift+u`, count item. *Visible*: *Go to next notification* cycles needs-you → error → done and clears marks. Parity, stress (hundreds of pending), perf table.
+4. **M4 System notifications + sound + DND.** Spike first: `main` + Electron `Notification` + focus detection (✔ target: banner on an unfocused window, one per event with two windows). Then sound cells and DND. *Visible*: unfocus the app, fail a schedule, get one banner; click opens the session.
+5. **M5 Migrate the rest** (usage-resume, snooze-archive, orchestrator-tools, blindfold) and write the README with media.
+
+## Open questions
+
+See the hand-off. Q1 host-vs-hub system channel for host-derived kinds; Q2 own main-process channel (needs the M4 spike) vs. piggybacking the host's Agent/Errors toggles; Q3 sound policy; Q4 the keystroke; Q5 name of the page ("Alerts"); Q6 whether `info` from peer messages should mark at all (they start a turn anyway).
