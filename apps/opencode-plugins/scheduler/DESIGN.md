@@ -3,6 +3,9 @@
 OpenCode 2.2.5 server plugin. Scheduled and recurring prompts that wake a session, modelled on Claude Code's cron tools.
 
 ## Decisions
+
+- **Friendly output is asked for in the tool description** (2026-11-03). The run row is titled by `name`, and the fired prompt is the agent's own text, so `schedule_task` tells the agent to make `name` a short human label ("Check the deploy") and the prompt ask for a short plain-language update, without raw ids or timestamps (+~80 tokens). No new field; no system-prompt hook (experimental, costs every request): the tool description is the mechanism.
+
 - **Server only.** No GUI entry; the message carries `metadata.scheduledTask = { id, name, kind, scheduled, firedAt, lateMs, text }` so a GUI card can be added later the way orchestrator-tools reads `peerMessage`. `text` is the bare prompt, so the trailer never shows in a card.
 - **Tools.** Namespace `scheduler`, effective ids `scheduler_<name>`, Code Mode `tools.scheduler.<name>`. All `codemode: true` with a loose object output schema, same as `orchestrate_*`. Errors reach the model as their message.
 - **Wake.** `session.prompt` with delivery `steer`, always; no option anywhere in input, output or descriptions. The text is the wrapper from the brief plus a trailer: not typed by the user, only the session's own permissions, recurring tasks must not create recurring tasks unless asked, and, when late, how late. Name and body are XML-escaped (`& < >`, plus `"` in attributes) so neither can close the tag or forge another.

@@ -4,6 +4,8 @@ A library of components copied from OpenCode Desktop 2.2.5's own markup, for GUI
 
 ## Decisions
 
+- **`humanizeLine`** (`src/humanize-line.ts`, 2026-11-03): the header preview of an injected row is reworded for reading; the card, the model's text and the event payload keep the raw line. Whole whitespace-delimited tokens only (after stripping `(`, `)`, `,` and the like, and a `key=` prefix): an ISO-8601 timestamp (`Z`, offset or none, ms ok) becomes "just now", "3m ago", "in 5m", then clock time today, "yesterday 20:24", "Nov 2, 20:24"; a snake_case status from a fixed list (`in_progress`, `timed_out`, `action_required`, ...) loses its underscore. Plain words are not listed (they already read fine). Tokens inside backticks and tokens holding `://` are skipped. Pure in (line, minute), memoised per line and minute (cache cleared at 400 entries); `minuteClock()` is one signal per plugin so a relative time moves on at most once a minute. `InjectedMessageRow` takes `previewTitle`, the raw line, as the header's `title` when the preview differs. The multi-line batch header stays as it was: first line plus `· N lines`.
+
 Reason for each copy, against the public components `ctx.ui` offers and the "no extension point" list in [host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary).
 
 - **Copy the host's markup, class names and data attributes** instead of drawing new look-alikes: the app's own CSS then styles them, so a theme or host update changes them together. `parity.spec.mjs` compares each component with the real element in the running app. The cost is that the copy tracks 2.2.5 and may break on an update.

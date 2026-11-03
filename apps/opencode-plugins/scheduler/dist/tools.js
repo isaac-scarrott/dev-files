@@ -9,6 +9,7 @@ export const SCHEDULE_DESCRIPTION = [
     "- every: repeat every N minutes, hours or days (30m, 2h, 1d). The first run is one interval from now; each next run is one interval after the last.",
     "- cron: 5 fields (minute hour day-of-month month day-of-week) in the user's local time zone, e.g. `0 9 * * 1-5` for 9am on weekdays.",
     "By default the prompt wakes this session. `session` targets another one by ref, unique title or `title [ref]` (see orchestrate_list_peers). Write the prompt so it makes sense on its own later: it is all the session will see.",
+    "The user sees each run as a row titled by `name`, so make it a short human label (\"Check the deploy\"), and have the prompt ask for a short plain-language update (a sentence or two, no raw ids or timestamps unless asked).",
     "A task that was missed because the app was closed or the machine was asleep runs once when it is back, not once per missed slot. Do not create recurring tasks unless the user asked for one.",
 ].join("\n");
 export const LIST_DESCRIPTION = "List scheduled tasks with their id, name, kind, next run, last run and target session, plus recently ended ones and why they ended.";
@@ -58,11 +59,11 @@ export function registerTools(editor, host, hub, options) {
     add("schedule_task", SCHEDULE_DESCRIPTION, {
         type: "object",
         properties: {
-            prompt: { type: "string", minLength: 1, description: "What the session should do when the task runs. It sees only this text." },
+            prompt: { type: "string", minLength: 1, description: "What the session should do when the task runs. It sees only this text. Ask for a short plain-language update." },
             at: { type: "string", description: "Run once at this ISO time, or relative to now: +30m, +2h, +1d" },
             every: { type: "string", description: `Repeat at this interval: 30m, 2h, 1d. At least ${formatSpan(options.minIntervalSeconds * 1000)}.` },
             cron: { type: "string", description: "5-field cron expression in local time, e.g. 0 9 * * 1-5" },
-            name: { type: "string", description: "Short label shown in list_schedules; defaults to the start of the prompt" },
+            name: { type: "string", description: "Human label shown on the run's row and in list_schedules, e.g. \"Check the deploy\"; defaults to the start of the prompt" },
             session: { type: "string", description: "Session to wake: its ref, unique title or `title [ref]`. Defaults to this session." },
             maxRuns: { type: "integer", minimum: 1, description: "Stop a recurring task after this many runs" },
         },

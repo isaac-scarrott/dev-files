@@ -4,6 +4,9 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
 `orchestrator-tools`, through `ctx.tool.transform`, Code Mode on.
 
 ## Decisions
+
+- **Friendly output is asked for in the tool description, not forced** (2026-11-03, user: monitor rows showed raw machine lines such as `DEPLOY run 41712278303 #8216 in_progress - (created 2026-11-03T20:24:29Z)`). Every output line is shown to the user in a one-line row, so `monitor.start` tells the agent to reshape output with awk/sed/jq into short plain sentences (sentence case, 80 characters or fewer, no raw ids, URLs, ISO timestamps or JSON, detail after the sentence) with one good and one bad example (+~130 tokens on the tool description; the `name` and `command` parameter docs say the same in one clause). No new `title`/`summary` field: `name` already is the human label (bold on the row), and the line itself comes from the command, so a second field would only duplicate it. The plugin API can also edit the system prompt (`session.hook("context")` gives a plugin the `system` parts), but it is marked experimental and adds text to every request of every session, so the description, which only the model's tool list carries, is the mechanism. The row additionally rewords the header preview for reading (`native-ui/src/humanize-line.ts`: whole-token ISO timestamps to "3m ago" / "20:24" / "yesterday 20:24", a short list of snake_case statuses to words; never inside backticks or URLs); the raw line is the header's tooltip and the open card, and the text the model gets is untouched.
+
 - **Delivery**: `ctx.session.prompt({ delivery: "steer" })` always, idle or busy. Not exposed to the model or options.
 - **Approval**: the SDK exposes `ctx.permission.assert`. The tool asserts `shell` with the command as the resource (the
   host's own shell tool uses the same action and resource) and `external_directory` for a `cwd` outside the session

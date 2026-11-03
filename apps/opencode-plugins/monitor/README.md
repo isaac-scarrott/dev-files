@@ -25,6 +25,8 @@ Chips animate in and out and the row moves with them: [recording](../native-ui/m
 - In the desktop app a wake is not a raw user bubble: it is a grey row in the style of the host's subagent row with the monitor's name, what happened (`first line · N lines`, `restarted (restart 5)`, `ended`, `lost`, `paused`) and, when opened, the real output in a card below, unescaped, without the tags or the trailer. A Stop button on the row ends the monitor while it still runs. The model still receives the wrapped, escaped text.
 - A "N monitors" chip sits in the row above the composer, beside the host's own "N subagents" capsule (same capsule, hidden at zero). It counts the monitors aimed at the session on screen, including ones another session started for it. Click it for a popover with one row per monitor, laid out like the host's own subagent popover: a spinner, its name and the status at the end (`3 of 50 events · re-arms in 12m · expires in 1h 5m`), which a Stop button replaces on hover or focus. The arrow keys move between rows (Right reaches Stop), Escape closes. Chips come and go with a short collapse (200ms) and the neighbours, the host's capsule included, slide to their new places; the popover's times tick over at minute boundaries while it is open.
 
+The tool description tells the agent each output line is shown to you in a one-line row, so it should print short plain sentences (`Deploy #8216 succeeded in 4m`) rather than raw ids, timestamps or JSON. The row also rewords ISO timestamps and snake_case statuses in the header; hover it for the raw line, open it for the full text.
+
 ## Context
 OpenCode's background shell only notifies when the command exits. This fills the gap for watchers, dev servers and polling loops.
 
