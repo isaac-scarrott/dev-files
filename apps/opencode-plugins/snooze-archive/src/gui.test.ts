@@ -111,6 +111,8 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
     openArchive: () => { const toggle = doc.querySelectorAll<HTMLButtonElement>("[data-sa-toggle] button")[1]; if (toggle.getAttribute("aria-expanded") !== "true") toggle.click() },
     reopen: () => setTabs([{ key: "tab", session }]),
     emit: (name: string, sessionID = "s") => listeners.get(name)?.forEach((fn) => fn({ created: Date.now() + 1, data: { sessionID } })),
+    // A prompt delivered to a session's inbox; by default what the composer stamps, else what another sender stamps (`null`: nothing).
+    deliver: (sessionID = "s", metadata: Record<string, unknown> | null = { displayText: "hi", agent: "build" }, type = "user") => listeners.get("session.inbox.enqueued")?.forEach((fn) => fn({ created: Date.now() + 1, data: { sessionID, item: { type, delivery: "queue", payload: { text: "hi", ...(metadata ? { metadata } : {}) } } } })),
     async close() {
       stop(); await window.happyDOM.close()
       for (const [key, descriptor] of previous) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key)
@@ -1074,5 +1076,95 @@ test("the remaining-time labels refresh on a 30 s interval only while the Snooze
     assert.equal(live.size, 1)
     toggle.click(); await f.flush()
     assert.equal(live.size, 0)
+  } finally { await f.close() }
+})
+
+const sleeper = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now(), until: Date.now() + 3_600_000, busy: 0, updated: 1 })
+
+test("a user send into a snoozed session unsnoozes it: no mark, any old mark cleared, wake timer cancelled", async () => {
+  const timers = new Set<unknown>()
+  const f = fixture([sleeper()], [{ server: "server", id: "s" }])
+  try {
+    const win = globalThis.window as unknown as { setTimeout: (...a: any[]) => unknown; clearTimeout: (id: unknown) => void }
+    const [set, clear] = [win.setTimeout.bind(win), win.clearTimeout.bind(win)]
+    win.setTimeout = (...a: any[]) => { const id = set(...a); timers.add(id); return id }
+    win.clearTimeout = (id: unknown) => { timers.delete(id); clear(id) }
+    f.start(); f.setServers(["server"]); f.setCurrent(false); await f.flush()
+    assert.ok(timers.size > 0, "a deadline timer exists while snoozed")
+    f.deliver(); await f.flush()
+    assert.equal(f.state().entries.length, 0)
+    assert.deepEqual(f.woke().entries, [], "an explicit send clears the woke mark")
+    assert.equal(timers.size, 0, "no wake timer is left")
+    assert.equal(f.calls.updates.length, 0)
+    assert.equal(f.calls.opened.length, 1)
+  } finally { await f.close() }
+})
+
+test("a user send into an archived session unarchives it once, without opening a tab", async () => {
+  const f = fixture()
+  try {
+    f.archived(true)
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
+    assert.equal(f.doc.querySelectorAll('button[aria-label="Restore Session"]').length, 1)
+    f.deliver(); f.deliver(); await f.flush()
+    assert.deepEqual(f.calls.updates, [{ sessionID: "s", archived: false }], "double delivery writes once")
+    f.deliver(); await f.flush()
+    assert.equal(f.calls.updates.length, 1, "already unarchived: nothing to write")
+    assert.equal(f.doc.querySelectorAll('button[aria-label="Restore Session"]').length, 0, "the Archived row is gone")
+    assert.equal(f.calls.opened.length, 0)
+    assert.equal(f.calls.toasts.length, 0)
+  } finally { await f.close() }
+})
+
+test("a user send into a session that is neither snoozed nor archived does nothing", async () => {
+  const f = fixture()
+  try {
+    f.start(); f.setServers(["server"]); await f.flush()
+    f.deliver(); await f.flush()
+    assert.equal(f.calls.updates.length, 0)
+    assert.equal(f.calls.opened.length, 0)
+    assert.equal(f.calls.toasts.length, 0)
+  } finally { await f.close() }
+})
+
+test("a stamped delivery (peer, monitor, scheduler) never unarchives, and wakes a snooze exactly as before, marked", async () => {
+  const archived = fixture()
+  try {
+    archived.archived(true)
+    archived.start(); archived.setServers(["server"]); await archived.flush()
+    for (const stamp of [{ monitor: {} }, { scheduledTask: {} }, { peerMessage: {} }, { anything: 1 }]) archived.deliver("s", stamp)
+    archived.deliver("s", null); archived.deliver("s", { displayText: "x" }, "synthetic"); archived.deliver("s", null, "compaction")
+    await archived.flush()
+    assert.equal(archived.calls.updates.length, 0)
+  } finally { await archived.close() }
+  const snoozed = fixture([sleeper()])
+  try {
+    snoozed.start(); snoozed.setServers(["server"]); snoozed.setCurrent(false); await snoozed.flush()
+    snoozed.deliver("s", { monitor: { id: "m" } }); await snoozed.flush()
+    assert.equal(snoozed.state().entries.length, 0, "inbox delivery wakes a snooze, whoever sent it (unchanged)")
+    assert.deepEqual(snoozed.woke().entries, [{ server: "server", id: "s" }], "and a wake that was not the user's is marked")
+  } finally { await snoozed.close() }
+})
+
+test("a failed unarchive on send toasts, leaves the session archived and the next send retries", async () => {
+  const f = fixture()
+  try {
+    f.archived(true)
+    f.start(); f.setServers(["server"]); await f.flush(); f.openArchive(); await f.flush()
+    f.fail(true); f.deliver(); await f.flush()
+    assert.match(f.calls.toasts.at(-1).description, /denied/)
+    assert.equal(f.doc.querySelectorAll('button[aria-label="Restore Session"]').length, 1)
+    f.fail(false); f.deliver(); await f.flush()
+    assert.equal(f.doc.querySelectorAll('button[aria-label="Restore Session"]').length, 0)
+    assert.equal(f.calls.updates.length, 2)
+  } finally { await f.close() }
+})
+
+test("a user send into a different session leaves a snooze alone", async () => {
+  const f = fixture([sleeper()])
+  try {
+    f.start(); f.setServers(["server"]); await f.flush()
+    f.deliver("other"); await f.flush()
+    assert.equal(f.state().entries.length, 1)
   } finally { await f.close() }
 })

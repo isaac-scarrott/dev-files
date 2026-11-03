@@ -15,7 +15,7 @@ import { createDomHub } from "./hub"
 import { createGuard, parseArchiveOption } from "./guard"
 import { createTabActions } from "./tabrows"
 import { openInCurrentTab } from "./route"
-import { sessionKey, wakeReason, type Snooze } from "./snooze"
+import { isUserSend, sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
 import { createWokeMarks, isWoke, withWoke, withoutWoke, wokeCss } from "./woke"
@@ -101,7 +101,8 @@ export default Plugin.define({
       }
       hiddenSnoozes.delete(sessionKey(entry.server, entry.id))
       remove(entry.server, entry.id)
-      if (archived) { clearWoke(entry.server, entry.id); return }
+      if (archived || opened) clearWoke(entry.server, entry.id)
+      if (archived) return
       ctx.tabs.open({ server: entry.server, id: entry.id }, { focus })
       const current = untrack(currentSession)
       if (!focus && !opened && !(current?.id === entry.id && current.server.id === entry.server)) markWoke(entry.server, entry.id)
@@ -181,6 +182,25 @@ export default Plugin.define({
         showApplied(server.id, (state) => upsertArchived(state, info))
       } catch (cause) { error(cause) }
       finally { actionKeys.delete(key) }
+    }
+    // The user sent a prompt into an archived session: it is in use again. No tab is opened or focused (the user is in it).
+    // A failed write leaves everything as it was and says so; the next send tries again. Every window that sees the event
+    // asks for the same state, so the write is idempotent and each window makes it at most once at a time.
+    const unarchiveOnSend = async (server: ServerRef, id: string) => {
+      const key = sessionKey(server.id, id)
+      if (actionKeys.has(key)) return
+      actionKeys.add(key)
+      try {
+        const info = await setArchived(server, id, false, ctx.signal)
+        if (!disposed) showApplied(server.id, (state) => upsertArchived(state, info))
+      } catch (cause) { error(cause) }
+      finally { actionKeys.delete(key) }
+    }
+    // A snooze wakes by the same events whoever sent (see `wakeEvent`); only the user's own send also unarchives, clears
+    // the woke mark and counts as "already opened" (no mark, whatever the session on screen is).
+    const userSent = (server: ServerRef, id: string) => {
+      clearWoke(server.id, id)
+      if (server.data.session.get(id)?.time?.archived !== undefined) void unarchiveOnSend(server, id)
     }
     const observe = (server: ServerRef, id: string, info: ArchivedSession | undefined) => {
       const family = server.data.session.family(id)
@@ -536,8 +556,8 @@ export default Plugin.define({
         const data = server.data
         if (subscriptions.get(id)?.data === data) continue
         subscriptions.get(id)?.off.forEach((off) => off())
-        const wakeEvent = (sessionID: string, created: number) => {
-          for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry)
+        const wakeEvent = (sessionID: string, created: number, userSend = false) => {
+          for (const entry of entries()) if (entry.server === id && created > entry.at && (entry.id === sessionID || data.session.root(sessionID) === entry.id)) wake(entry, false, false, userSend && entry.id === sessionID)
         }
         const off = [
           data.on("session.archived", (e) => { remove(id, e.data.sessionID); clearWoke(id, e.data.sessionID); void settle(server, e.data.sessionID) }),
@@ -547,7 +567,11 @@ export default Plugin.define({
           data.on("session.execution.started", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("session.execution.succeeded", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("session.execution.failed", (e) => wakeEvent(e.data.sessionID, e.created)),
-          data.on("session.inbox.enqueued", (e) => wakeEvent(e.data.sessionID, e.created)),
+          data.on("session.inbox.enqueued", (e) => {
+            const userSend = isUserSend(e.data.item)
+            if (userSend) userSent(server, e.data.sessionID)
+            wakeEvent(e.data.sessionID, e.created, userSend)
+          }),
           data.on("permission.asked", (e) => wakeEvent(e.data.sessionID, e.created)),
           data.on("form.created", (e) => wakeEvent(e.data.form.sessionID, e.created)),
         ]

@@ -11,6 +11,7 @@ Snoozed and Archived groups at the bottom of the sidebar, with Snooze and Archiv
 ## What it does
 - **Snooze** is a submenu of the session right-click menu, the session header "…" menu and the Home row menu: In 1 hour, In 3 hours, This evening, Tomorrow, Next week, each with its wake time, then Custom… (duration or calendar and time). The palette has "Snooze session…".
 - A snoozed session wakes at its deadline or when it needs attention (approval, question, new work, completion). It then shows a clock until you open it. Snoozes are stored on this device and survive restarts.
+- **Sending a message resets both.** A prompt you send (composer, queued or steering send, slash command) into a snoozed session unsnoozes it, and into an archived session unarchives it, at once: the session is back in the normal list, the wake timer is gone, and any woke clock is cleared. A failed unarchive shows an error toast and the session stays archived. Messages from anything else (assistant output, subagents, peer messages, monitor and scheduler wakes) never unarchive; a snooze still wakes on them as before.
 - **Archive** and **Restore** use OpenCode's native archive state. Opening an archived row reads it without unarchiving. Snoozed and Archived rows have Wake, Restore and Delete… (always confirmed) in their own menus.
 - Archived loads lazily. Each group shows 10 rows, and **Show N more** adds the next 25.  The Archived header shows no count, because the total isn't known until every page is loaded; Snoozed shows its count.
 - The groups scroll with the live rows inside the sidebar. Expanding one grows it upward into the empty space first, then downward. Rows never move.
@@ -53,6 +54,7 @@ Archive and Restore call the client's own `session.archive` / `session.unarchive
 - **Menus**: the label or `data-action` of the host's Archive item in the tab, header and Home row menus (`hasNativeArchive`).
 - **Sidebar**: the `data-slot` / `data-component` of an archived group in the Side tabs sidebar (`SIDEBAR_ARCHIVED`). The probe is scoped to `[data-slot="vertical-tabs-sidebar"]`.
 - **Home**: whether `SHOW_HOME_SESSION_ARCHIVE` is on (`home-session-archive`).
+- **Composer stamp**: `session.inbox.enqueued` items from the composer carry `payload.metadata.displayText` (`isUserSend`); other senders stamp their own keys. If a release drops it, sends stop resetting the state.
 - **Layouts**: whether the Inbox layout's Archived section moves into Side tabs.
 
 ## Credits
