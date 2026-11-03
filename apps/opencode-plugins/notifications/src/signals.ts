@@ -92,11 +92,13 @@ export function createHostSignals(deps: SignalDeps) {
     const root = data.session.root(sessionID)
     const target = deps.hasTab(sessionID) ? sessionID : root
     if (!deps.hasTab(target)) return
+    // The toast opens the target, so it names the target.
+    const named = target === sessionID ? session : await lookup(target)
     const message = record(error).message
     deps.publish({
       kind: "error",
       title: deps.text.failed,
-      body: typeof message === "string" && message ? message : (session?.title ?? deps.text.fallbackTitle),
+      body: typeof message === "string" && message ? [named?.title, message].filter(Boolean).join(" · ") : (named?.title ?? deps.text.fallbackTitle),
       key: keys.error(sessionID),
       target: { server, session: target },
     })

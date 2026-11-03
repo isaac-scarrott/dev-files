@@ -57,3 +57,11 @@ Source evidence: `app/src/session/timeline/virtualizer.tsx`, `ui/src/components/
 - Text: `--v2-text-text-base`, `--v2-text-text-muted`, `--v2-text-text-faint`.
 - Borders: `--v2-border-border-muted`, `--v2-border-border-base`, `--v2-border-border-focus`.
 - Status: `--v2-state-fg-warning`, `--v2-state-fg-danger`, `--v2-state-fg-info`.
+
+## Toasts
+
+`ctx.toast.show` has no class, data attribute or id option, so styling every toast is CSS on the app's markup; `apps/opencode-plugins/toast-style` does it. Markup (2.2.5): `ol.toast-v2-region[data-sonner-toaster] > li.toast-v2.toast-v2--{default,success,error}[data-sonner-toast]` with state attributes `data-front`, `data-expanded`, `data-visible`, `data-removed`, `data-swipe-out`; children `button[data-close-button]` (first), `div[data-icon] > svg > use[href="#opencode-v2-icon-<name>"]` (only with a glyph; a plain error, default or loading toast has none, success draws `check`), `div[data-content] > [data-title] + [data-description]`, `div[data-slot="toast-v2-actions"] > button[data-component="button-v2"]`.
+
+**The cascade trap:** solid-sonner's stylesheet is injected after `main.css`, so its `[data-sonner-toast]` / `[data-sonner-toaster]` rules (system font, 400ms `ease`, 12px peek, `[data-removed]` paths with up to five attributes) beat the app's `.toast-v2` ones of equal specificity. Beat them with `.toast-v2-region .toast-v2` (and a doubled class for the removal rules). Measure the computed value before trusting a rule in `main.css`.
+
+Convention: when a plugin has to target app markup for a whole surface, keep every selector in one `host-markup.ts`, comment the markup each depends on, fail a unit test when another source file names it, and ship a live probe (`test/markup-probe.mjs`) that runs against the harness, checks each selector matches and that the style is applied. `:has()` cannot nest inside `:has()`; happy-dom mis-evaluates `:is(:has())`, so selector matching is proved in the browser, not in unit tests.

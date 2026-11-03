@@ -2,12 +2,25 @@ import type { Notification, NotifySink } from "../../native-ui/src/notify-contra
 import { Admission, MERGE_MS, SUMMARY_MS, toastVerdict, type Presence } from "./policy"
 import { ALWAYS_SHOWN, type Settings } from "./settings"
 
+/** One glyph per kind, in the app's catalog. Shape alone tells them apart: the app draws every glyph in its neutral colour, and `toast-style` scopes its compact layout to these four names. */
+export type ToastGlyph = "circle-check" | "info" | "notifications" | "circle-x"
+
+const GLYPH: Record<Notification["kind"], ToastGlyph> = { done: "circle-check", info: "info", "needs-you": "notifications", error: "circle-x" }
+
+/** The variant follows the kind, not the severity: `toast-style` scopes its layout to the pair of variant and glyph. */
+const VARIANT: Record<Notification["kind"], NonNullable<ToastOptions["variant"]>> = { done: "success", info: "default", "needs-you": "default", error: "error" }
+
+/** Quiet info leaves sooner than the app's 5 seconds. */
+const INFO_MS = 4000
+
 /** The part of `ctx.toast.show` the sink uses. */
 export interface ToastOptions {
   title: string
   description?: string
   variant?: "default" | "success" | "error" | "loading"
-  icon?: "warning" | "info"
+  icon?: ToastGlyph
+  /** Milliseconds before it closes itself; the app's 5 seconds when absent. */
+  duration?: number
   persistent?: boolean
   actions?: readonly { label: string; run(): void }[]
 }
@@ -22,12 +35,16 @@ export interface SinkDeps {
   readonly presence: (n: Notification) => Presence
   readonly show: (options: ToastOptions) => { dismiss(): void }
   readonly open: (target: { server: string; session: string }) => void
+  /** Puts text on the clipboard; a rejection is reported as a failed copy. */
+  readonly copy: (text: string) => Promise<void>
   /** What waits on a session for go-to-next, the count and the marks. `host`: made from the host's own events. */
   readonly track: { put(n: Notification, host: boolean): void; remove(source: string, key: string): void }
   /** `ctx.attention.notify`: the host decides, by its own Settings › Notifications, whether anything shows or sounds. */
   readonly attention: (options: { title: string; message?: string; variant: "default" | "error"; session?: { server: string; id: string }; id: string }) => unknown
   readonly text: {
     readonly open: string
+    readonly copyDetails: string
+    readonly copyFailed: string
     readonly more: (count: number, source: string) => string
   }
 }
@@ -39,13 +56,22 @@ interface Live {
 
 const toastFor = (n: Notification, deps: SinkDeps): ToastOptions => {
   const target = n.target
+  const actions: { label: string; run(): void }[] = []
+  if (target) actions.push({ label: deps.text.open, run: () => deps.open(target) })
+  // Copying leaves the result in the clipboard and the toast closes (the app closes a toast on any button); only a failure is said.
+  if (n.kind === "error") {
+    const details = [n.title, n.body].filter(Boolean).join("\n")
+    actions.push({ label: deps.text.copyDetails, run: () => void deps.copy(details).catch(() => void deps.show({ title: deps.text.copyFailed, variant: "error" })) })
+  }
   return {
     title: n.title,
     description: n.body,
-    variant: n.severity === "error" ? "error" : n.severity === "success" ? "success" : "default",
-    icon: n.severity === "warning" ? "warning" : n.severity === "info" ? "info" : undefined,
-    persistent: n.persistent,
-    actions: target ? [{ label: deps.text.open, run: () => deps.open(target) }] : undefined,
+    variant: VARIANT[n.kind],
+    icon: GLYPH[n.kind],
+    duration: n.kind === "info" ? INFO_MS : undefined,
+    // A failure waits for you like a request does; a toast that closes by itself is gone when you look back.
+    persistent: n.persistent || n.kind === "error",
+    actions: actions.length > 0 ? actions : undefined,
   }
 }
 
@@ -77,7 +103,7 @@ export function createSink(deps: SinkDeps) {
     const present = () => {
       entry.cancel = undefined
       entry.handle?.dismiss()
-      entry.handle = deps.show({ title: deps.text.more(entry.count, source), variant: "default" })
+      entry.handle = deps.show({ title: deps.text.more(entry.count, source), variant: "default", icon: GLYPH.info, duration: INFO_MS })
     }
     if (!entry.handle) present()
     else if (!entry.cancel) entry.cancel = deps.later(present, SUMMARY_MS)

@@ -40,6 +40,13 @@ Verified in M4 (harness, 2.2.5; evidence in [SPIKES.md](SPIKES.md) § M4):
 23. **The fallback toast is window-aware** (`native-ui/src/notify-contract.ts`). With no hub, each window's plugin copy would toast the same event. The focused window shows it; when none has focus, one window does, chosen by claiming the event id (a Web Lock around a `localStorage` list). "A window has focus" is read from the host's own `opencode:notification-focus` lock, held shared in every focused window, so the host's focus bookkeeping is reused and nothing of ours holds a lock. The decision is asynchronous, so the toast appears a few milliseconds late; `clearNotification` or a newer toast with the same key cancels a pending one. Without `document` or Web Locks (a test, a server half) the toast shows at once.
 24. **No DND, no sound cells, no `main` entry** (M4 closes decision 13). Nothing in the plugin plays a sound or creates a system notification; all of it is the host's.
 
+Toast redesign (user, 2026-11-03; the look is the [`toast-style`](../toast-style/DESIGN.md) plugin, this plugin supplies the content):
+
+25. **One glyph per kind, all neutral.** `done` `circle-check`, `info` `info`, `needs-you` `notifications` (the tray with a dot), `error` `circle-x`; the variant follows the kind (success, default, default, error). The `toast-style` plugin never colours a glyph. The "N more" summary toast uses the info glyph. The old `warning` glyph for a request is gone.
+26. **Errors and requests are persistent, info closes in 4 s, done in the app's 5 s.** An error stays until closed (it is not retracted when its session opens). The error's detail now leads with the session: "session · message" (for a subagent, the root's title, the session the toast opens).
+27. **Buttons: Open, and Copy details on an error.** An error with no session has Copy details alone. Copying is silent when it works (the app closes the toast; nothing else is said) and a failed copy says so in one error toast. The app has no keep-open or ghost button for a plugin ([toast-style DESIGN](../toast-style/DESIGN.md#what-a-plugin-cannot-do)).
+28. **The `⌘I` hint is shown only where it is true.** This plugin sets `--toast-style-go-next-hint` on `:root` (a `Style`, from `ctx.keybinds`, so a rebound key shows) only while exactly one session has a waiting request, that session is the next stop of go-to-next (`pickNext`, so not the open one and not after the last visited) and no other stop would come first. `toast-style` shows it on the front request toast's first button. With two or more waiting sessions, or the request's session open, no hint.
+
 ## Keystroke: what Cmd+Enter does in 2.2.5
 
 Re-extracted from the installed app; checked in the harness ✔(7).

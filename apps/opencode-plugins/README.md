@@ -24,6 +24,7 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 | [`sidebar-repos`](sidebar-repos) | Two-line sidebar rows (project name over title), permission and question icons, last-active time on idle rows | GUI |
 | [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu; a woken session shows a clock (the shared tab mark), published as info to the hub | GUI |
 | [`timeline-rail`](timeline-rail) | Tick rail in the chat gutter for the newest 10 prompts, after t3-code's minimap: hover card, chevrons, keyboard, click to jump | GUI |
+| [`toast-style`](toast-style) | Every toast in the app in one quiet card: the app's own font and motion restored (solid-sonner's stylesheet overrides them today), the glyph on the title row with full-width text and buttons, two-line description, contrast button and key hint on a waiting request, "+N more" chip, softer exit and reduced motion; no glyph colour; one selector file with a live markup probe | GUI |
 | [`usage-resume`](usage-resume) | Waits for the earliest Claude account reset after a usage limit, re-checks usage, queues "Continue." once; a limit, a moved resume time and giving up are published to the hub (error / info / error) | server, GUI |
 | [`visual-replies`](visual-replies) | `publish_html` tool: agent HTML pages render inline in a sandboxed iframe | GUI + server |
 

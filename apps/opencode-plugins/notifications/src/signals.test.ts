@@ -71,7 +71,7 @@ test("execution.failed is an error with the failure message, aimed at the root f
   r.signals.attach()
   r.emit("session.execution.failed", { sessionID: "ses_2", error: { type: "x", message: "Rate limited" } })
   await r.flush()
-  assert.deepEqual(r.published, [{ kind: "error", title: "Run failed", body: "Rate limited", key: "host:error:ses_2", target: { server: "sidecar", session: "ses_1" } }])
+  assert.deepEqual(r.published, [{ kind: "error", title: "Run failed", body: "Fix bug · Rate limited", key: "host:error:ses_2", target: { server: "sidecar", session: "ses_1" } }])
 })
 
 test("permission.asked raises a persistent needs-you only if it is still pending after the settle delay", async () => {
