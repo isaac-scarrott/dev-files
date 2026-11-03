@@ -27,6 +27,7 @@ struct AccountUsage: Identifiable, Equatable, Codable {
     var plan: String?
     /// Allowance multiple from the account's rate-limit tier: 20 for Max 20x, 5 for Max 5x.
     var capacity: Double?
+    var profileFetchedAt: Date?
     var fiveHour: UsageWindow?
     var sevenDay: UsageWindow?
     var fetchedAt: Date?
@@ -48,6 +49,7 @@ struct AccountUsage: Identifiable, Equatable, Codable {
         org = try c.decode(String.self, forKey: .org)
         plan = try c.decodeIfPresent(String.self, forKey: .plan)
         capacity = try c.decodeIfPresent(Double.self, forKey: .capacity)
+        profileFetchedAt = try c.decodeIfPresent(Date.self, forKey: .profileFetchedAt)
         fiveHour = try c.decodeIfPresent(UsageWindow.self, forKey: .fiveHour)
         sevenDay = try c.decodeIfPresent(UsageWindow.self, forKey: .sevenDay)
         fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt)
@@ -78,6 +80,8 @@ private struct ProfileResponse: Decodable, Sendable {
     struct Organization: Decodable {
         let organization_type: String?
         let rate_limit_tier: String?
+        /// Anthropic's own name for the plan, when it has one ("Ultra").
+        let plan_display_name: String?
     }
     let organization: Organization?
 
@@ -90,6 +94,7 @@ private struct ProfileResponse: Decodable, Sendable {
 
     var plan: String? {
         guard let org = organization else { return nil }
+        if let name = org.plan_display_name, !name.isEmpty { return name }
         switch org.organization_type {
         case "claude_team": return "Team"
         case "claude_enterprise": return "Enterprise"
@@ -144,6 +149,7 @@ final class UsageStore: ObservableObject {
     private static let failureRetry: TimeInterval = 60
     private static let tick: Duration = .seconds(30)
     nonisolated private static let historyKept: TimeInterval = 2 * 3600
+    nonisolated private static let profileMaxAge: TimeInterval = 86400
 
     private var schedules: [String: Schedule] = [:]
     private var refreshing = false
@@ -253,12 +259,15 @@ final class UsageStore: ObservableObject {
 
     /// On failure, keep the last good numbers and say why they're old, rather than blanking the row.
     nonisolated private static func fetch(_ cred: Credential, previous: AccountUsage?) async -> (AccountUsage, Outcome) {
-        // The plan rarely changes, so it's fetched once and carried forward.
-        async let profile = previous?.capacity == nil ? fetchProfile(cred) : nil
+        // The plan rarely changes, so it's carried forward and refetched once a day.
+        let profileDue = previous?.capacity == nil
+            || previous?.profileFetchedAt.map { Date.now.timeIntervalSince($0) > profileMaxAge } ?? true
+        async let profile = profileDue ? fetchProfile(cred) : nil
         var usage = AccountUsage(id: cred.id, label: cred.label, org: cred.org)
         if let previous {
             usage.plan = previous.plan
             usage.capacity = previous.capacity
+            usage.profileFetchedAt = previous.profileFetchedAt
             usage.fiveHour = previous.fiveHour
             usage.sevenDay = previous.sevenDay
             usage.fetchedAt = previous.fetchedAt
@@ -298,7 +307,8 @@ final class UsageStore: ObservableObject {
         }
         if let profile = await profile {
             usage.plan = profile.plan
-            usage.capacity = profile.capacity
+            usage.capacity = profile.capacity ?? usage.capacity
+            usage.profileFetchedAt = .now
         }
         return (usage, outcome)
     }
