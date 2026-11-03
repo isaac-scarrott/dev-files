@@ -1,8 +1,9 @@
 // Parity spec for the peer-message row against the host's own rows in the same timeline: the background-subagent row
 // (`task-tool-surface`) for the row, the Questions disclosure (`collapsible-arrow`) for the arrow.
-// The spacing-* elements also need plain user bubbles followed by assistant turns, injected rows ending a run and consecutive ones.
-// Needs a harness session with an answered Questions row, a background subagent row and peer messages delivered through
-// send_message's real path (DESIGN.md, "Peer card"). Run from the repo root:
+// Seed: `seed-parity.mjs <service url> <password> <project dir> 60 --compact` (opencode-gui-plugins/scripts) imports the session this
+// spec needs: plain user bubbles (alone and as a run) followed by a text part, a host subagent row and a Thought-only group, injected rows
+// (peer short, two-line and long, monitor, scheduler) consecutive and ending a run, short enough that the 1300x1500 window mounts the whole
+// timeline. Start the harness with orchestrator-tools, monitor and scheduler, open that session, then run from the repo root:
 //   OC_PW_ROOT=/private/tmp/pw OC_HARNESS_CDP_PORT=<port> node ~/.config/opencode/skills/opencode-gui-plugins/scripts/parity.mjs \
 //     --spec apps/opencode-plugins/orchestrator-tools/parity.spec.mjs
 
@@ -156,6 +157,36 @@ const LONG_PROBE = `
     chevronFollowsEase: best.x < 0.1, clipFollowsEase: best.k < 0.1, opacityFollowsEase: best.o < 0.1,
   };`
 
+// Header hold: the row's header stays where the pointer clicked through expand and collapse (native-ui `holdTop`; the host's own
+// collapsibles do not do this). Sampled after every rendered frame (a timer queued from rAF runs once rendering, resize-observer
+// corrections included, is done), so a value is what was painted. Needs scroll room below the row: closing a row near the end of the
+// timeline cannot hold, the scroller has no room (native-ui DESIGN.md, "Header hold").
+const HOLD_START = `
+  window.__hold = []; window.__holdStop = false;
+  const title = el.querySelector("[data-slot=injected-title]"), row = el.closest("[data-injected-row]"), t0 = performance.now();
+  const sample = () => { window.__hold.push({ t: performance.now() - t0, y: title.getBoundingClientRect().top, open: row.dataset.open }); if (!window.__holdStop) tick(); };
+  const tick = () => requestAnimationFrame(() => setTimeout(sample, 0));
+  tick();`
+const HOLD_PROBE = `
+  window.__holdStop = true;
+  const f = window.__hold, y0 = f[0].y, r2 = (n) => Math.round(n * 100) / 100;
+  return { opened: f.some((x) => x.open === "true"), closed: f.at(-1).open === "false", frames: f.length > 40, maxDy: r2(Math.max(...f.map((x) => Math.abs(x.y - y0)))) };`
+const holdElement = (kind) => ({
+  name: `header-hold-${kind}`,
+  ours: { selector: `[data-injected-row][data-kind=${kind}][data-expandable=true] ${HEAD}`, index: 0 },
+  native: "[data-component=task-tool-surface]",
+  style: false,
+  behaviour: [{
+    name: "expand-then-collapse-per-frame",
+    check: "scenario",
+    only: "ours",
+    steps: [`js:${HOLD_START}`, "wait:200", { do: "click", target: "[data-slot=injected-title]" }, "wait:700", { do: "click", target: "[data-slot=injected-title]" }, "wait:700"],
+    probe: HOLD_PROBE,
+    expect: { result: { opened: true, closed: true, frames: true, maxDy: 0 } },
+    after: "document.querySelectorAll('[data-injected-row][data-open=true] [data-slot=injected-trigger]').forEach((trigger) => trigger.click())",
+  }],
+})
+
 export default {
   name: "orchestrator-tools-peer-row",
   viewport: "1300x1500",
@@ -191,7 +222,7 @@ export default {
         { name: "footer-to-row-and-row-height", check: "scenario", steps: [], probe: spacing(["footer-to-row", "row-height"]) },
         { name: "row-top-to-next-text", check: "scenario", steps: [], probe: spacing(["total"]) },
         // The pill is the 36px subagent-row header against the bubble's 37px, so the visible gap under it is 1px more (the row totals above are equal).
-        { name: "gap-below-header", check: "scenario", only: "ours", steps: [], probe: spacing(["gap-below"]), expect: { result: "gap-below:text-part=53,tool-part-wrapper=29" } },
+        { name: "gap-below-header", check: "scenario", only: "ours", steps: [], probe: spacing(["gap-below"]), expect: { result: "gap-below:collapsed-tool-group=29,text-part=53,tool-part-wrapper=29" } },
         { name: "gap-in-a-run", check: "scenario", steps: [], probe: spacing(["run"]) },
       ],
     },
@@ -313,6 +344,9 @@ export default {
           after: "document.querySelectorAll('[data-injected-row][data-open=true] [data-slot=injected-trigger]').forEach((trigger) => trigger.click())",
         }))),
     },
+    holdElement("peer"),
+    holdElement("monitor"),
+    holdElement("scheduler"),
     {
       // The go-to-session affordance: the host's row shows a bare 16px chevron-right (`task-tool-action`, rgb 128 = text-faint)
       // that fades in on hover. Ours is the same catalog icon inside a 24px ghost button, centred on the same x from the row's

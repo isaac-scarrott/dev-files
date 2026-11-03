@@ -66,3 +66,22 @@ test("a stopped hold ignores later resizes", () => {
   resize?.()
   assert.equal(scroller.scrollTop, 100)
 })
+
+test("holdTop cannot hold past the scroller's end: closing a row near the bottom moves its header by what scrollTop exceeded the new max", () => {
+  install()
+  let max = 300
+  let top = 0
+  const scroller = { get scrollTop() { return top }, set scrollTop(value: number) { top = Math.min(Math.max(value, 0), max) } } as HTMLElement
+  top = 200 // the user has scrolled down to read the open body
+  const content = 700 // the header's offset in the content
+  const target = { getBoundingClientRect: () => ({ top: content - top }) } as unknown as Element
+  holdTop(scroller, target, target, 200)
+  max = 140 // the body closed: the content below the header shrank, and the browser clamped the scroll position
+  top = Math.min(top, max)
+  resize?.()
+  assert.equal(scroller.scrollTop, 140, "the write is clamped, so the hold neither overshoots nor loops")
+  assert.equal(target.getBoundingClientRect().top - (content - 200), 60, "the header sits 60px lower than it was held at: the scroller had no room")
+  now = 300
+  frames.shift()?.()
+  assert.equal(frames.length, 0)
+})
