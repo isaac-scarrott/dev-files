@@ -48,7 +48,8 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/monitor",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/file-viewer",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/cache-warning",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/notifications"
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/notifications",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/toast-style"
   ],
   "mcp": {
     "paper": {
