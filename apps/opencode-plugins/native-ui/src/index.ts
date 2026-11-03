@@ -30,4 +30,4 @@ import { spinnerCss } from "./spinner"
 export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, spinnerCss].join("\n")
 
 export { createDomHub, elementsChangedBut, SIDEBAR, type DomHub } from "./dom-hub"
-export { createTabMarks, tabMarkNode, tabMarkCss, TAB_MARK_OWN, type TabMarkSpec, type TabMarkSeverity, type TabMarksOptions } from "./tab-marks"
+export { createTabMarks, tabMarkNode, iconSymbol, tabMarkCss, TAB_MARK_OWN, type TabMarkSpec, type TabMarkSeverity, type TabMarksOptions } from "./tab-marks"

@@ -1,7 +1,7 @@
 import { Command, createKeyed, Plugin, SettingsPage, Store, Style, TitlebarItem } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { createDomHub } from "../../native-ui/src/dom-hub"
-import { normalize, provideSink, publishers, type NotifyInput } from "../../native-ui/src/notify-contract"
+import { AGGREGATE_GLYPH, normalize, provideSink, publishers, type NotifyInput } from "../../native-ui/src/notify-contract"
 import { createTabMarks, tabMarkCss, TAB_MARK_OWN } from "../../native-ui/src/tab-marks"
 import { Ledger, markEntries, order, pickNext, sessionKey, stops, urgentCount, type SessionRef } from "./ledger"
 import { readRpcEvents } from "./events"
@@ -167,12 +167,12 @@ export default Plugin.define({
     const markOf = (tabKey: string) => {
       const sessionRef = tabSessions().get(tabKey)
       const entry = sessionRef ? marks().get(sessionRef) : undefined
-      return entry ? { severity: entry.severity, label: entry.title } : undefined
+      return entry ? { kind: entry.kind, severity: entry.severity, label: entry.title } : undefined
     }
     const dom = createDomHub(document, (fn) => requestAnimationFrame(fn), (id) => cancelAnimationFrame(id), TAB_MARK_OWN, ctx.id)
     const tabMarks = createTabMarks({ doc: document, hub: dom, mark: markOf, active: () => marks().size > 0 })
     createKeyed(
-      () => (marks().size === 0 ? "m:" : `m:${[...tabSessions()].map(([key]) => { const mark = markOf(key); return mark ? `${key}|${mark.severity}|${mark.label}` : "" }).join("\n")}`),
+      () => (marks().size === 0 ? "m:" : `m:${[...tabSessions()].map(([key]) => { const mark = markOf(key); return mark ? `${key}|${mark.kind}|${mark.severity}|${mark.label}` : "" }).join("\n")}`),
       () => tabMarks.sync(),
     )
     ctx.add(Style, tabMarkCss)
@@ -229,7 +229,7 @@ export default Plugin.define({
       if (count === 0) return undefined
       const keys = ctx.keybinds.keybind(`${ctx.id}.go-to-next`).join("")
       const title = ctx.plural("titlebar.title", count)
-      return { id: "next", icon: "notifications", label: ctx.plural("titlebar.label", count), title: keys ? `${title} (${keys})` : title, run: () => void goNext() }
+      return { id: "next", icon: AGGREGATE_GLYPH, label: ctx.plural("titlebar.label", count), title: keys ? `${title} (${keys})` : title, run: () => void goNext() }
     })
 
     // Server halves publish RPC events; every `rpc.<id>.notify` on the stream is one notification.

@@ -1,11 +1,9 @@
-import type { Notification, NotifySink } from "../../native-ui/src/notify-contract"
+import { KIND_GLYPH, type KindGlyph, type Notification, type NotifySink } from "../../native-ui/src/notify-contract"
 import { Admission, MERGE_MS, SUMMARY_MS, toastVerdict, type Presence } from "./policy"
 import { ALWAYS_SHOWN, type Settings } from "./settings"
 
-/** One glyph per kind, in the app's catalog. Shape alone tells them apart: the app draws every glyph in its neutral colour, and `toast-style` scopes its compact layout to these four names. */
-export type ToastGlyph = "circle-check" | "info" | "notifications" | "circle-x"
-
-const GLYPH: Record<Notification["kind"], ToastGlyph> = { done: "circle-check", info: "info", "needs-you": "notifications", error: "circle-x" }
+const GLYPH = KIND_GLYPH
+type ToastGlyph = KindGlyph
 
 /** The variant follows the kind, not the severity: `toast-style` scopes its layout to the pair of variant and glyph. */
 const VARIANT: Record<Notification["kind"], NonNullable<ToastOptions["variant"]>> = { done: "success", info: "default", "needs-you": "default", error: "error" }

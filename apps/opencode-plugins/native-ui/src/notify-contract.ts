@@ -19,6 +19,17 @@ export type NotifyKind = "done" | "needs-you" | "error" | "info"
 
 export const NOTIFY_KINDS: readonly NotifyKind[] = ["needs-you", "error", "done", "info"]
 
+/**
+ * The one glyph of each kind, by the host's icon name. The toast, the tab mark and the titlebar pill all draw it, so a
+ * kind looks the same wherever it shows. `notifications` is the host's monitor-with-a-dot.
+ */
+export const KIND_GLYPH = { done: "circle-check", info: "info", "needs-you": "notifications", error: "circle-x" } as const satisfies Record<NotifyKind, string>
+
+export type KindGlyph = (typeof KIND_GLYPH)[NotifyKind]
+
+/** The titlebar pill counts waiting sessions of every kind, so it keeps the glyph of the kind that waits on the user. */
+export const AGGREGATE_GLYPH: KindGlyph = KIND_GLYPH["needs-you"]
+
 export type NotifySeverity = "info" | "success" | "warning" | "error"
 
 /** The session a notification is about, in the host's terms (`ServerRef.id`, session id). */
