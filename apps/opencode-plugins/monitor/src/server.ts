@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin"
 import { createLog } from "./diag.js"
+import { globalRegistry } from "./handoff.js"
 import { Monitors, type Sessions, type Store } from "./manager.js"
 import { parseOptions } from "./options.js"
 import { spawnShell, systemClock } from "./process.js"
@@ -39,7 +40,7 @@ export default Plugin.define({
         await ctx.session.prompt({ sessionID: sessionID as never, text, delivery: "steer", metadata: { [METADATA_KEY]: meta } })
       },
     }
-    const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory })
+    const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000) })
     const tools = await ctx.tool.transform((editor) => registerTools(editor, monitors, ctx, options))
     await monitors.restore()
 

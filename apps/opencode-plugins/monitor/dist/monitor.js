@@ -1,3 +1,4 @@
+import { Port } from "./handoff.js";
 import { LineSplitter } from "./lines.js";
 import { renderWake } from "./wrap.js";
 const HOUR = 3_600_000;
@@ -18,6 +19,7 @@ export class Monitor {
     restartNotice;
     heartbeatTimer;
     child;
+    port;
     exited = Promise.resolve();
     splitter;
     pending = [];
@@ -71,6 +73,82 @@ export class Monitor {
     get pid() {
         return this.child?.pid;
     }
+    /**
+     * Plugin reload: the monitor leaves this instance with its process still running. Timers stop, the pipes are held
+     * by the port until another instance attaches, nothing is saved or sent and the manager is not told it finished.
+     */
+    detach() {
+        this.closing = true;
+        this.clearTimers();
+        this.port?.detach();
+        const handoff = {
+            def: this.def,
+            child: this.child,
+            port: this.port,
+            memory: {
+                seq: this.seq,
+                restartCount: this.restartCount,
+                restartNotice: this.restartNotice,
+                state: this.state,
+                startedAt: this.startedAt,
+                events: this.events,
+                lastEventAt: this.lastEventAt,
+                paused: this.paused,
+                lastRearmAt: this.lastRearmAt,
+                nextRearmAt: this.nextRearmAt,
+                pending: this.pending,
+                pendingBytes: this.pendingBytes,
+                dropped: this.dropped,
+                notes: this.notes,
+                window: this.window,
+                failures: this.failures,
+                cycling: this.cycling,
+                splitter: this.splitter,
+            },
+        };
+        this.child = undefined;
+        this.port = undefined;
+        this.state = "ended";
+        return handoff;
+    }
+    /**
+     * The other half of a plugin reload: takes over a running monitor. Same process, same counters, no restart count and
+     * no notice. Timers are rebuilt from the stored marks (a mark that passed during the gap fires at once), then the
+     * pipes are attached, replaying what arrived and an exit that happened in between.
+     */
+    adopt(handoff) {
+        const { clock } = this.deps;
+        const now = clock.now();
+        const m = handoff.memory;
+        this.seq = m.seq;
+        this.restartCount = m.restartCount;
+        this.restartNotice = m.restartNotice;
+        this.state = m.state;
+        this.startedAt = m.startedAt;
+        this.events = m.events;
+        this.lastEventAt = m.lastEventAt;
+        this.paused = m.paused;
+        this.lastRearmAt = m.lastRearmAt;
+        this.nextRearmAt = m.nextRearmAt;
+        this.pending = m.pending;
+        this.pendingBytes = m.pendingBytes;
+        this.dropped = m.dropped;
+        this.notes = m.notes;
+        this.window = m.window;
+        this.failures = m.failures;
+        this.cycling = m.cycling;
+        this.splitter = m.splitter;
+        this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - now));
+        this.heartbeatTimer = clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS);
+        if (this.def.rearmMinutes !== undefined && this.nextRearmAt !== undefined)
+            this.cycleTimer = clock.setTimeout(() => this.cycle(), Math.max(0, this.nextRearmAt - now));
+        if (this.pending.length > 0 || this.dropped > 0 || this.notes.length > 0)
+            this.scheduleFlush();
+        this.child = handoff.child;
+        if (handoff.child && handoff.port)
+            this.bind(handoff.child, handoff.port);
+        void this.save();
+    }
     snapshot() {
         return {
             seq: this.seq,
@@ -106,6 +184,15 @@ export class Monitor {
         await this.chain;
         this.deps.finished(this, reason);
     }
+    /** After a handover: waits for wakes still being delivered, then records the last-alive time. */
+    async settle() {
+        await this.chain;
+        await this.save();
+    }
+    /** Process-exit backstop: signals the process group at once. */
+    killNow(signal) {
+        this.child?.kill(signal);
+    }
     /** Shutdown path: end the process and wait for it, nothing else. */
     async dispose() {
         this.closing = true;
@@ -116,15 +203,29 @@ export class Monitor {
         await this.save(); // last-alive time for the downtime window of the next start
     }
     spawnRun(how = { rearmed: false }) {
-        const { clock, spawn, log } = this.deps;
+        const { clock, spawn } = this.deps;
         const now = clock.now();
         if (how.rearmed)
             this.lastRearmAt = now;
         this.splitter = new LineSplitter(this.deps.options.maxLineChars);
         this.state = "running";
+        const port = new Port();
+        const child = spawn({ command: this.def.command, cwd: this.def.cwd }, port);
+        this.child = child;
+        this.bind(child, port);
+        if (this.def.rearmMinutes !== undefined) {
+            this.nextRearmAt = how.mark ?? now + this.def.rearmMinutes * 60_000;
+            this.cycleTimer = clock.setTimeout(() => this.cycle(), this.nextRearmAt - now);
+        }
+        void this.save();
+    }
+    /** Routes a child's output and exit into this monitor. An exit already waiting in the port is delivered now. */
+    bind(child, port) {
+        const { log } = this.deps;
         let release;
         this.exited = new Promise((resolve) => (release = resolve));
-        const child = spawn({ command: this.def.command, cwd: this.def.cwd }, {
+        this.port = port;
+        port.attach({
             data: (chunk) => {
                 if (this.child === child)
                     for (const line of this.splitter.push(chunk))
@@ -142,12 +243,6 @@ export class Monitor {
                 this.onExit(code, signal);
             },
         });
-        this.child = child;
-        if (this.def.rearmMinutes !== undefined) {
-            this.nextRearmAt = how.mark ?? now + this.def.rearmMinutes * 60_000;
-            this.cycleTimer = clock.setTimeout(() => this.cycle(), this.nextRearmAt - now);
-        }
-        void this.save();
     }
     onExit(code, signal) {
         if (this.closing)

@@ -1,3 +1,4 @@
+import { type Handoff } from "./handoff.js";
 import type { Options } from "./options.js";
 import type { Clock, Spawn } from "./process.js";
 import type { RunState } from "./state.js";
@@ -53,6 +54,7 @@ export declare class Monitor {
     private restartNotice;
     private heartbeatTimer;
     private child;
+    private port;
     private exited;
     private splitter;
     private pending;
@@ -77,15 +79,32 @@ export declare class Monitor {
      */
     start(resume?: Resume): void;
     get pid(): number | undefined;
+    /**
+     * Plugin reload: the monitor leaves this instance with its process still running. Timers stop, the pipes are held
+     * by the port until another instance attaches, nothing is saved or sent and the manager is not told it finished.
+     */
+    detach(): Handoff;
+    /**
+     * The other half of a plugin reload: takes over a running monitor. Same process, same counters, no restart count and
+     * no notice. Timers are rebuilt from the stored marks (a mark that passed during the gap fires at once), then the
+     * pipes are attached, replaying what arrived and an exit that happened in between.
+     */
+    adopt(handoff: Handoff): void;
     private snapshot;
     private save;
     private heartbeat;
     nextRunAt(): number | undefined;
     /** Ends the monitor on request or because its session went away. No wake. */
     stop(reason: string): Promise<void>;
+    /** After a handover: waits for wakes still being delivered, then records the last-alive time. */
+    settle(): Promise<void>;
+    /** Process-exit backstop: signals the process group at once. */
+    killNow(signal: "SIGTERM" | "SIGKILL"): void;
     /** Shutdown path: end the process and wait for it, nothing else. */
     dispose(): Promise<void>;
     private spawnRun;
+    /** Routes a child's output and exit into this monitor. An exit already waiting in the port is delivered now. */
+    private bind;
     private onExit;
     /** The re-arm schedule fired: start a fresh run, ending the current one first if it is still going. */
     private cycle;

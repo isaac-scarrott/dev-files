@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { LineSplitter } from "./lines.js"
+import { PARK_MS, beginShutdown, newRegistry } from "./handoff.js"
 import { Monitors, type ManagerDeps } from "./manager.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import type { Child, ChildEvents, Clock, Spawn } from "./process.js"
@@ -58,6 +59,9 @@ function fakeSpawn() {
   return { runs, spawn, out, exit }
 }
 
+/** A new service process: nothing is handed over from the old one. */
+const newProcess = (deps: ManagerDeps): ManagerDeps => ({ ...deps, registry: { ...newRegistry(), shuttingDown: true } })
+
 function setup(over: Partial<Options> = {}) {
   const clock = new FakeClock()
   const sp = fakeSpawn()
@@ -73,6 +77,7 @@ function setup(over: Partial<Options> = {}) {
     log: (m) => logs.push(m),
     newID: () => `mon_${++n}`,
     origin: "/work",
+    registry: { ...newRegistry(), shuttingDown: true }, // these tests model the service ending; reload tests set their own
     store: {
       get: async (k) => storage.get(k),
       set: async (k, v) => void storage.set(k, v),
@@ -298,7 +303,7 @@ test("definitions persist; every monitor comes back after a restart, and says so
   assert.equal(t.defs(), 2)
   const stored = JSON.stringify([...t.storage.values()])
   assert.ok(!stored.includes("tick"))
-  const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const second = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await second.restore()
   assert.equal(second.count, 2)
   assert.deepEqual(second.list().map((m) => m.name).sort(), ["cmd", "watch"])
@@ -313,7 +318,7 @@ test("definitions persist; every monitor comes back after a restart, and says so
 test("a plugin instance restores only its own directory's monitors", async () => {
   const t = setup()
   await t.monitors.start({ ...t.input, rearmMinutes: 30 })
-  const other = new Monitors({ ...t.deps, origin: "/elsewhere" })
+  const other = new Monitors({ ...newProcess(t.deps), origin: "/elsewhere" })
   await other.restore()
   assert.equal(other.count, 0)
   assert.equal(t.defs(), 1)
@@ -324,7 +329,7 @@ test("a restore skips archived sessions and expired monitors", async () => {
   const t = setup()
   await t.monitors.start({ ...t.input, rearmMinutes: 30 })
   t.states.set("ses_1", "archived")
-  const second = new Monitors(t.deps)
+  const second = new Monitors(newProcess(t.deps))
   await second.restore()
   assert.equal(second.count, 0)
   await t.monitors.dispose()
@@ -333,7 +338,7 @@ test("a restore skips archived sessions and expired monitors", async () => {
 test("three failed deliveries stop the monitor", async () => {
   const t = setup()
   t.deps.sessions.prompt = async () => { throw new Error("gone") }
-  const m = new Monitors(t.deps)
+  const m = new Monitors(newProcess(t.deps))
   await m.start(t.input)
   for (let i = 0; i < 3; i++) {
     t.sp.out(t.sp.runs[0]!, `${i}\n`)
@@ -353,7 +358,7 @@ test("a monitor lost at restart wakes its session once, saying it is gone", asyn
   await t.monitors.start({ ...t.input, name: "plain", ttlMinutes: 1 })
   assert.equal(t.defs(), 1)
   t.clock.t += 120_000
-  const second = new Monitors(t.deps)
+  const second = new Monitors(newProcess(t.deps))
   await second.restore()
   assert.equal(second.count, 0)
   assert.equal(t.storage.size, 0)
@@ -364,7 +369,7 @@ test("a monitor lost at restart wakes its session once, saying it is gone", asyn
   assert.match(wake.text, /Monitor gone/)
   assert.match(wake.text, /Start it again/)
   assert.ok(wake.text.endsWith(TRAILER))
-  await new Monitors(t.deps).restore()
+  await new Monitors(newProcess(t.deps)).restore()
   assert.equal(t.wakes.length, 1)
   await t.monitors.dispose()
 })
@@ -374,7 +379,7 @@ test("a lost monitor does not wake an archived or missing session, and is still 
   await t.monitors.start({ ...t.input, ttlMinutes: 1 })
   t.clock.t += 120_000
   t.states.set("ses_1", "archived")
-  await new Monitors(t.deps).restore()
+  await new Monitors(newProcess(t.deps)).restore()
   assert.equal(t.wakes.length, 0)
   assert.equal(t.storage.size, 0)
   await t.monitors.dispose()
@@ -385,7 +390,7 @@ test("a failed notice wake is logged and not retried", async () => {
   await t.monitors.start({ ...t.input, ttlMinutes: 1 })
   t.clock.t += 120_000
   t.deps.sessions.prompt = async () => { throw new Error("busy") }
-  await new Monitors(t.deps).restore()
+  await new Monitors(newProcess(t.deps)).restore()
   assert.equal(t.storage.size, 0)
   assert.ok(t.logs.some((l) => l.includes("could not tell ses_1")))
   await t.monitors.dispose()
@@ -395,7 +400,7 @@ test("a re-arm monitor past its ttl at restart is reported gone too", async () =
   const t = setup()
   await t.monitors.start({ ...t.input, rearmMinutes: 30, ttlMinutes: 1 })
   t.clock.t += 120_000
-  await new Monitors(t.deps).restore()
+  await new Monitors(newProcess(t.deps)).restore()
   assert.equal(t.wakes.filter((w) => w.text.includes("Monitor gone")).length, 1)
   await t.monitors.dispose()
 })
@@ -430,7 +435,7 @@ test("a monitor without rearmMinutes past its ttl is not restored", async () => 
   const t = setup()
   await t.monitors.start({ ...t.input, ttlMinutes: 1 })
   t.clock.t += 120_000
-  const next = new Monitors(t.deps)
+  const next = new Monitors(newProcess(t.deps))
   await next.restore()
   assert.equal(next.count, 0)
   assert.equal(t.defs(), 0)
@@ -443,7 +448,7 @@ test("a stopped monitor stays stopped across a restart", async () => {
   await t.monitors.start(t.input)
   await t.monitors.stop("mon_1")
   assert.equal(t.storage.size, 0)
-  const next = new Monitors(t.deps)
+  const next = new Monitors(newProcess(t.deps))
   await next.restore()
   assert.equal(next.count, 0)
   assert.equal(t.wakes.length, 0)
@@ -453,7 +458,7 @@ test("a monitor without rearmMinutes at its event cap is not restored", async ()
   const t = setup()
   t.storage.set("monitor/def/mon_1", { id: "mon_1", name: "cmd", command: "cmd", cwd: "/work", sessionID: "ses_1", batchSeconds: 5, maxEvents: 2, createdAt: 0, origin: "/work", expiresAt: t.clock.t + 1e9 })
   t.storage.set("monitor/state/mon_1", { seq: 1, restartCount: 0, aliveAt: t.clock.t, events: 2 })
-  const next = new Monitors(t.deps)
+  const next = new Monitors(newProcess(t.deps))
   await next.restore()
   assert.equal(next.count, 0)
   assert.equal(t.sp.runs.length, 0)
@@ -483,7 +488,7 @@ test("a monitor may wake only the caller's own tree", async () => {
 /** The service restarts: the old instance shuts down cleanly, a new one restores from the same storage. */
 async function restart(t: ReturnType<typeof setup>, current: Monitors): Promise<Monitors> {
   await current.dispose()
-  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const next = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await next.restore()
   return next
 }
@@ -516,7 +521,7 @@ test("a restart after the mark counts as the re-arm and schedules the next from 
   await t.monitors.dispose()
   t.clock.t += 25 * MIN // down across the 30 minute mark
   const resumedAt = t.clock.t
-  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const next = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await next.restore()
   assert.equal(t.sp.runs.length, 2)
   const info = next.list()[0]!
@@ -555,7 +560,7 @@ test("a restart notice gives the downtime window and a restart counter, and seq 
   const down = t.clock.t
   await t.monitors.dispose()
   t.clock.t += 3 * MIN
-  const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const second = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await second.restore()
   await t.clock.advance(5000)
   const notice = t.wakes[1]!.text
@@ -574,7 +579,7 @@ test("a restart with no recorded last-alive time says the start of the window is
   await t.monitors.start({ ...t.input, rearmMinutes: 30 })
   await t.monitors.dispose()
   t.storage.delete("monitor/state/mon_1")
-  const second = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const second = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await second.restore()
   await t.clock.advance(5000)
   assert.match(t.wakes[0]!.text, /when it went down is unknown/)
@@ -600,7 +605,7 @@ test("a lost monitor's notice continues its seq and carries the restart counter 
   const down = t.clock.t
   await t.monitors.dispose()
   t.clock.t += MIN
-  await new Monitors(t.deps).restore()
+  await new Monitors(newProcess(t.deps)).restore()
   const text = t.wakes[1]!.text
   assert.match(text, /<monitor-notice name="cmd" id="mon_1" seq="2" restart="1">/)
   assert.ok(text.includes(`down from ${new Date(down).toISOString()} to ${new Date(down + MIN).toISOString()}`), text)
@@ -649,7 +654,7 @@ test("match filters before batching: batches and maxEvents see matched lines onl
 
 test("a re-arm kills the whole process group of the previous run (real processes)", async () => {
   const t = setup()
-  const monitors = new Monitors({ ...t.deps, spawn: spawnShell, newID: () => "mon_real" })
+  const monitors = new Monitors({ ...newProcess(t.deps), spawn: spawnShell, newID: () => "mon_real" })
   const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
   const pidsOf = (text: string) => text.match(/^\d+$/gm)!.map(Number)
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -716,7 +721,7 @@ test("a monitor that already hit maxEvents is not restored", async () => {
   t.storage.set("monitor/def/mon_1", { id: "mon_1", name: "cmd", command: "cmd", cwd: "/work", sessionID: "ses_1", batchSeconds: 5, maxEvents: 2, rearmMinutes: 30, createdAt: 0, origin: "/work", expiresAt: t.clock.t + 1e9 })
   t.storage.set("monitor/state/mon_1", { seq: 1, restartCount: 0, aliveAt: t.clock.t, events: 2 })
   const runs = t.sp.runs.length
-  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const next = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await next.restore()
   assert.equal(next.count, 0)
   assert.equal(t.sp.runs.length, runs)
@@ -730,7 +735,7 @@ test("state without an events field (older entries) restores with a count of 0",
   const key = "monitor/state/mon_1"
   const { events: _drop, ...old } = t.storage.get(key) as Record<string, unknown>
   t.storage.set(key, old)
-  const next = new Monitors({ ...t.deps, newID: () => "mon_x" })
+  const next = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
   await next.restore()
   assert.equal(next.list()[0]!.events, 0)
   await next.dispose()
@@ -750,4 +755,206 @@ test("the hourly window resets on restart: the lifetime count stays, the rate wi
   assert.match(wake, /Paused/)
   assert.equal(next.list()[0]!.events, 6)
   await next.dispose()
+})
+
+// Plugin hot reload: the module is loaded again in the same service process. Instances share one registry.
+function reloadSetup(over: Partial<Options> = {}) {
+  const t = setup(over)
+  t.deps.registry.shuttingDown = false
+  const next = (id = "mon_x") => new Monitors({ ...t.deps, newID: () => id })
+  return { ...t, next }
+}
+
+test("a reload keeps the process: same pid, no restart count, no notice, output keeps flowing", async () => {
+  const t = reloadSetup()
+  const first = await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  t.sp.out(t.sp.runs[0]!, "one\n")
+  await t.clock.advance(5000)
+  assert.equal(t.wakes.length, 1)
+  await t.monitors.dispose()
+  assert.deepEqual(t.sp.runs[0]!.signals, [])
+  t.sp.out(t.sp.runs[0]!, "during the gap\n")
+  const fresh = t.next()
+  await fresh.restore()
+  assert.equal(t.sp.runs.length, 1)
+  const [info] = fresh.list()
+  assert.equal(info!.pid, first.pid)
+  assert.equal(info!.restartCount, 0)
+  assert.equal(info!.state, "running")
+  assert.equal(info!.events, 2)
+  t.sp.out(t.sp.runs[0]!, "after\n")
+  await t.clock.advance(5000)
+  assert.equal(t.wakes.length, 2)
+  assert.match(t.wakes[1]!.text, /seq="2">\nduring the gap\nafter\n<\/monitor-event>/)
+  assert.doesNotMatch(t.wakes.map((w) => w.text).join(""), /monitor-notice|restart=/)
+  assert.ok(t.logs.some((l) => /adopted after a plugin reload/.test(l)))
+  t.deps.registry.shuttingDown = true
+  await fresh.dispose()
+})
+
+test("the re-arm clock survives a reload: the remaining time is kept and the same process is re-armed on schedule", async () => {
+  const t = reloadSetup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.clock.advance(10 * 60_000)
+  await t.monitors.dispose()
+  const fresh = t.next()
+  await fresh.restore()
+  assert.equal(t.sp.runs.length, 1)
+  await t.clock.advance(19 * 60_000)
+  assert.equal(t.sp.runs.length, 1)
+  await t.clock.advance(60_000)
+  assert.deepEqual(t.sp.runs[0]!.signals, ["SIGTERM", "SIGKILL"])
+  assert.equal(t.sp.runs.length, 2)
+  assert.equal(fresh.list()[0]!.restartCount, 0)
+  t.deps.registry.shuttingDown = true
+  await fresh.dispose()
+})
+
+test("a real restart still counts and announces; a reload in between does not change that", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  const reloaded = t.next()
+  await reloaded.restore()
+  assert.equal(reloaded.list()[0]!.restartCount, 0)
+  // The service process ends: its dispose kills, the next process has an empty registry.
+  t.deps.registry.shuttingDown = true
+  await reloaded.dispose()
+  assert.deepEqual(t.sp.runs[0]!.signals[0], "SIGTERM")
+  const restarted = new Monitors({ ...newProcess(t.deps), newID: () => "mon_x" })
+  await restarted.restore()
+  assert.equal(t.sp.runs.length, 2)
+  assert.equal(restarted.list()[0]!.restartCount, 1)
+  await t.clock.advance(5000)
+  assert.match(t.wakes.at(-1)!.text, /<monitor-notice[^>]* restart="1">/)
+  await restarted.dispose()
+})
+
+test("two instances restoring the same directory leave one process with one owner", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  const a = t.next()
+  const b = t.next()
+  await Promise.all([a.restore(), b.restore()])
+  assert.equal(t.sp.runs.length, 1)
+  assert.equal(a.list().length + b.list().length, 1)
+  assert.equal(t.deps.registry.live.size, 1)
+  assert.equal(t.deps.registry.parked.size, 0)
+  t.deps.registry.shuttingDown = true
+  await Promise.all([a.dispose(), b.dispose()])
+  assert.deepEqual(t.sp.runs[0]!.signals[0], "SIGTERM")
+})
+
+test("an instance of another directory does not take the monitor", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  const other = new Monitors({ ...t.deps, origin: "/elsewhere" })
+  await other.restore()
+  assert.equal(other.list().length, 0)
+  assert.equal(t.deps.registry.parked.size, 1)
+  const owner = t.next()
+  await owner.restore()
+  assert.equal(owner.list().length, 1)
+  t.deps.registry.shuttingDown = true
+  await owner.dispose()
+})
+
+test("a new instance that loads before the old one is disposed takes the monitor over", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  const fresh = t.next()
+  await fresh.restore()
+  assert.equal(t.sp.runs.length, 1)
+  assert.equal(t.monitors.list().length, 0)
+  assert.equal(fresh.list().length, 1)
+  await t.monitors.dispose() // the late dispose of the old instance leaves it alone
+  assert.deepEqual(t.sp.runs[0]!.signals, [])
+  assert.equal(fresh.list().length, 1)
+  assert.equal(fresh.list()[0]!.restartCount, 0)
+  t.deps.registry.shuttingDown = true
+  await fresh.dispose()
+})
+
+test("a process that ended during the reload gap is handled by the new instance", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  t.sp.out(t.sp.runs[0]!, "last words\n")
+  t.sp.exit(t.sp.runs[0]!, 3)
+  const fresh = t.next()
+  await fresh.restore()
+  await t.clock.advance(5000)
+  assert.equal(fresh.list().length, 0)
+  assert.equal(t.defs(), 0)
+  const text = t.wakes.map((w) => w.text).join("")
+  assert.match(text, /last words/)
+  assert.match(text, /Monitor ended: the command exited with code 3/)
+  assert.doesNotMatch(text, /restart=/)
+})
+
+test("a re-arm monitor whose process ended in the gap waits for its schedule", async () => {
+  const t = reloadSetup()
+  await t.monitors.start({ ...t.input, rearmMinutes: 30 })
+  await t.monitors.dispose()
+  t.sp.exit(t.sp.runs[0]!, 0)
+  const fresh = t.next()
+  await fresh.restore()
+  assert.equal(fresh.list()[0]!.state, "waiting")
+  assert.equal(t.sp.runs.length, 1)
+  await t.clock.advance(30 * 60_000)
+  assert.equal(t.sp.runs.length, 2)
+  t.deps.registry.shuttingDown = true
+  await fresh.dispose()
+})
+
+test("a time limit that passed during the gap ends the adopted monitor", async () => {
+  const t = reloadSetup()
+  await t.monitors.start({ ...t.input, ttlMinutes: 1 })
+  await t.monitors.dispose()
+  t.clock.t += 2 * 60_000
+  const fresh = t.next()
+  await fresh.restore()
+  await t.clock.advance(1)
+  assert.equal(fresh.list().length, 0)
+  assert.deepEqual(t.sp.runs[0]!.signals[0], "SIGTERM")
+  assert.match(t.wakes.map((w) => w.text).join(""), /time limit/)
+})
+
+test("a session archived during the gap ends the handed-over process, quietly", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  t.states.set("ses_1", "archived")
+  await t.next().restore()
+  assert.equal(t.sp.runs[0]!.signals[0], "SIGTERM")
+  assert.equal(t.wakes.length, 0)
+  assert.equal(t.defs(), 0)
+})
+
+test("a handed-over monitor nobody claims is ended after the park limit", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  assert.equal(t.deps.registry.parked.size, 1)
+  await t.clock.advance(PARK_MS - 1)
+  assert.deepEqual(t.sp.runs[0]!.signals, [])
+  await t.clock.advance(1)
+  assert.equal(t.sp.runs[0]!.signals[0], "SIGTERM")
+  assert.equal(t.deps.registry.parked.size, 0)
+})
+
+test("a service shutdown after a handover ends the parked process; a shutdown dispose ends live ones", async () => {
+  const t = reloadSetup()
+  await t.monitors.start(t.input)
+  await t.monitors.dispose()
+  beginShutdown(t.deps.registry, 5000)
+  assert.equal(t.sp.runs[0]!.signals[0], "SIGTERM")
+  await t.clock.advance(5000)
+  assert.deepEqual(t.sp.runs[0]!.signals, ["SIGTERM", "SIGKILL"])
+  assert.equal(t.deps.registry.parked.size, 0)
+  const live = await t.next("mon_live").start(t.input)
+  assert.ok(live.pid)
+  assert.equal(t.deps.registry.shuttingDown, true)
 })
