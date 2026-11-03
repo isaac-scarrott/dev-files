@@ -1,3 +1,4 @@
+import { claim, killParked, park } from "./handoff.js";
 import { Monitor } from "./monitor.js";
 import { oneLine } from "./diag.js";
 import { downtimeWindow, parseRunState } from "./state.js";
@@ -74,15 +75,25 @@ export class Monitors {
                 continue;
             const previous = parseRunState(await store.get(STATE_PREFIX + def.id));
             const active = (await sessions.state(def.sessionID)) === "active";
+            // Nothing awaits between this claim and the adoption below (which registers the new owner), so a monitor that
+            // survived a reload always has exactly one owner, however many instances restore at once.
+            const survivor = claim(this.deps.registry, def.id);
             const forget = async (why, notify) => {
                 log(`${def.id} (${def.name}): not restored: ${why}`);
                 // Removed before the wake, so a failed or repeated restart cannot announce it twice.
+                if (survivor)
+                    this.release(survivor);
                 await store.remove(key);
                 await store.remove(STATE_PREFIX + def.id);
                 if (notify && active)
                     await this.announceLost(def, previous);
             };
-            if (def.expiresAt <= now) {
+            if (survivor && active) {
+                // A plugin reload, not a restart: the process kept running, so nothing is counted or announced.
+                log(`${def.id} (${def.name}): adopted after a plugin reload (pid ${survivor.child?.pid ?? "none"})`);
+                this.create(def).adopt(survivor);
+            }
+            else if (def.expiresAt <= now) {
                 await forget("its time limit passed", true);
             }
             else if (def.maxEvents !== undefined && (previous?.events ?? 0) >= def.maxEvents) {
@@ -126,9 +137,32 @@ export class Monitors {
             this.deps.log(`${def.id} (${def.name}): could not tell ${def.sessionID} it is gone: ${String(error)}`);
         }
     }
+    /**
+     * Service shutdown ends every process. A plugin reload (the module loaded again in the same process) leaves them
+     * running: they wait in the registry for the new instance, which adopts them.
+     */
     async dispose() {
-        await Promise.all([...this.running.values()].map((monitor) => monitor.dispose()));
+        const { registry, clock, options } = this.deps;
+        const all = [...this.running.values()];
         this.running.clear();
+        if (registry.shuttingDown) {
+            for (const monitor of all)
+                registry.live.delete(monitor.def.id);
+            await Promise.all(all.map((monitor) => monitor.dispose()));
+            return;
+        }
+        await Promise.all(all.map(async (monitor) => {
+            const id = monitor.def.id;
+            if (registry.live.get(id)?.owner !== this)
+                return; // taken by the new instance already
+            registry.live.delete(id);
+            park(registry, monitor.detach(), clock, options.killGraceSeconds * 1000, this.deps.log);
+            this.deps.log(`${id} (${monitor.def.name}): handed over for a plugin reload`);
+            await monitor.settle(); // the last-alive time, and any wake still being delivered
+        }));
+    }
+    release(handoff) {
+        killParked(handoff, this.deps.clock, this.deps.options.killGraceSeconds * 1000);
     }
     create(def) {
         const { options, clock, spawn, sessions, log, store } = this.deps;
@@ -142,12 +176,22 @@ export class Monitors {
             finished: (done) => {
                 if (this.running.get(done.def.id) === done)
                     this.running.delete(done.def.id);
+                if (this.deps.registry.live.get(done.def.id)?.owner === this)
+                    this.deps.registry.live.delete(done.def.id);
                 this.finishedIDs.add(done.def.id);
                 void this.write(done.def.id, () => store.remove(STATE_PREFIX + done.def.id), true).catch(() => { });
                 void store.remove(PREFIX + done.def.id).catch(() => { });
             },
         });
         this.running.set(def.id, monitor);
+        this.deps.registry.live.set(def.id, {
+            owner: this,
+            detach: () => {
+                this.running.delete(def.id);
+                return monitor.detach();
+            },
+            kill: (signal) => monitor.killNow(signal),
+        });
         return monitor;
     }
     write(id, task, force = false) {

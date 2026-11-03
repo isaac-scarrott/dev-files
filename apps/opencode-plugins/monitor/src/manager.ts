@@ -1,3 +1,4 @@
+import { claim, killParked, park, type Handoff, type Registry } from "./handoff.js"
 import { Monitor, type Definition } from "./monitor.js"
 import type { Options } from "./options.js"
 import type { Clock, Spawn } from "./process.js"
@@ -28,6 +29,8 @@ export interface ManagerDeps {
   readonly newID?: () => string
   /** The plugin instance's directory: the plugin loads once per directory and they share storage. */
   readonly origin: string
+  /** Where monitors wait between a plugin reload's old and new instance; shared by every instance in the process. */
+  readonly registry: Registry
 }
 
 export interface StartInput {
@@ -140,14 +143,22 @@ export class Monitors {
       if (def.origin !== this.deps.origin) continue
       const previous = parseRunState(await store.get(STATE_PREFIX + def.id))
       const active = (await sessions.state(def.sessionID)) === "active"
+      // Nothing awaits between this claim and the adoption below (which registers the new owner), so a monitor that
+      // survived a reload always has exactly one owner, however many instances restore at once.
+      const survivor = claim(this.deps.registry, def.id)
       const forget = async (why: string, notify: boolean) => {
         log(`${def.id} (${def.name}): not restored: ${why}`)
         // Removed before the wake, so a failed or repeated restart cannot announce it twice.
+        if (survivor) this.release(survivor)
         await store.remove(key)
         await store.remove(STATE_PREFIX + def.id)
         if (notify && active) await this.announceLost(def, previous)
       }
-      if (def.expiresAt <= now) {
+      if (survivor && active) {
+        // A plugin reload, not a restart: the process kept running, so nothing is counted or announced.
+        log(`${def.id} (${def.name}): adopted after a plugin reload (pid ${survivor.child?.pid ?? "none"})`)
+        this.create(def).adopt(survivor)
+      } else if (def.expiresAt <= now) {
         await forget("its time limit passed", true)
       } else if (def.maxEvents !== undefined && (previous?.events ?? 0) >= def.maxEvents) {
         await forget(`it already reached its limit of ${def.maxEvents} events`, true)
@@ -188,9 +199,33 @@ export class Monitors {
     }
   }
 
+  /**
+   * Service shutdown ends every process. A plugin reload (the module loaded again in the same process) leaves them
+   * running: they wait in the registry for the new instance, which adopts them.
+   */
   async dispose(): Promise<void> {
-    await Promise.all([...this.running.values()].map((monitor) => monitor.dispose()))
+    const { registry, clock, options } = this.deps
+    const all = [...this.running.values()]
     this.running.clear()
+    if (registry.shuttingDown) {
+      for (const monitor of all) registry.live.delete(monitor.def.id)
+      await Promise.all(all.map((monitor) => monitor.dispose()))
+      return
+    }
+    await Promise.all(
+      all.map(async (monitor) => {
+        const id = monitor.def.id
+        if (registry.live.get(id)?.owner !== this) return // taken by the new instance already
+        registry.live.delete(id)
+        park(registry, monitor.detach(), clock, options.killGraceSeconds * 1000, this.deps.log)
+        this.deps.log(`${id} (${monitor.def.name}): handed over for a plugin reload`)
+        await monitor.settle() // the last-alive time, and any wake still being delivered
+      }),
+    )
+  }
+
+  private release(handoff: Handoff): void {
+    killParked(handoff, this.deps.clock, this.deps.options.killGraceSeconds * 1000)
   }
 
   private create(def: Definition): Monitor {
@@ -204,12 +239,21 @@ export class Monitors {
       deliver: (sessionID, text, meta) => sessions.prompt(sessionID, text, meta),
       finished: (done) => {
         if (this.running.get(done.def.id) === done) this.running.delete(done.def.id)
+        if (this.deps.registry.live.get(done.def.id)?.owner === this) this.deps.registry.live.delete(done.def.id)
         this.finishedIDs.add(done.def.id)
         void this.write(done.def.id, () => store.remove(STATE_PREFIX + done.def.id), true).catch(() => {})
         void store.remove(PREFIX + done.def.id).catch(() => {})
       },
     })
     this.running.set(def.id, monitor)
+    this.deps.registry.live.set(def.id, {
+      owner: this,
+      detach: () => {
+        this.running.delete(def.id)
+        return monitor.detach()
+      },
+      kill: (signal) => monitor.killNow(signal),
+    })
     return monitor
   }
 

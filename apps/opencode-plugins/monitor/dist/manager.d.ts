@@ -1,3 +1,4 @@
+import { type Registry } from "./handoff.js";
 import type { Options } from "./options.js";
 import type { Clock, Spawn } from "./process.js";
 export interface Store {
@@ -27,6 +28,8 @@ export interface ManagerDeps {
     readonly newID?: () => string;
     /** The plugin instance's directory: the plugin loads once per directory and they share storage. */
     readonly origin: string;
+    /** Where monitors wait between a plugin reload's old and new instance; shared by every instance in the process. */
+    readonly registry: Registry;
 }
 export interface StartInput {
     readonly command: string;
@@ -81,7 +84,12 @@ export declare class Monitors {
      */
     restore(): Promise<void>;
     private announceLost;
+    /**
+     * Service shutdown ends every process. A plugin reload (the module loaded again in the same process) leaves them
+     * running: they wait in the registry for the new instance, which adopts them.
+     */
     dispose(): Promise<void>;
+    private release;
     private create;
     private write;
     private describe;

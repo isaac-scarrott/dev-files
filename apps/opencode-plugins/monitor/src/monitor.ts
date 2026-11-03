@@ -1,3 +1,4 @@
+import { Port, type Handoff } from "./handoff.js"
 import { LineSplitter } from "./lines.js"
 import type { Options } from "./options.js"
 import type { Child, Clock, Spawn } from "./process.js"
@@ -60,6 +61,7 @@ export class Monitor {
   private restartNotice: number | undefined
   private heartbeatTimer: unknown
   private child: Child | undefined
+  private port: Port | undefined
   private exited: Promise<void> = Promise.resolve()
   private splitter: LineSplitter
   private pending: string[] = []
@@ -113,6 +115,81 @@ export class Monitor {
     return this.child?.pid
   }
 
+  /**
+   * Plugin reload: the monitor leaves this instance with its process still running. Timers stop, the pipes are held
+   * by the port until another instance attaches, nothing is saved or sent and the manager is not told it finished.
+   */
+  detach(): Handoff {
+    this.closing = true
+    this.clearTimers()
+    this.port?.detach()
+    const handoff: Handoff = {
+      def: this.def,
+      child: this.child,
+      port: this.port,
+      memory: {
+        seq: this.seq,
+        restartCount: this.restartCount,
+        restartNotice: this.restartNotice,
+        state: this.state,
+        startedAt: this.startedAt,
+        events: this.events,
+        lastEventAt: this.lastEventAt,
+        paused: this.paused,
+        lastRearmAt: this.lastRearmAt,
+        nextRearmAt: this.nextRearmAt,
+        pending: this.pending,
+        pendingBytes: this.pendingBytes,
+        dropped: this.dropped,
+        notes: this.notes,
+        window: this.window,
+        failures: this.failures,
+        cycling: this.cycling,
+        splitter: this.splitter,
+      },
+    }
+    this.child = undefined
+    this.port = undefined
+    this.state = "ended"
+    return handoff
+  }
+
+  /**
+   * The other half of a plugin reload: takes over a running monitor. Same process, same counters, no restart count and
+   * no notice. Timers are rebuilt from the stored marks (a mark that passed during the gap fires at once), then the
+   * pipes are attached, replaying what arrived and an exit that happened in between.
+   */
+  adopt(handoff: Handoff): void {
+    const { clock } = this.deps
+    const now = clock.now()
+    const m = handoff.memory
+    this.seq = m.seq
+    this.restartCount = m.restartCount
+    this.restartNotice = m.restartNotice
+    this.state = m.state
+    this.startedAt = m.startedAt
+    this.events = m.events
+    this.lastEventAt = m.lastEventAt
+    this.paused = m.paused
+    this.lastRearmAt = m.lastRearmAt
+    this.nextRearmAt = m.nextRearmAt
+    this.pending = m.pending
+    this.pendingBytes = m.pendingBytes
+    this.dropped = m.dropped
+    this.notes = m.notes
+    this.window = m.window
+    this.failures = m.failures
+    this.cycling = m.cycling
+    this.splitter = m.splitter as LineSplitter
+    this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - now))
+    this.heartbeatTimer = clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS)
+    if (this.def.rearmMinutes !== undefined && this.nextRearmAt !== undefined) this.cycleTimer = clock.setTimeout(() => this.cycle(), Math.max(0, this.nextRearmAt - now))
+    if (this.pending.length > 0 || this.dropped > 0 || this.notes.length > 0) this.scheduleFlush()
+    this.child = handoff.child
+    if (handoff.child && handoff.port) this.bind(handoff.child, handoff.port)
+    void this.save()
+  }
+
   private snapshot(): RunState {
     return {
       seq: this.seq,
@@ -151,6 +228,17 @@ export class Monitor {
     this.deps.finished(this, reason)
   }
 
+  /** After a handover: waits for wakes still being delivered, then records the last-alive time. */
+  async settle(): Promise<void> {
+    await this.chain
+    await this.save()
+  }
+
+  /** Process-exit backstop: signals the process group at once. */
+  killNow(signal: "SIGTERM" | "SIGKILL"): void {
+    this.child?.kill(signal)
+  }
+
   /** Shutdown path: end the process and wait for it, nothing else. */
   async dispose(): Promise<void> {
     this.closing = true
@@ -162,36 +250,42 @@ export class Monitor {
   }
 
   private spawnRun(how: { rearmed: boolean; mark?: number } = { rearmed: false }): void {
-    const { clock, spawn, log } = this.deps
+    const { clock, spawn } = this.deps
     const now = clock.now()
     if (how.rearmed) this.lastRearmAt = now
     this.splitter = new LineSplitter(this.deps.options.maxLineChars)
     this.state = "running"
-    let release!: () => void
-    this.exited = new Promise<void>((resolve) => (release = resolve))
-    const child = spawn(
-      { command: this.def.command, cwd: this.def.cwd },
-      {
-        data: (chunk) => {
-          if (this.child === child) for (const line of this.splitter.push(chunk)) this.accept(line)
-        },
-        exit: (code, signal) => {
-          if (this.child !== child) return
-          this.child = undefined
-          child.kill("SIGKILL") // stray members of the process group
-          for (const line of this.splitter.flush()) this.accept(line)
-          log(`${this.def.id} (${this.def.name}): process ended with ${signal ?? `code ${code}`}`)
-          release()
-          this.onExit(code, signal)
-        },
-      },
-    )
+    const port = new Port()
+    const child = spawn({ command: this.def.command, cwd: this.def.cwd }, port)
     this.child = child
+    this.bind(child, port)
     if (this.def.rearmMinutes !== undefined) {
       this.nextRearmAt = how.mark ?? now + this.def.rearmMinutes * 60_000
       this.cycleTimer = clock.setTimeout(() => this.cycle(), this.nextRearmAt - now)
     }
     void this.save()
+  }
+
+  /** Routes a child's output and exit into this monitor. An exit already waiting in the port is delivered now. */
+  private bind(child: Child, port: Port): void {
+    const { log } = this.deps
+    let release!: () => void
+    this.exited = new Promise<void>((resolve) => (release = resolve))
+    this.port = port
+    port.attach({
+      data: (chunk) => {
+        if (this.child === child) for (const line of this.splitter.push(chunk)) this.accept(line)
+      },
+      exit: (code, signal) => {
+        if (this.child !== child) return
+        this.child = undefined
+        child.kill("SIGKILL") // stray members of the process group
+        for (const line of this.splitter.flush()) this.accept(line)
+        log(`${this.def.id} (${this.def.name}): process ended with ${signal ?? `code ${code}`}`)
+        release()
+        this.onExit(code, signal)
+      },
+    })
   }
 
   private onExit(code: number | null, signal: string | null): void {

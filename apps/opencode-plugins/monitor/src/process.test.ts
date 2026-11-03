@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { Port } from "./handoff.js"
 import { spawnShell } from "./process.js"
 
 const alive = (pid: number) => {
@@ -45,4 +46,19 @@ test("a grandchild left behind by a command that exits is cleaned up by the moni
   child.kill("SIGKILL")
   await new Promise((r) => setTimeout(r, 100))
   assert.equal(alive(pid), false)
+})
+
+test("a port holds output and the exit while nobody is attached, then replays them to the next owner", async () => {
+  const port = new Port()
+  const first: string[] = []
+  const child = spawnShell({ command: "echo one; sleep 0.3; echo two; exit 5", cwd: "/tmp" }, port)
+  port.attach({ data: (c) => first.push(String(c)), exit: () => first.push("exit") })
+  while (!first.join("").includes("one")) await new Promise((r) => setTimeout(r, 20))
+  port.detach()
+  await new Promise((r) => setTimeout(r, 700))
+  assert.deepEqual(first.join(""), "one\n")
+  const second: string[] = []
+  port.attach({ data: (c) => second.push(String(c)), exit: (code) => second.push(`exit ${code}`) })
+  assert.deepEqual(second, ["two\n", "exit 5"])
+  assert.ok(child.pid)
 })
