@@ -6,7 +6,7 @@ Shared components that look and behave like OpenCode Desktop's own sidebar rows,
 ![The same in dark](media/injected-rows-dark.png)
 
 ## What it does
-- Exports session tab rows, tab close and row-action buttons, menu content and items (with a submenu chevron and keyboard highlight), a popover, a summary card, project avatars, a progress spinner, a header icon button and a drawn clock icon.
+- Exports session tab rows, tab close and row-action buttons, menu content and items (with a submenu chevron and keyboard highlight), a popover, a summary card, project avatars, a progress spinner, a header icon button and the schedule clock gauge (`ClockGaugeIcon`, `createChipClock`: the minute hand shows the time left to the next run).
 - Uses the host's own class names and data attributes, so the app's CSS styles them. `nativeUiCss` adds the little the host does not provide.
 - Imported by relative path and bundled into the importing plugin's build; `snooze-archive` (row styles) does, and `snooze-archive/src/menu.ts` re-implements part of the menu. It is not a plugin and is not registered. `demo/` is a separate demo GUI plugin.
 

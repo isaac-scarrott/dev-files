@@ -29,7 +29,8 @@ Every component that renders a host control takes `ui: ctx.ui` (through `host.ui
 | `HeaderIconButton` | `gui-plugins/src/details/popover.tsx` trigger | the Session details button (`ghost-muted large`) |
 | `ProgressSpinner` | `ui/src/components/spinner.tsx` (Soft Radar) and `spinner-radar.ts` | the busy ring in `[data-slot=tab-status]` |
 | `HeartbeatIcon`, `heartbeatIconCss`, `heartbeatChipCss`, `syncHeartbeats` | drawn: a simple ECG trace (flat, one up spike, one down spike, flat; 0.9px stroke) as a mask over the muted colour, with a head of light that sweeps along the stroke left to right (a 9px gradient band, sharp head and long fade, moved by `transform` and `opacity` only; rows: `<b>` the masked trace holding the band `<i>`, `<u>` the flat line; chip: the catalog `svg` as a muted plane, `::before` the band, `::after` a stencil of the capsule's own background with a trace-shaped hole) every 2.4s in one shared phase while `live`; `still` (trace at rest), `flat` (scale squash onto the baseline in 300ms, the flat line fades in); the monitors' glyph | catalog icons (none has a pulse) |
-| `ClockIcon`, `drawnIconCss` | drawn in the catalog's style ([icons.md](icons.md)) | catalog icons |
+| `drawnIconCss` | the drawn-icon slot (`RobotIcon`) in the catalog's style ([icons.md](icons.md)) | catalog icons |
+| `ClockGaugeIcon`, `createChipClock`, `clockGaugeIconCss`, `clockGaugeChipCss`, `watchMinute`, `clockPose` | the schedule clock as a gauge: the minute hand is the time left to the next run (12 = now, 5 degrees per minute, 60 minutes = 300 degrees), one soft tick when due, one lap when a run fires, `transform` only; rows are a span with face and hand children, the chip is `::before` face and `::after` hand driven by attributes on the root; one shared 60s timer while a schedule counts down | a static clock, a per-second timer or an animated mask |
 
 ### SessionTabRow
 

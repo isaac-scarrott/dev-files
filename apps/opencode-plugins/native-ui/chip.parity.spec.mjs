@@ -56,7 +56,7 @@ export default {
   viewport: "1600x1000",
   elements: [
     chip("monitor-chip", MONITOR, each(["icon.display", "icon.dx"], "the heartbeat is drawn through the capsule's svg (a muted plane), ::before (the travelling band) and ::after (a stencil with a trace-shaped hole), heartbeatChipCss, in a 16px box centred on the 14px, 10px-inset slot the catalog svg had, and the placeholder catalog svg is hidden, as for the clock; the capsule's box, label and padding are unchanged (108.02 x 32, label at +32.5, measured before and after)")),
-    chip("schedule-chip", SCHEDULE, each(["icon.display", "icon.dx"], "the catalog has no clock: the pill names a placeholder icon, whose svg is hidden and replaced by the drawn clock as the capsule's ::before (laneChipCss), so the measured svg is not the visible glyph")),
+    chip("schedule-chip", SCHEDULE, each(["icon.display", "icon.dx"], "the catalog has no clock: the pill names a placeholder icon, whose svg is hidden and replaced by the drawn clock gauge, the capsule's ::before (face) and ::after (minute hand) (clockGaugeChipCss in laneChipCss), so the measured svg is not the visible glyph; capsule 117.07 x 32 and label +32.5 unchanged, ink centre (17.5, 16.0) unchanged")),
     // Opening the host's activity panel dismisses a pill's popover and the reverse (Kobalte closes a popup on focus outside), so
     // the two never stand side by side and the runner cannot measure both at once. They were measured one after the other
     // with the same computed-style properties (DESIGN.md, "Popover rows against the host's activity panel").

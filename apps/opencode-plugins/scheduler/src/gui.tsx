@@ -1,6 +1,6 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup } from "solid-js"
-import { ClockIcon, CLOCK_PLACEHOLDER, createSessionChip, drawnIconCss, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
+import { ClockGaugeIcon, CLOCK_PLACEHOLDER, createChipClock, createMinuteTick, createSessionChip, drawnIconCss, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
 import { scheduleDeadlines, scheduleStatus } from "./chip"
 import type { ScheduleItem } from "./control"
 import { scheduledOf, type ScheduledRun } from "./message"
@@ -56,10 +56,17 @@ export default Plugin.define({
         return ctx.t("paused")
       },
     }
+    // The chip's clock shows the soonest of the schedules aimed at the session on screen: the last answer for that session.
+    const [loaded, setLoaded] = createSignal<{ key: string; items: readonly ScheduleItem[] } | undefined>()
+    const tick = createMinuteTick()
+    createChipClock(tick, () => {
+      const answer = loaded()
+      return answer && answer.key === ctx.sessions.current()?.key ? answer : undefined
+    })
     createSessionChip<ScheduleItem>(ctx, {
       id: "schedules",
       icon: CLOCK_PLACEHOLDER,
-      rowIcon: () => <ClockIcon />,
+      rowIcon: (row) => <ClockGaugeIcon tick={tick} input={row()?.clock} />,
       label: (count) => ctx.plural("chip", count),
       get actionLabel() {
         return ctx.t("cancel")
@@ -67,9 +74,12 @@ export default Plugin.define({
       get gone() {
         return ctx.t("gone")
       },
-      load: async (session, signal) =>
-        ((await session.server.client.rpc(ScheduleControl).pending({ sessionID: session.id }, { signal, location: session.location })) as { items: ScheduleItem[] }).items,
-      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: scheduleStatus(item, now, words) })),
+      load: async (session, signal) => {
+        const items = ((await session.server.client.rpc(ScheduleControl).pending({ sessionID: session.id }, { signal, location: session.location })) as { items: ScheduleItem[] }).items
+        if (!signal.aborted) setLoaded({ key: session.key, items })
+        return items
+      },
+      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: scheduleStatus(item, now, words), clock: item })),
       deadlines: scheduleDeadlines,
       act: async (session, item) =>
         ((await session.server.client.rpc(ScheduleControl).cancel({ id: item.id, sessionID: session.id }, { location: session.location })) as { cancelled: boolean }).cancelled,
@@ -130,7 +140,7 @@ export default Plugin.define({
         <InjectedMessageRow
           ui={ctx.ui}
           kind="scheduler"
-          icon={<ClockIcon />}
+          icon={<ClockGaugeIcon still />}
           title={located.run.name}
           preview={ctx.t("run")}
           more
