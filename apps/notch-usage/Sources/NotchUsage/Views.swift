@@ -70,11 +70,13 @@ struct NoLimitMark: View {
     let lineWidth: CGFloat
 
     var body: some View {
-        // Drawn to the same box and stroke as a ring, so it reads as one.
+        // Same stroke as a ring, sized to fit inside a ring's hole: each arm, round cap included, ends
+        // at the inner edge of where the ring's stroke would be.
         Path { p in
-            let lo = lineWidth / 2, hi = size - lineWidth / 2
-            p.move(to: CGPoint(x: lo, y: lo)); p.addLine(to: CGPoint(x: hi, y: hi))
-            p.move(to: CGPoint(x: hi, y: lo)); p.addLine(to: CGPoint(x: lo, y: hi))
+            let c = size / 2
+            let arm = (c - lineWidth - lineWidth / 2) / 2.squareRoot()
+            p.move(to: CGPoint(x: c - arm, y: c - arm)); p.addLine(to: CGPoint(x: c + arm, y: c + arm))
+            p.move(to: CGPoint(x: c + arm, y: c - arm)); p.addLine(to: CGPoint(x: c - arm, y: c + arm))
         }
         .stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
         .frame(width: size, height: size)
