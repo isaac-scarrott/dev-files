@@ -50,6 +50,8 @@ const definition = Plugin.define({
       "sources.description": "Show notifications from {{source}}",
       "sources.empty": "No plugin has published yet.",
       "open": "Open",
+      "copyDetails": "Copy details",
+      "copyFailed": "Couldn't copy the details",
       "more": "{{count}} more from {{source}}",
       "done.title": "Run finished",
       "failed.title": "Run failed",
@@ -117,8 +119,9 @@ export default Plugin.define({
       },
       show: (options) => ctx.toast.show(options),
       open: (target) => ctx.tabs.open({ server: target.server, id: target.session }, { focus: true }),
+      copy: (text) => navigator.clipboard.writeText(text),
       attention: (options) => ctx.attention.notify(options),
-      text: { open: ctx.t("open"), more: (count, source) => ctx.t("more", { count, source }) },
+      text: { open: ctx.t("open"), copyDetails: ctx.t("copyDetails"), copyFailed: ctx.t("copyFailed"), more: (count, source) => ctx.t("more", { count, source }) },
     })
     onCleanup(provideSink(hub.sink))
     onCleanup(hub.dispose)
@@ -175,20 +178,37 @@ export default Plugin.define({
     // Go to next notification: needs you, then error, then done (the host's unread roots included), the open session never.
     let last: SessionRef | undefined
     let walk: readonly SessionRef[] = []
-    const goNext = () => {
+    const [walked, setWalked] = createSignal(0)
+    const stopsNow = () => {
       const unread = ctx.servers.list().flatMap((id) => {
         const server = ctx.servers.get(id)
         return server?.connected ? unreadRoots(id, server.data as unknown as UnreadData) : []
       })
-      const ordered = order([...stops(ledger.list()), ...unread])
+      return order([...stops(ledger.list()), ...unread])
+    }
+    const goNext = () => {
+      const ordered = stopsNow()
       const next = pickNext(ordered, activeRef(), last, walk)
       // Nothing to jump to: decline the key so it reaches whatever has focus (Cmd+I in the composer).
       if (!next) return false
       last = next
       walk = ordered
+      setWalked((count) => count + 1)
       ctx.tabs.open({ server: next.server, id: next.session }, { focus: true })
       ledger.clearSession(next)
     }
+    // The key is shown on a waiting request's toast only while it opens that very session: one session waits and it is the next stop.
+    const hint = createMemo(() => {
+      version()
+      walked()
+      const waiting = new Set(ledger.list().filter((entry) => entry.kind === "needs-you").map((entry) => sessionKey(entry)))
+      if (waiting.size !== 1) return undefined
+      const next = pickNext(stopsNow(), activeRef(), last, walk)
+      if (!next || !waiting.has(sessionKey(next))) return undefined
+      return ctx.keybinds.keybind(`${ctx.id}.go-to-next`).join("").replace(/["\\]/g, "") || undefined
+    })
+    // `toast-style` reads this variable; without it (or with no value) a toast shows no key.
+    ctx.add(Style, () => (hint() ? `:root { --toast-style-go-next-hint: "${hint()}"; }` : undefined))
     const urgent = createMemo(() => (version(), urgentCount(ledger.list())))
     ctx.add(
       Command,

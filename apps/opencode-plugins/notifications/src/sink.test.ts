@@ -6,7 +6,7 @@ import { Ledger } from "./ledger"
 import { defaultSettings, type Settings } from "./settings"
 
 function rig(over: Partial<SinkDeps> = {}) {
-  const state = { now: 10_000, settings: defaultSettings as Settings, presence: { focused: true, onScreen: false }, shown: [] as ToastOptions[], dismissed: [] as ToastOptions[], opened: [] as unknown[], attention: [] as unknown[], timers: [] as { fn: () => void; ms: number; live: boolean }[] }
+  const state = { now: 10_000, settings: defaultSettings as Settings, presence: { focused: true, onScreen: false }, shown: [] as ToastOptions[], dismissed: [] as ToastOptions[], opened: [] as unknown[], copied: [] as string[], copyFails: false, attention: [] as unknown[], timers: [] as { fn: () => void; ms: number; live: boolean }[] }
   const ledger = new Ledger(() => {})
   const deps: SinkDeps = {
     self: "notifications",
@@ -24,8 +24,12 @@ function rig(over: Partial<SinkDeps> = {}) {
       return { dismiss: () => void state.dismissed.push(options) }
     },
     open: (target) => void state.opened.push(target),
+    copy: async (text) => {
+      if (state.copyFails) throw new Error("denied")
+      state.copied.push(text)
+    },
     attention: (options) => void state.attention.push(options),
-    text: { open: "Open", more: (count, source) => `${count} more from ${source}` },
+    text: { open: "Open", copyDetails: "Copy details", copyFailed: "Couldn't copy", more: (count, source) => `${count} more from ${source}` },
     ...over,
   }
   const hub = createSink(deps)
@@ -40,16 +44,51 @@ test("an error toast carries the error variant and an Open action that opens the
   send({ kind: "error", title: "Scheduled task failed", body: "delivery failed", target })
   assert.equal(state.shown.length, 1)
   assert.equal(state.shown[0].variant, "error")
-  assert.equal(state.shown[0].persistent, false)
+  assert.equal(state.shown[0].persistent, true)
   state.shown[0].actions![0].run()
   assert.deepEqual(state.opened, [target])
 })
 
-test("severity maps to variant and icon; needs-you is persistent", () => {
+test("severity maps to variant; each kind has its own glyph; needs-you and error are persistent", () => {
   const { state, send } = rig()
+  state.settings = { ...defaultSettings, toast: { ...defaultSettings.toast, info: true } }
   send({ kind: "needs-you", title: "Q", persistent: true, target, key: "q" })
+  send({ kind: "done", title: "D", severity: "success", target, key: "d" })
+  send({ kind: "error", title: "E", target, key: "e" })
+  send({ kind: "info", title: "I", key: "i" })
+  assert.deepEqual(state.shown.map((t) => [t.variant, t.icon, t.persistent, t.duration]), [
+    ["default", "notifications", true, undefined],
+    ["success", "circle-check", false, undefined],
+    ["error", "circle-x", true, undefined],
+    ["default", "info", false, 4000],
+  ])
+})
+
+test("an error toast offers Open then Copy details; copying puts the title and the detail on the clipboard, silently", async () => {
+  const { state, send } = rig()
+  send({ kind: "error", title: "Run failed", body: "fix-auth · 529", target, key: "e" })
+  assert.deepEqual(state.shown[0].actions!.map((a) => a.label), ["Open", "Copy details"])
+  state.shown[0].actions![1].run()
+  await Promise.resolve()
+  assert.deepEqual(state.copied, ["Run failed\nfix-auth · 529"])
+  assert.equal(state.shown.length, 1, "a copy that worked says nothing")
+})
+
+test("a copy that fails is said; the other kinds have no Copy details", async () => {
+  const { state, send } = rig()
+  state.copyFails = true
+  send({ kind: "error", title: "Run failed", target, key: "e" })
+  state.shown[0].actions![1].run()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(state.shown.slice(1).map((t) => [t.title, t.variant]), [["Couldn't copy", "error"]])
   send({ kind: "done", title: "D", target, key: "d" })
-  assert.deepEqual(state.shown.map((t) => [t.variant, t.icon, t.persistent]), [["default", "warning", true], ["success", undefined, false]])
+  assert.deepEqual(state.shown[2].actions!.map((a) => a.label), ["Open"])
+})
+
+test("an error with no session has Copy details alone", () => {
+  const { state, send } = rig()
+  send({ kind: "error", title: "Monitor stopped", key: "e" })
+  assert.deepEqual(state.shown[0].actions!.map((a) => a.label), ["Copy details"])
 })
 
 test("a cell turned off shows nothing; the next settings read applies at once", () => {
