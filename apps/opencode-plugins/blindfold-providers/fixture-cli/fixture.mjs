@@ -22,6 +22,7 @@ const OTP_SEED = "JBSWY3DPEHPK3PXP" // RFC 6238 test-style base32 seed, fake
 const VAULT = [
   { id: "op1", vaultId: "vlt_agent", vault: "Agent", title: "Google (personal)", urls: ["https://accounts.google.com"], username: "personal.fixture@example.test", password: "fixture-google-pw", otp: true },
   { id: "op2", vaultId: "vlt_agent", vault: "Agent", title: "GitHub", urls: ["https://github.com"], username: "fixture-gh", password: "fixture-gh-pw", otp: true },
+  { id: "op4", vaultId: "vlt_agent", vault: "Agent", title: "Local login (test page)", urls: ["http://127.0.0.1:47321"], username: "ada.fixture@example.test", password: "fixture-local-pw", otp: false },
   { id: "op3", vaultId: "vlt_private", vault: "Private", title: "Bank", urls: ["https://bank.example"], username: "x", password: "fixture-bank-pw", otp: false },
 ]
 const BW_VAULT = [

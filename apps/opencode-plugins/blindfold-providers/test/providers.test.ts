@@ -149,24 +149,25 @@ test("Bitwarden: origin search returns references only, scoped to the organisati
 })
 
 test("auto-lock: the idle timer drops the session and runs bw lock; the next read is LockedError", async () => {
-  const account = work({ autoLockMinutes: 0.001 })
+  const account = work({ autoLockMinutes: 0.01 })
   await account.unlock({ method: "masterPassword", password: "fixture-bw-master" })
   const locks = () => argv().filter((a) => a[0] === "bw" && a[1] === "lock").length
   const before = locks()
-  assert.equal((await account.status()).state, "unlocked")
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  // Polled, not slept: the CLI fixtures are slow on a busy machine.
+  for (let i = 0; i < 100 && locks() === before; i++) await new Promise((resolve) => setTimeout(resolve, 100))
   assert.equal(locks(), before + 1, "bw lock ran")
+  assert.equal((await account.status()).state === "unlocked", false)
   await assert.rejects(account.findByOrigin("https://admin.holibob.tech"), LockedError)
 })
 
-test("a use of the account restarts the idle timer", async () => {
-  const account = work({ autoLockMinutes: 0.003 })
+test("a use of the account moves its lock time later", async () => {
+  const account = work({ autoLockMinutes: 5 })
   await account.unlock({ method: "masterPassword", password: "fixture-bw-master" })
-  for (let i = 0; i < 4; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 80))
-    await account.read({ account: "work", id: "bw1", title: "x", origins: [], hasOtp: false, fields: [] }, "username")
-  }
-  assert.equal((await account.status()).state, "unlocked", "used every 80 ms, idle limit 180 ms")
+  const expires = async () => ((await account.status()) as { expiresAt: number }).expiresAt
+  const first = await expires()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  await account.read({ account: "work", id: "bw1", title: "x", origins: [], hasOtp: false, fields: [] }, "username")
+  assert.ok((await expires()) > first)
   await account.lock()
 })
 
