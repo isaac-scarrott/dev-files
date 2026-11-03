@@ -141,21 +141,20 @@ test("setup cold-starts, hydrates server inventory, tears down and reloads witho
   } finally { await f.close() }
 })
 
-test("snooze persists server+session, closes only tab, offers undo, and rejects waiting input", async () => {
+test("snooze persists server+session, closes only tab, shows no toast, and rejects waiting input", async () => {
   const f = fixture()
   try {
     f.start(); f.setServers(["server"]); await f.flush()
     f.permissions([{}]); await runSnooze(f)
     assert.equal(f.state().entries.length, 0)
     assert.match(f.calls.toasts.at(-1).description, /waiting/)
+    const toastsBefore = f.calls.toasts.length
     f.permissions([]); await runSnooze(f); await f.flush()
+    assert.equal(f.calls.toasts.length, toastsBefore, "a successful snooze is silent")
     assert.equal(f.state().entries.length, 1)
     assert.equal(f.state().entries[0].server, "server")
     assert.deepEqual(f.calls.closed, ["tab"])
     assert.equal(f.calls.updates.length, 0, "snooze must not change native archive or stop work")
-    f.calls.toasts.at(-1).actions[0].run(); await f.flush()
-    assert.equal(f.state().entries.length, 0)
-    assert.equal(f.calls.opened.length, 1)
   } finally { await f.close() }
 })
 

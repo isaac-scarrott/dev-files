@@ -294,7 +294,6 @@ export default Plugin.define({
         clearWoke(entry.server, entry.id)
         closeTabs(entry.server, entry.id)
         hiddenSnoozes.add(sessionKey(entry.server, entry.id))
-        ctx.toast.show({ title: "Snoozed on this device", description: `Work continues. Wakes ${formatWake(until, Date.now())} or when attention/work changes.`, actions: [{ label: "Undo", run: () => wake(entry, true) }] })
       } catch (cause) { error(cause) }
     }
     const deleteAction = async (server: ServerRef, id: string) => {
