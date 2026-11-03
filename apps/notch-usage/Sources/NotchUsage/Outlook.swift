@@ -33,6 +33,10 @@ struct PoolOutlook {
     let limitedNow: Int
     /// False until some account has enough history to project: "clear" would be a guess.
     let canProject: Bool
+
+    /// The next time every account is out. The 5h simulation already takes weeks running out into
+    /// account, so when it finds one it's never later than the week's.
+    var nextOut: Blackout? { fiveHour ?? week }
 }
 
 extension [AccountUsage] {

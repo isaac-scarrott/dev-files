@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store: UsageStore
-    private var notch: DynamicNotch<ExpandedView, CompactRings, CompactRings>!
+    private var notch: DynamicNotch<ExpandedView, CompactRings, CompactNextOut>!
     private var hoverSubscription: AnyCancellable?
     private var pendingHoverChange: Task<Void, Never>?
 
@@ -23,8 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch = DynamicNotch(
             hoverBehavior: [.keepVisible],
             expanded: { ExpandedView(store: store) },
-            compactLeading: { CompactRings(store: store, sevenDay: false) },
-            compactTrailing: { CompactRings(store: store, sevenDay: true) }
+            compactLeading: { CompactRings(store: store) },
+            compactTrailing: { CompactNextOut(store: store) }
         )
         notch.transitionConfiguration = Self.transitions()
         Task { await notch.compact() }

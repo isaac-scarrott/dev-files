@@ -1,8 +1,8 @@
 import SwiftUI
 import UsageForecast
 
-// One visual idea: a ring. Compact puts the 5h rings left of the notch and the 7d rings right of it;
-// expanded is the same two columns, larger, in the same order. The solid arc is where you are; the faint
+// One visual idea: a ring. Compact shows each account as a pair, 5h then 7d, split across the notch;
+// expanded is the same pair per row, larger, in the same order. The solid arc is where you are; the faint
 // arc beyond it is where you'll be at reset at the current pace. Amber means you'll hit the limit first.
 
 private let amber = Color(red: 1.0, green: 0.72, blue: 0.27)
@@ -83,26 +83,62 @@ struct NoLimitMark: View {
     }
 }
 
+/// One group per account, its 5h mark then its week ring, in the expanded view's column order.
 struct CompactRings: View {
     @ObservedObject var store: UsageStore
-    let sevenDay: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 10) {
             ForEach(store.accounts) { a in
                 let outlook = a.outlook
-                if !sevenDay && a.noFiveHourLimit {
-                    NoLimitMark(size: 12, lineWidth: 2)
-                } else {
-                    Ring(projection: sevenDay ? outlook.week : outlook.fiveHour,
-                         size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
+                HStack(spacing: 3) {
+                    if a.noFiveHourLimit {
+                        NoLimitMark(size: 12, lineWidth: 2)
+                    } else {
+                        Ring(projection: outlook.fiveHour, size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
+                    }
+                    Ring(projection: outlook.week, size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(a.label)
             }
         }
         .padding(.horizontal, 8)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(sevenDay ? "Weekly usage" : "Five-hour usage")
     }
+}
+
+/// Right of the notch: when every account will next be out of usage, or when it's back if that's now.
+/// Empty while nothing is coming.
+struct CompactNextOut: View {
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        TimelineView(.everyMinute) { _ in
+            let text = Self.text(store.accounts.poolOutlook(now: .now).nextOut, now: .now)
+            Text(text ?? "")
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(amber)
+                .lineLimit(1)
+                .padding(.horizontal, text == nil ? 0 : 8)
+        }
+    }
+
+    static func text(_ b: Blackout?, now: Date) -> String? {
+        guard let b else { return nil }
+        if b.start <= now.addingTimeInterval(60) {
+            return "Out" + (b.end.map { " · back \(whenText($0, now: now))" } ?? "")
+        }
+        return "Out \(whenText(b.start, now: now))"
+    }
+}
+
+/// Relative while it's close ("in 40m"), a clock time later today ("16:30"), then a day ("Sat 07:15").
+/// Forecasts are rounded to 5 minutes, never into the past.
+func whenText(_ date: Date, now: Date) -> String {
+    let rounded = date.rounded(to: 5 * 60)
+    let t = rounded > now ? rounded : rounded.addingTimeInterval(5 * 60)
+    if date.timeIntervalSince(now) < 3 * 3600 { return "in \(durationText(until: date, from: now))" }
+    return dayText(t)
 }
 
 private struct WindowColumn: View {
@@ -211,19 +247,11 @@ private struct Headline: View {
     private var headline: (String, Bool) {
         let pool = accounts.poolOutlook(now: now)
         let all = accounts.count > 1 ? "All accounts" : "Your account"
-        if let b = pool.fiveHour {
-            let back = b.end.map { durationText(until: $0, from: now) }
-            if b.start <= now.addingTimeInterval(60) {
-                return ("\(all) limited" + (back.map { " · back in \($0)" } ?? ""), true)
-            }
-            // Rounding a start a couple of minutes off can land in the past; the next 5 minutes then.
-            let rounded = b.start.rounded(to: 5 * 60)
-            let start = rounded > now ? rounded : rounded.addingTimeInterval(5 * 60)
-            return ("\(all) limited \(clockText(start))" + (b.end.map { " – \(clockText($0))" } ?? ""), true)
-        }
-        if let b = pool.week {
-            let from = b.start <= now.addingTimeInterval(60) ? "now" : dayText(b.start.rounded(to: 3600))
-            return ("Weekly limits run out \(from)" + (b.end.map { " · back \(dayText($0))" } ?? ""), true)
+        if let b = pool.nextOut {
+            let back = b.end.map { " · back \(whenText($0, now: now))" } ?? ""
+            if b.start <= now.addingTimeInterval(60) { return ("\(all) limited" + back, true) }
+            let what = pool.fiveHour == nil ? "Weekly limits run out" : "\(all) limited"
+            return ("\(what) \(whenText(b.start, now: now))" + back, true)
         }
         guard pool.canProject else { return (" ", false) }
         let clear = "No limits ahead at this pace"
