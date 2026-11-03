@@ -113,9 +113,9 @@ public struct Blackout: Equatable, Sendable {
 }
 
 extension Forecast {
-    /// Steps the pool forward through one window's length. cliproxy round-robins sessions, so the pool's
-    /// total load is shared evenly across whichever accounts are still available; when one hits its limit,
-    /// the others absorb its share and burn faster. Returns the first moment none are left.
+    /// Steps the pool forward through one window's length. Each available account keeps its own measured
+    /// pace; when one hits its limit, its load is split evenly across the accounts still available, which
+    /// burn faster. Returns the first moment none are left.
     ///
     /// For the 5h window an account that runs out of its week is out too. The week ignores 5h limits:
     /// they pause an account for hours, which barely moves a weekly total.
@@ -128,14 +128,23 @@ extension Forecast {
             let rate: Double
             let capacity: Double
             let blocked: (start: Date, end: Date?)?
+            var unlimited = false
+            /// Absolute pace, so it can move between accounts of different sizes.
+            var load: Double { rate * capacity }
         }
 
         var states: [State] = members.compactMap { m in
-            guard let p = m.projection(kind) else { return nil }
+            let weekOut = kind == .fiveHour ? m.week.flatMap { w in w.exhaustsAt.map { ($0, w.resetsAt) } } : nil
+            guard let p = m.projection(kind) else {
+                // Anthropic reports a week but no 5h window for accounts it has lifted the 5h limit from:
+                // still in the pool, only its week can stop it.
+                guard kind == .fiveHour, m.week != nil else { return nil }
+                return State(utilization: 0, resetsAt: nil, rate: 0, capacity: max(m.capacity, 0.1),
+                             blocked: weekOut, unlimited: true)
+            }
             // The last reading may be minutes old; carry it forward at its own pace to now.
             let sinceReading = max(now.timeIntervalSince(p.at), 0)
             let current = p.isExhausted ? p.utilization : min(p.utilization + (p.rate ?? 0) * sinceReading, 100)
-            let weekOut = kind == .fiveHour ? m.week.flatMap { w in w.exhaustsAt.map { ($0, w.resetsAt) } } : nil
             return State(utilization: current, resetsAt: p.resetsAt, rate: p.rate ?? 0,
                          capacity: max(m.capacity, 0.1), blocked: weekOut)
         }
@@ -153,14 +162,13 @@ extension Forecast {
                 guard let r = s.resetsAt else { return nil }
                 free = max(free, r)
             }
-            if let b = s.blocked, t >= b.start {
+            // The week may run out while the 5h window is still waiting to reset.
+            if let b = s.blocked, free >= b.start {
                 guard let e = b.end else { return nil }
                 free = max(free, e)
             }
             return free
         }
-
-        let load = states.filter { available($0, at: now) }.map { $0.rate * $0.capacity }.reduce(0, +)
 
         var t = now
         let end = now.addingTimeInterval(kind.length)
@@ -175,12 +183,12 @@ extension Forecast {
             if open.isEmpty {
                 return Blackout(start: t, end: states.compactMap { freeAgain($0, after: t) }.min())
             }
-            guard load > 0 else { return nil }
-            let share = load / Double(open.count)
-            for i in open {
+            let stranded = states.indices.filter { !open.contains($0) }.map { states[$0].load }.reduce(0, +)
+            let share = stranded / Double(open.count)
+            for i in open where !states[i].unlimited {
                 // A fresh window opens on first use after the last one reset.
                 if states[i].resetsAt == nil { states[i].resetsAt = t.addingTimeInterval(kind.length) }
-                states[i].utilization += share / states[i].capacity * step
+                states[i].utilization += (states[i].load + share) / states[i].capacity * step
             }
             t = t.addingTimeInterval(step)
         }
