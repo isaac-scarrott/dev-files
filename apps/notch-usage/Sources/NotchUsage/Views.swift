@@ -104,7 +104,9 @@ private struct WindowColumn: View {
         let warns = projection?.warns == true
         let next = next
         HStack(spacing: 8) {
-            Ring(projection: projection, size: 20, lineWidth: 2.5, dimmed: projection == nil)
+            if !noLimit {
+                Ring(projection: projection, size: 20, lineWidth: 2.5, dimmed: projection == nil)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%")
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
