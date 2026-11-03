@@ -64,6 +64,18 @@ struct Ring: View {
     }
 }
 
+/// Stands in for a ring where the window has no limit at all.
+struct NoLimitMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: size * 0.45, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.35))
+            .frame(width: size, height: size)
+    }
+}
+
 struct CompactRings: View {
     @ObservedObject var store: UsageStore
     let sevenDay: Bool
@@ -72,8 +84,12 @@ struct CompactRings: View {
         HStack(spacing: 5) {
             ForEach(store.accounts) { a in
                 let outlook = a.outlook
-                Ring(projection: sevenDay ? outlook.week : outlook.fiveHour,
-                     size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
+                if !sevenDay && a.noFiveHourLimit {
+                    NoLimitMark(size: 12)
+                } else {
+                    Ring(projection: sevenDay ? outlook.week : outlook.fiveHour,
+                         size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -91,6 +107,7 @@ private struct WindowColumn: View {
     /// The line under the percentage says what happens next: when you'll run out, when you're back,
     /// or, when neither applies, simply when it resets.
     private var next: String {
+        if noLimit { return "weekly limit only" }
         guard let p = projection, let resetsAt = p.resetsAt else { return "" }
         if p.isExhausted {
             return resetsAt.timeIntervalSince(now) < 60 ? "resetting" : "back in \(durationText(until: resetsAt, from: now))"
@@ -104,7 +121,9 @@ private struct WindowColumn: View {
         let warns = projection?.warns == true
         let next = next
         HStack(spacing: 8) {
-            if !noLimit {
+            if noLimit {
+                NoLimitMark(size: 20)
+            } else {
                 Ring(projection: projection, size: 20, lineWidth: 2.5, dimmed: projection == nil)
             }
             VStack(alignment: .leading, spacing: 1) {
