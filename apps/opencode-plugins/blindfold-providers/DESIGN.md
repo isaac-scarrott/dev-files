@@ -1,6 +1,7 @@
 # blindfold-providers: design spike
 
-Status: T3 spike (2026-11-03). Research plus a throwaway prototype under `spike/`. Not a plugin yet.
+Status: T3 spike (2026-11-03), done. Research plus a throwaway prototype under `spike/`. Not a plugin yet. Blindfold
+reference: the fork as merged to master (648a19a).
 
 Goal: agents use **1Password and Bitwarden side by side** (e.g. `personal` = 1Password, `work` = Bitwarden, or two
 accounts of one kind) for passwords and one-time codes through blindfold, without values reaching the model, and fill
@@ -87,7 +88,7 @@ input with a Show-password toggle, a plain text input, a one-time-code input, an
 | F9 | `browser.fill` on Google's identifier field | peer session A9Y6QGrG: rejected (not editable per the tool); `evaluate` with the native setter worked. F2 reproduces the workaround |
 | F10 | Is the input of a nested Code Mode call persisted? Probe: a marker built at run time (never in the code or the result) passed as `browser.evaluate({ script })` | **yes**: found in `opencode.db` `session_message.data` at `content[1].state.metadata.toolCalls[0].input.script` (plus WAL). A value embedded in an evaluate script lands on disk in that row unless something rewrites it |
 | F11 | OCR cost as a screenshot backstop | 0.17 to 0.28 s per 900×1100 PNG (tesseract 5.5.1, 3 runs) |
-| F12 | Vendor extensions in the in-app browser | **N**. The pane is an Electron `WebContentsView` (`gui/main.d.ts` embeds); Electron loads only unpacked MV2/limited MV3 extensions via `session.loadExtension` and has no native-messaging host for the 1Password/Bitwarden desktop apps, and the plugin API exposes no extension hook. Treat as not available |
+| F12 | Vendor extensions in the in-app browser | **N** (reasoned, not measured). The pane is an Electron `WebContentsView` (`gui/main.d.ts` embeds). Electron loads only unpacked extensions with a subset of Chrome APIs ([electronjs.org/docs/latest/api/extensions](https://www.electronjs.org/docs/latest/api/extensions)), the vendor extensions talk to their desktop apps over native messaging, and the plugin API has no extension hook. Treat as not available |
 
 ### Fixture providers (`spike/providers.ts`, `spike/fixture-cli/`)
 
@@ -261,9 +262,10 @@ warning**, keeping provider-backed values out of agent code until R2 or R3 lands
 - **Sessions.** In memory in the server process, auto-lock (default 10 min idle), `bw lock` / `op signout` on lock and
   on plugin dispose; nothing persisted by us. 1Password manual sign-in itself writes an encrypted session file (D, O9):
   prefer the service account for routine use.
-- **Service account token storage.** Asked once with the card, stored in the macOS keychain (`security
-  add-generic-password -s blindfold-op-agent -a <account> -w` reading the value from stdin via `-w` last argument
-  prompt, not argv), read with `security find-generic-password -w`. N: not run (no keychain writes in this spike).
+- **Service account token storage.** Asked once in the card (masked), stored in the macOS login keychain without
+  touching argv: the command goes to `security -i` on **stdin** (`add-generic-password -U -s blindfold-op-agent -a
+  opencode -w <token>`), read back with `security find-generic-password -s blindfold-op-agent -w` (stdout to the
+  provider only). N: not run (no keychain writes in this spike); check that `security -i` does not echo the line.
 - **Audit.** One line per use: time, session, account id, item title, field name, origin, outcome. No values, no
   tokens. Kept in the service log (and optionally a JSONL under `~/.local/share/opencode/blindfold/audit.jsonl`).
 - **Wrong value.** The card's provider row has "Use another" / "Forget for this site"; a typed value can be replaced
