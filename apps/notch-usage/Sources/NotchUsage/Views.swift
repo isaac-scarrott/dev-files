@@ -70,11 +70,11 @@ struct NoLimitMark: View {
     let lineWidth: CGFloat
 
     var body: some View {
-        // Same stroke as a ring, filling its hole: a ring's stroke straddles radius c, so its inner edge
-        // is at c - lineWidth/2; arms end lineWidth/2 short of that, and their round caps reach it.
+        // Same stroke and reach as a ring: a ring's stroke straddles radius c, so its outer edge is at
+        // c + lineWidth/2; arms end at c, and their round caps reach it.
         Path { p in
             let c = size / 2
-            let arm = (c - lineWidth) / 2.squareRoot()
+            let arm = c / 2.squareRoot()
             p.move(to: CGPoint(x: c - arm, y: c - arm)); p.addLine(to: CGPoint(x: c + arm, y: c + arm))
             p.move(to: CGPoint(x: c + arm, y: c - arm)); p.addLine(to: CGPoint(x: c - arm, y: c + arm))
         }
