@@ -137,10 +137,22 @@ of the wrapper is unchanged. The row renders `metadata.peerMessage.text`; the wr
   moving, header Δy 0.00 over every frame, pinned and scrolled 200-250px up, clicking on the title or on the message's first
   line; a message arriving below keeps the row open (the host then follows the new content as it does for any row).
   Unit-tested with a stubbed layout (`anchor.test.ts`).
+  **Limit, measured 2026-11-03 (harness, real clicks, Δy sampled after every rendered frame, 135-message session, rows in the middle
+  and as the last messages): Δy is 0.00 on open and on close, pinned and scrolled up, for peer, monitor (short body and the 360px
+  capped body) and scheduler rows, whenever the content below the header is tall enough.** The one case that moves is closing a row
+  while the scroller sits within the closed body's height of its end: after the user scrolled down to read the open body (or the row
+  is the last thing in the timeline), the shorter content lowers the scroller's maximum below `scrollTop`, the browser clamps it, and
+  the header lands lower by exactly `scrollTop - newMax` (60, 110 and 200px for wheel scrolls of 60, 110 and 200px, every kind alike;
+  the earlier "40-90px on monitor and scheduler" was this, with short bodies and a short timeline). `holdTop` writes the right value
+  and the write is clamped; nothing is mis-measured (the hold reads layout after the body unmounted, and the same close is exact
+  where there is room). Not fixed on purpose: giving the scroller room would take blank bottom padding on the last row, which then
+  sits as a gap above the next message that arrives and cannot be dropped without the same jump. Parity: `header-hold-*` in
+  `parity.spec.mjs`, on a timeline with room.
 - **Sender side: not done.** The call runs through Code Mode `execute`; the host has no tool-part renderer registry and
   the only route to a "Sent to X" row is rewriting the DOM of the tool row. Skipped.
 - **Sidebar time.** A peer message is a user message, so sidebar-repos' activity time counts it; the timeline rail
   ignores peer messages (its own tests).
+- **Parity seed.** The full spec needs a session built by `seed-parity.mjs <url> <password> <dir> 60 --compact` (opencode-gui-plugins/scripts): plain bubbles alone and as a run (the host joins a run only after a message that has context), a Thought-only group, host subagent rows (short, long), peer / monitor / scheduler rows (one line, two lines, long, consecutive, ending a run, last in the timeline), short enough for the 1300x1500 window to mount all of it. Monitor wakes are rows only with `metadata.monitor` (the seed once left it off, so they stayed raw bubbles). 2026-11-03: 170 pass, 0 fail, 40 N/A (every N/A is a declared `allow` or the host Execute action button, which the seed has no tool part for).
 - **Parity.** `parity.spec.mjs` (selectors moved to the shared row's `data-slot=injected-*`; behaviour identical) runs the row against the host's subagent row, the arrow against the Questions arrow
   (opacity curve, declarations, reduced motion), and records the host action button as N/A (it only exists inside an
   opened Execute part), the alignment probes (height, padding, baselines, centres, content edge, run on both rows and on the open row) and the go-to-session chevron against the host's: 150 to 152 PASS, 0 FAIL, 43 to 45 N/A (the width-curve sample is allowed for its one-frame sampling phase, so it counts as PASS or N/A from run to run), including per-frame hover-in checks (row width, chevron distance from the right edge, slot opacity against the host's easing), each N/A with its reason in the spec.
@@ -245,7 +257,7 @@ when the child went idle after that time, so the queued prompt is not mistaken f
 - **Observer scope**: only the timeline scroll regions are observed, not `document.body`, and nothing runs while no open session holds a peer message. A row the host adds is swapped inside the mutation callback, before paint, by searching only the added nodes; a row whose content slot is not mounted yet is retried on the next frame. Measured in "Performance". There is no extension point that replaces the observer.
 - **Options table (OT-4)** in the README already lists `defaultWaitMs`, `maxWaitMs`, `maxWaitSessions`, `maxReadChars`, `messageLimit` and the `"tree"` scope; checked against `src/options.ts`, nothing to add.
 - **Motion**: the row expands instantly, like the host's collapsibles. The trailing slot reveal is the host subagent row's own (width, margin, opacity, transform, 150ms `ease`), copied after measuring it per frame, so `ease` is the host's, not ours.
-- **Header hold (user decision, deviates from the host)**: the toggled header stays under the pointer through expand and collapse, so the same click area collapses what it expanded; the host does not do this for its own collapsibles. Measured host behaviour is in "Peer row", "Header hold".
+- **Header hold (user decision, deviates from the host)**: the toggled header stays under the pointer through expand and collapse, so the same click area collapses what it expanded; the host does not do this for its own collapsibles. Measured host behaviour is in "Peer row", "Header hold". Exception: closing a row near the end of the timeline moves the header when the scroller has no room (same section).
 - **Trailing slot parity (user decision)**: the row copies the host subagent row's hover exactly, including its width growth; no reserved slot.
 - **Scope default** is `tree`; `all` lets any agent message or interrupt any session (see "Safety properties").
 
