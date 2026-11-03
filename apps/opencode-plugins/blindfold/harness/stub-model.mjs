@@ -14,6 +14,7 @@ createServer((req, res) => {
     const body = JSON.parse(data)
     if (log && body.messages.at(-1)?.role === "tool") writeFileSync(log, JSON.stringify(body)) // the follow-up: what the model sees of the tool result
     const last = body.messages.at(-1)
+    console.log(new Date().toISOString(), "request", "last=" + last?.role, "messages=" + body.messages.length, "tools=" + (body.tools?.length ?? 0))
     res.writeHead(200, { "content-type": "text/event-stream" })
     if (!body.tools?.length || last?.role === "tool") {
       res.write(chunk({ role: "assistant", content: "Done." }))

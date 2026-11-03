@@ -5,58 +5,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Plugin } from "@opencode/plugin"
 import type { Info, ToolContext, ToolEditor } from "@opencode/plugin/promise/tool"
-import blindfold from "../plugin/src/server"
+import { SECRET, context, harness, type Handler, type Hook } from "./harness"
 
-const SECRET = "sk-test-1234567890"
-const context = {
-  sessionID: "ses_test", agent: "build", messageID: "msg_test", id: "call_test",
-  progress: async () => {},
-} as unknown as ToolContext
-
-type Handler = (input: unknown) => Promise<unknown>
-type Hook = (event: any) => unknown
-
-async function harness(options: Record<string, unknown> = {}) {
-  const tools = new Map<string, Info>()
-  const hooks = new Map<string, Hook>()
-  const emitted: Array<[string, Record<string, unknown>]> = []
-  let handlers!: Record<string, Handler>
-  let unreachable = false
-  const cleanup = await blindfold.setup({
-    options,
-    rpc: {
-      register: async (_: unknown, value: Record<string, Handler>) => {
-        handlers = value
-        return { dispose: async () => {}, events: { emit: async (name: string, data: Record<string, unknown>) => {
-          if (unreachable && name === "requested") throw new Error("no subscribers")
-          emitted.push([name, data])
-        } } }
-      },
-    },
-    tool: {
-      transform: async (transform: (editor: Pick<ToolEditor, "add" | "namespace">) => void) =>
-        transform({ namespace: () => {}, add: (tool: Info) => { tools.set(tool.name, tool) } }),
-      hook: async (name: string, hook: Hook) => { hooks.set(`tool.${name}`, hook) },
-    },
-    session: { hook: async (name: string, hook: Hook) => { hooks.set(`session.${name}`, hook) } },
-    shell: { hook: async (name: string, hook: Hook) => { hooks.set(`shell.${name}`, hook) } },
-    permission: { hook: async (name: string, hook: Hook) => { hooks.set(`permission.${name}`, hook) } },
-  } as unknown as Plugin.Context)
-
-  async function store(value = SECRET, name = "API_TOKEN") {
-    const result = tools.get("get")!.execute({ name, reason: "Call the API" }, context)
-    await sleep()
-    const [, data] = emitted.filter(([event]) => event === "requested").at(-1)!
-    await handlers.submit({ requestID: data.requestID, values: { [name]: value } })
-    return result
-  }
-
-  return { tools, hooks, emitted, handlers: () => handlers, store, cleanup, unreachable: () => { unreachable = true } }
-}
-
-test("registers a single get tool, in Code Mode when enabled", async () => {
+test("registers get and fill, in Code Mode when enabled", async () => {
   const { tools } = await harness()
-  expect([...tools.keys()]).toEqual(["get"])
+  expect([...tools.keys()]).toEqual(["get", "fill"])
   const get = tools.get("get")!
   expect(get.options).toEqual({ namespace: "blindfold", codemode: true, pinned: true })
   expect(get.description).toContain("the user is asked to enter it in a card in the chat")
@@ -334,6 +287,38 @@ test("reads op:// secrets from 1Password once, on first use", async () => {
   expect(op.calls()).toHaveLength(2)
 })
 
+test("op reads never use the 1Password app: the integration is off in the child's environment, whatever the service has", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "blindfold-openv-"))
+  const log = join(dir, "env")
+  writeFileSync(join(dir, "op"), `#!/bin/sh\necho "bio=$OP_BIOMETRIC_UNLOCK_ENABLED" >> "${log}"\nprintf "zen-secret-123"\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${dir}:${path}`
+  process.env.OP_BIOMETRIC_UNLOCK_ENABLED = "true"
+  try {
+    const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
+    expect(await tools.get("get")!.execute({ name: "ZEN_KEY" }, context)).toEqual({ content: "zen-secret-123", output: "zen-secret-123" })
+    expect(readFileSync(log, "utf8").trim()).toBe("bio=false")
+  } finally {
+    process.env.PATH = path
+    delete process.env.OP_BIOMETRIC_UNLOCK_ENABLED
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("a signed-out op explains that blindfold does not use the app, and points at the service account", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "blindfold-opout-"))
+  writeFileSync(join(dir, "op"), `#!/bin/sh\necho "[ERROR] 2026/11/03 00:00:00 You are not currently signed in." >&2\nexit 1\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${dir}:${path}`
+  try {
+    const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
+    await expect(tools.get("get")!.execute({ name: "ZEN_KEY" }, context)).rejects.toThrow("blindfold does not use the 1Password app; set up a service account in blindfold-providers")
+  } finally {
+    process.env.PATH = path
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test("falls back to the personal 1Password account when several are signed in", async () => {
   using op = await fakeOnePassword({ accounts: 2 })
   const { tools } = await harness({ secrets: { ZEN_KEY: "op://Agents/Zen/credential" } })
@@ -377,6 +362,12 @@ test("explains when the 1Password CLI isn't installed", async () => {
   } finally {
     process.env.PATH = path
   }
+})
+
+test("rejects invalid rules and audit options", async () => {
+  await expect(harness({ rules: {} })).rejects.toThrow("rules option must be a list")
+  await expect(harness({ rules: [{ tag: "x", account: "a" }] })).rejects.toThrow("tag rules are not supported")
+  await expect(harness({ audit: { file: 3 } })).rejects.toThrow("audit.file option must be a path or false")
 })
 
 test("rejects invalid options and empty secrets", async () => {
@@ -479,7 +470,7 @@ test("rejects a bad field list", async () => {
   await expect(get({ fields: [] })).rejects.toThrow("non-empty")
   await expect(get({ fields: [{ name: "EMAIL" }, { name: "EMAIL" }] })).rejects.toThrow("EMAIL is listed twice")
   await expect(get({ fields: [{ name: "email" }] })).rejects.toThrow("Secret name must match")
-  await expect(get({ fields: [{ name: "EMAIL", kind: "password" }] })).rejects.toThrow("kind must be text, email or secret")
+  await expect(get({ fields: [{ name: "EMAIL", kind: "password" }] })).rejects.toThrow("kind must be text, email, secret or otp")
   await expect(get({ fields: Array.from({ length: 9 }, (_, i) => ({ name: `F_${i}` })) })).rejects.toThrow("At most 8 fields")
 })
 

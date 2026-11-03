@@ -7,26 +7,87 @@ export default Plugin.define({
         const blindfold = ctx.client.rpc(Blindfold);
         // Requests with an open dialog in this client.
         const open = new Set();
+        const labelOf = (field) => field.label;
+        const site = (origin) => (origin ? ` for ${origin.replace(/^https:\/\//, "")}` : "");
+        /** The candidate for each provider field, asking when several can serve it. Undefined when the user backs out or one is locked (the terminal cannot unlock). */
+        async function pick(request) {
+            const picks = {};
+            for (const field of request.fields.filter((item) => item.source?.state === "choose")) {
+                const candidates = field.source.candidates;
+                let key = field.source.selected;
+                if (!key) {
+                    key = await ctx.ui.dialog.select({
+                        title: `Where does ${labelOf(field)} come from${site(request.origin)}?`,
+                        options: candidates.map((item) => ({ title: item.label, value: item.key, description: item.item?.title, disabled: item.state === "locked", footer: item.state === "locked" ? "locked: unlock it in the desktop app" : undefined })),
+                    });
+                    if (key === undefined)
+                        return undefined;
+                }
+                if (candidates.find((item) => item.key === key)?.state === "locked") {
+                    ctx.ui.toast.show({ variant: "error", message: `${candidates.find((item) => item.key === key).label} is locked. Unlock it in the OpenCode desktop app.` });
+                    return undefined;
+                }
+                picks[field.name] = key;
+            }
+            return picks;
+        }
         // The terminal prompt has no masked mode, so a secret is shown as typed: one prompt per field, in order.
         async function answer(request, options) {
             const ack = (await blindfold.ack({ requestID: request.requestID }, options));
             if (!ack.accepted)
                 return;
+            open.add(request.requestID);
+            const providers = request.fields.filter((field) => field.source?.state === "choose");
+            let remember = false;
+            if (providers.length > 0) {
+                const picks = await pick(request);
+                if (!open.has(request.requestID))
+                    return;
+                const named = providers.map((field) => `${field.name} from ${field.source.candidates.find((item) => item.key === picks?.[field.name])?.label ?? "your password manager"}`).join(", ");
+                const decision = picks && (await ctx.ui.dialog.select({
+                    title: `${request.via === "fill" ? "Fill" : "Use"} ${named}${site(request.origin)}?`,
+                    options: [
+                        { title: "Allow", value: "allow", description: "This once" },
+                        { title: "Always allow", value: "always", description: "Save a rule for this site and account" },
+                        { title: "Deny", value: "deny" },
+                    ],
+                }));
+                if (!open.delete(request.requestID))
+                    return;
+                if (!picks || !decision || decision === "deny") {
+                    await blindfold.cancel({ requestID: request.requestID }, options);
+                    return;
+                }
+                remember = decision === "always";
+                open.add(request.requestID);
+                const values = await typed(request, options);
+                if (!values)
+                    return;
+                await blindfold.submit({ requestID: request.requestID, values, picks, remember }, options);
+                return;
+            }
+            const values = await typed(request, options);
+            if (values)
+                await blindfold.submit({ requestID: request.requestID, values }, options);
+        }
+        /** The fields no provider serves, asked one at a time. Undefined when the user cancels or another client answered. */
+        async function typed(request, options) {
+            const fields = request.fields.filter((field) => field.source?.state !== "choose");
             const values = {};
-            for (const field of request.fields) {
+            for (const field of fields) {
                 while (true) {
                     open.add(request.requestID);
                     const value = await ctx.ui.dialog.prompt({
                         title: `Enter ${field.label}`,
-                        description: request.fields.length > 1 ? `${request.reason} (${Object.keys(values).length + 1} of ${request.fields.length})` : request.reason,
+                        description: fields.length > 1 ? `${request.reason} (${Object.keys(values).length + 1} of ${fields.length})` : request.reason,
                         placeholder: field.masked ? "Secret value" : field.label,
                     });
                     // Another client answered, or the request expired, while the dialog was open.
                     if (!open.delete(request.requestID))
-                        return;
+                        return undefined;
                     if (value === undefined) {
                         await blindfold.cancel({ requestID: request.requestID }, options);
-                        return;
+                        return undefined;
                     }
                     const text = normalize(field.kind, value);
                     // Empty and clearly invalid submissions reopen the dialog because a value is required.
@@ -36,7 +97,7 @@ export default Plugin.define({
                     break;
                 }
             }
-            await blindfold.submit({ requestID: request.requestID, values }, options);
+            return values;
         }
         const stopRequested = blindfold.events.on("requested", async (event) => {
             const request = event.data;

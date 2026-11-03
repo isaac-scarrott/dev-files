@@ -1,11 +1,12 @@
-/** What a field holds. `secret` is masked; `text` and `email` are shown as typed. */
-export type Kind = "text" | "email" | "secret";
-/** A field as the agent names it. */
+/** What a field holds. `secret` and `otp` (a one-time code, never kept) are masked; `text` and `email` are shown as typed. */
+export type Kind = "text" | "email" | "secret" | "otp";
+/** A field as the agent names it. `field` says which part of a vault item it is: username, password, otp or a field label. */
 export type FieldInput = {
     name: string;
     label?: string;
     kind?: Kind;
     replace?: boolean;
+    field?: string;
 };
 /** A field as the user is asked for it: the label is always set, and `masked` says how the input draws. */
 export type Field = {
@@ -31,6 +32,7 @@ export declare function parseFields(input: {
 }): {
     field: Field;
     replace?: boolean;
+    item?: string;
 }[];
 export type Check = {
     level: "ok" | "warn" | "invalid";

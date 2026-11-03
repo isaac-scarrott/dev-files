@@ -1,15 +1,15 @@
-/** What a field holds. `secret` is masked; `text` and `email` are shown as typed. */
-export type Kind = "text" | "email" | "secret"
+/** What a field holds. `secret` and `otp` (a one-time code, never kept) are masked; `text` and `email` are shown as typed. */
+export type Kind = "text" | "email" | "secret" | "otp"
 
-/** A field as the agent names it. */
-export type FieldInput = { name: string; label?: string; kind?: Kind; replace?: boolean }
+/** A field as the agent names it. `field` says which part of a vault item it is: username, password, otp or a field label. */
+export type FieldInput = { name: string; label?: string; kind?: Kind; replace?: boolean; field?: string }
 
 /** A field as the user is asked for it: the label is always set, and `masked` says how the input draws. */
 export type Field = { name: string; label: string; kind: Kind; masked: boolean }
 
 export const NAME_PATTERN = "^[A-Z_][A-Z0-9_]*$"
 export const MAX_FIELDS = 8
-const KINDS: readonly string[] = ["text", "email", "secret"]
+const KINDS: readonly string[] = ["text", "email", "secret", "otp"]
 
 // Whole `_`-separated words, so KEY matches API_KEY but not KEYBOARD.
 const SECRET_WORDS = new Set(["PASS", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE", "TOKEN", "KEY", "SECRET", "CREDENTIAL", "CREDENTIALS"])
@@ -17,6 +17,7 @@ const SECRET_WORDS = new Set(["PASS", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE",
 const SECRET_PARTS = ["PASSWORD", "PASSWD", "PASSPHRASE", "TOKEN", "SECRET"]
 const EMAIL_WORDS = new Set(["EMAIL", "MAIL"])
 const TEXT_WORDS = new Set(["USER", "USERNAME", "LOGIN"])
+const OTP_WORDS = new Set(["OTP", "TOTP", "MFA", "2FA"])
 
 const words = (name: string) => name.split("_").filter(Boolean)
 
@@ -26,6 +27,7 @@ export function looksSecret(name: string) {
 
 /** The kind a name implies. A name that matches nothing is a secret, so an unknown name is masked. */
 export function defaultKind(name: string): Kind {
+  if (words(name).some((word) => OTP_WORDS.has(word))) return "otp"
   if (looksSecret(name)) return "secret"
   const parts = words(name)
   if (parts.some((word) => EMAIL_WORDS.has(word))) return "email"
@@ -44,13 +46,13 @@ function humanize(name: string) {
  */
 export function resolveField(input: FieldInput): Field {
   const kind = input.kind ?? defaultKind(input.name)
-  const masked = kind === "secret" || (looksSecret(input.name) && kind !== "text")
-  const label = input.label?.trim() || humanize(input.name)
-  return { name: input.name, label, kind: masked ? "secret" : kind, masked }
+  const masked = kind === "secret" || kind === "otp" || (looksSecret(input.name) && kind !== "text")
+  const label = input.label?.trim() || (kind === "otp" ? "One-time code" : humanize(input.name))
+  return { name: input.name, label, kind: masked && kind !== "otp" ? "secret" : kind, masked }
 }
 
 /** Checks and normalises the agent's field list. Throws a message safe to show the agent. */
-export function parseFields(input: { name?: unknown; fields?: unknown }): { field: Field; replace?: boolean }[] {
+export function parseFields(input: { name?: unknown; fields?: unknown }): { field: Field; replace?: boolean; item?: string }[] {
   const pattern = new RegExp(NAME_PATTERN)
   const hasName = input.name !== undefined
   const hasFields = input.fields !== undefined
@@ -65,10 +67,11 @@ export function parseFields(input: { name?: unknown; fields?: unknown }): { fiel
     if (typeof name !== "string" || !pattern.test(name)) throw new Error(`Secret name must match ${NAME_PATTERN}`)
     if (seen.has(name)) throw new Error(`Field ${name} is listed twice.`)
     seen.add(name)
-    if (entry?.kind !== undefined && (typeof entry.kind !== "string" || !KINDS.includes(entry.kind))) throw new Error(`Field ${name}: kind must be text, email or secret.`)
+    if (entry?.kind !== undefined && (typeof entry.kind !== "string" || !KINDS.includes(entry.kind))) throw new Error(`Field ${name}: kind must be text, email, secret or otp.`)
     if (entry?.label !== undefined && typeof entry.label !== "string") throw new Error(`Field ${name}: label must be a string.`)
+    if (entry?.field !== undefined && (typeof entry.field !== "string" || entry.field === "" || entry.field.length > 80)) throw new Error(`Field ${name}: field must be a short non-empty string.`)
     const field = resolveField({ name, label: entry?.label as string | undefined, kind: entry?.kind as Kind | undefined })
-    return { field, replace: entry?.replace === true ? true : undefined }
+    return { field, replace: entry?.replace === true ? true : undefined, item: entry?.field as string | undefined }
   })
 }
 
@@ -92,4 +95,4 @@ export function check(kind: Kind, value: string): Check {
 }
 
 /** Email and plain text are trimmed on submit; a secret is sent exactly as typed. */
-export const normalize = (kind: Kind, value: string) => (kind === "secret" ? value : value.trim())
+export const normalize = (kind: Kind, value: string) => (kind === "secret" ? value : kind === "otp" ? value.replace(/\s+/g, "") : value.trim())

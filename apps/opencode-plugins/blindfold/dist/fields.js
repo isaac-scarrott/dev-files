@@ -1,18 +1,21 @@
 export const NAME_PATTERN = "^[A-Z_][A-Z0-9_]*$";
 export const MAX_FIELDS = 8;
-const KINDS = ["text", "email", "secret"];
+const KINDS = ["text", "email", "secret", "otp"];
 // Whole `_`-separated words, so KEY matches API_KEY but not KEYBOARD.
 const SECRET_WORDS = new Set(["PASS", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE", "TOKEN", "KEY", "SECRET", "CREDENTIAL", "CREDENTIALS"]);
 // Long enough to be unambiguous inside a run-together name such as GITHUBTOKEN.
 const SECRET_PARTS = ["PASSWORD", "PASSWD", "PASSPHRASE", "TOKEN", "SECRET"];
 const EMAIL_WORDS = new Set(["EMAIL", "MAIL"]);
 const TEXT_WORDS = new Set(["USER", "USERNAME", "LOGIN"]);
+const OTP_WORDS = new Set(["OTP", "TOTP", "MFA", "2FA"]);
 const words = (name) => name.split("_").filter(Boolean);
 export function looksSecret(name) {
     return words(name).some((word) => SECRET_WORDS.has(word)) || SECRET_PARTS.some((part) => name.includes(part));
 }
 /** The kind a name implies. A name that matches nothing is a secret, so an unknown name is masked. */
 export function defaultKind(name) {
+    if (words(name).some((word) => OTP_WORDS.has(word)))
+        return "otp";
     if (looksSecret(name))
         return "secret";
     const parts = words(name);
@@ -32,9 +35,9 @@ function humanize(name) {
  */
 export function resolveField(input) {
     const kind = input.kind ?? defaultKind(input.name);
-    const masked = kind === "secret" || (looksSecret(input.name) && kind !== "text");
-    const label = input.label?.trim() || humanize(input.name);
-    return { name: input.name, label, kind: masked ? "secret" : kind, masked };
+    const masked = kind === "secret" || kind === "otp" || (looksSecret(input.name) && kind !== "text");
+    const label = input.label?.trim() || (kind === "otp" ? "One-time code" : humanize(input.name));
+    return { name: input.name, label, kind: masked && kind !== "otp" ? "secret" : kind, masked };
 }
 /** Checks and normalises the agent's field list. Throws a message safe to show the agent. */
 export function parseFields(input) {
@@ -58,11 +61,13 @@ export function parseFields(input) {
             throw new Error(`Field ${name} is listed twice.`);
         seen.add(name);
         if (entry?.kind !== undefined && (typeof entry.kind !== "string" || !KINDS.includes(entry.kind)))
-            throw new Error(`Field ${name}: kind must be text, email or secret.`);
+            throw new Error(`Field ${name}: kind must be text, email, secret or otp.`);
         if (entry?.label !== undefined && typeof entry.label !== "string")
             throw new Error(`Field ${name}: label must be a string.`);
+        if (entry?.field !== undefined && (typeof entry.field !== "string" || entry.field === "" || entry.field.length > 80))
+            throw new Error(`Field ${name}: field must be a short non-empty string.`);
         const field = resolveField({ name, label: entry?.label, kind: entry?.kind });
-        return { field, replace: entry?.replace === true ? true : undefined };
+        return { field, replace: entry?.replace === true ? true : undefined, item: entry?.field };
     });
 }
 /**
@@ -86,4 +91,4 @@ export function check(kind, value) {
     return { level: "ok" };
 }
 /** Email and plain text are trimmed on submit; a secret is sent exactly as typed. */
-export const normalize = (kind, value) => (kind === "secret" ? value : value.trim());
+export const normalize = (kind, value) => (kind === "secret" ? value : kind === "otp" ? value.replace(/\s+/g, "") : value.trim());

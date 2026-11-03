@@ -11,6 +11,32 @@ const reply = {
     required: ["accepted"],
     additionalProperties: false,
 };
+const candidate = {
+    type: "object",
+    properties: {
+        key: { type: "string" },
+        account: { type: "string" },
+        label: { type: "string" },
+        state: { enum: ["ready", "locked"] },
+        methods: { type: "array", items: { enum: ["masterPassword", "serviceAccount", "apiKey"] } },
+        item: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } }, required: ["id", "title"], additionalProperties: false },
+        covered: { type: "boolean" },
+    },
+    required: ["key", "account", "label", "state", "methods", "covered"],
+    additionalProperties: false,
+};
+/** Where a field's value can come from: the accounts that hold it, which one is chosen, or why none can. */
+const source = {
+    type: "object",
+    properties: {
+        state: { enum: ["choose", "unavailable"] },
+        candidates: { type: "array", items: candidate },
+        selected: { type: "string" },
+        hint: { type: "string" },
+    },
+    required: ["state", "candidates"],
+    additionalProperties: false,
+};
 const requestedSchema = {
     type: "object",
     properties: {
@@ -19,6 +45,8 @@ const requestedSchema = {
         callID: { type: "string" },
         messageID: { type: "string" },
         reason: { type: "string" },
+        origin: { type: "string" },
+        via: { enum: ["get", "fill"] },
         fields: {
             type: "array",
             items: {
@@ -26,8 +54,9 @@ const requestedSchema = {
                 properties: {
                     name: { type: "string" },
                     label: { type: "string" },
-                    kind: { enum: ["text", "email", "secret"] },
+                    kind: { enum: ["text", "email", "secret", "otp"] },
                     masked: { type: "boolean" },
+                    source,
                 },
                 required: ["name", "label", "kind", "masked"],
                 additionalProperties: false,
@@ -40,18 +69,55 @@ const requestedSchema = {
 export const Blindfold = Rpc.define({
     id: "blindfold",
     methods: {
+        // `values` are the typed fields; `picks` chooses a candidate per provider field (default: the selected one);
+        // `remember` is "Always allow": a saved rule for each provider field.
         submit: {
             input: {
                 type: "object",
                 properties: {
                     requestID: { type: "string" },
                     values: { type: "object", additionalProperties: { type: "string", minLength: 1 } },
+                    picks: { type: "object", additionalProperties: { type: "string" } },
+                    remember: { type: "boolean" },
                 },
                 required: ["requestID", "values"],
                 additionalProperties: false,
             },
             output: reply,
         },
+        // Unlocks an account for an open request. The secrets travel only here, in `input`; the reply carries the vendor's
+        // first error line (never a value) when it failed.
+        unlock: {
+            input: {
+                type: "object",
+                properties: {
+                    requestID: { type: "string" },
+                    account: { type: "string" },
+                    input: {
+                        type: "object",
+                        properties: {
+                            method: { enum: ["masterPassword", "serviceAccount", "apiKey"] },
+                            password: { type: "string" },
+                            token: { type: "string" },
+                            clientId: { type: "string" },
+                            clientSecret: { type: "string" },
+                        },
+                        required: ["method"],
+                        additionalProperties: false,
+                    },
+                },
+                required: ["requestID", "account", "input"],
+                additionalProperties: false,
+            },
+            output: { type: "object", properties: { accepted: { type: "boolean" }, error: { type: "string" } }, required: ["accepted"], additionalProperties: false },
+        },
+        // The saved rules, the accounts' lock state and the recent uses, for the settings page.
+        overview: {
+            input: { type: "object", properties: {}, additionalProperties: false },
+            output: { type: "object", properties: { rules: { type: "array", items: { type: "object" } }, accounts: { type: "array", items: { type: "object" } }, audit: { type: "array", items: { type: "object" } } }, required: ["rules", "accounts", "audit"], additionalProperties: false },
+        },
+        revoke: { input: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false }, output: reply },
+        lock: { input: { type: "object", properties: { account: { type: "string" } }, required: ["account"], additionalProperties: false }, output: reply },
         ack: { input: request, output: reply },
         // What is still waiting, so a window that reloaded while a card was open shows it again.
         list: {
@@ -64,6 +130,17 @@ export const Blindfold = Rpc.define({
         requested: {
             schema: requestedSchema,
         },
+        // The request changed (an account was unlocked): the card shows the new rows.
+        updated: {
+            schema: {
+                type: "object",
+                properties: { requestID: { type: "string" }, fields: requestedSchema.properties.fields },
+                required: ["requestID", "fields"],
+                additionalProperties: false,
+            },
+        },
+        // Rules or account state changed: the settings page reloads.
+        changed: { schema: { type: "object", properties: {}, additionalProperties: false } },
         resolved: {
             schema: {
                 type: "object",
