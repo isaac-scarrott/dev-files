@@ -16,6 +16,8 @@ rm -f /private/tmp/bf-run/audit.jsonl
 "$HERE/setup-fixtures.sh" > /dev/null
 BF_STUB_LOG=$BF_REQ_LOG node "$HERE/stub-model.mjs" > /private/tmp/bf-run/stub.log 2>&1 &
 STUB=$!
+REACT_UMD_DIR=${REACT_UMD_DIR:-/private/tmp/bf-react/node_modules/react-dom} node "$HERE/login-page/server.mjs" 47321 > /private/tmp/bf-run/page.log 2>&1 &
+PAGE=$!
 "$SKILL/desktop-harness.sh" stop > /dev/null 2>&1; rm -rf "$OC_HARNESS_ROOT"
 OC_HARNESS_EXTRA_CONFIG=/private/tmp/bf-run/provider.json OC_HARNESS_TURNS=4 perl -e 'alarm 150; exec @ARGV' "$SKILL/desktop-harness.sh" start "$PLUGINS/blindfold-providers" "$PLUGINS/blindfold" | tail -1
 node "$HERE/harness-config.mjs" "$OC_HARNESS_ROOT" 0.25
@@ -24,5 +26,5 @@ perl -e 'alarm 600; exec @ARGV' node "$HERE/drive-providers.mjs" "${1:-/private/
 CODE=$?
 "$SKILL/desktop-harness.sh" stop
 pkill -f "$OC_HARNESS_ROOT/desktop/cli/" 2>/dev/null
-kill $STUB 2>/dev/null
+kill $STUB $PAGE 2>/dev/null
 exit $CODE

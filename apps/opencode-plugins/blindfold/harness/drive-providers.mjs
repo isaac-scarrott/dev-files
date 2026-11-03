@@ -22,7 +22,7 @@ const { chromium } = createRequire(`${process.env.BF_PW ?? "/private/tmp/bf-pw"}
 // The fake values the fixtures hold and the user would type. None of them may appear anywhere durable.
 const VALUES = { googlePw: "fixture-google-pw", googleMail: "personal.fixture@example.test", workPw: "fixture-gwork-pw", workMail: "work.fixture@example.test", holibobPw: "fixture-holibob-pw", ghPw: "fixture-gh-pw" }
 const SECRETS = ["ops_fixture_service_token", "fixture-bw-master", "fixture-client-secret"]
-const ALL = [...Object.values(VALUES), ...SECRETS]
+const ALL = [...Object.values(VALUES), ...SECRETS, "fixture-local-pw", "ada.fixture@example.test"]
 
 const results = []
 const check = (name, ok, detail = "") => {
@@ -256,7 +256,65 @@ await sleep(1200)
 }
 await page.locator("[data-titlebar-tab]").first().click()
 
-// ---- 8. Nothing durable holds a value ----
+// ---- 8. Fill: the value goes from the vault to the page and nowhere else ----
+const PAGE = "http://127.0.0.1:47321"
+const fillCode = (url, origin) => `const tab = await tools.browser.tabs.open({ url: ${JSON.stringify(url)}, focus: false })
+let ready = false
+for (let i = 0; i < 40 && !ready; i++) {
+  const r = await tools.browser.evaluate({ tabID: tab.id, script: "new Promise((done) => setTimeout(() => done(document.readyState === 'complete' && !!document.getElementById('password')), 300))" })
+  ready = r.value === true
+}
+const f = await tools.blindfold.fill({ tabID: tab.id, origin: ${JSON.stringify(origin)}, fields: [{ name: "EMAIL" }, { name: "PASSWORD" }], reason: "Sign in to the local test page" })
+const r = await tools.browser.evaluate({ tabID: tab.id, script: f.script })
+return JSON.stringify({ placeholder: f.script, report: r.value })`
+const target = (host = "127.0.0.1") => browser.contexts().flatMap((context) => context.pages()).find((p) => p.url().includes(`${host}:47321`))
+await ask(fillCode(`${PAGE}/login`, PAGE))
+await card().waitFor({ timeout: 60000 })
+await sleep(800)
+{
+  const title = await page.locator("[data-blindfold-request] [data-slot=title]").textContent()
+  check("fill card: Fill EMAIL and PASSWORD for the site from the account", title === "Fill EMAIL and PASSWORD for http://127.0.0.1:47321 from Personal (1Password)?", title)
+}
+await shot("13-fill-card")
+await button("Allow").click()
+await answered().first().waitFor({ timeout: 10000 })
+{
+  const model = await followUp(60000)
+  const content = (() => { try { return String(JSON.parse(model).messages.filter((m) => m.role === "tool").at(-1)?.content) } catch { return model } })()
+  check("the agent got a placeholder and a report with no value", /"ok":true/.test(content) && /blindfold:fill\/[0-9a-f]{32}/.test(content) && leaks(model).length === 0 && !model.includes("fixture-local-pw") && !model.includes("ada.fixture@example.test"), content.slice(0, 260))
+}
+{
+  const live = target()
+  check("the test page is open in the in-app browser (a CDP target)", !!live, browser.contexts().flatMap((context) => context.pages()).map((p) => p.url()).join(" "))
+  if (live) {
+    const state = await live.evaluate(() => {
+      const password = document.getElementById("password")
+      return { password: password.value, email: document.getElementById("identifierId").value, masked: [...document.querySelectorAll("[data-blindfold-masked]")].map((el) => el.id || el.tagName), security: getComputedStyle(password).webkitTextSecurity, echo: document.body.innerText.includes("Signing in as") }
+    })
+    check("the page holds both values, in the fields", state.password === "fixture-local-pw" && state.email === "ada.fixture@example.test", `masked=${state.masked.join(",")}`)
+    check("the fields are masked (discs), and the echo of the email too", state.security === "disc" && state.masked.includes("identifierId") && state.masked.includes("password"), JSON.stringify(state))
+    await live.screenshot({ path: `${SHOTS}/14-filled-page.png` })
+    const { execFileSync } = await import("node:child_process")
+    const ocr = execFileSync("tesseract", [`${SHOTS}/14-filled-page.png`, "stdout"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    check("OCR of a screenshot of the page finds neither value", !/fixture-local|ada\.fixture|local-pw/i.test(ocr), ocr.replace(/\s+/g, " ").slice(0, 140))
+  }
+}
+
+// The page script refuses a page whose origin is not the approved one, before touching a field.
+await ask(fillCode("http://localhost:47321/login", PAGE))
+await card().waitFor({ timeout: 60000 })
+await button("Allow").click()
+await answered().first().waitFor({ timeout: 10000 })
+{
+  const model = await followUp(60000)
+  const content = (() => { try { return String(JSON.parse(model).messages.filter((m) => m.role === "tool").at(-1)?.content) } catch { return model } })()
+  check("another origin: the report says origin, ok is false, no value", /"ok":false/.test(content) && /origin/.test(content) && !model.includes("fixture-local-pw"), content.slice(0, 200))
+  const live = target("localhost")
+  const typed = live ? await live.evaluate(() => (document.getElementById("password") || {}).value ?? "n/a") : "n/a"
+  check("and the password field on that page is still empty", typed === "", JSON.stringify(typed))
+}
+
+// ---- 9. Nothing durable holds a value ----
 {
   const listed = JSON.parse(await api("/api/session"))
   const items = Array.isArray(listed) ? listed : listed.data
