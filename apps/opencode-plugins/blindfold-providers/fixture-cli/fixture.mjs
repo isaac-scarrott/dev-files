@@ -11,6 +11,8 @@ const [tool, ...args] = process.argv.slice(2)
 const state = process.env.FIXTURE_STATE ?? "/tmp/blindfold-fixture"
 mkdirSync(state, { recursive: true })
 appendFileSync(join(state, "argv.log"), JSON.stringify([tool, ...args]) + "\n")
+// What the child was given, without values: whether the 1Password app integration was switched off, and which kind of credential.
+appendFileSync(join(state, "env.log"), JSON.stringify({ tool, bio: process.env.OP_BIOMETRIC_UNLOCK_ENABLED ?? null, service: !!process.env.OP_SERVICE_ACCOUNT_TOKEN, inheritedSession: !!process.env.OP_SESSION_inherited }) + "\n")
 
 const PASSWORD = { op: "fixture-op-master", bw: "fixture-bw-master" }
 const SERVICE_TOKEN = "ops_fixture_service_token"
@@ -18,9 +20,9 @@ const BW_API = { id: "user.fixture-client", secret: "fixture-client-secret" }
 const OTP_SEED = "JBSWY3DPEHPK3PXP" // RFC 6238 test-style base32 seed, fake
 
 const VAULT = [
-  { id: "op1", vault: "Agent", title: "Google (personal)", urls: ["https://accounts.google.com"], username: "personal.fixture@example.test", password: "fixture-google-pw", otp: true },
-  { id: "op2", vault: "Agent", title: "GitHub", urls: ["https://github.com"], username: "fixture-gh", password: "fixture-gh-pw", otp: true },
-  { id: "op3", vault: "Private", title: "Bank", urls: ["https://bank.example"], username: "x", password: "fixture-bank-pw", otp: false },
+  { id: "op1", vaultId: "vlt_agent", vault: "Agent", title: "Google (personal)", urls: ["https://accounts.google.com"], username: "personal.fixture@example.test", password: "fixture-google-pw", otp: true },
+  { id: "op2", vaultId: "vlt_agent", vault: "Agent", title: "GitHub", urls: ["https://github.com"], username: "fixture-gh", password: "fixture-gh-pw", otp: true },
+  { id: "op3", vaultId: "vlt_private", vault: "Private", title: "Bank", urls: ["https://bank.example"], username: "x", password: "fixture-bank-pw", otp: false },
 ]
 const BW_VAULT = [
   { id: "bw1", organizationId: "org-work", name: "Holibob admin", uris: ["https://admin.holibob.tech"], username: "work.fixture@holibob.test", password: "fixture-holibob-pw", totp: OTP_SEED },
@@ -48,6 +50,7 @@ const fail = (message, code = 1) => {
   process.stderr.write(message + "\n")
   process.exit(code)
 }
+const sessionToken = () => process.env[Object.keys(process.env).find((key) => key.startsWith("OP_SESSION_") && key !== "OP_SESSION_inherited") ?? "OP_SESSION"]
 const sessions = () => (existsSync(join(state, `${tool}-sessions.json`)) ? JSON.parse(readFileSync(join(state, `${tool}-sessions.json`), "utf8")) : {})
 const saveSessions = (s) => writeFileSync(join(state, `${tool}-sessions.json`), JSON.stringify(s))
 const stdin = () => (process.stdin.isTTY ? "" : readFileSync(0, "utf8").replace(/\n$/, ""))
@@ -64,7 +67,12 @@ if (tool === "op") {
       if (process.env.OP_SERVICE_ACCOUNT_TOKEN !== SERVICE_TOKEN) fail("[ERROR] 2026/11/03 00:00:00 invalid service account token")
       return ["Agent"]
     }
-    const token = process.env.OP_SESSION_personal ?? process.env.OP_SESSION
+    // Without a token or a session `op` would ask the 1Password app ("Allow opencode-cli to get CLI access"). Count it.
+    if (process.env.OP_BIOMETRIC_UNLOCK_ENABLED !== "false") {
+      appendFileSync(join(state, "app-prompts.log"), "prompt\n")
+      fail("[ERROR] 2026/11/03 00:00:00 fixture: the app integration would have prompted")
+    }
+    const token = sessionToken()
     const all = sessions()
     const session = token && all[token]
     if (!session || Date.now() - session.used > IDLE) fail("[ERROR] 2026/11/03 00:00:00 You are not currently signed in. Please run `op signin --help` for instructions")
@@ -82,7 +90,7 @@ if (tool === "op") {
     process.exit(0)
   }
   if (cmd === "signout") {
-    const token = process.env.OP_SESSION_personal ?? process.env.OP_SESSION
+    const token = sessionToken()
     const all = sessions()
     delete all[token]
     saveSessions(all)
@@ -92,7 +100,7 @@ if (tool === "op") {
   const visible = VAULT.filter((item) => vaults.includes(item.vault))
   if (cmd === "item" && sub === "list") {
     // Like op: overview only, no field values; urls carry the origins.
-    console.log(JSON.stringify(visible.map((i) => ({ id: i.id, title: i.title, vault: { name: i.vault }, category: "LOGIN", urls: i.urls.map((href, n) => ({ href, primary: n === 0 })) }))))
+    console.log(JSON.stringify(visible.map((i) => ({ id: i.id, title: i.title, vault: { id: i.vaultId, name: i.vault }, category: "LOGIN", urls: i.urls.map((href, n) => ({ href, primary: n === 0 })) }))))
     process.exit(0)
   }
   if (cmd === "item" && sub === "get") {
@@ -111,12 +119,45 @@ if (tool === "op") {
   if (cmd === "read") {
     const ref = args.find((a) => a.startsWith("op://"))
     const m = ref && ref.match(/^op:\/\/([^/]+)\/([^/]+)\/([^?]+)(\?attribute=otp)?$/)
-    const item = m && visible.find((i) => i.vault === m[1] && i.title === m[2])
+    const item = m && visible.find((i) => (i.vault === m[1] || i.vaultId === m[1]) && (i.title === m[2] || i.id === m[2]))
     if (!item) fail(`[ERROR] 2026/11/03 00:00:00 could not read secret '${ref}': error resolving item`)
     process.stdout.write(m[4] ? totp(OTP_SEED) : item[m[3]])
     process.exit(0)
   }
   fail(`fixture op: unsupported ${args.join(" ")}`, 2)
+}
+
+if (tool === "security") {
+  // The login keychain, as far as blindfold uses it: add-generic-password through `-i` (stdin), find, delete.
+  const file = join(state, "keychain.json")
+  const store = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
+  const save = () => writeFileSync(file, JSON.stringify(store))
+  const parse = (line) => {
+    const words = [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2])
+    const get = (flag) => words[words.indexOf(flag) + 1]
+    return { command: words[0], service: get("-s"), password: get("-w") }
+  }
+  if (args[0] === "-i") {
+    for (const line of stdin().split("\n").filter(Boolean)) {
+      const { command, service, password } = parse(line)
+      if (command !== "add-generic-password") fail(`fixture security: unsupported ${command}`, 2)
+      store[service] = password
+    }
+    save()
+    process.exit(0)
+  }
+  if (args[0] === "find-generic-password") {
+    const service = args[args.indexOf("-s") + 1]
+    if (!(service in store)) fail("security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.", 44)
+    process.stdout.write(store[service] + "\n")
+    process.exit(0)
+  }
+  if (args[0] === "delete-generic-password") {
+    delete store[args[args.indexOf("-s") + 1]]
+    save()
+    process.exit(0)
+  }
+  fail(`fixture security: unsupported ${args.join(" ")}`, 2)
 }
 
 if (tool === "bw") {
@@ -151,6 +192,10 @@ if (tool === "bw") {
     data.sessions.push(key)
     save()
     process.stdout.write(has("--raw") ? key : `export BW_SESSION="${key}"\n`)
+    process.exit(0)
+  }
+  if (cmd === "sync") {
+    console.log("Syncing complete.")
     process.exit(0)
   }
   if (cmd === "lock") {
