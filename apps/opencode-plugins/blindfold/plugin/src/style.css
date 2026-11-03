@@ -100,3 +100,102 @@
 [data-blindfold-row] [data-slot='collapsible-trigger'] {
   pointer-events: none;
 }
+/* A field a password manager serves: where it comes from, a choice when several can, the unlock when one is locked. */
+[data-blindfold-card] [data-slot='source'] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--v2-text-text-base);
+}
+[data-blindfold-card] [data-slot='source'] svg {
+  flex: none;
+  color: var(--v2-text-text-muted);
+}
+[data-blindfold-card] [data-slot='source'][data-state='locked'] svg {
+  color: var(--v2-state-fg-warning);
+}
+[data-blindfold-card] [data-slot='source-text'] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-blindfold-card] [data-slot='choices'] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+[data-blindfold-card] [data-slot='choice'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--v2-text-text-base);
+  font: inherit;
+  text-align: start;
+}
+[data-blindfold-card] [data-slot='choice']:hover:not(:disabled) {
+  background: var(--v2-background-bg-layer-02);
+}
+[data-blindfold-card] [data-slot='choice']:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
+}
+[data-blindfold-card] [data-slot='choice'][aria-checked='true'] {
+  border-color: var(--v2-border-border-base);
+  background: var(--v2-background-bg-layer-02);
+}
+[data-blindfold-card] [data-slot='choice-dot'] {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--v2-text-text-muted);
+}
+[data-blindfold-card] [data-slot='choice'][aria-checked='true'] [data-slot='choice-dot'] {
+  border-color: var(--v2-text-text-base);
+  background: var(--v2-text-text-base);
+}
+[data-blindfold-card] [data-slot='choice-text'] {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-blindfold-card] [data-slot='choice-note'] {
+  flex: none;
+  color: var(--v2-state-fg-warning);
+  font-size: 12px;
+}
+[data-blindfold-card] [data-slot='unlock'] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+[data-blindfold-card] [data-slot='unlock-input'] [data-slot='label'] {
+  padding-bottom: 4px;
+}
+[data-blindfold-card] [data-slot='unlock-input'] > :last-child {
+  width: 100%;
+}
+[data-blindfold-card] [data-slot='unlock-input'] input {
+  width: 100%;
+  box-sizing: border-box;
+}
+[data-blindfold-card] [data-slot='unlock-foot'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+[data-blindfold-card] [data-slot='unlock-foot'] [data-slot='hint'] {
+  flex: 1;
+  min-width: 0;
+  min-height: 16px;
+  color: var(--v2-state-fg-danger);
+  font-size: 12px;
+  line-height: 16px;
+}
