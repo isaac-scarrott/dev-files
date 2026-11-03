@@ -55,10 +55,17 @@ export function RobotIcon() {
 }
 
 /**
- * An ECG trace, the monitors' glyph (heartbeat.ts). `live` beats, `still` shows the trace at rest, `flat` is the line a monitor ends
- * on; a change of state animates, and a flat icon draws nothing animated. Needs `heartbeatIconCss` in the document (`laneChipCss` and
- * `nativeUiCss` include it).
+ * An ECG trace, the monitors' glyph (heartbeat.ts). `live` sweeps a head of light along the trace, `still` shows the trace at rest,
+ * `flat` is the line a monitor ends on; a change of state animates, and a flat icon draws nothing animated. Needs `heartbeatIconCss`
+ * in the document (`laneChipCss` and `nativeUiCss` include it).
  */
 export function HeartbeatIcon(props: { state: HeartbeatState }) {
-  return <span data-slot="drawn-icon" data-icon="heartbeat" data-state={props.state} aria-hidden="true" />
+  return (
+    <span data-slot="drawn-icon" data-icon="heartbeat" data-state={props.state} aria-hidden="true">
+      <b>
+        <i />
+      </b>
+      <u />
+    </span>
+  )
 }

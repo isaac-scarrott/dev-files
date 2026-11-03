@@ -4,13 +4,13 @@ Start a command in the background and wake the session with its output as it hap
 
 > **Credit:** Idea and tool wording follow Claude Code's Monitor tool (Anthropic); the wrapper and untrusted-data trailer follow the `<cross-session-message>` pattern in [`orchestrator-tools`](../orchestrator-tools). No code was copied.
 
-![The "5 monitors" chip with its popover open on five monitor rows, and the timeline rows above it, in light: the heartbeat is flashing on the chip and every row at once](media/monitor-chip-light.png)
+![The "5 monitors" chip with its popover open on five monitor rows, and the timeline rows above it, in light: the heartbeat's light is sweeping along the trace on the chip and every newest row at once](media/monitor-chip-light.png)
 ![The same in dark](media/monitor-chip-dark.png)
 
 Chips animate in and out and the row moves with them: [recording](../native-ui/media/lane-chips.gif) ([mp4](../native-ui/media/lane-chips.mp4)).
 
 ## What it does
-- The desktop UI marks monitors with a heartbeat (a fine ECG trace): while a monitor runs, the trace flashes with a quick double beat every 2.4s, in the popover and timeline rows and on the composer chip, in phase everywhere. When it has ended the trace flattens into a still line over 300ms. Reduced motion shows the trace at rest.
+- The desktop UI marks monitors with a heartbeat (a fine ECG trace): while a monitor runs, a soft head of light sweeps along the trace every 2.4s, in the popover and timeline rows and on the composer chip, in phase everywhere (only the newest wake of a running monitor sweeps; older wakes stay still). When it has ended the trace flattens into a still line over 300ms. Reduced motion shows the trace at rest.
 - `monitor.start` runs a shell command in the background. Each stdout/stderr line (optionally filtered by a regex) is an event; lines arriving close together become one message in the session, idle or busy, as `<monitor-event name="…" id="…" seq="N">` with a trailer saying the content is untrusted program output.
 - One more message arrives when the command exits, with its exit code.
 - `rearmMinutes` starts the command again every N minutes, ending a run that is still going (the "storefront watch" pattern). The old run's whole process group gets SIGTERM, then SIGKILL after the grace period, so subshells and `sleep`s end with it. The clock is saved: a service restart keeps the time left in the cycle (restart at minute 10 of 30: 20 left), and a restart after the mark counts as the re-arm (the restored process is fresh) with the next one set from then. Frequent restarts cannot starve it.
