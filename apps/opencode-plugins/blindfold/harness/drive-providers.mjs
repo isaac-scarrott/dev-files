@@ -314,7 +314,40 @@ await answered().first().waitFor({ timeout: 10000 })
   check("and the password field on that page is still empty", typed === "", JSON.stringify(typed))
 }
 
-// ---- 9. Nothing durable holds a value ----
+// ---- 9. Hot reload: a card open while the GUI bundle reloads comes back, once, empty, and still answers ----
+await ask(login("https://accounts.google.com", '[{ name: "EMAIL" }]'))
+await card().waitFor({ timeout: 60000 })
+const bundle = new URL("../dist/gui-experimental.cjs", import.meta.url).pathname
+const original = readFileSync(bundle, "utf8")
+const styles = () => page.evaluate(() => [...document.querySelectorAll("style[data-plugin]")].filter((el) => el.textContent.includes("data-blindfold-card")).length)
+try {
+  const before = await styles()
+  writeFileSync(bundle, `${original}\n/* hot reload ${Date.now()} */\n`)
+  await sleep(7000)
+  await card().waitFor({ timeout: 20000 })
+  const cards = await page.locator("[data-blindfold-request]").count()
+  check("a rebuilt bundle reloads in place: one style, one card back", before === 1 && (await styles()) === 1 && cards === 1, JSON.stringify({ before, after: await styles(), cards }))
+  await button("Deny").click({ timeout: 15000 })
+  await answered().first().waitFor({ timeout: 10000 })
+  check("and the card still answers after the reload", /Secrets declined/.test(await answered().first().textContent()))
+} finally {
+  // Restore the tracked bundle once the request is resolved: a second reload would end a request that is still open.
+  writeFileSync(bundle, original)
+}
+await sleep(5000)
+
+// ---- 10. Light and dark ----
+await ask(login("https://accounts.google.com", '[{ name: "PASSWORD" }]'))
+await card().waitFor({ timeout: 60000 })
+for (const scheme of ["dark", "light"]) {
+  await page.emulateMedia({ colorScheme: scheme })
+  await sleep(700)
+  await shot(`15-card-${scheme}`)
+}
+await button("Deny").click()
+await sleep(500)
+
+// ---- 11. Nothing durable holds a value ----
 {
   const listed = JSON.parse(await api("/api/session"))
   const items = Array.isArray(listed) ? listed : listed.data
