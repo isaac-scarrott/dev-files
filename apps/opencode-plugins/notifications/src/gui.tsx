@@ -155,7 +155,9 @@ export default Plugin.define({
       () => (focused() ? (activeRef() ? sessionKey(activeRef()!) : undefined) : undefined),
       () => {
         const ref = activeRef()
-        if (ref) ledger.clearSession(ref)
+        if (!ref) return
+        ledger.clearSession(ref)
+        hub.seen(ref.server, ref.session)
       },
     )
 

@@ -184,6 +184,11 @@ export function createSink(deps: SinkDeps) {
         deps.track.remove(source, key)
       },
     } satisfies NotifySink,
+    /** The user opened the session: its error toasts have been seen. A request that still needs an answer stays. */
+    seen(server: string, session: string) {
+      const key = `${server}\u0000${session}`
+      for (const [id, entry] of [...live]) if (entry.n.kind === "error" && sessionOf(entry.n) === key) retract(id)
+    },
     /** A window gained focus: persistent notifications that waited for one appear now. */
     focusGained() {
       for (const [id, entry] of live) if (!entry.handle && deps.presence(entry.n).focused) entry.handle = deps.show(toastFor(entry.n, deps))

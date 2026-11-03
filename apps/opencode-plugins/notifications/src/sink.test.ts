@@ -49,6 +49,15 @@ test("an error toast carries the error variant and an Open action that opens the
   assert.deepEqual(state.opened, [target])
 })
 
+test("opening the session retracts its error toast; a request that still needs an answer stays", () => {
+  const { hub, state, send } = rig()
+  send({ kind: "error", title: "Scheduled task failed", target })
+  send({ kind: "needs-you", title: "Permission needed", target, key: "ask" })
+  hub.seen(target.server, target.session)
+  assert.deepEqual(state.dismissed.map((t) => t.variant), ["error"])
+  assert.equal(hub.size(), 1)
+})
+
 test("severity maps to variant; each kind has its own glyph; needs-you and error are persistent", () => {
   const { state, send } = rig()
   state.settings = { ...defaultSettings, toast: { ...defaultSettings.toast, info: true } }
