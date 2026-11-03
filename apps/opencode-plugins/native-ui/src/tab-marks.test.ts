@@ -93,3 +93,39 @@ test("a row added later is marked by the hub's next frame, and the mark's own in
   flush()
   assert.equal(runs, before, "no frame queued by the initial injection")
 })
+
+test("the clock glyph keeps the snooze clock's drawing and its own colour", () => {
+  const { doc } = fixture(["a"])
+  createRoot((dispose) => {
+    const hub = createDomHub(doc, schedule, () => {}, TAB_MARK_OWN)
+    createTabMarks({ doc, hub, mark: () => ({ severity: "info", label: "Woke from snooze", glyph: "clock" }) })
+    const mark = doc.querySelector<HTMLElement>(TAB_MARK_OWN)!
+    assert.equal(mark.dataset.glyph, "clock")
+    assert.equal(mark.querySelector("circle")?.getAttribute("r"), "6")
+    assert.equal(mark.querySelector("path")?.getAttribute("d"), "M8 4.5V8l2.5 1.5")
+    dispose()
+  })
+  assert.match(tabMarkCss, /\[data-glyph="clock"\] \{ color: var\(--v2-orange-800\); \}/)
+})
+
+test("two owners in one sidebar: a mark of another owner is never replaced or removed", () => {
+  const { doc } = fixture(["a"])
+  createRoot((dispose) => {
+    const hub = createDomHub(doc, schedule, () => {}, TAB_MARK_OWN)
+    const [clock, setClock] = createSignal<TabMarkSpec | undefined>({ severity: "info", label: "Woke from snooze", glyph: "clock" })
+    const first = createTabMarks({ doc, hub, owner: "snooze-archive", mark: () => clock() })
+    const second = createTabMarks({ doc, hub, owner: "notifications", mark: () => ({ severity: "error", label: "Failed" }) })
+    second.sync()
+    assert.equal(doc.querySelectorAll(TAB_MARK_OWN).length, 1, "the second owner leaves the first one's mark")
+    assert.equal(doc.querySelector(TAB_MARK_OWN)!.getAttribute("aria-label"), "Woke from snooze")
+    setClock(undefined)
+    first.sync()
+    assert.equal(doc.querySelectorAll(TAB_MARK_OWN).length, 0)
+    second.sync()
+    assert.equal(doc.querySelector(TAB_MARK_OWN)!.getAttribute("aria-label"), "Failed")
+    setClock({ severity: "info", label: "Woke from snooze", glyph: "clock" })
+    first.sync()
+    assert.equal(doc.querySelector(TAB_MARK_OWN)!.getAttribute("aria-label"), "Failed", "the first owner does not take the second's mark")
+    dispose()
+  })
+})

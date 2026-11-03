@@ -245,3 +245,13 @@ Standing cost now: one observer (zero callbacks while nothing in the sidebar or 
 | cold load | 13.9 s | 15.1 s | PASS |
 
 The hover cost appears only after the Archived group has been expanded once, and stays after it is collapsed again. Disabling the plugin's whole stylesheet, or dropping its `:has(:focus-visible)` or `tab-row-action` rules, does not remove it (style 3.7-3.9 s in every variant), so it is not those rules; style recalc counts equal the floor's (about 300) while each costs about nine times as much, and the page has 6k more nodes. Not found. Paging ("more") did not load further rows in the harness (10 rows before and after four clicks); the selector for the button needs checking before expand cost at 500+ rows can be claimed.
+
+## Decisions: notifications (M5)
+
+Supersede the woke-mark and hub notes above where they differ.
+
+- **The clock is native-ui's tab mark.** `src/woke.ts` is a thin `createTabMarks` call (the clock glyph, owner `snooze-archive`); `src/hub.ts` only names what this plugin injects and builds native-ui's `createDomHub`. The look is unchanged: measured in the harness against the previous build, the mark's box, colour (`--v2-orange-800`), glyph, status-slot swap, `--sidebar-fade` and link mask are identical; only the hooks are renamed, `data-sa-woke` to `data-notify` and `data-sa-woke-mark` to `data-notify-mark` (sidebar-repos lists `data-notify` for the title fade, and its own `data-sa-woke` entry is gone).
+- **A wake is published as `info`** (`snooze-archive:woke:<server>/<session>`, title "Woke from snooze", target the session) through `notify()`; with no `notifications` plugin that is silent (`info` has no fallback toast), exactly as before. Opening the session, archiving, deleting or re-snoozing retracts it (`clearNotification`).
+- **One mark, never two.** With a sink installed the hub draws the woke mark (its `info` glyph) and this plugin's clock stays away; without one the clock is ours. The tab-mark owner field keeps the two from removing each other's node when the sink appears after the first draw. This is the one place the look differs with the hub installed: the hub's `info` glyph instead of the clock.
+- A wake that starts a turn leaves no extra mark: only the no-turn wakes (deadline, `inbox.enqueued`) mark, as before. Waking by the user's own action (Wake, Undo, a send) is silent, as before.
+- Tests: a sink receives one `info` with the right key and target and no toast, the clock is not drawn, clearing retracts it; without a sink the clock shows and no toast. The CSS tests read native-ui's `tabMarkCss`.

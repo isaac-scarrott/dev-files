@@ -8,6 +8,8 @@ import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import { createLog, Samples } from "./diag.js"
 import { acquireUsage, createUsageSource } from "./hub.js"
 import { Resumer, type Clock, type Host } from "./resume.js"
+import type { Outgoing } from "./notify.js"
+import { normalize } from "../../native-ui/src/notify-contract.js"
 import { Toggles } from "./toggles.js"
 import { fake } from "../../test-utils/fake.js"
 import { availability, MIN_INTERVAL_MS, type Reading } from "./usage.js"
@@ -29,6 +31,8 @@ interface Env {
   host: Host
   prompts: Array<Record<string, any>>
   notices: string[]
+  /** What the resumer told the user (the server emits these as the `notify` event). */
+  told: Outgoing[]
   sessions: Map<string, Record<string, any>>
   storage: Map<string, unknown>
   /** token-name -> usage body or HTTP status */
@@ -52,6 +56,7 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
   const sessions = new Map<string, Record<string, any>>()
   const prompts: Array<Record<string, any>> = []
   const notices: string[] = []
+  const told: Outgoing[] = []
   const storage = new Map<string, unknown>()
   const fetches: string[] = []
   const host = fake<Host>({
@@ -88,9 +93,9 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
     return new Response(JSON.stringify(body), { status: 200 })
   }) as unknown as typeof fetch
   const out: Env = {
-    clock, host, prompts, notices, sessions, storage, usage, fetches, options, authDir, toggles, logs, sampleDir,
-    make: async (directory = "/work") =>
-      Resumer.create(
+    clock, host, prompts, notices, told, sessions, storage, usage, fetches, options, authDir, toggles, logs, sampleDir,
+    make: async (directory = "/work") => {
+      const resumer = await Resumer.create(
         host,
         out.options,
         clock,
@@ -99,7 +104,10 @@ async function env(accounts: Record<string, Body | number>, overrides: Partial<O
         new Samples({ dir: sampleDir, now: () => clock.now(), log: () => {} }),
         directory,
         (m) => void logs.push(m),
-      ),
+      )
+      resumer.notify = (notification) => void told.push(notification)
+      return resumer
+    },
   }
   return out
 }
@@ -650,4 +658,64 @@ test("a limit on an opted-out session is recorded for the pill, then waits once 
   await r.onSettled("ses_1")
   assert.equal(await r.limited("ses_1"), undefined)
   assert.equal(e.storage.has("limited/ses_1"), false)
+})
+
+// No real usage limit can be triggered here: these drive the resumer with a simulated limit error (the shape read from the
+// provider's source, see DESIGN.md), so they prove what is emitted, not that a live limit reaches it.
+test("a limit on a session that resumes tells the user once as an error carrying the resume time; a moved time is info", async () => {
+  const e = await env({ a: { five_hour: win(100, T0 + 3 * HOUR), seven_day: win(10, T0 + 100 * HOUR) } })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + HOUR), T0)
+  assert.equal(e.told.length, 1)
+  assert.equal(e.told[0]!.kind, "error")
+  assert.match(e.told[0]!.title, /^Usage limit reached, resumes /)
+  assert.equal(e.told[0]!.key, "usage-resume:limit:ses_1")
+  assert.deepEqual(e.told[0]!.target, { session: "ses_1" })
+  assert.equal("body" in e.told[0]!, false, "the RPC schema rejects an undefined string, so absent fields are absent")
+  assert.equal(normalize(e.told[0], "usage-resume", 1, "sidecar")!.action?.type, "open-session")
+
+  // The usage endpoint says the reset is later than the first estimate: the time moves, nothing new has failed.
+  e.usage.set("a", { five_hour: win(100, T0 + 9 * HOUR), seven_day: win(10, T0 + 100 * HOUR) })
+  e.clock.t = T0 + HOUR + 2 * MIN
+  await r.tick()
+  const moved = e.told.slice(1)
+  assert.ok(moved.every((n) => n.kind === "info" && n.key === "usage-resume:resume:ses_1" && /^Resumes /.test(n.title)), JSON.stringify(moved))
+})
+
+test("a limit with auto-resume off is still an error, saying why nothing will resume", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  assert.deepEqual(e.told.map((n) => [n.kind, n.title, n.body, n.key]), [["error", "Usage limit reached", "Auto-resume is off for this session.", "usage-resume:limit:ses_1"]])
+})
+
+test("giving up after the attempt cap is an error; a successful resume and a subagent say nothing", async () => {
+  const e = await env({ a: bothFree }, { maxAttempts: 1 })
+  const r = await e.make()
+  stalled(e, "ses_1", T0)
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  e.clock.t = T0 + HOUR
+  await r.tick()
+  assert.equal(e.prompts.length, 1)
+  assert.deepEqual(e.told.map((n) => n.key), ["usage-resume:limit:ses_1"], "the resume itself starts a turn: no notification")
+  e.told.length = 0
+  stalled(e, "ses_1", e.clock.t)
+  await r.onFailed("ses_1", limitError(e.clock.t + MIN), e.clock.t)
+  assert.deepEqual(e.told.map((n) => [n.kind, n.key]), [["error", "usage-resume:giveup:ses_1"]])
+  e.told.length = 0
+  stalled(e, "sub", e.clock.t, { parentID: "ses_1" })
+  await r.onFailed("sub", limitError(e.clock.t + MIN), e.clock.t)
+  assert.equal(e.told.length, 0)
+})
+
+test("a failing notify never breaks resuming", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  r.notify = () => { throw new Error("boom") }
+  await r.onFailed("ses_1", limitError(T0 + MIN), T0)
+  assert.equal(r.waiting().length, 1)
+  assert.ok(e.logs.some((l) => /could not notify/.test(l)))
 })

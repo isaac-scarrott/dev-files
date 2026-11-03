@@ -18,7 +18,9 @@ import { openInCurrentTab } from "./route"
 import { isUserSend, sessionKey, wakeReason, type Snooze } from "./snooze"
 import { openCustom, customCss } from "./custom"
 import { openMenu, type MenuLine } from "./menu"
-import { createWokeMarks, isWoke, withWoke, withoutWoke, wokeCss } from "./woke"
+import { createWokeMarks, isWoke, WOKE_LABEL, withWoke, withoutWoke } from "./woke"
+import { clearNotification, notify } from "../../native-ui/src/notify-contract"
+import { tabMarkCss } from "../../native-ui/src/tab-marks"
 import { checkWake, formatHint, formatRemaining, formatWake, presets, uses12Hour, zoneLabel } from "./time"
 
 const SnoozeSchema = Schema.Struct({
@@ -35,7 +37,7 @@ const definition = Plugin.define({ stores: {
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, tabRowActionCss + css + actionsCss + iconCss + menuCss + customCss + wokeCss)
+    ctx.add(Style, tabRowActionCss + css + actionsCss + iconCss + menuCss + customCss + tabMarkCss)
     const host = createHost(ctx.ui)
     let disposed = false
     onCleanup(() => { disposed = true })
@@ -80,9 +82,15 @@ export default Plugin.define({
     const hiddenSnoozes = new Set<string>()
     const entries = () => ctx.stores.snoozes.value.entries
     const wokeEntries = () => ctx.stores.woke.value.entries
-    const markWoke = (server: string, id: string) => ctx.stores.woke.update((draft) => { draft.entries = withWoke(draft.entries, server, id) })
+    // A wake starts no turn, so it is `info`: the `notifications` plugin marks the tab when installed, else the clock below does.
+    const wokeKey = (server: string, id: string) => `snooze-archive:woke:${server}/${id}`
+    const markWoke = (server: string, id: string) => {
+      ctx.stores.woke.update((draft) => { draft.entries = withWoke(draft.entries, server, id) })
+      notify(ctx, { kind: "info", title: WOKE_LABEL, key: wokeKey(server, id), target: { server, session: id } })
+    }
     const clearWoke = (server: string, id: string) => {
       if (isWoke(untrack(wokeEntries), server, id)) ctx.stores.woke.update((draft) => { draft.entries = withoutWoke(draft.entries, server, id) })
+      clearNotification(ctx, wokeKey(server, id))
     }
     const error = (cause: unknown) => {
       if (!disposed) ctx.toast.show({ title: "Session action failed", description: String(cause), variant: "error" })

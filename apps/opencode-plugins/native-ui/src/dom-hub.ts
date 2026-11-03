@@ -1,10 +1,7 @@
 import { onCleanup } from "solid-js"
 
-// Generalised from snooze-archive/src/hub.ts (same observer, same scoping), parametrised by what the plugin injects. A
-// plugin that injects into the sidebar creates one of these per window; `own` lists its injected nodes so its own writes
-// never wake it.
-// TODO(M5): snooze-archive/src/hub.ts is the original of this file; point it here and move its woke clock onto `createTabMarks`
-// (needs the `data-sa-woke*` hooks that sidebar-repos and its tests name to become `data-notify*`).
+// Parametrised by what the plugin injects (it began as snooze-archive's observer, which now uses this one). A plugin that
+// injects into the sidebar creates one of these per window; `own` lists its injected nodes so its own writes never wake it.
 // The one MutationObserver of the plugin. The host has no extension point for tab rows, the session menus or the
 // sidebar's scroll region, so those are read from its DOM; this is the single place that watches it.
 //

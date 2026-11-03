@@ -2,12 +2,14 @@
 
 Agents use secrets you provide without ever seeing their values.
 
-> **Credit:** this is [vimtor](https://github.com/vimtor)'s [opencode-blindfold](https://github.com/vimtor/opencode-plugins/tree/main/packages/opencode-blindfold) 0.5.0 (MIT), vendored unchanged and pinned in `vendor.manifest`. The idea, the redaction and the code are all vimtor's. Please star and use the original.
+> **Credit:** this is [vimtor](https://github.com/vimtor)'s [opencode-blindfold](https://github.com/vimtor/opencode-plugins/tree/main/packages/opencode-blindfold) 0.5.0 (MIT), vendored and pinned in `vendor.manifest`, with one local change: the green "Secret stored." toast is dropped (see [PROVENANCE.md](PROVENANCE.md)). The idea, the redaction and the code are all vimtor's. Please star and use the original.
 
 ## What it does
 - The agent asks for a named secret (`blindfold.get`); you paste it into a dialog and the value goes to the plugin, never to the agent.
 - Code Mode returns the value to the running code only; shell commands get it as an environment variable only when the command names it.
 - The value and its JSON, URL, base64 and hex forms are replaced with `[REDACTED:NAME]` in tool results, errors, messages, system prompts and raw provider requests.
+
+Storing a secret shows no toast: you did it, and the dialog closing is the answer. A failure still toasts.
 
 The full documentation is upstream's README, kept here unchanged: [README.upstream.md](README.upstream.md).
 

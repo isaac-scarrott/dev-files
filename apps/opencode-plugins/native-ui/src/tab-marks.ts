@@ -16,6 +16,8 @@ export interface TabMarkSpec {
   readonly severity: TabMarkSeverity
   /** The accessible name of the mark. */
   readonly label: string
+  /** A drawing of its own instead of the severity's: snooze-archive's clock. It keeps its own colour. */
+  readonly glyph?: "clock"
 }
 
 /** What the plugin injects, for the hub's own-write filter. */
@@ -31,6 +33,8 @@ const GLYPHS: Record<TabMarkSeverity, readonly string[]> = {
   error: ["M8 4.75v4", "M8 10.75h.01"],
 }
 
+const CLOCK_HANDS = ["M8 4.5V8l2.5 1.5"]
+
 const FACE: Record<TabMarkSeverity, string> = {
   info: "circle",
   success: "circle",
@@ -44,15 +48,17 @@ function node(doc: Document, tag: string, attributes: Record<string, string>) {
   return element
 }
 
-export function tabMarkNode(doc: Document, spec: TabMarkSpec): HTMLElement {
+export function tabMarkNode(doc: Document, spec: TabMarkSpec, owner = ""): HTMLElement {
   const mark = doc.createElement("span")
   mark.dataset.notifyMark = ""
+  mark.dataset.notifyOwner = owner
   mark.dataset.severity = spec.severity
+  if (spec.glyph) mark.dataset.glyph = spec.glyph
   mark.setAttribute("role", "img")
   mark.setAttribute("aria-label", spec.label)
   const svg = node(doc, "svg", { viewBox: "0 0 16 16", width: "14", height: "14", fill: "none", stroke: "currentColor", "stroke-width": "1", "stroke-linecap": "round", "stroke-linejoin": "round" })
-  svg.append(FACE[spec.severity] === "circle" ? node(doc, "circle", { cx: "8", cy: "8", r: "6" }) : node(doc, "path", { d: "M8 2.5l6 10.5H2z" }))
-  for (const d of GLYPHS[spec.severity]) svg.append(node(doc, "path", { d }))
+  svg.append(spec.glyph === "clock" || FACE[spec.severity] === "circle" ? node(doc, "circle", { cx: "8", cy: "8", r: "6" }) : node(doc, "path", { d: "M8 2.5l6 10.5H2z" }))
+  for (const d of spec.glyph === "clock" ? CLOCK_HANDS : GLYPHS[spec.severity]) svg.append(node(doc, "path", { d }))
   mark.append(svg)
   return mark
 }
@@ -64,9 +70,15 @@ export interface TabMarksOptions {
   readonly mark: (tabKey: string) => TabMarkSpec | undefined
   /** False while the plugin has no mark to show: sidebar changes then wake nothing. Defaults to always. */
   readonly active?: () => boolean
+  /**
+   * Who draws these marks. Two plugins can run in one sidebar (a plugin's own mark while no hub is installed, the hub's
+   * otherwise): a mark of another owner is never touched, so neither removes the other's.
+   */
+  readonly owner?: string
 }
 
-const same = (mark: Element, spec: TabMarkSpec) => (mark as HTMLElement).dataset.severity === spec.severity && mark.getAttribute("aria-label") === spec.label
+const same = (mark: Element, spec: TabMarkSpec) =>
+  (mark as HTMLElement).dataset.severity === spec.severity && (mark as HTMLElement).dataset.glyph === spec.glyph && mark.getAttribute("aria-label") === spec.label
 
 /**
  * Keeps the marks of the vertical tabs in step with `mark`. Must run inside the plugin's owner: every mark is removed on
@@ -75,10 +87,15 @@ const same = (mark: Element, spec: TabMarkSpec) => (mark as HTMLElement).dataset
  */
 export function createTabMarks(options: TabMarksOptions) {
   const { doc, hub } = options
+  const owner = options.owner ?? ""
   const marked = new Set<HTMLElement>()
+  const ours = (mark: Element | null) => mark !== null && (mark as HTMLElement).dataset.notifyOwner === owner
   const clear = (tab: HTMLElement) => {
-    tab.removeAttribute("data-notify")
-    tab.querySelector(TAB_MARK_OWN)?.remove()
+    const mark = tab.querySelector(TAB_MARK_OWN)
+    if (ours(mark)) {
+      mark!.remove()
+      tab.removeAttribute("data-notify")
+    }
     marked.delete(tab)
   }
   onCleanup(() => {
@@ -92,10 +109,11 @@ export function createTabMarks(options: TabMarksOptions) {
       const tab = host.querySelector<HTMLElement>("[data-titlebar-tab]")
       const close = tab?.querySelector<HTMLElement>('[data-slot="tab-close"]')
       if (!tab || !close || !spec) continue
-      live.add(tab)
       const existing = close.querySelector(TAB_MARK_OWN)
+      if (existing && !ours(existing)) continue
+      live.add(tab)
       if (existing && !same(existing, spec)) existing.remove()
-      if (!close.querySelector(TAB_MARK_OWN)) close.querySelector('[data-slot="tab-status"]')?.after(tabMarkNode(doc, spec))
+      if (!close.querySelector(TAB_MARK_OWN)) close.querySelector('[data-slot="tab-status"]')?.after(tabMarkNode(doc, spec, owner))
       if (!tab.hasAttribute("data-notify")) tab.setAttribute("data-notify", "")
       marked.add(tab)
     }
@@ -116,6 +134,7 @@ export const tabMarkCss = `
 [data-titlebar-tab] [data-notify-mark][data-severity="success"] { color: var(--v2-state-fg-success, var(--v2-text-text-muted)); }
 [data-titlebar-tab] [data-notify-mark][data-severity="warning"] { color: var(--v2-state-fg-warning); }
 [data-titlebar-tab] [data-notify-mark][data-severity="error"] { color: var(--v2-state-fg-danger); }
+[data-titlebar-tab] [data-notify-mark][data-glyph="clock"] { color: var(--v2-orange-800); }
 [data-titlebar-tab][data-notify]${SHOWN} [data-notify-mark] { display: grid; }
 [data-titlebar-tab][data-notify]${SHOWN} [data-slot="tab-status"] { display: none; }
 [data-titlebar-tab]:is(:hover, :has(:focus-visible)) [data-notify-mark] { opacity: 0; }

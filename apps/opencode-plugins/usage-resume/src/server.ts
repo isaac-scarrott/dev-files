@@ -75,6 +75,7 @@ export default Plugin.define({
     // OpenCode retries a failed request with backoff; a usage limit lasts hours, so end the run and let us wait.
     // Only for sessions that opted in: an opted-out session keeps OpenCode's own behaviour.
     resumer.changed = (sessionID) => void rpc.events.emit("changed", { sessionID }).catch(() => {})
+    resumer.notify = (notification) => void rpc.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`))
 
     const retry = await ctx.session.hook("retry", async (event) => {
       const limit = detectUsageLimit(event.error, Date.now())

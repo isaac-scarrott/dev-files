@@ -27,7 +27,6 @@ export default Plugin.define({
         // Empty submissions reopen the dialog because a value is required.
         if (value === "") continue
         const reply = (await blindfold.submit({ requestID: request.requestID, value }, options)) as { accepted: boolean }
-        if (reply.accepted) ctx.ui.toast.show({ variant: "success", message: `Secret ${request.name} stored.` })
         return
       }
     }

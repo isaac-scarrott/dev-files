@@ -6,6 +6,7 @@ import plugin from "./gui"
 import type { Snooze } from "./snooze"
 import { delegate, fakeUi } from "./testui"
 import { fake } from "../../test-utils/fake"
+import { provideSink, type Notification } from "../../native-ui/src/notify-contract"
 
 type Context = Parameters<NonNullable<typeof plugin.setup>>[0]
 
@@ -71,6 +72,7 @@ function fixture(initial: Snooze[] = [], initialWoke: { server: string; id: stri
   const [current, setCurrent] = createSignal<typeof session | undefined>(session)
   const [tabs, setTabs] = createSignal([{ key: "tab", session }])
   const ctx = fake<Context>({
+    id: "snooze-archive",
     ui: fakeUi(doc),
     options: extra.options ?? {},
     keybinds: { keybind: (id: string) => extra.bound?.includes(id) ? ["⌘", "K"] : [] },
@@ -584,7 +586,7 @@ test("regression: deleting an archived row from its context menu confirms, calls
 
 // A native vertical tab: marks live in `tab-close > tab-status`, which the host marks aria-hidden.
 const nativeTab = `<aside data-slot="vertical-tabs-sidebar"><div data-slot="vertical-tabs"><div data-slot="vertical-tabs-scroll"><div data-tab-key="tab"><div data-titlebar-tab data-orientation="vertical"><a data-slot="tab-link"><span data-slot="tab-title">Host title</span></a><div data-slot="tab-close"><span data-slot="tab-status" aria-hidden="true"><span data-mark="busy"></span><span data-mark="attention"></span><span data-mark="unread"></span></span><button aria-label="Close tab"></button></div></div></div></div></div></aside>`
-const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-sa-woke-mark]")
+const wakeMark = (f: { doc: Document }) => f.doc.querySelector<HTMLElement>("[data-notify-mark]")
 const dueSnooze = (): Snooze => ({ server: "server", id: "s", title: "Session", at: Date.now() - 2_000, until: Date.now() - 1_000, busy: 0, updated: 1 })
 
 test("a woken session gets a labelled clock in its tab's status slot, persisted, and opening it clears the mark", async () => {
@@ -599,11 +601,45 @@ test("a woken session gets a labelled clock in its tab's status slot, persisted,
     assert.equal(mark.getAttribute("aria-label"), "Woke from snooze")
     assert.equal(mark.previousElementSibling?.getAttribute("data-slot"), "tab-status", "sibling of the host's status slot, which is aria-hidden")
     assert.equal(mark.querySelector("svg")?.getAttribute("width"), "14")
-    assert.ok(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"))
+    assert.ok(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-notify"))
     f.setCurrent(true); await f.flush()
     assert.deepEqual(f.woke().entries, [])
     assert.equal(wakeMark(f), null)
-    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"), false)
+    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-notify"), false)
+  } finally { await f.close() }
+})
+
+test("with the notifications plugin the wake is published as info and the hub draws the mark; clearing retracts it", async () => {
+  const published: Notification[] = []
+  const cleared: string[] = []
+  const release = provideSink({ id: "test", accepts: [1], publish: (n) => void published.push(n), clear: (_source, key) => void cleared.push(key) })
+  const f = fixture([dueSnooze()])
+  try {
+    f.doc.body.innerHTML = nativeTab
+    f.setCurrent(false)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.equal(published.length, 1)
+    assert.equal(published[0]!.kind, "info")
+    assert.equal(published[0]!.title, "Woke from snooze")
+    assert.equal(published[0]!.key, "snooze-archive:woke:server/s")
+    assert.deepEqual(published[0]!.target, { server: "server", session: "s" })
+    assert.equal(f.calls.toasts.length, 0, "no toast of ours")
+    assert.equal(wakeMark(f), null, "the hub draws the mark, not a second clock")
+    assert.deepEqual(f.woke().entries, [{ server: "server", id: "s" }], "kept, for when the hub is removed")
+    f.setCurrent(true); await f.flush()
+    assert.deepEqual(cleared, ["snooze-archive:woke:server/s"])
+  } finally { await f.close(); release() }
+})
+
+test("without the notifications plugin a wake shows the clock and no toast", async () => {
+  const f = fixture([dueSnooze()])
+  try {
+    f.doc.body.innerHTML = nativeTab
+    f.setCurrent(false)
+    f.start(); f.setServers(["server"]); await f.flush()
+    assert.ok(wakeMark(f))
+    assert.equal(wakeMark(f)!.dataset.glyph, "clock")
+    assert.equal(f.calls.toasts.length, 0)
   } finally { await f.close() }
 })
 
@@ -615,9 +651,9 @@ test("the woke mark survives reload, and a deadline that passed while the app wa
     f.start(); await f.flush()
     assert.ok(wakeMark(f), "persisted mark renders on load")
     f.stop(); assert.equal(wakeMark(f), null, "cleanup removes the node and attribute")
-    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-sa-woke"), false)
+    assert.equal(f.doc.querySelector("[data-titlebar-tab]")?.hasAttribute("data-notify"), false)
     f.start(); await f.flush()
-    assert.equal(f.doc.querySelectorAll("[data-sa-woke-mark]").length, 1, "no duplicate after reload")
+    assert.equal(f.doc.querySelectorAll("[data-notify-mark]").length, 1, "no duplicate after reload")
   } finally { await f.close() }
   const closed = fixture([dueSnooze()])
   try {
@@ -685,14 +721,14 @@ test("archiving, deleting or re-snoozing a woken session drops its mark", async 
 })
 
 test("a pending approval or question outranks the clock: only a CSS precedence, the mark stays in the DOM", async () => {
-  const { wokeCss } = await import("./woke")
-  assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-sa-woke-mark\] \{ display: grid; \}/)
-  assert.match(wokeCss, /\[data-sa-woke\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
+  const { tabMarkCss: wokeCss } = await import("../../native-ui/src/tab-marks")
+  assert.match(wokeCss, /\[data-notify\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-notify-mark\] \{ display: grid; \}/)
+  assert.match(wokeCss, /\[data-notify\]:not\(\[data-status="attention"\], \[data-active="true"\]\) \[data-slot="tab-status"\] \{ display: none; \}/)
 })
 
 test("the clock owns the status slot: sidebar-repos' last-activity label is hidden and the title fade is the host's while it shows", async () => {
-  const { wokeCss } = await import("./woke")
-  const shown = '[data-sa-woke]:not([data-status="attention"], [data-active="true"])'
+  const { tabMarkCss: wokeCss } = await import("../../native-ui/src/tab-marks")
+  const shown = '[data-notify]:not([data-status="attention"], [data-active="true"])'
   assert.ok(wokeCss.includes(`${shown} [data-sidebar-time] { display: none; }`), "same condition as the clock itself, so attention and the open tab keep the label rules")
   assert.ok(wokeCss.includes(`${shown}:not(:hover):not(:has(:focus-visible)) { --sidebar-fade: 30px; }`))
 })

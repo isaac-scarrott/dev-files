@@ -106,7 +106,7 @@ test("asks for the secret in a hidden prompt and submits it to the requesting lo
     ["ack", { requestID: "req" }, location],
     ["submit", { requestID: "req", value: "s3cret" }, location],
   ])
-  expect(toasts).toEqual([{ variant: "success", title: "Secret API_TOKEN stored." }])
+  expect(toasts).toEqual([])
 })
 
 test("cancels the request when the prompt is dismissed", async () => {

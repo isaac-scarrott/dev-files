@@ -28,8 +28,6 @@ export default Plugin.define({
                 if (value === "")
                     continue;
                 const reply = (await blindfold.submit({ requestID: request.requestID, value }, options));
-                if (reply.accepted)
-                    ctx.ui.toast.show({ variant: "success", message: `Secret ${request.name} stored.` });
                 return;
             }
         }
