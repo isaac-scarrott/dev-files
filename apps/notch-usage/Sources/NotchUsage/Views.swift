@@ -67,12 +67,17 @@ struct Ring: View {
 /// Stands in for a ring where the window has no limit at all.
 struct NoLimitMark: View {
     let size: CGFloat
+    let lineWidth: CGFloat
 
     var body: some View {
-        Image(systemName: "xmark")
-            .font(.system(size: size * 0.45, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.35))
-            .frame(width: size, height: size)
+        // Drawn to the same box and stroke as a ring, so it reads as one.
+        Path { p in
+            let lo = lineWidth / 2, hi = size - lineWidth / 2
+            p.move(to: CGPoint(x: lo, y: lo)); p.addLine(to: CGPoint(x: hi, y: hi))
+            p.move(to: CGPoint(x: hi, y: lo)); p.addLine(to: CGPoint(x: lo, y: hi))
+        }
+        .stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+        .frame(width: size, height: size)
     }
 }
 
@@ -85,7 +90,7 @@ struct CompactRings: View {
             ForEach(store.accounts) { a in
                 let outlook = a.outlook
                 if !sevenDay && a.noFiveHourLimit {
-                    NoLimitMark(size: 12)
+                    NoLimitMark(size: 12, lineWidth: 2)
                 } else {
                     Ring(projection: sevenDay ? outlook.week : outlook.fiveHour,
                          size: 12, lineWidth: 2, dimmed: a.fetchedAt == nil)
@@ -122,7 +127,7 @@ private struct WindowColumn: View {
         let next = next
         HStack(spacing: 8) {
             if noLimit {
-                NoLimitMark(size: 20)
+                NoLimitMark(size: 20, lineWidth: 2.5)
             } else {
                 Ring(projection: projection, size: 20, lineWidth: 2.5, dimmed: projection == nil)
             }
