@@ -60,5 +60,7 @@ export function RobotIcon() {
  * `nativeUiCss` include it).
  */
 export function HeartbeatIcon(props: { state: HeartbeatState }) {
-  return <span data-slot="drawn-icon" data-icon="heartbeat" data-state={props.state} aria-hidden="true" />
+  return <span data-slot="drawn-icon" data-icon="heartbeat" data-state={props.state} aria-hidden="true">
+      <i />
+    </span>
 }

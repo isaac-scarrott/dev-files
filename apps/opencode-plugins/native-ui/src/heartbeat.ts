@@ -2,11 +2,14 @@
 // masks so one drawing serves a span (rows, the timeline) and the host's own capsule (`ComposerPill` takes catalog names only, so
 // the chip hides the catalog glyph and draws this itself, as it does for the clock).
 //
-// Two stacked layers, both the same trace: `::before` the dim trace, `::after` a bright copy whose only animation is `opacity`
-// (a compositor property: 11 live icons cost ~2.7 ms/s of main-thread time against ~65 ms/s for an SVG animated inside a mask,
-// which repaints every frame). Every instance runs the same keyframes and is pinned to the document timeline origin by
-// `syncSpinPhase`, so all beat in phase.
-//   live   the bright layer flashes with the beat (2s loop): up in 12% of the loop, down by 55%, then rests.
+// Two renderings of one icon, both compositor-only (an SVG animated inside a mask repaints on the main thread: 11 icons cost
+// ~65 ms/s, against 1.4 to 2.7 ms/s here). Every instance runs the same keyframes and is pinned to the document timeline origin
+// by `syncHeartbeats`, so all beat in phase.
+//   rows   (`HeartbeatIcon`, popover rows and timeline) a span masked by the trace, holding one child: a 10px gradient band with a
+//          soft trail that slides across by `transform` (the sweep, 62% of a 2s loop, then rest). The mask clips the band to the trace.
+//   chip   (the host's capsule, which can have no child) two stacked pseudo-element layers, `::before` the dim trace and `::after` a
+//          bright copy whose only animation is `opacity` (the flash).
+//   live   rows: the band sweeps. Chip: the bright layer flashes, up in 12% of the loop, down by 55%, then rests.
 //   still  the dim trace plus a steady bright layer: live under reduced motion, and a running monitor's older wakes.
 //   flat   the line a monitor ends on, muted. Going there, both trace layers are squashed to the baseline over 300ms (the trace is
 //          centred on y=8) while the flat line grows in.
@@ -32,6 +35,7 @@ export type HeartbeatState = "live" | "still" | "flat"
 const EASE = "cubic-bezier(0.25, 0.7, 0.3, 1)"
 const SETTLE_MS = 300
 const BEAT = "heartbeat-beat"
+const SWEEP = "heartbeat-sweep"
 
 interface Target {
   /** The element that owns the two pseudo-elements. */
@@ -77,15 +81,29 @@ const pillHas = (icon: string) => `${PILL}:has(use[href$="icon-${icon}"])`
 
 export const heartbeatKeyframes = `@keyframes ${BEAT} { 0% { opacity: 0; animation-timing-function: cubic-bezier(.3,0,.2,1); } 12% { opacity: 1; animation-timing-function: cubic-bezier(.4,0,.2,1); } 55%, 100% { opacity: 0; } }`
 
-/** The span `HeartbeatIcon` renders, in the rows and the timeline. */
-export const heartbeatIconCss = `${heartbeatKeyframes}
-[data-icon="heartbeat"] { display: inline-block; flex: none; width: 16px; height: 16px; }${rules({ host: '[data-icon="heartbeat"]', live: span("live"), still: span("still"), flat: span("flat"), size: 16, start: "0" })}`
+export const heartbeatSweepKeyframes = `@keyframes ${SWEEP} { 0% { transform: translateX(-10px); animation-timing-function: cubic-bezier(.4,0,.2,1); } 62%, 100% { transform: translateX(16px); } }`
+
+const ROW = '[data-icon="heartbeat"]'
+const dim = (percent: number) => `color-mix(in srgb, currentColor ${percent}%, transparent)`
+
+/** The span `HeartbeatIcon` renders, in the rows and the timeline: masked by the trace, with a band that sweeps across it while live. */
+export const heartbeatIconCss = `${heartbeatSweepKeyframes}
+${ROW} { display: inline-block; flex: none; position: relative; overflow: hidden; width: 16px; height: 16px; color: var(--v2-icon-icon-base); background: ${dim(45)}; mask-repeat: no-repeat; mask-position: center; mask-image: ${heartbeatMasks.trace}, ${heartbeatMasks.flat}; mask-size: 100% 100%, 100% 0%; transition: mask-size ${SETTLE_MS}ms ${EASE}, color ${SETTLE_MS}ms ${EASE}, background-color ${SETTLE_MS}ms ${EASE}; }
+${ROW} > i { display: none; position: absolute; inset-block: 0; inset-inline-start: 0; width: 10px; background: linear-gradient(90deg, transparent, currentColor 85%); will-change: transform; }
+${span("live")} > i { display: block; animation: ${SWEEP} ${HEARTBEAT_LOOP}s infinite; }
+${span("still")} { background: ${dim(75)}; }
+${span("flat")} { color: var(--v2-icon-icon-muted); background: ${dim(80)}; mask-size: 100% 0%, 100% 100%; }
+@media (prefers-reduced-motion: reduce) { ${span("live")} { background: ${dim(75)}; } ${span("live")} > i { display: none; } ${ROW} { transition: none; } }
+:root[data-motion="reduce"] ${span("live")} { background: ${dim(75)}; }
+:root[data-motion="reduce"] ${span("live")} > i { display: none; }
+:root[data-motion="reduce"] ${ROW} { transition: none; }
+`
 
 const LIVE_PILL = pillHas(HEARTBEAT_LIVE_PLACEHOLDER)
 const FLAT_PILL = pillHas(HEARTBEAT_FLAT_PLACEHOLDER)
 
 /** The capsule of a plugin pill that names one of the two placeholders: its catalog glyph is hidden and the heartbeat is drawn in the same 14px box. */
-export const heartbeatChipCss = `
+export const heartbeatChipCss = `${heartbeatKeyframes}
 ${LIVE_PILL} > svg, ${FLAT_PILL} > svg { display: none; }
 ${LIVE_PILL}, ${FLAT_PILL} { --heartbeat-slot: 14px; }
 ${rules({ host: `${LIVE_PILL}, ${FLAT_PILL}`, live: LIVE_PILL, still: `${PILL}:not(*)`, flat: FLAT_PILL, size: 14, start: "10px", hostCss: "padding-inline-start: calc(10px + 14px + 8px);" })}`
@@ -97,7 +115,7 @@ ${rules({ host: `${LIVE_PILL}, ${FLAT_PILL}`, live: LIVE_PILL, still: `${PILL}:n
 export function syncHeartbeats(doc: Document = document): () => void {
   const pin = () => {
     for (const animation of doc.getAnimations()) {
-      if ((animation as CSSAnimation).animationName === BEAT && animation.startTime !== 0) animation.startTime = 0
+      if ([BEAT, SWEEP].includes((animation as CSSAnimation).animationName) && animation.startTime !== 0) animation.startTime = 0
     }
   }
   doc.addEventListener("animationstart", pin, true)
