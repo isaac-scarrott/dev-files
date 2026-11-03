@@ -5,6 +5,19 @@ import UsageForecast
 struct UsageWindow: Equatable, Codable {
     let utilization: Double
     let resetsAt: Date?
+    /// When a poll first found this window at its limit.
+    var exhaustedSince: Date? = nil
+
+    /// Keeps the first sighting at the limit across polls of the same window.
+    func carryingExhaustion(from old: UsageWindow?, at now: Date) -> UsageWindow {
+        guard utilization >= 100 else { return self }
+        var next = self
+        let sameWindow = old.flatMap { o in
+            o.resetsAt.flatMap { a in resetsAt.map { abs(a.timeIntervalSince($0)) < 120 } }
+        } ?? false
+        next.exhaustedSince = sameWindow ? old?.exhaustedSince ?? now : now
+        return next
+    }
 }
 
 struct AccountUsage: Identifiable, Equatable, Codable {
@@ -264,8 +277,8 @@ final class UsageStore: ObservableObject {
                     break
                 }
                 let now = Date.now
-                usage.fiveHour = body.five_hour?.window
-                usage.sevenDay = body.seven_day?.window
+                usage.fiveHour = body.five_hour?.window.carryingExhaustion(from: usage.fiveHour, at: now)
+                usage.sevenDay = body.seven_day?.window.carryingExhaustion(from: usage.sevenDay, at: now)
                 usage.fetchedAt = now
                 if let five = usage.fiveHour {
                     usage.history = usage.history.filter { now.timeIntervalSince($0.at) < historyKept }

@@ -85,6 +85,7 @@ struct CompactRings: View {
 private struct WindowColumn: View {
     let projection: Projection?
     let now: Date
+    var noLimit = false
     static let width: CGFloat = 106
 
     /// The line under the percentage says what happens next: when you'll run out, when you're back,
@@ -105,7 +106,7 @@ private struct WindowColumn: View {
         HStack(spacing: 8) {
             Ring(projection: projection, size: 20, lineWidth: 2.5, dimmed: projection == nil)
             VStack(alignment: .leading, spacing: 1) {
-                Text(projection == nil ? "–" : "\(Int(pct))%")
+                Text(projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%")
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(warns ? amber : .white)
                     .contentTransition(.numericText(value: pct))
@@ -158,7 +159,7 @@ private struct AccountRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 16)
-            WindowColumn(projection: outlook.fiveHour, now: now)
+            WindowColumn(projection: outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit)
             WindowColumn(projection: outlook.week, now: now)
         }
     }
@@ -187,7 +188,10 @@ private struct Headline: View {
             if b.start <= now.addingTimeInterval(60) {
                 return ("\(all) limited" + (back.map { " · back in \($0)" } ?? ""), true)
             }
-            return ("\(all) limited \(clockText(b.start.rounded(to: 5 * 60)))" + (b.end.map { " – \(clockText($0))" } ?? ""), true)
+            // Rounding a start a couple of minutes off can land in the past; the next 5 minutes then.
+            let rounded = b.start.rounded(to: 5 * 60)
+            let start = rounded > now ? rounded : rounded.addingTimeInterval(5 * 60)
+            return ("\(all) limited \(clockText(start))" + (b.end.map { " – \(clockText($0))" } ?? ""), true)
         }
         if let b = pool.week {
             let from = b.start <= now.addingTimeInterval(60) ? "now" : dayText(b.start.rounded(to: 3600))

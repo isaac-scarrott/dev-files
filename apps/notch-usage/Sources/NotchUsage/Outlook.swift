@@ -11,9 +11,14 @@ struct Outlook {
 private let assumedCapacity = 5.0
 
 extension AccountUsage {
+    /// Anthropic has lifted the 5h limit on this account: it reports a week but no 5h window.
+    var noFiveHourLimit: Bool { fetchedAt != nil && fiveHour == nil && sevenDay != nil }
+
     var outlook: Outlook {
         let at = fetchedAt ?? .now
-        func sample(_ w: UsageWindow) -> Sample { Sample(at: at, utilization: w.utilization, resetsAt: w.resetsAt) }
+        func sample(_ w: UsageWindow) -> Sample {
+            Sample(at: at, utilization: w.utilization, resetsAt: w.resetsAt, exhaustedSince: w.exhaustedSince)
+        }
         return Outlook(
             fiveHour: fiveHour.map { Forecast.project(.fiveHour, current: sample($0), history: history) },
             week: sevenDay.map { Forecast.project(.week, current: sample($0), history: []) }
