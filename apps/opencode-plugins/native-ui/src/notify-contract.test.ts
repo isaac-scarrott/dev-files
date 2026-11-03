@@ -169,3 +169,57 @@ test("a server half's event reaches the sink with the desktop's own server fille
   assert.equal(s.got[0].source, "scheduler")
   assert.equal(notifyFromServer(ctx, { kind: "error" }), "none", "no title, nothing to show")
 })
+
+// Several windows: each runs every plugin, so one server event reaches all of them.
+function fakeWindows(options: { focused: boolean; hostFocusHeld: boolean }) {
+  const store = new Map<string, string>()
+  const saved = ["document", "navigator", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const)
+  const define = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
+  define("document", { hasFocus: () => options.focused })
+  define("navigator", { locks: { query: async () => ({ held: options.hostFocusHeld ? [{ name: "opencode:notification-focus", mode: "shared" }] : [] }), request: async (_name: string, run: () => unknown) => run() } })
+  define("localStorage", { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) })
+  return { restore: () => saved.forEach(([name, descriptor]) => (descriptor ? Object.defineProperty(globalThis, name, descriptor) : delete (globalThis as Record<string, unknown>)[name])) }
+}
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
+
+test("fallback: a focused window shows the toast", async () => {
+  const w = fakeWindows({ focused: true, hostFocusHeld: true })
+  try {
+    notify(context(), { kind: "error", title: "Dropped", key: "k", at: 1 } as never)
+    await settle()
+    assert.equal(toasts.length, 1)
+  } finally { w.restore() }
+})
+
+test("fallback: an unfocused window stays quiet while another window has focus", async () => {
+  const w = fakeWindows({ focused: false, hostFocusHeld: true })
+  try {
+    notify(context(), { kind: "error", title: "Dropped", key: "k", at: 1 } as never)
+    await settle()
+    assert.equal(toasts.length, 0)
+  } finally { w.restore() }
+})
+
+test("fallback: with no window focused, one window shows an event every window received", async () => {
+  const w = fakeWindows({ focused: false, hostFocusHeld: false })
+  try {
+    notify(context(), { kind: "error", title: "Dropped", key: "k", at: 7 } as never)
+    notify(context(), { kind: "error", title: "Dropped", key: "k", at: 7 } as never)
+    await settle()
+    assert.equal(toasts.length, 1)
+    notify(context(), { kind: "error", title: "Dropped", key: "k", at: 8 } as never)
+    await settle()
+    assert.equal(toasts.length, 2)
+  } finally { w.restore() }
+})
+
+test("fallback: clearing before the window decides shows nothing", async () => {
+  const w = fakeWindows({ focused: true, hostFocusHeld: true })
+  try {
+    const ctx = context()
+    notify(ctx, { kind: "error", title: "Dropped", key: "k", at: 1 } as never)
+    clearNotification(ctx, "k")
+    await settle()
+    assert.equal(toasts.length, 0)
+  } finally { w.restore() }
+})

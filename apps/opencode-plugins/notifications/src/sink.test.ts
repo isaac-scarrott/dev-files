@@ -131,6 +131,17 @@ test("host signals never repeat the host's system notification; plugin ones go t
   assert.deepEqual(state.attention[0], { title: "Task failed", message: undefined, variant: "error", session: { server: "sidecar", id: "ses_1" }, id: `scheduler\u0000f\u0000${10_000}` })
 })
 
+test("the focus rule keeps the host's sound quiet for a done on the session on screen; error and needs-you still call it", () => {
+  const { state, send } = rig()
+  state.presence = { focused: true, onScreen: true }
+  send({ kind: "done", title: "Finished", target, key: "d" }, "monitor")
+  assert.equal(state.attention.length, 0)
+  send({ kind: "error", title: "Failed", target, key: "e" }, "monitor")
+  state.now += 31_000
+  send({ kind: "needs-you", title: "Question", target, key: "q", persistent: true }, "monitor")
+  assert.deepEqual(state.attention.map((a) => (a as { variant: string }).variant), ["error", "default"])
+})
+
 test("a muted source reaches neither toast nor system notification", () => {
   const { state, send } = rig()
   state.settings = { ...defaultSettings, muted: ["scheduler"] }

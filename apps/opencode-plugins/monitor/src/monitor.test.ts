@@ -658,27 +658,34 @@ test("a re-arm kills the whole process group of the previous run (real processes
   const t = setup()
   const monitors = new Monitors({ ...newProcess(t.deps), spawn: spawnShell, newID: () => "mon_real" })
   const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
-  const pidsOf = (text: string) => text.match(/^\d+$/gm)!.map(Number)
+  const pidsOf = (text: string) => text.match(/^\d+$/gm)?.map(Number) ?? []
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  const waitWake = async (n: number) => {
-    for (let i = 0; i < 200 && t.wakes.length < n; i++) { await pause(20); await t.clock.advance(5000) }
-    assert.ok(t.wakes.length >= n, "no wake arrived")
+  // The two `echo $!` lines are separate chunks of output; a batch may flush between them, so a run's pids are everything its wakes reported.
+  const pidsAfter = async (from: number) => {
+    for (let i = 0; i < 200; i++) {
+      const found = t.wakes.slice(from).flatMap((w) => pidsOf(w.text))
+      if (found.length >= 2) return found
+      await pause(20)
+      await t.clock.advance(5000)
+    }
+    return assert.fail("the processes did not report their pids")
+  }
+  const allDead = async (pids: number[]) => {
+    for (let i = 0; i < 100 && pids.some(alive); i++) await pause(20)
+    return pids.every((pid) => !alive(pid))
   }
   await monitors.start({ ...t.input, command: "(sleep 300 & echo $!); sleep 301 & echo $!; wait", cwd: "/tmp", rearmMinutes: 10 })
-  await waitWake(1)
-  const first = pidsOf(t.wakes[0]!.text)
+  const first = await pidsAfter(0)
   assert.equal(first.length, 2) // a sleep in a subshell, and one beside it
   assert.ok(first.every(alive))
+  const mark = t.wakes.length
   await t.clock.advance(10 * MIN)
-  await waitWake(2)
-  const second = pidsOf(t.wakes[1]!.text)
-  await pause(200)
+  const second = await pidsAfter(mark)
   assert.notDeepEqual(first, second)
-  assert.ok(first.every((pid) => !alive(pid)))
+  assert.ok(await allDead(first), "the previous run's processes are still alive")
   assert.ok(second.every(alive))
   await monitors.dispose()
-  await pause(200)
-  assert.ok(second.every((pid) => !alive(pid)))
+  assert.ok(await allDead(second), "dispose left processes alive")
 })
 
 test("maxEvents is a lifetime cap: a restart at 3 of 5 events leaves 2", async () => {

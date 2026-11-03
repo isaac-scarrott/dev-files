@@ -219,6 +219,42 @@ const handles = new WeakMap<object, Map<string, { dismiss(): void }>>()
 
 const fallbackKinds: ReadonlySet<NotifyKind> = new Set<NotifyKind>(["needs-you", "error", "done"])
 
+/** The host holds this Web Lock (shared) in every window that has focus (`shell/notifications/coordinator.ts`), so no holder means no window is focused. */
+const HOST_FOCUS_LOCK = "opencode:notification-focus"
+const CLAIM_LOCK = "opencode-plugins.notify.fallback"
+const CLAIM_STORE = "opencode-plugins.notify.fallback"
+const CLAIM_MAX = 200
+
+/**
+ * Which window shows a fallback toast when the app has several. Each window runs every plugin, so one server event reaches
+ * all of them: the focused window shows it, and when none has focus one window does (the first to claim the event). Undefined
+ * when the page cannot coordinate (no `document` or Web Locks: a server half, a test): the caller shows at once.
+ */
+function windowGate(): ((id: string) => Promise<boolean>) | undefined {
+  if (typeof document === "undefined" || typeof navigator === "undefined" || !navigator.locks) return undefined
+  const locks = navigator.locks
+  const seen = new Set<string>()
+  const claim = (id: string): boolean => {
+    if (seen.has(id)) return false
+    seen.add(id)
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem(CLAIM_STORE) ?? "[]")
+      const ids = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : []
+      if (ids.includes(id)) return false
+      localStorage.setItem(CLAIM_STORE, JSON.stringify([...ids, id].slice(-CLAIM_MAX)))
+    } catch {
+      // The in-memory claim still keeps this window from showing it twice.
+    }
+    return true
+  }
+  return async (id) => {
+    if (document.hasFocus()) return true
+    const someoneFocused = await locks.query().then((state) => (state.held ?? []).some((lock) => lock.name === HOST_FOCUS_LOCK), () => false)
+    if (someoneFocused) return false
+    return locks.request(CLAIM_LOCK, async () => claim(id)).catch(() => true)
+  }
+}
+
 function fallback(ctx: NotifyContext, notification: Notification): NotifyOutcome {
   if (!fallbackKinds.has(notification.kind)) return "none"
   const open = ctx.tabs && notification.target
@@ -226,14 +262,30 @@ function fallback(ctx: NotifyContext, notification: Notification): NotifyOutcome
   const live = handles.get(ctx) ?? new Map()
   handles.set(ctx, live)
   live.get(notification.key)?.dismiss()
-  const handle = ctx.toast.show({
-    title: notification.title,
-    description: notification.body,
-    variant: notification.kind === "error" ? "error" : notification.kind === "done" ? "success" : "default",
-    persistent: notification.persistent,
-    actions: open && target ? [{ label: "Open", run: () => ctx.tabs!.open({ server: target.server, id: target.session }, { focus: true }) }] : undefined,
-  })
-  live.set(notification.key, handle)
+  const show = () =>
+    ctx.toast.show({
+      title: notification.title,
+      description: notification.body,
+      variant: notification.kind === "error" ? "error" : notification.kind === "done" ? "success" : "default",
+      persistent: notification.persistent,
+      actions: open && target ? [{ label: "Open", run: () => ctx.tabs!.open({ server: target.server, id: target.session }, { focus: true }) }] : undefined,
+    })
+  const gate = windowGate()
+  if (!gate) {
+    live.set(notification.key, show())
+    return "fallback"
+  }
+  // Decided a moment later (Web Locks answer asynchronously); a newer notification with the key, or a clear, cancels this one.
+  const pending = { dismiss() {} }
+  live.set(notification.key, pending)
+  void gate(`${ctx.id}\u0000${notification.key}\u0000${notification.at}`).then(
+    (yes) => {
+      if (live.get(notification.key) !== pending) return
+      if (yes) live.set(notification.key, show())
+      else live.delete(notification.key)
+    },
+    () => undefined,
+  )
   return "fallback"
 }
 
@@ -300,6 +352,8 @@ export const serverNotificationSchema = {
     body: { type: "string" },
     key: { type: "string" },
     persistent: { type: "boolean" },
+    /** The server clock at the event: every window then derives the same system-notification id from one event. */
+    at: { type: "number" },
     target: { type: "object", properties: { server: { type: "string" }, session: { type: "string" } }, required: ["session"], additionalProperties: false },
     action: { type: "object", properties: { type: { type: "string" }, message: { type: "string" } }, required: ["type"], additionalProperties: false },
   },
