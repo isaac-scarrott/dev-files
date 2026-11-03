@@ -10,7 +10,7 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 
 | Package | What it does | Kind |
 | --- | --- | --- |
-| [`blindfold`](blindfold) | Vendored vimtor/opencode-blindfold 0.5.0: agents use secrets without seeing them | server, TUI, GUI |
+| [`blindfold`](blindfold) | Vendored vimtor/opencode-blindfold 0.5.0 (one local change: no success toast): agents use secrets without seeing them | server, TUI, GUI |
 | [`cache-warning`](cache-warning) | Grey tray above the composer when the next message will re-read the conversation at full price: prompt cache expired, model changed, after a compaction; the cache window (5m or 1h) is read from Claude Code's transcript | GUI + server |
 | [`claude-proxy`](claude-proxy) | Routes the Claude Agent provider through the proxy in `~/.claude/settings.json` | server |
 | [`model-picker`](model-picker) | Search models dialog: no Recent section, providers A to Z, models by output price | GUI |
@@ -18,13 +18,13 @@ restarted, not just the app: quit the app, then `opencode service restart`. Cmd+
 | [`native-ui`](native-ui) | Components copied from the app's own markup; `snooze-archive`, `orchestrator-tools`, `monitor` and `scheduler` import it; the shared injected-message row and the composer chip (a `ComposerPill` that collapses in and out, with its popover rows); the alerts hub contract (`notify-contract.ts`) | library |
 | [`no-project`](no-project) | "No project" row in the project picker and `/no-project`: a draft in its own scratch folder, swept when unused | GUI + server |
 | [`notifications`](notifications) | Settings > Notifications (plugins), one toast system and tab marks for what finishes, fails or waits for you: the app's own run done / failed / question events plus notifications published by `scheduler` and `monitor` (any plugin can publish through the hub in `native-ui`); Open button, focus rule, burst collapse, per-source mute; **Go to next notification** (⌘I) with a titlebar count; system notification and sound stay the app's | GUI |
-| [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions; a peer's message shows as a grey row | server, GUI |
+| [`orchestrator-tools`](orchestrator-tools) | `orchestrate_*` tools: create, delegate to, message (`<cross-session-message>` wrapper, `list_peers`), wait on, read and stop sessions; a peer's message shows as a grey row (publishes nothing to the hub: its wakes start a turn) | server, GUI |
 | [`scheduler`](scheduler) | `schedule_task`, `list_schedules`, `cancel_schedule`: one-off, interval and cron prompts that wake a session (`<scheduled-task>` wrapper), kept across restarts and sleep; runs show as a grey row with a Cancel button, and a "N schedules" chip beside the composer lists what is scheduled for the session (Cancel on each row) | server, GUI |
 | [`session-drag`](session-drag) | Drag a sidebar session row into the chat to attach a `@session:<id>` chip | GUI |
 | [`sidebar-repos`](sidebar-repos) | Two-line sidebar rows (project name over title), permission and question icons, last-active time on idle rows | GUI |
-| [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu | GUI |
+| [`snooze-archive`](snooze-archive) | Snoozed and Archived sidebar groups (paged, lazy Archived, whole-sidebar scroll, upward expand), Snooze and Archive in every session menu; a woken session shows a clock (the shared tab mark), published as info to the hub | GUI |
 | [`timeline-rail`](timeline-rail) | Tick rail in the chat gutter for the newest 10 prompts, after t3-code's minimap: hover card, chevrons, keyboard, click to jump | GUI |
-| [`usage-resume`](usage-resume) | Waits for the earliest Claude account reset after a usage limit, re-checks usage, queues "Continue." once | server |
+| [`usage-resume`](usage-resume) | Waits for the earliest Claude account reset after a usage limit, re-checks usage, queues "Continue." once; a limit, a moved resume time and giving up are published to the hub (error / info / error) | server, GUI |
 | [`visual-replies`](visual-replies) | `publish_html` tool: agent HTML pages render inline in a sandboxed iframe | GUI + server |
 
 Each package has a README with what it does, how to install it, its options and its credits. Design notes are in `DESIGN.md` where a package has one.

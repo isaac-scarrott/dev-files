@@ -115,5 +115,46 @@ export declare const UsageResume: {
                 readonly additionalProperties: false;
             };
         };
+        /** What the user should hear: a limit was hit, the resume moved. Read by the GUI half or the `notifications` plugin. */
+        readonly notify: {
+            readonly schema: {
+                readonly type: "object";
+                readonly properties: {
+                    readonly kind: {
+                        readonly type: "string";
+                    };
+                    readonly title: {
+                        readonly type: "string";
+                    };
+                    readonly severity: {
+                        readonly type: "string";
+                    };
+                    readonly body: {
+                        readonly type: "string";
+                    };
+                    readonly key: {
+                        readonly type: "string";
+                    };
+                    readonly persistent: {
+                        readonly type: "boolean";
+                    };
+                    readonly at: {
+                        readonly type: "number";
+                    };
+                    readonly target: {
+                        readonly type: "object";
+                        readonly properties: {
+                            readonly session: {
+                                readonly type: "string";
+                            };
+                        };
+                        readonly required: readonly ["session"];
+                        readonly additionalProperties: false;
+                    };
+                };
+                readonly required: readonly ["kind", "title"];
+                readonly additionalProperties: true;
+            };
+        };
     };
 };

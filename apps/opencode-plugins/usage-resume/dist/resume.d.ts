@@ -3,6 +3,7 @@ import { type ErrorLike, type UsageLimit } from "./detect.js";
 import type { Options } from "./options.js";
 import { type Waiting } from "./plan.js";
 import { type Samples } from "./diag.js";
+import type { Outgoing } from "./notify.js";
 import type { Toggles } from "./toggles.js";
 import { type UsageSource } from "./usage.js";
 /** The slice of the plugin context the resumer uses; tests supply a fake. */
@@ -46,6 +47,11 @@ export declare class Resumer {
     private busy;
     /** Called with a session id when what the GUI shows for it may have changed. */
     changed: (sessionID: string) => void;
+    /**
+     * Called with what the user should hear. A wake that starts a turn says nothing (the run's own outcome does), so this is
+     * the limit itself, a resume that moved, and giving up. The timeline notices stay the record in the session.
+     */
+    notify: (notification: Outgoing) => void;
     private constructor();
     static create(host: Host, options: Options, clock: Clock, usage: UsageSource, toggles: Toggles, samples: Samples, 
     /** The project location this instance serves; it acts only on sessions that live there. */
@@ -85,6 +91,7 @@ export declare class Resumer {
     private process;
     private drop;
     private announce;
+    private tell;
     /** A timeline notice that does not wake the session. */
     private notice;
     private save;

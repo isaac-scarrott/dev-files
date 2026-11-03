@@ -7,6 +7,7 @@ License: MIT, copyright vimtor 2026.
 LICENSE.root is the upstream root LICENSE (identical to the package LICENSE).
 
 Upstream files are unchanged, except these local adaptations:
+- `plugin/src/gui.ts`, `plugin/src/tui.ts`: the green "Secret NAME stored." success toast is dropped. A thing the user just did is silent when it succeeds (the dialog closing is the answer); the failure toast ("Could not send secret") stays. Done as a `| sed` transform on their `vendor.manifest` lines (`scripts/vendor.sh` pipes upstream through it), so a vendor run reproduces the change instead of overwriting it, and an upstream rewrite of that line makes the delete match nothing (the two tests that expect no toast then fail). `test/gui.test.ts` and `test/tui.test.ts` (not vendored) expect no toast.
 - `package.json`: local (private, pnpm, `@opencode/plugin` 2.2.5, vite 7, no publish scripts). Upstream is `upstream.package.json`.
 - `tsconfig.json`: extends the local `./tsconfig.base.json` (upstream root file, unchanged) instead of `../../tsconfig.base.json`. Upstream is `upstream.tsconfig.json`.
 - `.npmrc`, `pnpm-workspace.yaml`: copied from sidebar-repos.

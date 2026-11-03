@@ -61,7 +61,7 @@ test("prompts until a value is entered, then submits it to the requesting locati
     { title: "Enter API_TOKEN", description: "Call the API", placeholder: "Secret value" },
   ])
   expect(calls).toEqual([["submit", { requestID: "req", value: "x" }, { location: { directory: "/project" } }]])
-  expect(toasts).toEqual([{ variant: "success", message: "Secret API_TOKEN stored." }])
+  expect(toasts).toEqual([])
   await cleanup()
   expect(listeners.size).toBe(0)
 })

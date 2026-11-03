@@ -309,3 +309,12 @@ What was done about it, in order of effect: one `MutationObserver` per window sh
 | idle | 85 | 78 | -7 | 0 | 0 | 9.2 (9.9) | PASS |
 | open thread (settled, ms) | 372 | 380 | 7 | | | | PASS |
 | reopen thread (settled, ms) | 48 | 47 | -1 | | | | PASS |
+
+## Notifications (M5): nothing published
+
+Checked for events worth a notification; none, so the plugin neither publishes nor imports the hub.
+
+- It never toasts. Its failures (an unknown peer, a target outside the scope, a session that cannot be read) are thrown as tool errors and reach the model, and the user sees them on the tool card. The `catch` blocks that swallow a deleted session are benign cleanup, not user-facing failures.
+- A peer message wakes the recipient, which starts a turn: the host reports that turn's done or error, and the injected row is the in-timeline record. The user's rule is that a wake that starts a turn leaves no extra mark, so the planned `info` per peer message is dropped (this settles open question 6 in `notifications/DESIGN.md`).
+- A finished run of a created session is the host's: a root session with a tab reports `done`/`error` itself, and a subagent's failure is shown on its root.
+- Add a publisher only for something that happens with no turn and no tool error. None exists today.

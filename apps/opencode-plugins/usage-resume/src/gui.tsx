@@ -1,6 +1,7 @@
 import { ComposerPill, createKeyed, createLatest, Plugin, SettingsPage } from "@opencode/plugin/gui"
 import { createSignal, onCleanup } from "solid-js"
 import { UsageResume } from "./rpc.js"
+import { acquirePublisher, notifyFromServer } from "../../native-ui/src/notify-contract.js"
 import { type Loaded, pillFor, type SessionState } from "./view.js"
 
 const TITLE = "Auto-resume after usage limit"
@@ -20,11 +21,14 @@ export default Plugin.define({
   },
   setup(ctx) {
     const rpc = () => ctx.client.rpc(UsageResume)
+    onCleanup(acquirePublisher(ctx.id))
 
     // One reactive view of the server's state, refreshed by its `changed` event.
     const [version, setVersion] = createSignal(0)
     createKeyed(rpc, (client) => {
       onCleanup(client.events.on("changed", () => void setVersion((v) => v + 1)))
+      // A limit hit, a resume that moved, giving up: the `notifications` plugin when installed, else a toast of our own.
+      onCleanup(client.events.on("notify", (event) => void notifyFromServer(ctx, event.data), { signal: ctx.signal }))
     })
 
     const defaults = createLatest(

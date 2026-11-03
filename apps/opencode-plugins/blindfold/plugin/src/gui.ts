@@ -30,7 +30,6 @@ export default Plugin.define({
             return
           }
           const reply = (await blindfold.submit({ requestID: request.requestID, value }, options)) as { accepted: boolean }
-          if (reply.accepted) ctx.toast.show({ variant: "success", title: `Secret ${request.name} stored.` })
         }
 
         onCleanup(

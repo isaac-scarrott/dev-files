@@ -1,4 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc";
+import { notificationSchema } from "./notify.js";
 const sessionID = { type: "string", minLength: 1 };
 const enabled = { type: "boolean" };
 /** The GUI and the server plugin are separate processes; the server owns the state and the GUI reads and writes it here. */
@@ -48,6 +49,8 @@ export const UsageResume = Rpc.define({
                 additionalProperties: false,
             },
         },
+        /** What the user should hear: a limit was hit, the resume moved. Read by the GUI half or the `notifications` plugin. */
+        notify: { schema: notificationSchema },
     },
 });
 //# sourceMappingURL=rpc.js.map

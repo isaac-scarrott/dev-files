@@ -75,3 +75,8 @@ interface SessionTabRowProps {
 - **Busy spinner and status marks.** Verbatim copies, but no seeded session is busy or unread, so parity reports them N/A rather than measured.
 - **Tooltip internals and Kobalte's positioning wrapper.** Both come from `ctx.ui.Tooltip` and the host; the library's shell does the same arithmetic without the popper wrapper (placement is checked, the wrapper's `position` is an allowed difference).
 - **Extending the host's own tab menu.** snooze-archive's injection keys on the session last right-clicked, so a library menu opened next to it shows no Snooze/Archive lines; the parity spec ignores `[data-sa-menu]`.
+
+## Shared tab marks and the sidebar observer
+
+- **One mark node, one owner.** `createTabMarks({ owner })` stamps `data-notify-owner` on the mark it draws and never replaces or removes a mark of another owner. A plugin that draws its own mark while no hub is installed (snooze-archive's clock, `glyph: "clock"`) and the hub's mark can coexist without removing each other. A plugin that wants the hub to draw instead returns `undefined` from `mark` while `activeSink()` answers.
+- **Plugin tests resolve Solid from the plugin.** A plugin's tests import native-ui's source, and each package has its own Solid copy: an `onCleanup` from native-ui's copy finds no owner in the plugin's `createRoot`, so cleanups silently never run. `native-ui/test/solid-hooks.mjs` (loaded by `--import ../native-ui/test/register.mjs`) maps `solid-js` imports from native-ui's source to the package the tests run in. A failing `assert.equal(domNode, null)` on a happy-dom element can hang for minutes and eat memory (the diff of the DOM): compare strings or counts.

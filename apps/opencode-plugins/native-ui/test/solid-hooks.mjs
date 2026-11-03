@@ -21,3 +21,11 @@ export async function load(url, context, next) {
   })
   return { format: "module", source: result.code, shortCircuit: true }
 }
+
+// A plugin's tests import native-ui's source, and each package has its own copy of Solid: an `onCleanup` from native-ui's copy
+// would find no owner in the plugin's roots. Resolve Solid from the package the tests run in, as the plugin's bundle does.
+const home = pathToFileURL(`${process.cwd()}/`).href
+export async function resolve(specifier, context, next) {
+  if (/^solid-js(\/|$)/.test(specifier) && context.parentURL?.includes("/native-ui/src/")) return next(specifier, { ...context, parentURL: `${home}resolve.mjs` })
+  return next(specifier, context)
+}

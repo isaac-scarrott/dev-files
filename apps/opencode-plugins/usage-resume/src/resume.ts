@@ -3,6 +3,7 @@ import { detectUsageLimit, type ErrorLike, type UsageLimit } from "./detect.js"
 import type { Options } from "./options.js"
 import { decide, type Waiting } from "./plan.js"
 import { LIMIT_LIKE, oneLine, type Samples } from "./diag.js"
+import type { Outgoing } from "./notify.js"
 import type { Toggles } from "./toggles.js"
 import { availability, type UsageSource } from "./usage.js"
 
@@ -65,6 +66,12 @@ export class Resumer {
 
   /** Called with a session id when what the GUI shows for it may have changed. */
   changed: (sessionID: string) => void = () => {}
+
+  /**
+   * Called with what the user should hear. A wake that starts a turn says nothing (the run's own outcome does), so this is
+   * the limit itself, a resume that moved, and giving up. The timeline notices stay the record in the session.
+   */
+  notify: (notification: Outgoing) => void = () => {}
 
   private constructor(
     private readonly host: Host,
@@ -171,10 +178,14 @@ export class Resumer {
     if (info.parentID !== undefined) return this.skip(sessionID, "subagent")
     await this.markLimited(sessionID, limit, at)
     const toggle = await this.toggles.effective(sessionID, true, info.time.created)
-    if (!toggle.on) return this.skip(sessionID, toggle.why)
+    if (!toggle.on) {
+      this.tell(sessionID, "error", "Usage limit reached", "limit", "Auto-resume is off for this session.")
+      return this.skip(sessionID, toggle.why)
+    }
     const attempts = this.state.attempts[sessionID]
     if (attempts && attempts.count >= this.options.maxAttempts) {
       this.log(`${sessionID}: skip: attempt cap reached (${attempts.count}/${this.options.maxAttempts} resumes)`)
+      this.tell(sessionID, "error", "Usage limit reached again, not resuming", "giveup", `Stopped after ${attempts.count} automatic resumes.`)
       await this.notice(sessionID, `Usage limit reached again after ${attempts.count} automatic resumes. Not resuming automatically.`)
       delete this.state.waiting[sessionID]
       await this.save()
@@ -314,7 +325,19 @@ export class Resumer {
     waiting.announcedAt = waiting.dueAt
     waiting.announcements += 1
     const at = formatTime(waiting.dueAt, this.clock.now())
+    // The first announcement is the limit being hit; later ones are the resume time moving, which starts no turn.
+    if (waiting.announcements === 1) this.tell(waiting.sessionID, "error", `Usage limit reached, resumes ${at}`, "limit")
+    else this.tell(waiting.sessionID, "info", `Resumes ${at}`, "resume")
     await this.notice(waiting.sessionID, `Claude usage limit reached. Resumes automatically at ${at}.`)
+  }
+
+  private tell(sessionID: string, kind: Outgoing["kind"], title: string, key: "limit" | "resume" | "giveup", body?: string): void {
+    try {
+      // No `body: undefined`: the RPC event's schema rejects an undefined string.
+      this.notify({ kind, title, ...(body === undefined ? {} : { body }), key: `usage-resume:${key}:${sessionID}`, target: { session: sessionID }, at: this.clock.now() })
+    } catch (error) {
+      this.log(`${sessionID}: could not notify: ${String(error)}`)
+    }
   }
 
   /** A timeline notice that does not wake the session. */

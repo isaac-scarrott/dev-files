@@ -227,3 +227,11 @@ Standing cost, read from the source (not measured):
 | idle | 85 | 84 | -1 | 0 | 0 | 9.2 (9.9) | PASS |
 | open thread (settled, ms) | 372 | 366 | -6 | | | | PASS |
 | reopen thread (settled, ms) | 48 | 48 | -1 | | | | PASS |
+
+## Notifications (M5)
+
+The server emits one RPC event, `notify` (`src/notify.ts`, the hub's shape spelled out as the monitor and scheduler do); the GUI half calls `acquirePublisher` and `notifyFromServer` from native-ui's `notify-contract`: the `notifications` plugin when installed, else a toast of our own with Open.
+
+- **Decisions.** (1) The limit being hit is an `error` keyed `usage-resume:limit:<session>`: "Usage limit reached, resumes 14:05" when it waits, "Usage limit reached" with "Auto-resume is off for this session." when the toggle is off (the host's own "Run failed" for that session is absorbed by the hub's merge rule). (2) A later announcement (the due time moved) is `info` "Resumes 15:10", key `usage-resume:resume:<session>`: it starts no turn. (3) The attempt cap is an `error` keyed `giveup`. (4) A resume that succeeds says nothing: the queued prompt starts a turn, whose done or error the host reports (user rule: a wake that starts a turn leaves no extra mark). (5) The timeline notices stay, as the record in the session, and do not depend on the `notifications` option. (6) The pill is unchanged.
+- **Not verified against a real limit.** The harness cannot trigger Claude's limit. A stub provider (`@ai-sdk/openai-compatible` pointed at a local server that answers 429 with `{"error":{"message":"Claude usage limit reached","resets_at":"<iso>"}}`) drives the real detector, retry hook, server and RPC event to the GUI: toggle off shows the error toast "Auto-resume is off for this session", toggle on shows "Usage limit reached, resumes 04:09 PM" and the pill "Resuming 16:09", with and without `notifications` loaded (the hub's registry then lists `usage-resume` as a publisher). The harness run found that `body: undefined` fails the event's schema; the server now leaves absent fields out, and a test keeps it so. The provider's real CLI error text is covered only by the unit tests.
+- The title uses the system's 12 or 24 hour clock (`toLocaleTimeString`, as the timeline notice does) while the pill reads 24 hour: an existing difference, not changed here.

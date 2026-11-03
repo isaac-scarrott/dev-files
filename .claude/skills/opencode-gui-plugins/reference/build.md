@@ -46,3 +46,7 @@ The renderer sources in the installed app equal tag `v2.2.5` of https://github.c
 App internals can also be recovered from `/Applications/OpenCode.app/Contents/Resources/app.asar` JavaScript source maps. Use an ASAR reader, or parse its four little-endian header integers: JSON directory length is the fourth; file-data base offset is `8 + second`. Walk `files.out.files.renderer.files.assets.files`, read each `.js.map` at `base + offset`, then match `sources` to `sourcesContent`. Narrow by source path before extracting.
 
 Write extracts to the approved session temporary directory and record original source paths. Treat them as implementation evidence for that app version, not an API promise. Leave the installed app unchanged.
+
+## Vendored plugins with a local change
+
+`vendor.manifest` lines take `| <filter>`: `scripts/vendor.sh` pipes the upstream file through it (and the pre-commit hook re-runs it), so a change survives a re-vendor instead of being overwritten. Use a content-based `sed` (match the text, not a line number) and keep the pipe free of `|` characters of its own. Blindfold's success toast is dropped this way (`sed '/toast\.show({ variant: "success"/d'` on `gui.ts` and `tui.ts`). Check by running the filter on the pinned upstream file (`curl ... | sed ...`) and diffing with the repo copy, and keep the tests (not vendored) in step. Note the vendored package's `tui` and `gui` bundles in `dist/` are rebuilt, not fetched.

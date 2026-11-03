@@ -8,13 +8,14 @@ When a Claude usage limit stops a session you opted in, it waits for your accoun
 - **Off by default.** While a session is stopped at a usage limit, a pill above the composer ("Resume after limit") turns it on for that session; it is not shown otherwise and never in subagent sessions. Settings > Preferences > "Auto-resume after usage limit" sets whether new sessions start with it on; a session's own toggle always wins.
 - Detects the Claude Agent provider's "usage limit reached" failure and stops OpenCode's useless short retries.
 - Works out when any of your cliproxy Claude accounts has the limiting window free again, waits for that reset plus a margin, re-checks real usage, then queues one "Continue." prompt.
+- Tells you through the shared notification system ([notifications](../notifications) when installed, else a toast of its own with Open): an error "Usage limit reached, resumes 14:05" (or "Usage limit reached" with "Auto-resume is off for this session." when you did not opt in), an info "Resumes 15:10" when the time moves, and an error when it gives up after the attempt cap. A resume that works says nothing: it starts a turn and the run reports for itself.
 - Adds a timeline notice with the resume time. Survives restarts and sleep: deadlines are checked every 30 seconds.
 - Gives up on a session after 3 resumes without a completed run, and drops stalls older than 8 days. Subagent sessions are never resumed.
 - Logs every failed run, detected limit, schedule, resume and skip with its reason (tokens redacted) to `~/.local/share/opencode/usage-resume/usage-resume.log`, and keeps the first real limit error as `limit-error.json` for detector tests.
 - Only reads the cliproxy auth files and the usage endpoint, at the notch app's pace (5 minute floor per account, 30 minute backoff cap). It never enables or spends extra usage.
 
 ## Context
-Without it a session that hits the 5-hour or weekly limit just fails and waits for you. It needs the Claude Agent provider routed through cliproxy ([claude-proxy](../claude-proxy)) and accounts in `~/.cli-proxy-api/claude-*.json`. A real limit cannot be provoked in tests, so the limit message is the one the 2.2.5 provider builds, fed to the resumer.
+Without it a session that hits the 5-hour or weekly limit just fails and waits for you. It needs the Claude Agent provider routed through cliproxy ([claude-proxy](../claude-proxy)) and accounts in `~/.cli-proxy-api/claude-*.json`. A real limit cannot be provoked in tests, so the limit message is the one the 2.2.5 provider builds, fed to the resumer. The notifications were also exercised end to end in the harness with a stub provider that answers 429 with a limit body (the other shape the detector reads); a real Claude limit has not been seen.
 
 A limit that never makes a run fail leaves nothing to resume: an account with extra usage on keeps serving past 100% and bills the overage. This plugin never enables or pays for extra usage.
 
@@ -26,7 +27,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
   "options": { "prompt": "Continue." }
 }]
 ```
-Kind: server and GUI. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
+Kind: server and GUI. The GUI half republishes the server's `notify` event through the hub in [native-ui](../native-ui). Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
 
 ## Options
 Durations are seconds.
