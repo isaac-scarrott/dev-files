@@ -55,7 +55,7 @@ export default {
   name: "lane-chip",
   viewport: "1600x1000",
   elements: [
-    chip("monitor-chip", MONITOR),
+    chip("monitor-chip", MONITOR, each(["icon.display", "icon.dx"], "the heartbeat is drawn as the capsule's ::before (two stacked mask layers, heartbeatChipCss) and the placeholder catalog svg is hidden, as for the clock; the ::before sits in the same 14px box and 10px inset the svg had, so the capsule's box, label and padding are unchanged (108.02 x 32, label at +32.5, measured before and after)")),
     chip("schedule-chip", SCHEDULE, each(["icon.display", "icon.dx"], "the catalog has no clock: the pill names a placeholder icon, whose svg is hidden and replaced by the drawn clock as the capsule's ::before (laneChipCss), so the measured svg is not the visible glyph")),
     // Opening the host's activity panel dismisses a pill's popover and the reverse (Kobalte closes a popup on focus outside), so
     // the two never stand side by side and the runner cannot measure both at once. They were measured one after the other

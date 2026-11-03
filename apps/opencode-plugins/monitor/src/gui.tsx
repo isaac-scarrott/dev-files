@@ -1,6 +1,6 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup, For } from "solid-js"
-import { createSessionChip, firstLine, ProgressSpinner, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
+import { createSessionChip, firstLine, HeartbeatIcon, type HeartbeatState, HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_LIVE_PLACEHOLDER, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
 import { monitorDeadlines, monitorStatus } from "./chip"
 import type { MonitorItem } from "./control"
 import { monitorOf, summarize, type MonitorWake } from "./parse"
@@ -56,8 +56,10 @@ export default Plugin.define({
     }
     createSessionChip<MonitorItem>(ctx, {
       id: "monitors",
-      icon: "outline-console",
-      rowIcon: () => <ProgressSpinner />,
+      icon: HEARTBEAT_LIVE_PLACEHOLDER,
+      restIcon: HEARTBEAT_FLAT_PLACEHOLDER,
+      rowIcon: (row) => <HeartbeatIcon state={row()?.resting ? "flat" : "live"} />,
+      isResting: (item) => item.state === "paused",
       label: (count) => ctx.plural("chip", count),
       get actionLabel() {
         return ctx.t("stop")
@@ -67,7 +69,7 @@ export default Plugin.define({
       },
       load: async (session, signal) =>
         ((await session.server.client.rpc(MonitorControl).list({ sessionID: session.id }, { signal, location: session.location })) as { items: MonitorItem[] }).items,
-      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: monitorStatus(item, now, words) })),
+      rows: (items, now) => items.map((item) => ({ id: item.id, name: item.name, status: monitorStatus(item, now, words), resting: item.state === "paused" })),
       deadlines: monitorDeadlines,
       act: async (session, item) =>
         ((await session.server.client.rpc(MonitorControl).stop({ id: item.id, sessionID: session.id }, { location: session.location })) as { stopped: boolean }).stopped,
@@ -122,6 +124,15 @@ export default Plugin.define({
     const [stopped, setStopped] = createSignal<ReadonlySet<string>>(new Set())
     const isRunning = (located: Located) => running.latest?.found.has(handle(located)) === true && !stopped().has(handle(located))
 
+    // Of a monitor's wakes only the newest beats: a long-running monitor leaves a row per wake, and a screen of beating rows is noise
+    // (and a cost). The older ones of a monitor that still runs keep the trace at rest; once it has ended every one of them is flat.
+    const newest = createMemo(() => {
+      const last = new Map<string, string>()
+      for (const located of wakes().values()) last.set(handle(located), located.id)
+      return last
+    })
+    const stateOf = (located: Located): HeartbeatState => (running.latest === undefined ? "still" : !isRunning(located) ? "flat" : newest().get(handle(located)) === located.id ? "live" : "still")
+
     const stop = async (located: Located) => {
       const reply = (await located.session.server.client
         .rpc(MonitorControl)
@@ -142,7 +153,7 @@ export default Plugin.define({
           <InjectedMessageRow
             ui={ctx.ui}
             kind="monitor"
-            icon={<ctx.ui.Icon name="outline-console" size="small" />}
+            icon={<HeartbeatIcon state={stateOf(located)} />}
             title={wake.name}
             preview={firstLine(summarize(wake))}
             more={!single}

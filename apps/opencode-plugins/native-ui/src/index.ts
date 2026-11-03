@@ -19,15 +19,17 @@ export { LaneChipRows, laneChipCss, CLOCK_PLACEHOLDER, type LaneChipRow, type La
 export { createSessionChip, type SessionChipOptions } from "./session-chip"
 export { messageSignature } from "./chip-signature"
 export { span, nextChange, MINUTE } from "./chip-time"
-export { RobotIcon, ClockIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { RobotIcon, ClockIcon, HeartbeatIcon, clockIcon, drawnIconCss, CLOCK_PATH } from "./icons"
+export { heartbeatIconCss, heartbeatChipCss, heartbeatKeyframes, heartbeatSweepKeyframes, heartbeatMasks, HEARTBEAT_LIVE_PLACEHOLDER, HEARTBEAT_FLAT_PLACEHOLDER, HEARTBEAT_TRACE, HEARTBEAT_FLAT, HEARTBEAT_LOOP, syncHeartbeats, type HeartbeatState } from "./heartbeat"
 
 import { tabRowActionCss } from "./tab-row-action"
 import { popoverCss } from "./popover"
 import { drawnIconCss } from "./icons"
 import { spinnerCss } from "./spinner"
+import { heartbeatIconCss } from "./heartbeat"
 
 /** Everything the library needs beyond the host's own CSS. Register once: `ctx.add(Style, nativeUiCss)`. */
-export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, spinnerCss].join("\n")
+export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, heartbeatIconCss, spinnerCss].join("\n")
 
 export { createDomHub, elementsChangedBut, SIDEBAR, type DomHub } from "./dom-hub"
 export { createTabMarks, tabMarkNode, iconSymbol, tabMarkCss, TAB_MARK_OWN, type TabMarkSpec, type TabMarkSeverity, type TabMarksOptions } from "./tab-marks"

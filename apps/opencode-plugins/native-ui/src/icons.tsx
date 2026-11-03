@@ -1,3 +1,5 @@
+import type { HeartbeatState } from "./heartbeat"
+
 // Icons the host catalog lacks (searched ui/src/icons/catalog.ts), drawn in its 16px style: outline, 1px currentColor
 // stroke, round caps and joins, circle r6 as `circle-check` and `info` use. ctx.ui.Icon takes only catalog names, so a
 // drawn icon renders inline in a span that inherits the surrounding colour.
@@ -50,4 +52,15 @@ export function RobotIcon() {
       </svg>
     </span>
   )
+}
+
+/**
+ * An ECG trace, the monitors' glyph (heartbeat.ts). `live` beats, `still` shows the trace at rest, `flat` is the line a monitor ends
+ * on; a change of state animates, and a flat icon draws nothing animated. Needs `heartbeatIconCss` in the document (`laneChipCss` and
+ * `nativeUiCss` include it).
+ */
+export function HeartbeatIcon(props: { state: HeartbeatState }) {
+  return <span data-slot="drawn-icon" data-icon="heartbeat" data-state={props.state} aria-hidden="true">
+      <i />
+    </span>
 }

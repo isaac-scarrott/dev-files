@@ -1,5 +1,6 @@
 import { createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { ComposerPill, createKeyed, createLatest, type IconName, type MountedSession, type SessionRef, type Ui } from "@opencode/plugin/gui"
+import { syncHeartbeats } from "./heartbeat"
 import { messageSignature } from "./chip-signature"
 import { nextChange } from "./chip-time"
 import { createLaneChip } from "./lane-chip"
@@ -22,7 +23,12 @@ export interface ChipContext {
 export interface SessionChipOptions<Item extends { readonly id: string }> {
   id: string
   icon: IconName
-  rowIcon: () => JSX.Element
+  /** The chip's icon while every item is at rest (`isResting`). */
+  restIcon?: IconName
+  /** The row's glyph; see `LaneChipRowsProps.icon`. */
+  rowIcon: (row: () => LaneChipRow | undefined) => JSX.Element
+  /** Whether an item is alive but not at work (a paused monitor). */
+  isResting?(item: Item): boolean
   /** "2 monitors". */
   label(count: number): string
   /** Accessible name of a row's action: "Stop monitor". */
@@ -54,6 +60,7 @@ export function createSessionChip<Item extends { readonly id: string }>(ctx: Chi
     document.removeEventListener("keydown", noteKey, true)
     document.removeEventListener("pointerdown", notePointer, true)
   })
+  onCleanup(syncHeartbeats())
   const [stamp, setStamp] = createSignal(0)
   const refresh = () => setStamp((value) => value + 1)
   // Items the user just removed stay out of any answer that was asked before the removal.
@@ -82,9 +89,12 @@ export function createSessionChip<Item extends { readonly id: string }>(ctx: Chi
     return latest.items.filter((item) => (gone.get(item.id) ?? 0) <= latest.stamp)
   }
 
+  const restingOf = (items: readonly Item[]) => options.isResting !== undefined && items.length > 0 && items.every(options.isResting)
+
   const chip = createLaneChip({
     id: options.id,
     icon: options.icon,
+    restIcon: options.restIcon,
     label: options.label,
     menu: (input) => {
       const [now, setNow] = createSignal(Date.now())
@@ -139,9 +149,9 @@ export function createSessionChip<Item extends { readonly id: string }>(ctx: Chi
   createKeyed(
     () => {
       const session = ctx.sessions.current()
-      return session && answer.latest?.key === session.key ? { key: session.key, visit: session.visit, count: itemsOf(session.key).length } : undefined
+      return session && answer.latest?.key === session.key ? { key: session.key, visit: session.visit, count: itemsOf(session.key).length, resting: restingOf(itemsOf(session.key)) } : undefined
     },
-    (value) => chip.settle(value, value.count),
-    { equals: (a, b) => a.key === b.key && a.visit === b.visit && a.count === b.count },
+    (value) => chip.settle(value, value.count, value.resting),
+    { equals: (a, b) => a.key === b.key && a.visit === b.visit && a.count === b.count && a.resting === b.resting },
   )
 }
