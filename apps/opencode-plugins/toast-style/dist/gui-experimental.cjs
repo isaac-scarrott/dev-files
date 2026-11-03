@@ -16,7 +16,7 @@ ${l}${e.removed}${e.notSwiped} { transition: transform 160ms ${i}, opacity 160ms
 ${l}${e.removed}${e.notSwiped}${e.front} { --y: translateY(6px) scale(0.98); opacity: 0; }
 
 /* Every toast, whoever raised it: the glyph shares the title's row; the text and the buttons use the full width. */
-${t} { column-gap: 8px; row-gap: 0; }
+${t} { column-gap: 4px; row-gap: 0; }
 ${t} > ${f} { display: contents; }
 ${t} ${h} { grid-area: 1 / 1; min-width: 0; }
 ${t}${x} ${h} { grid-column: 2; }
