@@ -1,4 +1,5 @@
 import { onCleanup } from "solid-js"
+import { KIND_GLYPH, type NotifyKind } from "./notify-contract"
 import type { DomHub } from "./dom-hub"
 import { elementsChangedBut } from "./dom-hub"
 
@@ -13,6 +14,9 @@ import { elementsChangedBut } from "./dom-hub"
 export type TabMarkSeverity = "info" | "success" | "warning" | "error"
 
 export interface TabMarkSpec {
+  /** Which glyph: the kind's, the same one its toast and the titlebar pill draw. */
+  readonly kind: NotifyKind
+  /** The colour. */
   readonly severity: TabMarkSeverity
   /** The accessible name of the mark. */
   readonly label: string
@@ -25,27 +29,23 @@ export const TAB_MARK_OWN = "[data-notify-mark]"
 
 const NS = "http://www.w3.org/2000/svg"
 
-// 16px grid, 1px round stroke, the catalog's style. Nearest catalog neighbours: `circle-exclamation`, `warning`.
-const GLYPHS: Record<TabMarkSeverity, readonly string[]> = {
-  info: ["M8 7.5v3.5", "M8 5h.01"],
-  success: ["M5.5 8.25l1.75 1.75L10.75 6"],
-  warning: ["M8 5.25v3.5", "M8 10.75h.01"],
-  error: ["M8 4.75v4", "M8 10.75h.01"],
-}
-
-const CLOCK_HANDS = ["M8 4.5V8l2.5 1.5"]
-
-const FACE: Record<TabMarkSeverity, string> = {
-  info: "circle",
-  success: "circle",
-  warning: "triangle",
-  error: "circle",
-}
+// The mark draws the host's own artwork for the kind: a `<use>` of the app's icon sprite, the way the toast's glyph does, so
+// the two are the same drawing. 14px is the host's small icon and the size of its busy ring in this slot. The clock is
+// snooze-archive's own drawing and keeps its colour.
+const CLOCK = ["M8 4.5V8l2.5 1.5"]
+const SIZE = "14"
 
 function node(doc: Document, tag: string, attributes: Record<string, string>) {
   const element = doc.createElementNS(NS, tag)
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value)
   return element
+}
+
+/** The sprite symbol the host's `Icon` draws for a name: the new artwork while the "New icons" experiment is on and has it. */
+export function iconSymbol(doc: Document, name: string): string {
+  const next = `opencode-v2-icon-new-${name}`
+  const experiment = doc.querySelector('svg[data-slot="icon-svg"] use[href*="icon-new-"]') !== null
+  return experiment && doc.getElementById(next) ? next : `opencode-v2-icon-${name}`
 }
 
 export function tabMarkNode(doc: Document, spec: TabMarkSpec, owner = ""): HTMLElement {
@@ -56,9 +56,17 @@ export function tabMarkNode(doc: Document, spec: TabMarkSpec, owner = ""): HTMLE
   if (spec.glyph) mark.dataset.glyph = spec.glyph
   mark.setAttribute("role", "img")
   mark.setAttribute("aria-label", spec.label)
-  const svg = node(doc, "svg", { viewBox: "0 0 16 16", width: "14", height: "14", fill: "none", stroke: "currentColor", "stroke-width": "1", "stroke-linecap": "round", "stroke-linejoin": "round" })
-  svg.append(spec.glyph === "clock" || FACE[spec.severity] === "circle" ? node(doc, "circle", { cx: "8", cy: "8", r: "6" }) : node(doc, "path", { d: "M8 2.5l6 10.5H2z" }))
-  for (const d of spec.glyph === "clock" ? CLOCK_HANDS : GLYPHS[spec.severity]) svg.append(node(doc, "path", { d }))
+  if (spec.glyph === "clock") {
+    const svg = node(doc, "svg", { viewBox: "0 0 16 16", width: SIZE, height: SIZE, fill: "none", stroke: "currentColor", "stroke-width": "1", "stroke-linecap": "round", "stroke-linejoin": "round" })
+    svg.append(node(doc, "circle", { cx: "8", cy: "8", r: "6" }))
+    for (const d of CLOCK) svg.append(node(doc, "path", { d }))
+    mark.append(svg)
+    return mark
+  }
+  const symbol = iconSymbol(doc, KIND_GLYPH[spec.kind])
+  mark.dataset.icon = symbol
+  const svg = node(doc, "svg", { width: SIZE, height: SIZE, viewBox: doc.getElementById(symbol)?.getAttribute("viewBox") ?? "0 0 20 20", fill: "none" })
+  svg.append(node(doc, "use", { href: `#${symbol}` }))
   mark.append(svg)
   return mark
 }
@@ -78,7 +86,7 @@ export interface TabMarksOptions {
 }
 
 const same = (mark: Element, spec: TabMarkSpec) =>
-  (mark as HTMLElement).dataset.severity === spec.severity && (mark as HTMLElement).dataset.glyph === spec.glyph && mark.getAttribute("aria-label") === spec.label
+  (mark as HTMLElement).dataset.severity === spec.severity && (spec.glyph === "clock" || (mark as HTMLElement).dataset.icon === iconSymbol(mark.ownerDocument, KIND_GLYPH[spec.kind])) && (mark as HTMLElement).dataset.glyph === spec.glyph && mark.getAttribute("aria-label") === spec.label
 
 /**
  * Keeps the marks of the vertical tabs in step with `mark`. Must run inside the plugin's owner: every mark is removed on

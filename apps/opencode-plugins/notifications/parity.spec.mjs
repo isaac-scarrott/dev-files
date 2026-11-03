@@ -29,6 +29,7 @@ export default {
         color: "severity colour from the host's --v2-state-fg-* tokens; the slot has no colour of its own until a mark fills it",
         outline: "outline-style is none on both: only the unused outline colour (currentColor) differs, nothing is drawn",
       },
+      // The mark's glyph is the toast's: same sprite symbol, 14px (the host's small icon, the busy ring's size).
       behaviour: [
         { name: "aria", na: "the host's status slot is aria-hidden decoration; ours is role=img with a label by design, so assistive tech hears what the host only paints" },
       ],

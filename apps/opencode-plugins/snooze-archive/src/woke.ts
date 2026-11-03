@@ -31,7 +31,7 @@ export function createWokeMarks(doc: Document, hub: DomHub, target: (key: string
     owner: OWNER,
     mark: (key) => {
       const session = target(key)
-      return session && woke(session) && !activeSink() ? { severity: "info", label: WOKE_LABEL, glyph: "clock" } : undefined
+      return session && woke(session) && !activeSink() ? { kind: "info", severity: "info", label: WOKE_LABEL, glyph: "clock" } : undefined
     },
   })
 }
