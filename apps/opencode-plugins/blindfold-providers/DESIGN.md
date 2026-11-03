@@ -1,7 +1,45 @@
-# blindfold-providers: design spike
+# blindfold-providers: design
 
-Status: T3 spike (2026-11-03), done. Research plus a throwaway prototype under `spike/`. Not a plugin yet. Blindfold
-reference: the fork as merged to master (648a19a).
+Status: **v1 built** (2026-11-03). `src/` is the plugin; `spike/` keeps the research prototypes (fill-and-mask page driver,
+evidence). Sections 1 to 5 are the spike's evidence and design, unchanged except where marked **Built**. Blindfold
+reference: the fork as merged to master (648a19a), changed here as listed in §11.
+
+## Decisions
+
+Settled with the user (2026-11-03), in the order they shaped the build:
+
+1. **Two packages.** `blindfold` keeps the card, the redactor, the rules, the audit trail and the settings page;
+   `blindfold-providers` is a server-only plugin that registers accounts. They meet through the versioned
+   `Symbol.for("opencode-plugins.blindfold.providers.v1")` registry (`contract.ts`, byte-identical copy in blindfold, a test
+   in each package compares them). A third vendor is a new provider registering the same way.
+2. **1Password by service account.** Default path: a token (`OP_SERVICE_ACCOUNT_TOKEN`) for a dedicated `Agent` vault, no
+   biometrics, no app dialog. Every `op` call sets `OP_BIOMETRIC_UNLOCK_ENABLED=false` and the child's environment has
+   every inherited `OP_*`, `BW_*` and `BITWARDENCLI_*` removed. The token is asked once in the card and kept in the login
+   keychain (`security -i` on stdin, never argv). Whole-account master-password unlock is an option (`unlock:
+   "masterPassword"`), documented as untested against the real CLI, not the default.
+3. **Bitwarden cloud, no SSO.** `bw login --apikey` once (the card asks for the client id and secret), then the master
+   password by `bw unlock --passwordenv`. `BW_SESSION` lives in memory only; the account locks itself after 10 idle minutes
+   (`autoLockMinutes`, per account) with `bw lock`.
+4. **Named accounts.** Work is Bitwarden and personal is 1Password in the user's setup, but an account is a configured
+   name: any number of either kind. `allowedOrigins` on an account fences it.
+5. **Three choices.** The inline card offers **Always allow** (a saved rule for site or name, account, item and field:
+   stored in the plugin's storage, listed and revocable on the Blindfold settings page, never a value), **Allow** (once)
+   and **Deny** (a denial to the agent, never a value). Two matching accounts: the card lets the user choose, and the
+   choice with Always allow becomes the rule. A locked account shows "Work (Bitwarden) is locked" with masked inputs.
+6. **Defaults.** Confirm every use unless a saved rule covers it. A fenced account serves only its origins, and a rule that
+   names an origin keeps every other account out of it. Rules and mapping are options: `rules: [{ origin | name,
+   account, ref? }]`. Tag rules are not supported (Bitwarden has no tags; see §8).
+7. **Fill ships in v1** (Q1 passed, F13 below): `blindfold.fill` returns a placeholder script and the `execute.before`
+   hook of `browser.evaluate` swaps it for the script that carries the value, after the call was recorded.
+8. **Own actions are silent.** Approve, Always allow, Deny and unlock show their result in the card (it becomes one line)
+   and never toast.
+
+## Evidence added by the build
+
+| # | What | Result |
+|---|---|---|
+| F13 | **Q1**, private harness (OpenCode 2.2.5), a probe plugin on `execute.before` / `execute.after`, run from a Code Mode script that calls `probe.echo` and `browser.evaluate` with a placeholder inside | (a) `execute.before` **fires for nested calls**: tool ids `probe_echo`, `browser_tabs_open`, `browser_evaluate`, with the outer `execute`'s call id. (b) It **can rewrite `input`**, and the tool runs with the rewritten input (a `browser.evaluate` of `'{{...}}'.length` returned the length of the substituted text). (c) The stored call keeps the **original**: `session_message.data` `content[0].state.metadata.toolCalls[i].input` holds the placeholder; a value built at run time and substituted by the hook was found **nowhere** under the harness root (database, WAL, log, caches). (d) `execute.after` receives the rewritten input (read only). (e) A hook that also rewrote the outer `execute` input changed what the nested calls saw but not the stored `input.code`: rewrite nested calls only |
+| F14 | End to end in the real in-app browser, harness driver `harness/drive-providers.mjs` | `fill` from a 1Password fixture item filled the React test page; both fields held the value and carried the mask (computed `-webkit-text-security: disc`), the echo line was masked, OCR of a screenshot found neither value; with the page on another origin the page script refused both fields (`origin`) and the password field stayed empty; no value in the model's request, the stored messages, the service log or the audit file |
 
 Goal: agents use **1Password and Bitwarden side by side** (e.g. `personal` = 1Password, `work` = Bitwarden, or two
 accounts of one kind) for passwords and one-time codes through blindfold, without values reaching the model, and fill
@@ -230,8 +268,9 @@ string passed to a nested Code Mode tool call is stored in `session_message.data
 | **R3** GUI/Electron: blindfold's GUI `main` runs `webContents.executeJavaScript` in the tab's contents | no | no | **N** | a way to map `tabID` to a `WebContents` (no public API: `Browser` contract offers only `attached/canOpen/open/openFile`) |
 | **R4** host feature: `browser.fill({ secret: "NAME" })` resolved by the host from blindfold | no | no | no | an OpenCode change |
 
-v1 takes **R2** if the harness check passes, and otherwise ships R1 **only for typed (non-provider) values with a
-warning**, keeping provider-backed values out of agent code until R2 or R3 lands. See §6.
+**Built:** R2. The handle is `"{{blindfold:fill/<32 hex>}}"`, single use, two minutes, bound to the session and the tab id
+(`fill.ts`). The hook claims it only when it is the **whole** script, as one string literal: embedded in other code (an agent
+that would send the swapped text somewhere) it stays inert. Typed fallback values fill the same way. R1 is not offered.
 
 ### Redaction of what the browser returns
 
@@ -299,6 +338,12 @@ What the merged fork must expose so providers plug in (for relay):
 
 ## 7. Agent tools, v1 scope, roadmap
 
+**Built in v1** (§11 lists the checks): both vendors, accounts, rules and saved rules, the three-choice card with choice and
+unlock, the settings page and its command, audit, form-urlencoded redaction, `op read` without the app, `get({ origin })`,
+`kind: "otp"`, and `fill`. Not built: screenshot OCR backstop, echo re-mask after navigation, tag rules, "Type it instead"
+on a provider row (v1.1 below).
+
+
 - **Expose `otp` and `login(origin)` as tools?** Not as separate tools in v1. `get({ fields: [{ name: "OTP", kind:
   "otp" }], origin })` and `fill` cover both, keep one approval surface, and avoid a second path that could skip the
   card. A `login(origin)` convenience (username + password + OTP in one card, then fill) is roadmap once R2 is proven.
@@ -307,13 +352,19 @@ What the merged fork must expose so providers plug in (for relay):
     `Bitwarden` (API key + master password, master password), several accounts of each, auto-lock, env/stdin only.
   - blindfold: rules, account policy, `get` with `origin`, card rows (approve, choose, unlock, fallback), audit,
     form-urlencoded redaction, `op read` without the app integration.
-  - Fill: R2 if Q1 passes; otherwise provider values go only to `get` (code) and typed fallback, with fill shipped in v1.1.
-- **v1.1:** R2/R3 fill with echo re-mask after navigation; screenshot OCR backstop; remember-choice as a confirmed rule.
+  - Fill: R2 (Q1 passed).
+- **v1.1:** echo re-mask after navigation (the observer dies with the document); screenshot OCR backstop; "Type it instead"
+  on a provider row; tag rules if a uniform tag exists; per-origin remembered choice without a rule.
 - **Later:** `login(origin)`; `write` (save a generated password); SSH keys; Bitwarden self-hosted; JS SDK desktop auth
   for 1Password (one approval per process, if it runs in Bun and the user wants the app path once Touch ID is fixed);
   passkeys only if a vendor exposes signing (none does today).
 
 ## 8. Open questions
+
+Answered by the user's decisions (see Decisions): Q1 passed (fill ships); Q3 service account on an `Agent` vault by default,
+master password documented; Q4 Bitwarden cloud, no SSO, API key; Q5 the remembered choice is a saved rule the user created with
+Always allow, never silent; Q6 10 idle minutes, per account, confirm every use unless a rule covers it. Still open: Q2 (R3
+or an upstream `browser.fill({ secret })`; R2 made it unnecessary for now) and the original text below for the record.
 
 1. **R2 feasibility** (blocks fill): in the private harness, does `ctx.tool.hook("execute.before")` fire for a nested
    Code Mode `browser.evaluate`, can it rewrite `input.script`, and which form lands in `metadata.toolCalls`? And does
@@ -330,24 +381,58 @@ What the merged fork must expose so providers plug in (for relay):
 
 ## 9. USER STEPS
 
-None of these were done. Each unlocks the measurements listed; until then those rows stay N/D/F.
+None of these were done by the build; it ran against the fixture CLIs only. Each unlocks the measurements listed. The README of
+`blindfold-providers` has the same steps as a "First run" guide, and `node check.mjs` (in that package) tests each account with
+the real CLI once they are done, without changing anything in it.
 
 | # | Step (one time) | Unlocks |
 |---|---|---|
-| U1 | 1Password: create a vault **Agent**; move or copy only the logins agents may use into it (e.g. a throwaway item `blindfold-spike` with username, password and a TOTP). In 1Password.com → Developer → Service accounts: create `opencode-agent` with **read** on `Agent` only; save the `ops_…` token in 1Password. Individual/Families limits: 1,000 reads/h, 1,000 requests/day | real `serviceAccount` unlock, `op item list` URL matching, `op read`/`--otp` timing, rate-limit headroom (`op service-account ratelimit`) |
-| U2 | Stop the app dialog for good: 1Password → Settings → Developer → turn **off** "Integrate with 1Password CLI" (or keep it on and rely on `OP_BIOMETRIC_UNLOCK_ENABLED=false` in every call; with it off, today's blindfold `op read` path fails fast instead of prompting) | no more "Allow opencode-cli" prompts |
-| U3 | Optional, whole-account access by master password: in a Terminal run `OP_BIOMETRIC_UNLOCK_ENABLED=false op account add --address my.1password.com --shorthand personal` (enter email, Secret Key, password there, not in chat) | `masterPassword` unlock: does `op signin --raw` accept the password on **stdin** without a TTY (assumed by the fixture), 30 min idle measured |
-| U4 | Bitwarden: `npm install -g @bitwarden/cli` (arm64: npm per D); for each account pick a data dir, e.g. `BITWARDENCLI_APPDATA_DIR=~/.config/blindfold/bw-work bw config server <url>`; create a personal API key (web vault → Account settings → Security → Keys → API key) | real `apiKey` + `masterPassword` unlock, `bw list items --url` shape, `bw get totp`, bot challenge behaviour, lock semantics |
-| U5 | Bitwarden work: confirm the organisation id and a collection for agent logins (or a separate account) | org/collection scoping |
-| U6 | Open this spike's test page in an attached session's in-app browser and run `spike/cdp-run.mjs`'s scenarios through `tools.browser.evaluate`/`screenshot` (or let a session with the pane attached do it) | F2 to F6 in the real pane; F9 reproduced; R2 check (Q1) in the harness |
+| U1 | 1Password: create a vault **Agent**; put only the logins agents may use into it (e.g. a throwaway item `blindfold-check` with username, password and a TOTP). 1Password.com → Developer → Service accounts: create `opencode-agent` with **read** on `Agent` only; keep the `ops_…` token. It is typed once, into the card (or `node check.mjs`), and kept in the login keychain. Individual/Families limits: 1,000 reads/h, 1,000 requests/day | real `serviceAccount` unlock, `op item list` URL matching, `op read`/`--otp` timing, rate-limit headroom |
+| U2 | Stop the app dialog for good: 1Password → Settings → Developer → turn **off** "Integrate with 1Password CLI". Blindfold already sets `OP_BIOMETRIC_UNLOCK_ENABLED=false` on every call, so this only makes it certain for every other tool; with it off, an `op` that has no token fails fast | no more "Allow opencode-cli" prompts |
+| U3 | Optional, whole account by master password: in a Terminal `OP_BIOMETRIC_UNLOCK_ENABLED=false op account add --address my.1password.com --shorthand personal`, then set `unlock: "masterPassword"` on the account | whether `op signin --raw` takes the password on **stdin** without a TTY (assumed by the code and the fixture), the 30 min idle |
+| U4 | Bitwarden: `npm install -g @bitwarden/cli` (it needs `node` on the service's PATH); a data directory per account, e.g. `~/.config/blindfold/bw-work` (for a self-hosted server `BITWARDENCLI_APPDATA_DIR=… bw config server <url>`); create a personal API key (web vault → Account settings → Security → Keys → View API key). The first card asks for the client id, the secret and the master password | real `apiKey` + `masterPassword` unlock, `bw list items --url` shape, `bw get totp`, bot challenge behaviour, `bw lock` on idle |
+| U5 | Bitwarden work: `bw list organizations` for the organisation id (`organizationId`), and decide which collection holds the logins agents may use | org scoping |
+| U6 | `node check.mjs --keychain` once: writes and deletes a dummy keychain item and checks that `security -i` does not echo its input | the keychain path (the one thing here that writes outside the plugin's own storage) |
 
 ## 10. How to re-run
 
 ```sh
-cd apps/opencode-plugins/blindfold-providers/spike
-# fixture providers (no network, no real CLI)
-node --experimental-strip-types --test providers.test.ts
-# fill-and-mask (needs a React 18 UMD dir and Chromium; fake values only)
+cd apps/opencode-plugins/blindfold-providers
+npm test                      # providers against the fixture CLIs, the plugin, check.mjs, the contract copy
+cd ../blindfold
+npm test                      # the card model, rules, redaction, the provider flow end to end, fill and the page script
+./harness/run-providers.sh    # the private desktop harness: card, unlock, rules, fill in the in-app browser (see README)
+# the spike's fill-and-mask prototype (needs a React 18 UMD dir and Chromium; fake values only)
+cd ../blindfold-providers/spike
 REACT_UMD_DIR=<path>/node_modules/react-dom node page/server.mjs 47321 &
 BLINDFOLD_DIST=../../blindfold/dist node cdp-run.mjs "<Chrome for Testing binary>" http://127.0.0.1:47321/login /tmp/bf-spike-out
 ```
+
+## 11. What was built, and how it was checked
+
+- **blindfold-providers** (`src/`): `contract.ts` (registry, origin and pattern helpers, `isLocked`), `run.ts` (children get no inherited vendor
+  variables; secrets only on stdin or in `env`; errors are the CLI's first line with the secrets scrubbed), `keychain.ts`,
+  `account.ts` (session, idle timer, 5 minute item cache), `onepassword.ts`, `bitwarden.ts`, `config.ts`, `server.ts` (accounts
+  live once per process, shared by every location; a changed configuration starts locked). `check.mjs` is the self-check.
+- **blindfold**: `providers-contract.ts`, `rules.ts`, `broker.ts` (who can serve a field, nothing read), `fill.ts` and
+  `fill-script.ts`, `audit.ts`, `legacy-op.ts`; `server.ts` (origin and `field` on `get`, the `fill` tool and its hook, `unlock`,
+  `overview`, `revoke` and `lock` methods, `updated` and `changed` events), `redact.ts` (form encodings, `track`), `fields.ts`
+  (`otp`), `model.ts`, `card.tsx`, `page.tsx` and `gui.tsx` (card rows, settings page, command), `tui.ts`.
+- **Locked accounts are listed as a choice only when nothing unlocked can serve the field, or a rule names them**; once one
+  unlocked account searched and found nothing, the hint says which locked accounts were not searched.
+- **Tests**: providers 25 (fixture `op`, `bw`, `security`: unlock paths, scoping, no secret in any argv, auto-lock, the app
+  integration off on every call and zero app prompts, keychain, the plugin and its pool, `check.mjs`); blindfold 83 (the upstream 20
+  ported, card model, rules, redaction, 13 end-to-end flows through the provider layer, the page script in happy-dom).
+- **Harness** (`harness/run-providers.sh`, 41 checks, fake CLIs and values): the card inline with three buttons and the account
+  named in the title; choosing between accounts; the locked card for both vendors (token, three Bitwarden inputs) with a wrong
+  credential shown without echo and the inputs emptied; Always allow then the same use with no card; Deny; the settings page
+  (accounts, rules, recent use, Revoke, Lock) with no value; Work locking itself after its idle time; fill in the in-app browser (F14);
+  the hot reload of a bundle with a card open; light and dark; no value in the DOM, the model's request, the stored messages, the
+  service log or the audit file.
+- **Performance** (`perf.mjs`, blindfold alone vs bare, 3 runs, the machine at load 60): 7 of 8 scenarios inside the bars; hover
+  read +13 ms against a bar of 10 and +2 on the 7-run repeat, the same pattern the fork's first measurement had.
+- **Not verified**: anything against a real `op`, `bw` or the real keychain (U1 to U6); the TUI flow (no TUI harness); a locked
+  account's unlock when the vault is a Business tenant with rate limits; Bitwarden's bot challenge; behaviour with two OpenCode
+  locations that hold separate rule storage (the plugin's `storage` may be per location: rules saved in one project would not
+  show in another; check once with two projects).
+
