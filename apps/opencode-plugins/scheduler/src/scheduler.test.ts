@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Host, SessionInfo } from "./host.js"
 import { memoryClaims } from "./claims.js"
+import { normalize } from "../../native-ui/src/notify-contract.js"
+import type { Outgoing } from "./notify.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import { emptyState, Scheduler, STATE_KEY, type AddInput } from "./scheduler.js"
 import { resolveTarget } from "./targets.js"
@@ -20,6 +22,8 @@ interface Rig {
   readonly prompts: Record<string, any>[]
   readonly notices: Record<string, any>[]
   readonly logs: string[]
+  /** What the scheduler asked the hub to tell the user. */
+  readonly told: Outgoing[]
   readonly storage: Map<string, unknown>
   readonly host: Host
   now: number
@@ -35,7 +39,8 @@ async function rig(overrides: Partial<Options> = {}, seed: SessionInfo[] = [sess
   const prompts: Record<string, any>[] = []
   const notices: Record<string, any>[] = []
   const logs: string[] = []
-  const state: Rig = { sessions, prompts, notices, logs, storage, now: T0, failPrompt: false } as Rig
+  const told: Outgoing[] = []
+  const state: Rig = { sessions, prompts, notices, logs, told, storage, now: T0, failPrompt: false } as Rig
   const host = {
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
@@ -62,7 +67,7 @@ async function rig(overrides: Partial<Options> = {}, seed: SessionInfo[] = [sess
   } as unknown as Host
   const options: Options = { ...DEFAULTS, logDir: "/unused", ...overrides }
   const held = new Map<string, number>()
-  const make = () => Scheduler.create(options, { now: () => state.now }, host.storage, (m) => logs.push(m), () => host, memoryClaims(() => state.now, held))
+  const make = () => Scheduler.create(options, { now: () => state.now }, host.storage, (m) => logs.push(m), () => host, memoryClaims(() => state.now, held), (n) => void told.push(n))
   const out = Object.assign(state, { host, scheduler: await make(), reload: async () => (out.scheduler = await make()), instance: make })
   return out
 }
@@ -373,4 +378,53 @@ test("overdue after sleep: a week of missed cron slots delivers one run", async 
   assert.equal(r.prompts.length, 1)
   assert.equal(r.prompts[0].metadata.scheduledTask.scheduled, job.nextRun)
   assert.equal(r.scheduler.list().jobs[0]!.nextRun > r.now, true)
+})
+
+test("a task that cannot be delivered three times raises one error for its session, with Open data", async () => {
+  const r = await rig()
+  await add(r, { prompt: "doomed", at: "+1m", name: "nightly" })
+  r.failPrompt = true
+  for (let i = 0; i < 3; i++) {
+    r.now += 2 * MIN
+    await r.scheduler.tick()
+  }
+  assert.equal(r.told.length, 1)
+  const [told] = r.told
+  assert.equal(told!.kind, "error")
+  assert.match(told!.key!, /^scheduler:failed:/)
+  assert.deepEqual(told!.target, { session: "ses_aaaaaaaa11111111" })
+  const n = normalize(told, "scheduler", 1, "sidecar")!
+  assert.deepEqual(n.target, { server: "sidecar", session: "ses_aaaaaaaa11111111" }, "the hub can turn it into a notification with an Open action")
+  assert.equal(n.action?.type, "open-session")
+})
+
+test("a paused loop is a warning-level error; a finished one-off and an archived target are info", async () => {
+  const r = await rig({ loopMaxFires: 2, loopWindowMinutes: 10 })
+  await add(r, { prompt: "spin", every: "1m", name: "spin" })
+  for (let i = 0; i < 3; i++) {
+    r.now += MIN
+    await r.scheduler.tick()
+  }
+  const paused = r.told.find((n) => n.key?.startsWith("scheduler:loop:"))
+  assert.equal(paused?.kind, "error")
+  assert.equal(paused?.severity, "warning")
+
+  await add(r, { prompt: "once", at: "+1m", name: "once" })
+  r.now += 2 * MIN
+  await r.scheduler.tick()
+  assert.ok(r.told.some((n) => n.kind === "info" && n.key?.startsWith("scheduler:ended:") && /ran once/.test(n.body ?? "")))
+})
+
+test("a notifier that throws never breaks the scheduler", async () => {
+  const r = await rig()
+  const loud = await Scheduler.create({ ...DEFAULTS, logDir: "/unused" }, { now: () => r.now }, r.host.storage, () => undefined, () => r.host, memoryClaims(() => r.now, new Map()), () => {
+    throw new Error("rpc down")
+  })
+  await loud.add(r.host, main(r), { prompt: "x", at: "+1m" })
+  r.failPrompt = true
+  for (let i = 0; i < 3; i++) {
+    r.now += 2 * MIN
+    await loud.tick()
+  }
+  assert.equal(loud.list().jobs.length, 0)
 })

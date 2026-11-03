@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { afterEach, test } from "node:test"
 import {
-  NOTIFY_KEY, NOTIFY_PROTOCOL, acquirePublisher, activeSink, clearNotification, defaultKey, normalize, notify, provideSink,
+  NOTIFY_KEY, NOTIFY_PROTOCOL, acquirePublisher, activeSink, clearNotification, defaultKey, normalize, notify, notifyFromServer, provideSink,
   publishers, sourceOfEvent, type Notification, type NotifyContext, type NotifySink,
 } from "./notify-contract.js"
 
@@ -134,6 +134,13 @@ test("normalize reads foreign payloads defensively", () => {
   assert.equal(n.key, defaultKey("x", "info", undefined))
 })
 
+test("a server half names only the session; the hub supplies the server", () => {
+  const n = normalize({ kind: "error", title: "t", target: { session: "ses_1" } }, "scheduler", 1, "sidecar")!
+  assert.deepEqual(n.target, { server: "sidecar", session: "ses_1" })
+  assert.deepEqual(n.action, { type: "open-session" })
+  assert.equal(normalize({ kind: "error", title: "t", target: { session: "ses_1" } }, "scheduler", 1)!.target, undefined, "no server known: no target")
+})
+
 test("open-message keeps its message and needs a message to count", () => {
   const t = { server: "s", session: "a" }
   assert.deepEqual(normalize({ kind: "info", title: "t", target: t, action: { type: "open-message", message: "msg_1" } }, "x")!.action, { type: "open-message", message: "msg_1" })
@@ -147,4 +154,18 @@ test("sourceOfEvent reads rpc.<source>.notify, dots in the source included", () 
   assert.equal(sourceOfEvent("rpc.monitor.running"), undefined)
   assert.equal(sourceOfEvent("rpc..notify"), undefined)
   assert.equal(sourceOfEvent(3), undefined)
+})
+
+test("a server half's event reaches the sink with the desktop's own server filled in, or its own toast with Open without one", () => {
+  const ctx: NotifyContext = { ...context("scheduler"), servers: { list: () => ["remote", "sidecar"], get: (id) => ({ builtin: id === "sidecar" }) } }
+  const fallback = notifyFromServer(ctx, { kind: "error", title: "Dropped", key: "scheduler:failed:1", target: { session: "ses_1" } })
+  assert.equal(fallback, "fallback")
+  toasts[0].actions![0].run()
+  assert.deepEqual(opened, [[{ server: "sidecar", id: "ses_1" }, { focus: true }]])
+  const s = sink()
+  provideSink(s)
+  assert.equal(notifyFromServer(ctx, { kind: "error", title: "Dropped", target: { session: "ses_1" } }), "hub")
+  assert.deepEqual(s.got[0].target, { server: "sidecar", session: "ses_1" })
+  assert.equal(s.got[0].source, "scheduler")
+  assert.equal(notifyFromServer(ctx, { kind: "error" }), "none", "no title, nothing to show")
 })

@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin"
 import { createLog } from "./diag.js"
 import { globalRegistry } from "./handoff.js"
 import { Monitors, type Sessions, type Store } from "./manager.js"
+import type { Notify } from "./notify.js"
 import { parseOptions } from "./options.js"
 import { spawnShell, systemClock } from "./process.js"
 import { monitorControl } from "./control.js"
@@ -40,17 +41,22 @@ export default Plugin.define({
         await ctx.session.prompt({ sessionID: sessionID as never, text, delivery: "steer", metadata: { [METADATA_KEY]: meta } })
       },
     }
-    const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000) })
+    // Registered below; until then (and after the cleanup starts) there is nowhere to send.
+    let control: Awaited<ReturnType<typeof ctx.rpc.register<typeof MonitorControl>>> | undefined
+    const notify: Notify = (notification) => void control?.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`))
+    const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000), notify })
     const tools = await ctx.tool.transform((editor) => registerTools(editor, monitors, ctx, options))
-    await monitors.restore()
 
     // The desktop row's Stop button. A monitor belongs to one session, and only that session's row may stop it.
     const handlers = monitorControl(monitors)
-    const control = await ctx.rpc.register(MonitorControl, {
+    control = await ctx.rpc.register(MonitorControl, {
       running: (input) => handlers.running(input as Parameters<typeof handlers.running>[0]),
       list: (input) => handlers.list(input as Parameters<typeof handlers.list>[0]),
       stop: (input) => handlers.stop(input as Parameters<typeof handlers.stop>[0]),
     })
+
+    // After the control is registered, so what restore announces (restarted, lost) can be sent.
+    await monitors.restore()
 
     const abort = new AbortController()
     const listen = async () => {
@@ -71,7 +77,9 @@ export default Plugin.define({
 
     return async () => {
       abort.abort()
-      await control.dispose()
+      const registered = control
+      control = undefined
+      await registered?.dispose()
       await tools.dispose()
       await monitors.dispose()
     }

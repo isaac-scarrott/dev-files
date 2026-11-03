@@ -1,4 +1,5 @@
 import { Rpc } from "@opencode/plugin/rpc";
+import { notificationSchema } from "./notify.js";
 const id = { type: "string", minLength: 1 };
 const num = { type: "number" };
 /** What the desktop asks of the monitor plugin: which of these monitors still run, what runs for a session, and stop one. Ids, names, numbers and booleans only. */
@@ -43,6 +44,9 @@ export const MonitorControl = Rpc.define({
             output: { type: "object", properties: { stopped: { type: "boolean" } }, required: ["stopped"], additionalProperties: false },
         },
     },
-    events: {},
+    events: {
+        /** Something the user should hear about: a monitor that crashed or stopped waking its session. */
+        notify: { schema: notificationSchema },
+    },
 });
 //# sourceMappingURL=rpc.js.map

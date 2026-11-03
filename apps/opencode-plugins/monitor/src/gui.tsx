@@ -1,10 +1,11 @@
 import { createKeyed, createLatest, Plugin, Style, type SessionRef } from "@opencode/plugin/gui"
-import { createMemo, createSignal, For } from "solid-js"
+import { createMemo, createSignal, onCleanup, For } from "solid-js"
 import { createSessionChip, firstLine, ProgressSpinner, InjectedMessageRow, injectedMessageRowCss, laneChipCss, mountInjectedRows } from "../../native-ui/src"
 import { monitorDeadlines, monitorStatus } from "./chip"
 import type { MonitorItem } from "./control"
 import { monitorOf, summarize, type MonitorWake } from "./parse"
 import { MonitorControl } from "./rpc"
+import { acquirePublisher, notifyFromServer } from "../../native-ui/src/notify-contract"
 
 type Located = { readonly id: string; readonly wake: MonitorWake; readonly session: SessionRef }
 
@@ -36,6 +37,13 @@ export default Plugin.define({
     ctx.add(Style, injectedMessageRowCss)
     ctx.add(Style, css)
     ctx.add(Style, laneChipCss)
+
+    // What the server half has to tell the user goes through the shared hub: the `notifications` plugin when it is installed, else a toast of our own.
+    onCleanup(acquirePublisher(ctx.id))
+    createKeyed(
+      () => ctx.client,
+      (client) => void onCleanup(client.rpc(MonitorControl).events.on("notify", (event) => void notifyFromServer(ctx, event.data), { signal: ctx.signal })),
+    )
 
     // The monitors aimed at the session on screen, as a chip beside the host's own background-activity capsule.
     const words = {

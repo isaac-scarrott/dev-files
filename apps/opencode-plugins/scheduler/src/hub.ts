@@ -1,6 +1,7 @@
 import path from "node:path"
 import { fileClaims } from "./claims.js"
 import type { Host, SessionInfo } from "./host.js"
+import type { Notify } from "./notify.js"
 import type { Options } from "./options.js"
 import { Scheduler, type AddInput, type Clock } from "./scheduler.js"
 
@@ -14,6 +15,8 @@ export interface Hub {
 interface Entry {
   readonly scheduler: Promise<Scheduler>
   readonly hosts: Set<Host>
+  /** One per live plugin instance; the first speaks, so an event is sent once however many locations load the plugin. */
+  readonly notifiers: Set<Notify>
   timer?: ReturnType<typeof setTimeout>
   started: boolean
   stopped: boolean
@@ -26,19 +29,22 @@ let shared: Entry | undefined
  * would each fire every due job and overwrite each other's state, so instances share one scheduler and one timer; any
  * live instance's host can reach every session. The last instance out stops the timer.
  */
-export async function acquire(host: Host, options: Options, clock: Clock, log: (message: string) => void): Promise<{ hub: Hub; release(): void }> {
+export async function acquire(host: Host, options: Options, clock: Clock, log: (message: string) => void, notify: Notify = () => {}): Promise<{ hub: Hub; release(): void }> {
   if (!shared || shared.stopped) {
     const hosts = new Set<Host>()
+    const notifiers = new Set<Notify>()
     const entry: Entry = {
       hosts,
+      notifiers,
       started: false,
       stopped: false,
-      scheduler: Scheduler.create(options, clock, host.storage, log, () => hosts.values().next().value, fileClaims(path.join(options.logDir, "claims"), clock.now, log)),
+      scheduler: Scheduler.create(options, clock, host.storage, log, () => hosts.values().next().value, fileClaims(path.join(options.logDir, "claims"), clock.now, log), (n) => notifiers.values().next().value?.(n)),
     }
     shared = entry
   }
   const entry = shared
   entry.hosts.add(host)
+  entry.notifiers.add(notify)
   const scheduler = await entry.scheduler
   const tickMs = options.tickSeconds * 1000
 
@@ -75,6 +81,7 @@ export async function acquire(host: Host, options: Options, clock: Clock, log: (
     hub,
     release() {
       entry.hosts.delete(host)
+      entry.notifiers.delete(notify)
       if (entry.hosts.size === 0) {
         entry.stopped = true
         clearTimeout(entry.timer)

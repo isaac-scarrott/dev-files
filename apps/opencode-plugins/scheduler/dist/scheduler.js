@@ -37,10 +37,13 @@ export class Scheduler {
     log;
     anyHost;
     claims;
+    notify;
     queue = Promise.resolve();
     constructor(options, clock, storage, state, log, 
     /** Any live host that can reach the session API; the server runs one plugin instance per project location. */
-    anyHost, claims) {
+    anyHost, claims, 
+    /** Tells the user (through the hub) about what they would not otherwise see; never decides how. */
+    notify = () => { }) {
         this.options = options;
         this.clock = clock;
         this.storage = storage;
@@ -48,11 +51,12 @@ export class Scheduler {
         this.log = log;
         this.anyHost = anyHost;
         this.claims = claims;
+        this.notify = notify;
     }
-    static async create(options, clock, storage, log, anyHost, claims) {
+    static async create(options, clock, storage, log, anyHost, claims, notify) {
         const stored = (await storage.get(STATE_KEY).catch(() => undefined));
         const state = { ...emptyState(), ...stored };
-        return new Scheduler(options, clock, storage, state, log, anyHost, claims);
+        return new Scheduler(options, clock, storage, state, log, anyHost, claims, notify);
     }
     locked(fn) {
         const run = this.queue.then(fn, fn);
@@ -69,6 +73,15 @@ export class Scheduler {
     }
     save() {
         return this.storage.set(STATE_KEY, this.state);
+    }
+    tell(job, what) {
+        const { target = true, ...rest } = what;
+        try {
+            this.notify({ ...rest, key: `scheduler:${rest.key}:${job.id}`, target: target ? { session: job.sessionID } : undefined, at: this.clock.now() });
+        }
+        catch (error) {
+            this.log(`${job.id}: could not notify: ${String(error)}`);
+        }
     }
     end(job, reason) {
         this.state.jobs = this.state.jobs.filter((j) => j.id !== job.id);
@@ -227,12 +240,14 @@ export class Scheduler {
         catch (error) {
             if (gone(error)) {
                 this.end(job, "target session was deleted");
+                this.tell(job, { kind: "info", title: "Scheduled task ended", body: `"${job.name}": its session was deleted`, key: "ended", target: false });
                 return this.save();
             }
             return this.failed(job, now, `could not read the target session: ${String(error)}`);
         }
         if (info.time.archived !== undefined) {
             this.end(job, "target session was archived");
+            this.tell(job, { kind: "info", title: "Scheduled task ended", body: `"${job.name}": its session was archived`, key: "ended" });
             return this.save();
         }
         const windowMs = this.options.loopWindowMinutes * 60_000;
@@ -242,6 +257,7 @@ export class Scheduler {
             job.pausedReason = `fired ${job.fires.length} times in the last ${this.options.loopWindowMinutes} minutes`;
             this.log(`${job.id} "${job.name}" paused: ${job.pausedReason}`);
             await this.save();
+            this.tell(job, { kind: "error", severity: "warning", title: "Scheduled task paused", body: `"${job.name}" ${job.pausedReason}`, key: "loop" });
             await this.notice(host, job.sessionID, `Scheduled task "${job.name}" (${job.id}) was paused: it ${job.pausedReason}. It stays in list_schedules; cancel_schedule removes it.`);
             return;
         }
@@ -268,6 +284,8 @@ export class Scheduler {
                 metadata: wakeMetadata(wake, job.kind, now),
             });
             job.failures = 0;
+            if (finished)
+                this.tell(job, { kind: "info", title: "Scheduled task ended", body: `"${job.name}": ${next === undefined ? "ran once" : `reached ${job.maxRuns} runs`}`, key: "ended" });
             this.log(`${job.id} "${job.name}" woke ${job.target}${lateMs > this.options.lateSeconds * 1000 ? ` (${formatSpan(lateMs)} late)` : ""}${finished ? "" : `, next ${isoLocal(job.nextRun)}`}`);
         }
         catch (error) {
@@ -285,8 +303,10 @@ export class Scheduler {
         job.failures += 1;
         job.nextRun = now + RETRY_MS;
         this.log(`${job.id} "${job.name}": ${why} (${job.failures}/${MAX_FAILURES})`);
-        if (job.failures >= MAX_FAILURES)
+        if (job.failures >= MAX_FAILURES) {
             this.end(job, why);
+            this.tell(job, { kind: "error", title: "Scheduled task dropped", body: `"${job.name}" could not be delivered ${MAX_FAILURES} times in a row`, key: "failed" });
+        }
         await this.save();
     }
     async notice(host, sessionID, text) {

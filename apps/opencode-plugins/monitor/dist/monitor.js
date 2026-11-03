@@ -34,6 +34,8 @@ export class Monitor {
     closing = false;
     chain = Promise.resolve();
     failures = 0;
+    /** The command died on its own: the crash was reported as an error, so ending it is not news again. */
+    crashed = false;
     matcher;
     constructor(def, deps) {
         this.def = def;
@@ -172,6 +174,14 @@ export class Monitor {
     nextRunAt() {
         return this.state === "waiting" ? this.nextRearmAt : undefined;
     }
+    tell(what) {
+        try {
+            this.deps.notify?.({ ...what, key: `monitor:${what.key}:${this.def.id}`, target: { session: this.def.sessionID }, at: this.deps.clock.now() });
+        }
+        catch (error) {
+            this.deps.log(`${this.def.id} (${this.def.name}): could not notify: ${String(error)}`);
+        }
+    }
     /** Ends the monitor on request or because its session went away. No wake. */
     async stop(reason) {
         if (this.closing)
@@ -254,6 +264,10 @@ export class Monitor {
             return;
         }
         if (this.def.rearmMinutes === undefined) {
+            if (code !== 0) {
+                this.crashed = true;
+                this.tell({ kind: "error", title: "Monitor stopped", body: `"${this.def.name}" ${how}`, key: "error" });
+            }
             void this.end(`the command ${how}`);
             return;
         }
@@ -287,6 +301,7 @@ export class Monitor {
             if (!this.paused) {
                 this.paused = true;
                 this.notes.push(`Paused: more than ${options.maxEventsPerHour} lines in an hour. Lines are dropped, and counted, until the rate falls.`);
+                this.tell({ kind: "error", severity: "warning", title: "Monitor paused", body: `"${this.def.name}" produced more than ${options.maxEventsPerHour} lines in an hour`, key: "paused" });
                 this.deps.log(`${this.def.id} (${this.def.name}): paused after ${options.maxEventsPerHour} events in an hour`);
             }
             this.dropped += 1;
@@ -346,6 +361,8 @@ export class Monitor {
                 this.failures += 1;
                 this.deps.log(`${this.def.id} (${this.def.name}): could not wake ${this.def.sessionID}: ${String(error)}`);
                 if (this.failures >= MAX_DELIVERY_FAILURES && !this.closing)
+                    this.tell({ kind: "error", title: "Monitor stopped", body: `"${this.def.name}" could not wake its session ${MAX_DELIVERY_FAILURES} times in a row`, key: "error" });
+                if (this.failures >= MAX_DELIVERY_FAILURES && !this.closing)
                     void this.stop(`session ${this.def.sessionID} did not accept ${MAX_DELIVERY_FAILURES} wakes in a row`);
             }
         });
@@ -359,6 +376,8 @@ export class Monitor {
         await this.terminate();
         this.state = "ended";
         this.deps.log(`${this.def.id} (${this.def.name}): ${reason}`);
+        if (!this.crashed)
+            this.tell({ kind: "info", title: "Monitor ended", body: `"${this.def.name}": ${reason}`, key: "ended" });
         this.flush([`Monitor ended: ${reason}.`]);
         await this.chain;
         this.deps.finished(this, reason);
