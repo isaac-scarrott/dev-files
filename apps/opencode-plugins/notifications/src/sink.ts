@@ -1,6 +1,6 @@
 import type { Notification, NotifySink } from "../../native-ui/src/notify-contract"
 import { Admission, MERGE_MS, SUMMARY_MS, toastVerdict, type Presence } from "./policy"
-import type { Settings } from "./settings"
+import { ALWAYS_SHOWN, type Settings } from "./settings"
 
 /** The part of `ctx.toast.show` the sink uses. */
 export interface ToastOptions {
@@ -133,8 +133,11 @@ export function createSink(deps: SinkDeps) {
       retract(id)
       live.set(id, { n })
     }
-    // Host signals already reach the system notification through the host's own listener; a plugin's go through the host's mechanism.
-    if (n.source !== deps.self && n.kind !== "info" && admission.system(n)) {
+    // Host signals already reach the system notification through the host's own listener; a plugin's go through the host's
+    // mechanism. The host never banners a focused window but does play the sound there, so the focus rule (the session on
+    // screen needs nothing for `done`) is applied here, before the call.
+    const seen = presence.onScreen && !ALWAYS_SHOWN.has(n.kind)
+    if (n.source !== deps.self && n.kind !== "info" && !seen && admission.system(n)) {
       void deps.attention({
         title: n.title,
         message: n.body,

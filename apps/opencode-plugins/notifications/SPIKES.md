@@ -28,7 +28,23 @@ ctx.add(Command, { id: "cmdenter", title: "Spike mod+enter", bind: "mod+enter", 
 
 ## Not proved (carried as risks in DESIGN.md)
 
-- System notifications from the plugin's own channel (option C in DESIGN: `main(ctx)` + Electron `Notification` + `BrowserWindow.isFocused`). Reading the SDK says it works (`electron` is allowed in main); not run. First task of milestone 4.
-- The enabled `ctx.attention.notify` path (needs the host setting on and a real unfocused window).
 - Pending permission/question for a session that was never synced: `permission.list(id)` needs `permission.sync(id)` first (snooze-archive does this); events cover live changes, a sync covers startup.
 - Events are ephemeral (`permission.asked`, `form.created` are `ephemeral(...)` in `schema/src/{permission,form}.ts`): a window opened after the event never sees it. Startup reconciliation by `sync` is in the design.
+
+## M4: system notification and sound through the host (2026-11-03, 2.2.5)
+
+Private harness (`desktop-harness.sh`, root `/private/tmp/oc-harness-notify4`, `--mute-audio`, workspace Z, main-process inspector on 9230 via `OC_HARNESS_INSPECT`), a scripted OpenAI-compatible stub provider so real tools run (`execute` → `tools.monitor.start`, `tools.scheduler.schedule_task`, `shell`), every script under `perl -e 'alarm N'`; the harness, the stub and every leftover process stopped afterwards. The window cannot be focused for real without taking the user's focus, so **focus is emulated**: `document.hasFocus` plus `focus`/`blur` events in the page (what the host's coordinator reads) and `BrowserWindow.isFocused` patched in the main process (what `platform.notify` asks over IPC). The page's `Notification` and `Audio` are replaced by recorders, so no banner was shown and no sound played; the constructor call (title, body, `silent:true`) is what the OS would receive. **A real macOS banner was not observed.**
+
+| # | Question | Result | Evidence |
+|---|---|---|---|
+| 8 | What `ctx.attention.notify` gates on | **Agent / Errors only** | `host-apis.tsx` `notify`: `error` → `settings.notifications.errors`, else `.agent`; sound `options.sound !== false && (error ? sounds.errorsEnabled : sounds.agentEnabled)`; key `plugin:<plugin>\0<id>`; `coordinator.system`: claim in `localStorage["opencode:notification-system"]` (shared by windows, taken even when the call then returns because a window is focused), skip when this document has focus, skip when another window holds the shared `opencode:notification-focus` lock; `platform.notify` asks main `isFocused` again and makes a `silent:true` `Notification` whose click shows the window and opens the session |
+| 9 | Per-kind mapping with the toggles (sink publish, source `probe`) | **as designed** | Agent off, Errors off: 0 banners. Agent on, Errors on: banners `error`, `done`, `needs-you`, none for `info`. Agent on, Errors off: `done` and `needs-you` only. Agent off, Errors on: `error` only |
+| 10 | Sound | **host's choice** | Sound plays for `error`, `done`, `needs-you` (error clip ≠ agent clip), never for `info`, whatever the banner toggles say (host behaviour for its own events too). Setting both sounds to *None* in the host page: 0 audio, the banner still shown |
+| 11 | Focus | **host's** | main `isFocused` true (patched) → no banner; document focused → no banner (claim burned) |
+| 12 | Click | **routes** | calling the recorded notification's `onclick` opened and selected the target session's tab |
+| 13 | Two windows (second real window: main-process `Menu` item *New Window*), same event in both | **one banner** | probe event with a shared `at`: one banner (window A); A focused: no banner, toast in A only; B focused: toast in B only; none focused: one banner, no transient toast. Real monitor crash (`exit 4`) with both windows unfocused: one banner, `Monitor stopped · "crash-S6" exited with code 4`; the claim list holds one id `plugin:notifications·monitor·monitor:error:<id>·<server at>` |
+| 14 | Fallback toast, no hub, two windows, real monitor crash | **one window** | none focused: one toast (window B); A focused: A only; B focused: B only (`native-ui` `notify-contract.ts`, 4 unit tests) |
+| 15 | Real scheduler failure | **toast with Open** | the stored job's session id was corrupted in the harness database; three failed reads one minute apart ended in `Scheduled task dropped · "sched-fail" could not be delivered 3 times in a row` with *Open*, in the focused window |
+| 16 | Permission | **persistent toast, retracted** | a `shell` call that asks (`rm -rf`): `Permission needed` toast (the host's own sound played too); *Allow once* removed it. With the host command *Auto-accept permissions for this project* on, no `Permission needed` toast appeared (mutation observer over 3.5 s); only the host's own "Auto-accepting permissions" toast |
+
+Not observed: a real banner (recorders stand in for the OS), a really focused window (emulated as above), a natural failed `session.prompt` (it accepted a prompt even with the project directory moved away; the scheduler failure above is a failed `session.get`), the Permissions/Questions toggles (not reachable from a plugin).
