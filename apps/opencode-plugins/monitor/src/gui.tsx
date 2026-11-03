@@ -5,6 +5,7 @@ import { monitorDeadlines, monitorStatus } from "./chip"
 import type { MonitorItem } from "./control"
 import { monitorOf, summarize, type MonitorWake } from "./parse"
 import { MonitorControl } from "./rpc"
+import { humanizeLine, minuteClock } from "../../native-ui/src/humanize-line"
 import { acquirePublisher, notifyFromServer } from "../../native-ui/src/notify-contract"
 
 type Located = { readonly id: string; readonly wake: MonitorWake; readonly session: SessionRef }
@@ -142,12 +143,15 @@ export default Plugin.define({
       else ctx.toast.show({ title: ctx.t("gone") })
     }
 
+    const now = minuteClock()
     const opened = new Set<string>()
     const rows = mountInjectedRows({
       kind: "monitor",
       known: wakes,
       render: (located) => {
         const wake = located.wake
+        const raw = firstLine(summarize(wake))
+        const shown = () => humanizeLine(raw, now())
         const single = wake.blocks.length === 1 && wake.blocks[0]!.kind === "event" && wake.blocks[0]!.lines.filter((line) => line.trim() !== "").length <= 1
         return (
           <InjectedMessageRow
@@ -155,7 +159,8 @@ export default Plugin.define({
             kind="monitor"
             icon={<HeartbeatIcon state={stateOf(located)} />}
             title={wake.name}
-            preview={firstLine(summarize(wake))}
+            preview={shown()}
+            previewTitle={shown() === raw ? undefined : raw}
             more={!single}
             action={isRunning(located) ? { icon: "close", label: ctx.t("stop"), onClick: () => void stop(located) } : undefined}
             open={opened.has(located.id)}

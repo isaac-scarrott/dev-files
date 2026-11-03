@@ -209,3 +209,10 @@ test("every header part passes clicks through to the trigger; only the action bu
   assert.equal(head.firstElementChild?.getAttribute("data-slot"), "injected-trigger")
   assert.deepEqual([...head.children].map((child) => child.getAttribute("data-slot")), ["injected-trigger", "injected-icon", "injected-main", "injected-tail"])
 })
+
+test("a reworded preview carries the raw text as the header tooltip", () => {
+  const host = dom()
+  mount(host, { preview: "#8216 in progress", previewTitle: "#8216 in_progress" })
+  assert.equal(host.querySelector("[data-slot=injected-head]")?.getAttribute("title"), "#8216 in_progress")
+  assert.equal(host.querySelector("[data-slot=injected-preview]")?.textContent, "#8216 in progress")
+})

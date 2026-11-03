@@ -24,6 +24,8 @@ export interface InjectedMessageRowProps {
   title: string
   /** One line, ellipsized to the width of the column. */
   preview: string
+  /** The text behind a preview that was reworded for reading; shown as the header's tooltip. */
+  previewTitle?: string
   /** The body holds more than the preview shows (another line, text the preview cuts). A preview that overflows counts too, measured. */
   more?: boolean
   /** The 24px ghost icon button after the disclosure triangle; absent when the row has nothing to do. */
@@ -76,7 +78,7 @@ export function InjectedMessageRow(props: InjectedMessageRowProps) {
 
   return (
     <div ref={root} data-injected-row="" data-kind={props.kind} data-open={open()} data-expandable={expandable()} data-clipped={clipped()} data-action={props.action ? "" : undefined}>
-      <div data-slot="injected-head">
+      <div data-slot="injected-head" title={props.previewTitle}>
         <button type="button" data-slot="injected-trigger" aria-expanded={open()} aria-controls={id} aria-label={props.title} onClick={toggle} />
         <span data-slot="injected-icon" aria-hidden="true">{props.icon}</span>
         <span ref={main} data-slot="injected-main">

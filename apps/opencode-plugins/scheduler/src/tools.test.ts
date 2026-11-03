@@ -55,3 +55,12 @@ test("registers schedule_task, list_schedules and cancel_schedule under the sche
     release()
   }
 })
+
+test("schedule_task tells the agent the name is the row title and the prompt should ask for a short update", () => {
+  const added: any[] = []
+  registerTools({ namespace() {}, add: (t: any) => void added.push(t) } as never, {} as never, {} as never, DEFAULTS)
+  const schedule = added.find((t) => t.name === "schedule_task")
+  assert.match(schedule.description, /short human label/)
+  assert.match(schedule.input.properties.prompt.description, /short plain-language update/)
+  assert.match(schedule.input.properties.name.description, /Human label/)
+})

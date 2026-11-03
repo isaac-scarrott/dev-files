@@ -15,3 +15,14 @@ test("registers start, list and stop under the monitor namespace", () => {
   assert.equal(tools[0].options.codemode, true)
   assert.equal(tools[0].options.permission, "shell")
 })
+
+test("start tells the agent each line is shown to the user as one short plain sentence", () => {
+  const added: any[] = []
+  registerTools({ namespace() {}, add: (t: any) => void added.push(t) } as never, {} as never, {} as never, DEFAULTS)
+  const start = added.find((t) => t.name === "start")
+  assert.match(start.description, /one-line row/)
+  assert.ok(start.description.slice(0, 117).includes("shown to the user"), "the catalog shows only the first 117 characters of a description")
+  assert.match(start.input.properties.command.description, /Good: `Deploy #8216 succeeded in 4m`/)
+  assert.match(start.input.properties.name.description, /Human label/)
+  assert.match(start.input.properties.command.description, /no raw ids/)
+})
