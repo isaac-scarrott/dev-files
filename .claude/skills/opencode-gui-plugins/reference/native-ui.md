@@ -28,7 +28,7 @@ Every component that renders a host control takes `ui: ctx.ui` (through `host.ui
 | `SummaryCard`, `SummaryHeading`, `SummaryRows`, `SummaryRow` | `gui-plugins/src/details` and its `style[data-plugin=details]` | the cards inside Session details |
 | `HeaderIconButton` | `gui-plugins/src/details/popover.tsx` trigger | the Session details button (`ghost-muted large`) |
 | `ProgressSpinner` | `ui/src/components/spinner.tsx` (Soft Radar) and `spinner-radar.ts` | the busy ring in `[data-slot=tab-status]` |
-| `HeartbeatIcon`, `heartbeatIconCss`, `heartbeatChipCss`, `syncHeartbeats` | drawn: an ECG trace, states `live` (rows: a transform-slid band sweeps the trace; chip: three trace thirds on the capsule's `svg` and its two pseudo-elements, each an opacity pulse in turn; one shared phase), `still`, `flat` (300ms settle); the monitors' glyph | catalog icons (none has a pulse) |
+| `HeartbeatIcon`, `heartbeatIconCss`, `heartbeatChipCss`, `syncHeartbeats` | drawn: a classic P-QRS-T ECG trace (muted) with a bright dot and two trailing dots running along it by `transform` and `opacity` while `live` (rows: `<b>` trace + three `<i>`; chip: the capsule's `svg` is the trace, `::before`, `::after` and the label's `::before` the dots; one shared phase), `still`, `flat` (the trace squashes onto the baseline in 300ms, the dots flatten onto it and fade); the monitors' glyph | catalog icons (none has a pulse) |
 | `ClockIcon`, `drawnIconCss` | drawn in the catalog's style ([icons.md](icons.md)) | catalog icons |
 
 ### SessionTabRow
