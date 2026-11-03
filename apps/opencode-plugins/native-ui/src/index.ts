@@ -28,3 +28,6 @@ import { spinnerCss } from "./spinner"
 
 /** Everything the library needs beyond the host's own CSS. Register once: `ctx.add(Style, nativeUiCss)`. */
 export const nativeUiCss = [tabRowActionCss, popoverCss, drawnIconCss, spinnerCss].join("\n")
+
+export { createDomHub, elementsChangedBut, SIDEBAR, type DomHub } from "./dom-hub"
+export { createTabMarks, tabMarkNode, tabMarkCss, TAB_MARK_OWN, type TabMarkSpec, type TabMarkSeverity, type TabMarksOptions } from "./tab-marks"

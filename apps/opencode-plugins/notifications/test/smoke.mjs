@@ -10,7 +10,7 @@ const quiet = (signal) =>
 
 const { added } = await smokeGui({
   dir: fileURLToPath(new URL("..", import.meta.url)),
-  registries: ["settings-page"],
+  registries: ["settings-page", "command", "titlebar-item", "style"],
   host: { client: { event: { subscribe: ({ signal }) => quiet(signal) } } },
 })
 assert.equal(globalThis[Symbol.for("opencode-plugins.notify.v1")], undefined, "the hub registry is gone after cleanup")

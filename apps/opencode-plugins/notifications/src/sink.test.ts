@@ -2,12 +2,15 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { normalize, type Notification, type NotifyInput } from "../../native-ui/src/notify-contract"
 import { createSink, type SinkDeps, type ToastOptions } from "./sink"
+import { Ledger } from "./ledger"
 import { defaultSettings, type Settings } from "./settings"
 
 function rig(over: Partial<SinkDeps> = {}) {
   const state = { now: 10_000, settings: defaultSettings as Settings, presence: { focused: true, onScreen: false }, shown: [] as ToastOptions[], dismissed: [] as ToastOptions[], opened: [] as unknown[], attention: [] as unknown[], timers: [] as { fn: () => void; ms: number; live: boolean }[] }
+  const ledger = new Ledger(() => {})
   const deps: SinkDeps = {
     self: "notifications",
+    track: { put: (n, host) => ledger.put(n, host), remove: (source, key) => void ledger.remove(source, key) },
     now: () => state.now,
     later: (fn, ms) => {
       const timer = { fn, ms, live: true }
@@ -27,7 +30,7 @@ function rig(over: Partial<SinkDeps> = {}) {
   }
   const hub = createSink(deps)
   const send = (input: NotifyInput, source = "scheduler") => hub.sink.publish(normalize(input, source, state.now)!)
-  return { hub, state, send }
+  return { hub, state, send, ledger }
 }
 
 const target = { server: "sidecar", session: "ses_1" }
@@ -168,4 +171,35 @@ test("a persistent request asked again unchanged (a reconnect) is not shown twic
   state.now += 5_000
   send({ kind: "needs-you", title: "Q2", persistent: true, target, key: "q" })
   assert.equal(state.shown.length, 2, "a changed one replaces it")
+})
+
+test("what waits on a session is tracked even when its toast is off, and clear() retracts it", () => {
+  const { state, send, hub, ledger } = rig()
+  state.settings = { ...defaultSettings, toast: { ...defaultSettings.toast, info: false } }
+  send({ kind: "info", title: "Monitor ended", target, key: "ended" }, "monitor")
+  assert.equal(state.shown.length, 0)
+  assert.equal(ledger.list().length, 1)
+  assert.equal(ledger.list()[0]!.host, false)
+  hub.sink.clear("monitor", "ended")
+  assert.equal(ledger.list().length, 0)
+})
+
+test("the host-derived source is tracked as host; a muted source and a notification without a session are not tracked", () => {
+  const { state, send, ledger } = rig()
+  send({ kind: "done", title: "Run finished", target, key: "host:done:ses_1" }, "notifications")
+  assert.equal(ledger.list()[0]!.host, true)
+  state.settings = { ...defaultSettings, muted: ["scheduler"] }
+  send({ kind: "error", title: "muted", target, key: "m" }, "scheduler")
+  send({ kind: "error", title: "no session", key: "n" }, "monitor")
+  assert.equal(ledger.list().length, 1)
+})
+
+test("the session on screen leaves nothing waiting except a request that needs an answer", () => {
+  const { state, send, ledger } = rig()
+  state.presence = { focused: true, onScreen: true }
+  send({ kind: "done", title: "d", target, key: "d" }, "notifications")
+  send({ kind: "error", title: "e", target, key: "e" }, "scheduler")
+  send({ kind: "needs-you", title: "q", target, key: "q", persistent: true }, "notifications")
+  assert.deepEqual(ledger.list().map((entry) => entry.key), ["q"])
+  assert.equal(state.shown.length, 2, "the error toast and the request still show")
 })

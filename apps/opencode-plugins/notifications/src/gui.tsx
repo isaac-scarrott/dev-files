@@ -1,19 +1,35 @@
-import { createKeyed, Plugin, SettingsPage, Store } from "@opencode/plugin/gui"
-import { createSignal, onCleanup } from "solid-js"
+import { Command, createKeyed, Plugin, SettingsPage, Store, Style, TitlebarItem } from "@opencode/plugin/gui"
+import { createMemo, createSignal, onCleanup } from "solid-js"
+import { createDomHub } from "../../native-ui/src/dom-hub"
 import { normalize, provideSink, publishers, type NotifyInput } from "../../native-ui/src/notify-contract"
+import { createTabMarks, tabMarkCss, TAB_MARK_OWN } from "../../native-ui/src/tab-marks"
+import { Ledger, markEntries, order, pickNext, sessionKey, stops, urgentCount, type SessionRef } from "./ledger"
 import { readRpcEvents } from "./events"
-import { AlertsPage } from "./page"
+import { NotificationsPage } from "./page"
 import { createSink } from "./sink"
 import { createHostSignals, type SignalData } from "./signals"
-import { defaultSettings, SettingsSchema } from "./settings"
+import { defaultMarks, defaultPending, defaultSettings, MarksSchema, PendingSchema, SettingsSchema } from "./settings"
+import { unreadRoots, type UnreadData } from "./unread"
 
 const definition = Plugin.define({
-  stores: { settings: Store.global(SettingsSchema, defaultSettings) },
+  stores: {
+    settings: Store.global(SettingsSchema, defaultSettings),
+    marks: Store.global(MarksSchema, defaultMarks),
+    pending: Store.global(PendingSchema, defaultPending),
+  },
   i18n: {
     en: {
-      "page.title": "Alerts",
-      "page.description": "Toasts for what finishes, fails or waits for you. Plugins that publish alerts are listed under Sources.",
-      "toasts.title": "Toasts",
+      "page.title": "Notifications (plugins)",
+      "page.description": "Toasts and tab marks for what finishes, fails or waits for you, from the app and from your plugins. Plugins that publish are listed under Sources.",
+      "toasts.title": "Delivery",
+      "column.toast": "Toast",
+      "column.mark": "Mark",
+      "next.title": "Go to next notification",
+      "next.description": "Open the session that needs you, then one that failed, then one that finished",
+      "titlebar.label.one": "{{count}} waiting",
+      "titlebar.label.other": "{{count}} waiting",
+      "titlebar.title.one": "{{count}} session needs you or failed",
+      "titlebar.title.other": "{{count}} sessions need you or failed",
       "kind.needs-you.title": "Needs you",
       "kind.needs-you.description": "A question or permission is waiting. Stays until answered.",
       "kind.error.title": "Error",
@@ -28,10 +44,10 @@ const definition = Plugin.define({
       "onScreen.info.description": "Also toast info for the session you are looking at.",
       "system.title": "System notification and sound",
       "system.row.title": "Follows Settings > Notifications",
-      "system.row.description": "The app's own switches and sound choices decide whether a banner shows or plays for plugin alerts.",
+      "system.row.description": "The app's own switches and sound choices decide whether a banner shows or plays for plugin notifications.",
       "system.row.open": "Open",
       "sources.title": "Sources",
-      "sources.description": "Show alerts from {{source}}",
+      "sources.description": "Show notifications from {{source}}",
       "sources.empty": "No plugin has published yet.",
       "open": "Open",
       "more": "{{count}} more from {{source}}",
@@ -57,7 +73,36 @@ export default Plugin.define({
     const activeSession = () => ctx.tabs.list().find((tab) => tab.active)?.session
     const hasTab = (server: string, sessionID: string) => ctx.tabs.list().some((tab) => tab.session?.server.id === server && tab.session.id === sessionID)
 
+    // Marks, the titlebar count and go-to-next read one ledger of what waits on a session. Plugin-sourced entries are kept in
+    // storage so the marks survive a reload; the host's own events are rebuilt by the signals below.
+    const [version, setVersion] = createSignal(0)
+    let persistTimer: ReturnType<typeof setTimeout> | undefined
+    const writePending = () => {
+      persistTimer = undefined
+      const entries = ledger.stored().map(({ source, key, kind, severity, title, server, session, at }) => ({ source, key, kind, severity, title, server, session, at }))
+      if (JSON.stringify(entries) === JSON.stringify(ctx.stores.pending.value.entries)) return
+      ctx.stores.pending.update(((draft: { entries: typeof entries }) => void (draft.entries = entries)) as never)
+    }
+    // A burst of events changes the ledger hundreds of times in one task: readers (marks, count) run once after it.
+    let announced = false
+    const ledger = new Ledger(() => {
+      persistTimer ??= setTimeout(writePending, 500)
+      if (announced) return
+      announced = true
+      queueMicrotask(() => {
+        announced = false
+        setVersion((value) => value + 1)
+      })
+    })
+    onCleanup(() => {
+      if (persistTimer === undefined) return
+      clearTimeout(persistTimer)
+      writePending()
+    })
+    ledger.load(ctx.stores.pending.value.entries)
+
     const hub = createSink({
+      track: { put: (n, host) => ledger.put(n, host), remove: (source, key) => void ledger.remove(source, key) },
       self: ctx.id,
       now: () => Date.now(),
       later: (fn, ms) => {
@@ -84,10 +129,86 @@ export default Plugin.define({
       if (n) hub.sink.publish(n)
     }
 
-    // Window focus: persistent alerts that waited for a focused window appear now.
-    const onFocus = () => hub.focusGained()
+    // Window focus: persistent notifications that waited for a focused window appear now.
+    const [focused, setFocused] = createSignal(document.hasFocus())
+    const onFocus = () => {
+      setFocused(true)
+      hub.focusGained()
+    }
+    const onBlur = () => setFocused(false)
     window.addEventListener("focus", onFocus)
-    onCleanup(() => window.removeEventListener("focus", onFocus))
+    window.addEventListener("blur", onBlur)
+    onCleanup(() => {
+      window.removeEventListener("focus", onFocus)
+      window.removeEventListener("blur", onBlur)
+    })
+
+    // Looking at a session sees what waits on it (the host clears its own dot the same way).
+    const activeRef = (): SessionRef | undefined => {
+      const session = activeSession()
+      return session ? { server: session.server.id, session: session.id } : undefined
+    }
+    createKeyed(
+      () => (focused() ? (activeRef() ? sessionKey(activeRef()!) : undefined) : undefined),
+      () => {
+        const ref = activeRef()
+        if (ref) ledger.clearSession(ref)
+      },
+    )
+
+    // Tab marks for events that start no turn. The host's own marks cover everything it knows about.
+    const tabSessions = createMemo(() => new Map(ctx.tabs.list().flatMap((tab) => (tab.session ? [[tab.key, sessionKey({ server: tab.session.server.id, session: tab.session.id })] as const] : []))))
+    const marks = createMemo(() => (version(), markEntries(ledger.list(), (kind) => ctx.stores.marks.value[kind])))
+    const markOf = (tabKey: string) => {
+      const sessionRef = tabSessions().get(tabKey)
+      const entry = sessionRef ? marks().get(sessionRef) : undefined
+      return entry ? { severity: entry.severity, label: entry.title } : undefined
+    }
+    const dom = createDomHub(document, (fn) => requestAnimationFrame(fn), (id) => cancelAnimationFrame(id), TAB_MARK_OWN, ctx.id)
+    const tabMarks = createTabMarks({ doc: document, hub: dom, mark: markOf, active: () => marks().size > 0 })
+    createKeyed(
+      () => (marks().size === 0 ? "m:" : `m:${[...tabSessions()].map(([key]) => { const mark = markOf(key); return mark ? `${key}|${mark.severity}|${mark.label}` : "" }).join("\n")}`),
+      () => tabMarks.sync(),
+    )
+    ctx.add(Style, tabMarkCss)
+
+    // Go to next notification: needs you, then error, then done (the host's unread roots included), the open session never.
+    let last: SessionRef | undefined
+    let walk: readonly SessionRef[] = []
+    const goNext = () => {
+      const unread = ctx.servers.list().flatMap((id) => {
+        const server = ctx.servers.get(id)
+        return server?.connected ? unreadRoots(id, server.data as unknown as UnreadData) : []
+      })
+      const ordered = order([...stops(ledger.list()), ...unread])
+      const next = pickNext(ordered, activeRef(), last, walk)
+      // Nothing to jump to: decline the key so it reaches whatever has focus (Cmd+I in the composer).
+      if (!next) return false
+      last = next
+      walk = ordered
+      ctx.tabs.open({ server: next.server, id: next.session }, { focus: true })
+      ledger.clearSession(next)
+    }
+    const urgent = createMemo(() => (version(), urgentCount(ledger.list())))
+    ctx.add(
+      Command,
+      (): Command => ({
+        id: "go-to-next",
+        title: ctx.t("next.title"),
+        description: ctx.t("next.description"),
+        keywords: "notification inbox alert unread waiting error needs you jump",
+        section: "navigation",
+        bind: "mod+i",
+        run: goNext,
+      }),
+    )
+    ctx.add(TitlebarItem, (): TitlebarItem | undefined => {
+      const count = urgent()
+      if (count === 0) return undefined
+      const keys = ctx.keybinds.keybind(`${ctx.id}.go-to-next`).join("")
+      const title = ctx.plural("titlebar.title", count)
+      return { id: "next", icon: "notifications", label: ctx.plural("titlebar.label", count), title: keys ? `${title} (${keys})` : title, run: () => void goNext() }
+    })
 
     // Server halves publish RPC events; every `rpc.<id>.notify` on the stream is one notification.
     createKeyed(
@@ -151,18 +272,21 @@ export default Plugin.define({
     )
 
     ctx.add(SettingsPage, {
+      // The page was first called Alerts; the id stays so links and search entries keep working.
       id: "alerts",
       title: ctx.t("page.title"),
       icon: "circle-exclamation",
       entries: [
-        { id: "alerts-toasts", title: ctx.t("toasts.title"), description: ctx.t("page.description"), keywords: "notifications toast alerts done error needs you" },
+        { id: "alerts-toasts", title: ctx.t("toasts.title"), description: ctx.t("page.description"), keywords: "notifications toast mark alerts done error needs you" },
         { id: "alerts-sources", title: ctx.t("sources.title"), keywords: "mute scheduler monitor plugin" },
       ],
       render: () => (
-        <AlertsPage
+        <NotificationsPage
           ctx={ctx}
           settings={() => ctx.stores.settings.value}
           update={(change) => ctx.stores.settings.update(change as never)}
+          marks={() => ctx.stores.marks.value}
+          updateMarks={(change) => ctx.stores.marks.update(change as never)}
           sources={() => [...new Set([...publishers().filter((id) => id !== ctx.id), ...seen()])].sort()}
         />
       ),

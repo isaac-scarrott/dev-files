@@ -1,19 +1,21 @@
 import type { Context } from "@opencode/plugin/gui"
 import { For } from "solid-js"
 import { NOTIFY_KINDS, type NotifyKind } from "../../native-ui/src/notify-contract"
-import type { Settings } from "./settings"
+import type { Marks, Settings } from "./settings"
 
 /** What the page reads and writes. */
 export interface PageInput {
   readonly ctx: Pick<Context, "t" | "ui" | "layout">
   readonly settings: () => Settings
+  readonly marks: () => Marks
+  readonly updateMarks: (change: (draft: { -readonly [K in keyof Marks]: Marks[K] }) => void) => void
   readonly update: (change: (draft: { toast: Record<NotifyKind, boolean>; onScreen: { done: boolean; info: boolean }; muted: string[] }) => void) => void
   /** The plugin ids that publish: announced publishers and sources seen on the event stream. */
   readonly sources: () => readonly string[]
 }
 
 /** The host's own settings markup (title, description, body, section, list, row), so its CSS styles the page. */
-export function AlertsPage(props: PageInput) {
+export function NotificationsPage(props: PageInput) {
   const { ctx } = props
   const row = (action: string, title: string, description: string, checked: () => boolean, onChange: (checked: boolean) => void) => (
     <div data-component="settings-row">
@@ -26,6 +28,14 @@ export function AlertsPage(props: PageInput) {
           <ctx.ui.Switch label={title} hideLabel checked={checked()} onChange={onChange} />
         </div>
       </div>
+    </div>
+  )
+
+  // One column of the kind matrix: the switch with its column name beside it, named for the kind for assistive tech.
+  const cell = (action: string, column: string, kind: string, checked: () => boolean, onChange: (checked: boolean) => void) => (
+    <div data-action={action} class="flex items-center gap-2">
+      <span class="text-11-regular text-v2-text-text-muted" aria-hidden="true">{column}</span>
+      <ctx.ui.Switch label={`${kind}: ${column}`} hideLabel checked={checked()} onChange={onChange} />
     </div>
   )
 
@@ -45,11 +55,20 @@ export function AlertsPage(props: PageInput) {
           <h3 class="settings-section-title">{ctx.t("toasts.title")}</h3>
           <div data-component="settings-list">
             <For each={NOTIFY_KINDS}>
-              {(kind) =>
-                row(`alerts-toast-${kind}`, ctx.t(`kind.${kind}.title`), ctx.t(`kind.${kind}.description`), () => props.settings().toast[kind], (checked) =>
-                  props.update((draft) => void (draft.toast[kind] = checked)),
-                )
-              }
+              {(kind) => (
+                <div data-component="settings-row">
+                  <div data-slot="settings-row-copy">
+                    <div data-slot="settings-row-title">{ctx.t(`kind.${kind}.title`)}</div>
+                    <div data-slot="settings-row-description">{ctx.t(`kind.${kind}.description`)}</div>
+                  </div>
+                  <div data-slot="settings-row-control">
+                    <div class="flex items-center gap-4">
+                      {cell(`alerts-toast-${kind}`, ctx.t("column.toast"), ctx.t(`kind.${kind}.title`), () => props.settings().toast[kind], (checked) => props.update((draft) => void (draft.toast[kind] = checked)))}
+                      {cell(`alerts-mark-${kind}`, ctx.t("column.mark"), ctx.t(`kind.${kind}.title`), () => props.marks()[kind], (checked) => props.updateMarks((draft) => void (draft[kind] = checked)))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </For>
             {row("alerts-onscreen-done", ctx.t("onScreen.done.title"), ctx.t("onScreen.done.description"), () => props.settings().onScreen.done, (checked) =>
               props.update((draft) => void (draft.onScreen.done = checked)),
