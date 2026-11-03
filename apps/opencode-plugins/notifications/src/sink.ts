@@ -22,6 +22,8 @@ export interface SinkDeps {
   readonly presence: (n: Notification) => Presence
   readonly show: (options: ToastOptions) => { dismiss(): void }
   readonly open: (target: { server: string; session: string }) => void
+  /** What waits on a session for go-to-next, the count and the marks. `host`: made from the host's own events. */
+  readonly track: { put(n: Notification, host: boolean): void; remove(source: string, key: string): void }
   /** `ctx.attention.notify`: the host decides, by its own Settings › Notifications, whether anything shows or sounds. */
   readonly attention: (options: { title: string; message?: string; variant: "default" | "error"; session?: { server: string; id: string }; id: string }) => unknown
   readonly text: {
@@ -122,7 +124,10 @@ export function createSink(deps: SinkDeps) {
     // A request that is already waiting on screen, unchanged (a reconnect asks again): leave it be.
     const shown = live.get(id)
     if (shown?.handle && shown.n.persistent && n.persistent && shown.n.title === n.title && shown.n.body === n.body) return
-    const verdict = toastVerdict(n, deps.settings(), deps.presence(n))
+    const presence = deps.presence(n)
+    // The user is looking at it: a toast (error, needs-you) says enough, and nothing waits except a request that needs an answer.
+    if (!(presence.onScreen && n.kind !== "needs-you")) deps.track.put(n, n.source === deps.self)
+    const verdict = toastVerdict(n, deps.settings(), presence)
     if (verdict.show) show(id, n)
     else if (verdict.hold) {
       retract(id)
@@ -145,7 +150,10 @@ export function createSink(deps: SinkDeps) {
       id: deps.self,
       accepts: [1],
       publish,
-      clear: (source: string, key: string) => retract(idOf(source, key)),
+      clear: (source: string, key: string) => {
+        retract(idOf(source, key))
+        deps.track.remove(source, key)
+      },
     } satisfies NotifySink,
     /** A window gained focus: persistent notifications that waited for one appear now. */
     focusGained() {
