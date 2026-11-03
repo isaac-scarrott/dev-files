@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Bitwarden } from "./bitwarden.js";
-import { keychainTokens } from "./keychain.js";
+import { keychainTokens, memoryTokens } from "./keychain.js";
 import { OnePassword } from "./onepassword.js";
 const ID = /^[a-z][a-z0-9_-]{0,31}$/;
 function fail(path, expected) {
@@ -36,7 +36,7 @@ const expand = (path) => (path.startsWith("~/") ? join(homedir(), path.slice(2))
  * Reads the `accounts` option into account builders. The key of each is its whole configuration, so a reload with the same
  * settings keeps the unlocked session and a changed account starts locked.
  */
-export function parseAccounts(options, tokens = keychainTokens()) {
+export function parseAccounts(options, fallback) {
     const raw = options.accounts;
     if (raw === undefined)
         return [];
@@ -49,6 +49,9 @@ export function parseAccounts(options, tokens = keychainTokens()) {
             fail(`accounts.${id}`, "an object");
         const config = value;
         const where = (name) => `accounts.${id}.${name}`;
+        // Where a service account token rests: the macOS keychain (default), this process only, or a `security` binary at a path.
+        const store = optionalText(config.tokenStore, where("tokenStore"));
+        const tokens = fallback ?? (store === undefined || store === "keychain" ? keychainTokens() : store === "memory" ? memoryTokens() : keychainTokens(store));
         const provider = config.provider;
         const common = {
             id,

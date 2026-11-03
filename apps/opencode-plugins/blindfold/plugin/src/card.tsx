@@ -145,24 +145,25 @@ function UnlockForm(props: CardProps & { account: string; label: string; method:
   )
 }
 
-/** A field a password manager can serve: who it would come from, a choice when several can, and the unlock when one is locked. */
+/**
+ * A field a password manager can serve: who it would come from, a choice when several can, and the unlock when one is
+ * locked. Fields offered the same candidates share one choice and one unlock, shown on the first of them.
+ */
 function ProviderRow(props: CardProps & { field: RequestedField }) {
   const { ui, t, model, field } = props
   const source = field.source!
   const picked = () => model.candidate(field)
   const detail = (item: { account: string; label: string; item?: { title: string } }) => (item.item ? `${item.label} · ${item.item.title}` : item.label)
+  const lead = () => model.leads(field)
+  const status = () => {
+    const item = picked()
+    if (!item) return t("chooseBelow")
+    return item.state === "locked" ? t("isLocked", { account: item.label }) : t("fromAccount", { detail: detail(item) })
+  }
   return (
     <div data-slot="field" data-field={field.name} data-provider="">
       <div data-slot="label">{field.label}</div>
-      <Show
-        when={source.candidates.length > 1}
-        fallback={
-          <div data-slot="source" data-state={picked()?.state}>
-            <ui.Icon name={picked()?.state === "locked" ? "lock" : "check"} size="small" />
-            <span data-slot="source-text">{picked()?.state === "locked" ? t("isLocked", { account: picked()!.label }) : t("fromAccount", { detail: detail(picked()!) })}</span>
-          </div>
-        }
-      >
+      <Show when={source.candidates.length > 1 && lead()}>
         <div role="radiogroup" aria-label={t("choose", { label: field.label })} data-slot="choices">
           <For each={source.candidates}>
             {(item) => (
@@ -177,7 +178,13 @@ function ProviderRow(props: CardProps & { field: RequestedField }) {
           </For>
         </div>
       </Show>
-      <Show when={picked()?.state === "locked" && picked()!.methods.length > 0}>
+      <Show when={source.candidates.length === 1 || !lead()}>
+        <div data-slot="source" data-state={picked()?.state}>
+          <ui.Icon name={picked()?.state === "locked" ? "lock" : "check"} size="small" />
+          <span data-slot="source-text">{status()}</span>
+        </div>
+      </Show>
+      <Show when={lead() && picked()?.state === "locked" && picked()!.methods.length > 0}>
         <UnlockForm {...props} account={picked()!.account} label={picked()!.label} method={picked()!.methods[0]!} />
       </Show>
     </div>

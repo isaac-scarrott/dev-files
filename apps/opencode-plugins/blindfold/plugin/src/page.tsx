@@ -19,10 +19,19 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-di
 export function BlindfoldPage(props: PageInput) {
   const { ctx } = props
   const [data, setData] = createSignal<Overview>()
-  const refresh = () => void props.load().then(setData, () => undefined)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // An account locks itself when idle and nothing says so: look again just after the earliest lock time.
+  const refresh = () =>
+    void props.load().then((next) => {
+      setData(next)
+      clearTimeout(timer)
+      const soon = Math.min(...(next?.accounts ?? []).flatMap((account) => (account.expiresAt ? [account.expiresAt] : [])))
+      if (Number.isFinite(soon)) timer = setTimeout(refresh, Math.max(1000, soon - Date.now() + 300))
+    }, () => undefined)
   onMount(() => {
     refresh()
     onCleanup(props.changes(refresh))
+    onCleanup(() => clearTimeout(timer))
   })
   const row = (title: string, description: string, control?: unknown) => (
     <div data-component="settings-row">

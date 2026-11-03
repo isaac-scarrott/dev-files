@@ -59,6 +59,8 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
   const providersReady = () => providers().every((field) => candidate(field)?.state === "ready")
   const ready = createMemo(() => typed().every((field) => filled(field) && verdict(field).level !== "invalid") && providersReady())
 
+  /** Fields offered the same candidates are one choice: a login's email and password come from the same account. */
+  const signature = (field: RequestedField) => field.source?.candidates.map((item) => item.key).join("|") ?? ""
   const clearSecrets = () => setSecrets({})
   const clear = () =>
     batch(() => {
@@ -102,7 +104,14 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
     ready,
     candidate,
     selectedKey: key,
-    choose: (name: string, next: string) => setChosen({ ...chosen(), [name]: next }),
+    /** Whether the field leads its group: the one that shows the choice and the unlock. */
+    leads: (field: RequestedField) => providers().find((item) => signature(item) === signature(field)) === field,
+    choose(name: string, next: string) {
+      const field = providers().find((item) => item.name === name)
+      if (!field) return
+      const same = providers().filter((item) => signature(item) === signature(field))
+      setChosen({ ...chosen(), ...Object.fromEntries(same.map((item) => [item.name, next])) })
+    },
     summary,
     /** The first typed field still empty or invalid: where focus goes, and where Enter moves on to. */
     next: (after?: string) => {
