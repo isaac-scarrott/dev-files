@@ -6,7 +6,7 @@ import { createBroker, itemFieldOf, type Ask, type Planned } from "./broker.js"
 import { MAX_FIELDS, NAME_PATTERN, parseFields, type Field } from "./fields.js"
 import { createFills, type FillField } from "./fill.js"
 import { readOnePassword } from "./legacy-op.js"
-import { accounts as registered, LockedError, originOf, type UnlockInput } from "./providers-contract.js"
+import { accounts as registered, isLocked, originOf, type UnlockInput } from "./providers-contract.js"
 import { Redactor } from "./redact.js"
 import { Blindfold, type AccountState, type RequestedField } from "./rpc.js"
 import { nameRule, parseRules, savedRules, type ConfigRule } from "./rules.js"
@@ -227,8 +227,9 @@ export default Plugin.define({
           return { accepted: true, error: message.slice(0, 200) }
         }
         changed()
-        await request.refresh().catch(() => undefined)
-        return { accepted: true }
+        // Unlocked, but the card could not look again: say so instead of leaving it stale.
+        const stale = await request.refresh().then(() => undefined, (error: unknown) => (error instanceof Error ? error.message : "unknown error").slice(0, 160))
+        return stale ? { accepted: true, error: `Unlocked, but the card could not be refreshed: ${stale}` } : { accepted: true }
       },
       ack: async (input) => {
         const request = pending.get((input as { requestID: string }).requestID)
@@ -407,7 +408,7 @@ export default Plugin.define({
           log(planned, item.name, answer.auto ? "rule" : answer.remember ? "always" : "allowed", key)
         } catch (error) {
           log(planned, item.name, "error", key)
-          if (error instanceof LockedError) throw new Error(`${planned.source.candidates.find((entry) => entry.key === key)?.label ?? error.account} locked before it could be read. Ask again.`)
+          if (isLocked(error)) throw new Error(`${planned.source.candidates.find((entry) => entry.key === key)?.label ?? error.account} locked before it could be read. Ask again.`)
           throw error
         }
       }

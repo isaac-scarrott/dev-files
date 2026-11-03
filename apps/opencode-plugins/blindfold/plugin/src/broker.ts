@@ -1,5 +1,5 @@
 import type { Field } from "./fields.js"
-import { LockedError, type Account, type FieldRef, type ItemRef, type LockState, type UnlockMethod } from "./providers-contract.js"
+import { isLocked, patternMatches, type Account, type FieldRef, type ItemRef, type LockState, type UnlockMethod } from "./providers-contract.js"
 import { covering, nameRule, permitted, type ConfigRule, type SavedRule } from "./rules.js"
 
 /** One account (and item) that could serve a field. `key` identifies it inside a request. */
@@ -57,9 +57,10 @@ export function createBroker(deps: BrokerDeps) {
     else return undefined
     if (accounts.length === 0) return undefined
 
-    const candidates: Candidate[] = []
+    let candidates: Candidate[] = []
     const refs = new Map<string, { item: ItemRef; field: FieldRef }>()
     const hints: string[] = []
+    let searched = false
     const add = (account: Account, state: "ready" | "locked", methods: UnlockMethod[], found?: { item: ItemRef; field: FieldRef }) => {
       const key = found ? `${account.id}:${found.item.id}` : account.id
       const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name }
@@ -80,17 +81,26 @@ export function createBroker(deps: BrokerDeps) {
         } else if (state.state === "locked") add(account, "locked", [...state.methods])
         else {
           const items = await account.findByOrigin(ask.origin!)
+          searched = true
           const holding = items.filter((item) => item.fields.includes(itemField))
           if (items.length > 0 && holding.length === 0) hints.push(`${account.label}: the login has no ${itemField}`)
           for (const item of holding) add(account, "ready", [], { item, field: fieldRef(itemField) })
         }
       } catch (error) {
         // The session ended between the status and the listing.
-        if (error instanceof LockedError) add(account, "locked", [...error.methods])
+        if (isLocked(error)) add(account, "locked", [...error.methods])
         else hints.push(error instanceof Error ? error.message : String(error))
       }
     }
-    if (candidates.length === 0) return { itemField, refs, source: { state: "unavailable", candidates: [], hint: hints[0] ?? "No login for this site in your vaults." } }
+    // A locked account cannot be searched. It is listed only when nothing unlocked can serve the field, or when a rule names
+    // it for this site; otherwise every locked vault would show up as a choice on every page.
+    const named = new Set(ask.origin ? deps.rules.filter((item) => item.origin !== undefined && patternMatches(item.origin, ask.origin!)).flatMap((item) => item.account) : [])
+    const skipped = candidates.filter((item) => item.state === "locked" && !named.has(item.account))
+    if (searched || candidates.some((item) => item.state === "ready")) candidates = candidates.filter((item) => item.state === "ready" || named.has(item.account))
+    if (candidates.length === 0) {
+      const locked = skipped.length > 0 ? ` Not searched, locked: ${skipped.map((item) => item.label).join(", ")}.` : ""
+      return { itemField, refs, source: { state: "unavailable", candidates: [], hint: (hints[0] ?? "No login for this site in your vaults.") + locked } }
+    }
     const chosen = candidates.find((item) => item.covered) ?? (candidates.length === 1 ? candidates[0] : undefined)
     return { itemField, refs, source: { state: "choose", candidates, ...(chosen ? { selected: chosen.key } : {}) } }
   }

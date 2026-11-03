@@ -94,6 +94,9 @@ export class LockedError extends Error {
   }
 }
 
+/** True for a LockedError from any copy of this contract: a provider bundle and blindfold each carry their own class. */
+export const isLocked = (error: unknown): error is LockedError => error instanceof Error && error.name === "LockedError"
+
 export interface Provider {
   readonly kind: string
   /** Protocol majors this provider speaks. */
