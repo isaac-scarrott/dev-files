@@ -1,6 +1,6 @@
 import type { Managed } from "./managed.js"
-import { Base, MISS_TTL_MS } from "./account.js"
-import { LockedError, originMatches, itemOriginOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
+import { Base, LIST_TTL_MS, MISS_TTL_MS } from "./account.js"
+import { LockedError, isLocked, originMatches, itemOriginOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
 import { memoryTokens, type TokenStore } from "./keychain.js"
 import { PROBE_MS, classify, type Probe } from "./probe.js"
 import { reason, run } from "./run.js"
@@ -35,6 +35,7 @@ export class OnePassword extends Base implements Managed {
   readonly kind = "1password"
   readonly capabilities: Capabilities
   private readonly bin: string
+  private readonly otpOf = new Map<string, { at: number; has: boolean }>()
   private readonly method: "serviceAccount" | "masterPassword"
   private readonly address: string
   private readonly shorthand: string
@@ -96,6 +97,7 @@ export class OnePassword extends Base implements Managed {
 
   async lock() {
     if (this.session?.method === "masterPassword") await run(this.bin, ["signout", "--account", this.address], this.session.env)
+    this.otpOf.clear()
     await super.lock()
   }
 
@@ -129,8 +131,8 @@ export class OnePassword extends Base implements Managed {
           id: `${vault}/${item.id}`,
           title: item.title,
           origins: (item.urls ?? []).map((url) => itemOriginOf(url.href)).filter((origin): origin is string => !!origin),
-          hasOtp: true,
-          fields: ["username", "password", "otp"],
+          hasOtp: false,
+          fields: ["username", "password"],
         })
       }
     }
@@ -191,14 +193,39 @@ export class OnePassword extends Base implements Managed {
       readAt = Date.now()
       this.cache.set("list", { at: readAt, items })
     }
-    const found = matching(items)
+    const found = await this.withParts(matching(items), env, signal)
     // A miss on a list read a while ago may only mean the login was added or moved since: look once more.
     if (found.length === 0 && Date.now() - readAt > MISS_TTL_MS) {
       items = await this.list(env, signal)
       this.cache.set("list", { at: Date.now(), items })
-      return matching(items)
+      return this.withParts(matching(items), env, signal)
     }
     return found
+  }
+
+  /**
+   * The list does not say which parts a login has, so the ones that matched a page are read once to see whether they carry
+   * a one-time password field. Only the field types are kept: the values in the reply are dropped here.
+   */
+  private async withParts(found: readonly ItemRef[], env: Record<string, string>, signal?: AbortSignal): Promise<ItemRef[]> {
+    return Promise.all(
+      found.map(async (item) => {
+        let otp = this.otpOf.get(item.id)
+        if (!otp || Date.now() - otp.at > LIST_TTL_MS) {
+          const [vault, id] = item.id.split("/")
+          let has = false
+          try {
+            const out = await this.call(["item", "get", id!, "--vault", vault!, "--format", "json"], env, signal)
+            has = ((JSON.parse(out) as { fields?: { type?: string }[] }).fields ?? []).some((field) => field.type === "OTP")
+          } catch (error) {
+            if (isLocked(error)) throw error
+          }
+          otp = { at: Date.now(), has }
+          this.otpOf.set(item.id, otp)
+        }
+        return otp.has ? { ...item, hasOtp: true, fields: [...item.fields, "otp"] } : item
+      }),
+    )
   }
 
   async resolve(reference: string) {

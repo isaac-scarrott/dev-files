@@ -1,5 +1,5 @@
-import { Base, MISS_TTL_MS } from "./account.js";
-import { LockedError, originMatches, itemOriginOf } from "./contract.js";
+import { Base, LIST_TTL_MS, MISS_TTL_MS } from "./account.js";
+import { LockedError, isLocked, originMatches, itemOriginOf } from "./contract.js";
 import { memoryTokens } from "./keychain.js";
 import { PROBE_MS, classify } from "./probe.js";
 import { reason, run } from "./run.js";
@@ -11,6 +11,7 @@ export class OnePassword extends Base {
     kind = "1password";
     capabilities;
     bin;
+    otpOf = new Map();
     method;
     address;
     shorthand;
@@ -73,6 +74,7 @@ export class OnePassword extends Base {
     async lock() {
         if (this.session?.method === "masterPassword")
             await run(this.bin, ["signout", "--account", this.address], this.session.env);
+        this.otpOf.clear();
         await super.lock();
     }
     /** Forgets the saved token as well: the next use asks for a new one. */
@@ -103,8 +105,8 @@ export class OnePassword extends Base {
                     id: `${vault}/${item.id}`,
                     title: item.title,
                     origins: (item.urls ?? []).map((url) => itemOriginOf(url.href)).filter((origin) => !!origin),
-                    hasOtp: true,
-                    fields: ["username", "password", "otp"],
+                    hasOtp: false,
+                    fields: ["username", "password"],
                 });
             }
         }
@@ -168,14 +170,38 @@ export class OnePassword extends Base {
             readAt = Date.now();
             this.cache.set("list", { at: readAt, items });
         }
-        const found = matching(items);
+        const found = await this.withParts(matching(items), env, signal);
         // A miss on a list read a while ago may only mean the login was added or moved since: look once more.
         if (found.length === 0 && Date.now() - readAt > MISS_TTL_MS) {
             items = await this.list(env, signal);
             this.cache.set("list", { at: Date.now(), items });
-            return matching(items);
+            return this.withParts(matching(items), env, signal);
         }
         return found;
+    }
+    /**
+     * The list does not say which parts a login has, so the ones that matched a page are read once to see whether they carry
+     * a one-time password field. Only the field types are kept: the values in the reply are dropped here.
+     */
+    async withParts(found, env, signal) {
+        return Promise.all(found.map(async (item) => {
+            let otp = this.otpOf.get(item.id);
+            if (!otp || Date.now() - otp.at > LIST_TTL_MS) {
+                const [vault, id] = item.id.split("/");
+                let has = false;
+                try {
+                    const out = await this.call(["item", "get", id, "--vault", vault, "--format", "json"], env, signal);
+                    has = (JSON.parse(out).fields ?? []).some((field) => field.type === "OTP");
+                }
+                catch (error) {
+                    if (isLocked(error))
+                        throw error;
+                }
+                otp = { at: Date.now(), has };
+                this.otpOf.set(item.id, otp);
+            }
+            return otp.has ? { ...item, hasOtp: true, fields: [...item.fields, "otp"] } : item;
+        }));
     }
     async resolve(reference) {
         const match = reference.match(/^op:\/\/([^/]+)\/([^/]+)\/([^?]+)(\?attribute=otp)?$/);
