@@ -1,13 +1,13 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { Account } from "./contract.js"
+import type { Managed } from "./managed.js"
 import { Bitwarden } from "./bitwarden.js"
-import { keychainTokens, memoryTokens, type TokenStore } from "./keychain.js"
+import { keychainTokens, memoryTokens, type KeyStore, type TokenStore } from "./keychain.js"
 import { OnePassword } from "./onepassword.js"
 
 const ID = /^[a-z][a-z0-9_-]{0,31}$/
 
-export type Built = { id: string; key: string; make: () => Account }
+export type Built = { id: string; key: string; make: () => Managed }
 
 function fail(path: string, expected: string): never {
   throw new Error(`blindfold-providers ${path} must be ${expected}`)
@@ -41,7 +41,7 @@ const expand = (path: string) => (path.startsWith("~/") ? join(homedir(), path.s
  * Reads the `accounts` option into account builders. The key of each is its whole configuration, so a reload with the same
  * settings keeps the unlocked session and a changed account starts locked.
  */
-export function parseAccounts(options: Record<string, unknown>, fallback?: TokenStore): Built[] {
+export function parseAccounts(options: Record<string, unknown>, fallback?: TokenStore, keys?: KeyStore): Built[] {
   const raw = options.accounts
   if (raw === undefined) return []
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) fail("accounts", "an object of account id to settings")
@@ -59,6 +59,7 @@ export function parseAccounts(options: Record<string, unknown>, fallback?: Token
       autoLockMinutes: minutes(config.autoLockMinutes, where("autoLockMinutes")),
       allowedOrigins: strings(config.allowedOrigins, where("allowedOrigins")),
       bin: optionalText(config.bin, where("bin")),
+      confirmEveryUse: config.confirmEveryUse === undefined ? undefined : config.confirmEveryUse === true,
     }
     if (provider === "1password") {
       const unlock = config.unlock ?? "serviceAccount"
@@ -77,7 +78,7 @@ export function parseAccounts(options: Record<string, unknown>, fallback?: Token
         organizationId: optionalText(config.organizationId, where("organizationId")),
         syncOnUnlock: config.syncOnUnlock === undefined ? undefined : config.syncOnUnlock === true,
       }
-      return { id, key: JSON.stringify([provider, settings]), make: () => new Bitwarden(settings) }
+      return { id, key: JSON.stringify([provider, settings]), make: () => new Bitwarden({ ...settings, apiKeys: keys }) }
     }
     return fail(where("provider"), "1password or bitwarden")
   })

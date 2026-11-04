@@ -1,6 +1,8 @@
+import type { Managed } from "./managed.js"
 import { Base } from "./account.js"
 import { LockedError, originMatches, originOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
 import { memoryTokens, type TokenStore } from "./keychain.js"
+import { PROBE_MS, classify, type Probe } from "./probe.js"
 import { reason, run } from "./run.js"
 
 export type OnePasswordOptions = {
@@ -19,6 +21,7 @@ export type OnePasswordOptions = {
   tokens?: TokenStore
   autoLockMinutes?: number
   allowedOrigins?: readonly string[]
+  confirmEveryUse?: boolean
 }
 
 type Overview = { id: string; title: string; vault?: { id?: string; name?: string }; urls?: { href: string }[] }
@@ -27,7 +30,7 @@ type Overview = { id: string; title: string; vault?: { id?: string; name?: strin
  * 1Password through the `op` CLI, with the desktop-app integration off on every call (OP_BIOMETRIC_UNLOCK_ENABLED=false):
  * `op` never asks the 1Password app, so no "Allow opencode-cli" dialog and no biometrics.
  */
-export class OnePassword extends Base {
+export class OnePassword extends Base implements Managed {
   readonly kind = "1password"
   readonly capabilities: Capabilities
   private readonly bin: string
@@ -131,6 +134,50 @@ export class OnePassword extends Base {
       }
     }
     return items
+  }
+
+  /** Where a service-account call gets its token now: this session, the keychain, then the service's environment variable. */
+  private async token() {
+    return this.session?.env.OP_SERVICE_ACCOUNT_TOKEN ?? (await this.tokens.get(this.id)) ?? (this.tokenEnv ? process.env[this.tokenEnv] : undefined)
+  }
+
+  /** Whether a token is saved (the keychain or the configured variable), without opening a session. */
+  async hasCredential() {
+    return !!(await this.token())
+  }
+
+  /**
+   * Connection test: lists the vaults' logins the way a use would and reports how many, never a value. Runs with the
+   * app integration off and gives up after `timeoutMs` (an app dialog never answers).
+   */
+  async probe(signal?: AbortSignal, timeoutMs = PROBE_MS): Promise<Probe> {
+    if (this.method !== "serviceAccount") return { ok: false, code: "other", detail: "only service accounts are tested here" }
+    const token = await this.token()
+    if (!token) return { ok: false, code: "no_token" }
+    const env = { ...this.base(), OP_SERVICE_ACCOUNT_TOKEN: token }
+    const scopes = this.vaults.length > 0 ? this.vaults.map((vault) => ({ vault, args: ["--vault", vault] })) : [{ vault: undefined, args: [] as string[] }]
+    const items: { id: string; title: string }[] = []
+    for (const scope of scopes) {
+      const result = await run(this.bin, ["item", "list", "--categories", "Login", "--format", "json", ...scope.args], env, undefined, signal, timeoutMs)
+      if (result.code !== 0 || result.missing || result.timedOut) return classify(result, [token], scope.vault)
+      try {
+        for (const item of JSON.parse(result.stdout || "[]") as Overview[]) items.push({ id: `${item.vault?.id ?? item.vault?.name ?? ""}/${item.id}`, title: item.title })
+      } catch {
+        return { ok: false, code: "other", detail: "unexpected output from op item list" }
+      }
+    }
+    return { ok: true, code: "ok", count: items.length, items: items.slice(0, 200) }
+  }
+
+  /** Reads one login's password and reports only whether it could be read. The value is dropped here. */
+  async verify(itemId: string, signal?: AbortSignal, timeoutMs = PROBE_MS): Promise<Probe> {
+    const token = await this.token()
+    if (!token) return { ok: false, code: "no_token" }
+    const [vault, id] = itemId.split("/")
+    if (!vault || !id) return { ok: false, code: "other", detail: "not an item of this account" }
+    const result = await run(this.bin, ["read", "--no-newline", `op://${vault}/${id}/password`], { ...this.base(), OP_SERVICE_ACCOUNT_TOKEN: token }, undefined, signal, timeoutMs)
+    if (result.code !== 0 || result.missing || result.timedOut) return classify(result, [token])
+    return result.stdout === "" ? { ok: false, code: "other", detail: "the login has no password" } : { ok: true, code: "ok" }
   }
 
   async findByOrigin(pageOrigin: string, signal?: AbortSignal) {

@@ -1,5 +1,8 @@
+import type { Managed } from "./managed.js"
 import { Base } from "./account.js"
 import { LockedError, originMatches, originOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
+import { apiKeys as keyStore, memoryTokens, type KeyStore } from "./keychain.js"
+import { PROBE_MS, classify, type Probe } from "./probe.js"
 import { reason, run } from "./run.js"
 
 export type BitwardenOptions = {
@@ -13,6 +16,9 @@ export type BitwardenOptions = {
   allowedOrigins?: readonly string[]
   /** Pull the vault after each unlock (default true). */
   syncOnUnlock?: boolean
+  confirmEveryUse?: boolean
+  /** A saved API key logs in by itself, so unlocking takes only the master password. */
+  apiKeys?: KeyStore
 }
 
 type Item = { id: string; name: string; organizationId: string | null; login?: { totp?: string | null; uris?: { uri: string }[] } }
@@ -24,13 +30,14 @@ const PASSWORD_VARIABLE = "BLINDFOLD_BW_PASSWORD"
  * password goes to the child through its environment (`--passwordenv`), the session (BW_SESSION) lives here and nowhere
  * else, and `bw lock` runs when the idle timer fires: the CLI itself never expires a session.
  */
-export class Bitwarden extends Base {
+export class Bitwarden extends Base implements Managed {
   readonly kind = "bitwarden"
   readonly capabilities: Capabilities = { otp: true, searchByOrigin: true, write: false, passkey: false, unlock: ["apiKey", "masterPassword"] }
   private readonly bin: string
   private readonly appData: string
   private readonly organizationId: string | undefined
   private readonly sync: boolean
+  private readonly keys: KeyStore
 
   constructor(options: BitwardenOptions) {
     super(options)
@@ -38,6 +45,11 @@ export class Bitwarden extends Base {
     this.appData = options.appDataDir
     this.organizationId = options.organizationId
     this.sync = options.syncOnUnlock ?? true
+    this.keys = options.apiKeys ?? keyStore(memoryTokens(), memoryTokens())
+  }
+
+  async hasCredential() {
+    return !!(await this.keys.get(this.id))
   }
 
   private base(extra: Record<string, string> = {}) {
@@ -55,15 +67,18 @@ export class Bitwarden extends Base {
     } catch {
       return { state: "unavailable", reason: "unexpected output from bw status" }
     }
-    // Logged out needs the API key; logged in needs only the master password.
-    return { state: "locked", methods: status === "unauthenticated" ? ["apiKey"] : ["masterPassword"] }
+    // Logged out needs the API key (unless one is saved); logged in needs only the master password.
+    return { state: "locked", methods: status === "unauthenticated" && !(await this.hasCredential()) ? ["apiKey"] : ["masterPassword"] }
   }
 
   async unlock(input: UnlockInput, signal?: AbortSignal) {
     if (input.method !== "apiKey" && input.method !== "masterPassword") throw new Error(`${this.label}: ${input.method} unlock is not supported`)
-    const secrets = [input.password, ...(input.method === "apiKey" ? [input.clientSecret ?? ""] : [])]
-    if (input.method === "apiKey" && input.clientId && input.clientSecret) {
-      const login = await run(this.bin, ["login", "--apikey"], this.base({ BW_CLIENTID: input.clientId, BW_CLIENTSECRET: input.clientSecret }), undefined, signal)
+    const saved = input.method === "masterPassword" ? await this.keys.get(this.id) : undefined
+    const given = input.method === "apiKey" && input.clientId && input.clientSecret ? { clientId: input.clientId, clientSecret: input.clientSecret } : undefined
+    const secrets = [input.password, ...(input.method === "apiKey" ? [input.clientSecret ?? ""] : []), ...(saved ? [saved.clientSecret] : [])]
+    const key = given ?? (saved && (await this.loggedOut(signal)) ? saved : undefined)
+    if (key) {
+      const login = await run(this.bin, ["login", "--apikey"], this.base({ BW_CLIENTID: key.clientId, BW_CLIENTSECRET: key.clientSecret }), undefined, signal)
       if (login.code !== 0 && !/already logged in/i.test(login.stderr + login.stdout)) throw new Error(`${this.label}: ${reason(login, secrets)}`)
     }
     const unlocked = await run(this.bin, ["unlock", "--raw", "--passwordenv", PASSWORD_VARIABLE], this.base({ [PASSWORD_VARIABLE]: input.password }), undefined, signal)
@@ -72,6 +87,46 @@ export class Bitwarden extends Base {
     if (this.sync) await run(this.bin, ["sync"], env, undefined, signal)
     this.open({ env, method: input.method })
     return this.status()
+  }
+
+  async forget() {
+    await this.lock()
+    await this.keys.delete(this.id)
+  }
+
+  private async loggedOut(signal?: AbortSignal) {
+    const result = await run(this.bin, ["status"], this.base(), undefined, signal)
+    try {
+      return result.code === 0 && (JSON.parse(result.stdout) as { status?: string }).status === "unauthenticated"
+    } catch {
+      return false
+    }
+  }
+
+  /** Connection test: signed in and unlocked, then how many collections the account can list. Counts only. */
+  async probe(signal?: AbortSignal, timeoutMs = PROBE_MS): Promise<Probe> {
+    if (!this.session) {
+      const result = await run(this.bin, ["status"], this.base(), undefined, signal, timeoutMs)
+      if (result.code !== 0 || result.missing || result.timedOut) return classify(result)
+      try {
+        const status = (JSON.parse(result.stdout) as { status?: string }).status
+        return status === "unauthenticated" ? { ok: false, code: (await this.hasCredential()) ? "locked" : "not_logged_in" } : { ok: false, code: "locked" }
+      } catch {
+        return { ok: false, code: "other", detail: "unexpected output from bw status" }
+      }
+    }
+    const args = ["list", "collections", "--nointeraction", ...(this.organizationId ? ["--organizationid", this.organizationId] : [])]
+    const result = await run(this.bin, args, this.session.env, undefined, signal, timeoutMs)
+    if (result.code !== 0 || result.missing || result.timedOut) {
+      const failed = classify(result)
+      if (failed.code === "locked") await super.lock()
+      return failed
+    }
+    try {
+      return { ok: true, code: "ok", count: (JSON.parse(result.stdout || "[]") as unknown[]).length }
+    } catch {
+      return { ok: false, code: "other", detail: "unexpected output from bw list collections" }
+    }
   }
 
   async lock() {
