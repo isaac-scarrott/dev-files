@@ -23,6 +23,7 @@ config.plugins = [
         { origin: "http://127.0.0.1:47321", account: "personal" },
       ],
       audit: { file: "/private/tmp/bf-run/audit.jsonl" },
+      ...(process.env.BF_FLOW_MINUTES ? { flowMinutes: Number(process.env.BF_FLOW_MINUTES) } : {}),
     },
   },
 ]
