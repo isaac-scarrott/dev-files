@@ -79,7 +79,7 @@ test("the events and hooks of one background job, then a hot reload and a restar
 })
 
 test("another service process: the stored job is reported through the session and the hub", async () => {
-  const storage = new Map<string, unknown>([["job/sh_9", { shellID: "sh_9", sessionID: "ses_a", command: "make watch", cwd: "/work", startedAt: Date.now() - 600_000, boot: "1:1" }]])
+  const storage = new Map<string, unknown>([["job/sh_9", { shellID: "sh_9", sessionID: "ses_a", command: "make watch", cwd: "/work", startedAt: Date.now() - 600_000, boot: "1:1", location: "/work" }]])
   const host = fakeHost(storage)
   const stop = (await plugin.setup(host.ctx)) as () => Promise<void>
   assert.equal(host.synthetic.length, 1)

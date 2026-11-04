@@ -43,6 +43,7 @@ export default Plugin.define({
         const tracker = new Tracker({
             options,
             boot: bootId(),
+            location: ctx.location.directory,
             now: Date.now,
             store,
             files: diskFiles(options.dir),

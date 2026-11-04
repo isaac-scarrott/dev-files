@@ -58,6 +58,8 @@ export interface ToolEnd {
 export interface Deps {
   options: Options
   boot: string
+  /** This instance's location: it records and reports only what belongs to it. */
+  location: string
   now: () => number
   store: Store
   files: Files
@@ -97,11 +99,21 @@ export class Tracker {
   /** `shell.created`: remembered in memory only; a foreground command costs no write. */
   created(info: Created): void {
     this.seen.set(info.id, { info, exited: false })
+    const job = this.jobs.get(info.id)
+    // The event can arrive after the tool call returned: the record then learns what only the host knew.
+    if (job) void this.enrich(job, info)
     while (this.seen.size > SEEN_CAP) {
       const oldest = this.seen.keys().next().value
       if (oldest === undefined) break
       this.seen.delete(oldest)
     }
+  }
+
+  private async enrich(job: Job, info: Created): Promise<void> {
+    const next: Job = { ...job, cwd: info.cwd ?? job.cwd, pid: info.pid ?? job.pid, output: info.file ?? job.output, startedAt: info.started ?? job.startedAt }
+    if (next.cwd === job.cwd && next.pid === job.pid && next.output === job.output && next.startedAt === job.startedAt) return
+    this.jobs.set(job.shellID, next)
+    await this.deps.store.set(jobKey(job.shellID), next).catch((error) => this.deps.log(`could not update ${job.shellID}: ${String(error)}`))
   }
 
   /** `shell.exited` / `shell.deleted`. A killed job may be the service going down, so its record is kept a moment. */
@@ -141,6 +153,7 @@ export class Tracker {
       callID: event.callID,
       messageID: event.messageID,
       boot: this.deps.boot,
+      location: this.deps.location,
     }
     this.jobs.set(shellID, job)
     await this.deps.store.set(jobKey(shellID), job).catch((error) => this.deps.log(`could not record ${shellID}: ${String(error)}`))
@@ -170,6 +183,7 @@ export class Tracker {
         await store.remove(entry.key).catch(() => {})
         continue
       }
+      if (job.location !== this.deps.location) continue
       if (job.boot === boot) {
         this.jobs.set(job.shellID, job)
         continue
@@ -179,7 +193,7 @@ export class Tracker {
     for (const entry of await store.scan(NOTICE_PREFIX).catch(() => [])) {
       const notice = parseNotice(entry.value)
       if (!notice || notice.at < cutoff || noticeKey(entry.key.slice(NOTICE_PREFIX.length)) !== entry.key) await store.remove(entry.key).catch(() => {})
-      else this.pending.set(entry.key.slice(NOTICE_PREFIX.length), notice)
+      else if (notice.location === this.deps.location) this.pending.set(entry.key.slice(NOTICE_PREFIX.length), notice)
     }
     await this.trim()
     if (options.file) await this.deps.files.prune(cutoff).catch((error) => this.deps.log(`could not prune handoff files: ${String(error)}`))
@@ -217,7 +231,7 @@ export class Tracker {
       }
     }
     if (options.notice) {
-      const notice: PendingNotice = { text: noticeText(found, at, path), at }
+      const notice: PendingNotice = { text: noticeText(found, at, path), at, location: this.deps.location }
       this.pending.set(sessionID, notice)
       await store.set(noticeKey(sessionID), notice).catch((error) => this.deps.log(`${sessionID}: could not queue the notice: ${String(error)}`))
     }

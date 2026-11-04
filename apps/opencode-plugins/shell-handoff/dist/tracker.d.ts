@@ -52,6 +52,8 @@ export interface ToolEnd {
 export interface Deps {
     options: Options;
     boot: string;
+    /** This instance's location: it records and reports only what belongs to it. */
+    location: string;
     now: () => number;
     store: Store;
     files: Files;
@@ -72,6 +74,7 @@ export declare class Tracker {
     dispose(): void;
     /** `shell.created`: remembered in memory only; a foreground command costs no write. */
     created(info: Created): void;
+    private enrich;
     /** `shell.exited` / `shell.deleted`. A killed job may be the service going down, so its record is kept a moment. */
     ended(id: string, status?: string): void;
     /** `execute.after` for the shell tool: a job still running when the call returned is a background job. */

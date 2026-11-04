@@ -270,10 +270,10 @@ test("malformed, foreign and expired records are ignored and removed", async () 
   const store = memoryStore()
   store.data.set("job/sh_bad", { shellID: "sh_bad" })
   store.data.set("job/sh_str", "nope")
-  store.data.set("job/sh_mismatch", { shellID: "other", sessionID: "ses_a", command: "x", startedAt: 1, boot: "old" })
+  store.data.set("job/sh_mismatch", { shellID: "other", sessionID: "ses_a", command: "x", startedAt: 1, boot: "old", location: "/work" })
   store.data.set("notice/ses_a", { text: 5 })
   const clock = { now: 1_700_000_000_000 }
-  store.data.set("job/sh_old", { shellID: "sh_old", sessionID: "ses_a", command: "x", startedAt: clock.now - 8 * 86_400_000, boot: "old" })
+  store.data.set("job/sh_old", { shellID: "sh_old", sessionID: "ses_a", command: "x", startedAt: clock.now - 8 * 86_400_000, boot: "old", location: "/work" })
   const h = harness({ store, clock })
   await h.tracker.restore()
   assert.equal(store.data.size, 0)
@@ -308,4 +308,33 @@ test("handoff files older than the retention are pruned", async () => {
 test("an unsafe session id never becomes a path", async () => {
   const h = harness()
   assert.throws(() => h.deps.files.path("../../etc/passwd"))
+})
+
+test("the host's created event after the tool call fills in cwd, output and start time", async () => {
+  const h = harness()
+  await h.tracker.toolEnd(background("sh_1"))
+  assert.equal((h.store.data.get("job/sh_1") as Record<string, unknown>).cwd, undefined)
+  h.tracker.created(created("sh_1"))
+  await new Promise((resolve) => setImmediate(resolve))
+  const stored = h.store.data.get("job/sh_1") as Record<string, unknown>
+  assert.equal(stored.cwd, "/work/repo")
+  assert.equal(stored.output, "/nonexistent/out")
+  assert.equal(stored.startedAt, 1_699_999_000_000)
+})
+
+test("each location's instance reports only its own jobs, so several instances never report one job twice", async () => {
+  const store = memoryStore()
+  const a = harness({ store, location: "/a" })
+  const b = harness({ store, location: "/b" })
+  await a.tracker.toolEnd(background("sh_a"))
+  await b.tracker.toolEnd({ ...background("sh_b"), sessionID: "ses_b" })
+  const after = { store, boot: "other", dir: a.dir }
+  const a2 = harness({ ...after, location: "/a" })
+  const b2 = harness({ ...after, location: "/b" })
+  const c2 = harness({ ...after, location: "/c" })
+  await Promise.all([a2.tracker.restore(), b2.tracker.restore(), c2.tracker.restore()])
+  assert.deepEqual(a2.sent.map((m) => m.sessionID), ["ses_a"])
+  assert.deepEqual(b2.sent.map((m) => m.sessionID), ["ses_b"])
+  assert.equal(c2.sent.length, 0)
+  assert.equal(store.data.size, 0)
 })

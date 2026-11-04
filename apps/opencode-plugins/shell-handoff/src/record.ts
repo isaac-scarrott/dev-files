@@ -15,6 +15,11 @@ export interface Job {
   messageID?: string
   /** The service process that started it (see boot.ts). */
   boot: string
+  /**
+   * The location (project directory) whose plugin instance recorded it. The service runs one instance per location, they
+   * share one storage, and only the instance of the session's location sees its tool calls: each reports only its own.
+   */
+  location: string
 }
 
 export const JOB_PREFIX = "job/"
@@ -35,7 +40,8 @@ export function parseJob(value: unknown): Job | undefined {
   const command = str(o.command)
   const startedAt = num(o.startedAt)
   const boot = str(o.boot)
-  if (!shellID || !sessionID || !command || startedAt === undefined || !boot) return undefined
+  const location = str(o.location)
+  if (!shellID || !sessionID || !command || startedAt === undefined || !boot || !location) return undefined
   return {
     shellID,
     sessionID,
@@ -49,12 +55,14 @@ export function parseJob(value: unknown): Job | undefined {
     callID: str(o.callID),
     messageID: str(o.messageID),
     boot,
+    location,
   }
 }
 
 export interface PendingNotice {
   text: string
   at: number
+  location: string
 }
 
 export function parseNotice(value: unknown): PendingNotice | undefined {
@@ -62,5 +70,6 @@ export function parseNotice(value: unknown): PendingNotice | undefined {
   const o = value as Record<string, unknown>
   const text = str(o.text)
   const at = num(o.at)
-  return text && at !== undefined ? { text, at } : undefined
+  const location = str(o.location)
+  return text && at !== undefined && location ? { text, at, location } : undefined
 }

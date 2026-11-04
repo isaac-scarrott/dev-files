@@ -16,7 +16,7 @@ export const memoryStore = (): Store & { data: Map<string, unknown> } => {
   }
 }
 
-export function harness(overrides: { boot?: string; store?: ReturnType<typeof memoryStore>; options?: Record<string, unknown>; dir?: string; clock?: { now: number } } = {}) {
+export function harness(overrides: { boot?: string; location?: string; store?: ReturnType<typeof memoryStore>; options?: Record<string, unknown>; dir?: string; clock?: { now: number } } = {}) {
   const dir = overrides.dir ?? mkdtempSync(join(tmpdir(), "shell-handoff-"))
   const store = overrides.store ?? memoryStore()
   const clock = overrides.clock ?? { now: 1_700_000_000_000 }
@@ -27,6 +27,7 @@ export function harness(overrides: { boot?: string; store?: ReturnType<typeof me
   const deps: Deps = {
     options: parseOptions({ dir, ...overrides.options }),
     boot: overrides.boot ?? "100:1",
+    location: overrides.location ?? "/work",
     now: () => clock.now,
     store,
     files: diskFiles(dir),

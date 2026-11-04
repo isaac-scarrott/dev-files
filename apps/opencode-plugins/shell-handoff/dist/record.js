@@ -15,7 +15,8 @@ export function parseJob(value) {
     const command = str(o.command);
     const startedAt = num(o.startedAt);
     const boot = str(o.boot);
-    if (!shellID || !sessionID || !command || startedAt === undefined || !boot)
+    const location = str(o.location);
+    if (!shellID || !sessionID || !command || startedAt === undefined || !boot || !location)
         return undefined;
     return {
         shellID,
@@ -30,6 +31,7 @@ export function parseJob(value) {
         callID: str(o.callID),
         messageID: str(o.messageID),
         boot,
+        location,
     };
 }
 export function parseNotice(value) {
@@ -38,5 +40,6 @@ export function parseNotice(value) {
     const o = value;
     const text = str(o.text);
     const at = num(o.at);
-    return text && at !== undefined ? { text, at } : undefined;
+    const location = str(o.location);
+    return text && at !== undefined && location ? { text, at, location } : undefined;
 }
