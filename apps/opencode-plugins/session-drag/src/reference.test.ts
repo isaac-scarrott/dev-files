@@ -13,12 +13,13 @@ const sidebar = () => {
       </div></div>
       <div data-tab-key="tab-2"><div data-titlebar-tab data-editing="true"><a data-slot="tab-link"><input value="Renaming"></a></div></div>
     </div>
-    <div data-sa-host>
+    <div data-sa-host data-sa-kind="archived">
       <div data-sa-row="local\nses_ABCDEFGHIJKLMNOPQRSTUVWXYZ" data-titlebar-tab>
         <a data-slot="tab-link" href="#"><span data-slot="project-avatar-slot"></span><span data-slot="tab-title">Archived one</span></a>
         <div data-slot="tab-close"><button>restore</button></div>
       </div>
     </div>
+    <div data-sa-kind="snoozed"><div data-sa-row="local\nses_SNOOZED" data-titlebar-tab><a data-slot="tab-link" href="#"><span data-slot="tab-title">Snoozed one</span></a></div></div>
     <main><p>timeline</p></main>`
 
   return doc
@@ -65,7 +66,7 @@ test("rowFromTarget finds the live tab row from its title", () => {
 
 test("rowFromTarget finds a snooze-archive row and parses server and id", () => {
   const doc = sidebar()
-  const row = rowFromTarget(doc.querySelector('[data-sa-row] [data-slot="tab-title"]'))
+  const row = rowFromTarget(doc.querySelector('[data-sa-kind="archived"] [data-sa-row] [data-slot="tab-title"]'))
   assert.ok(row)
   assert.deepEqual(rowRef(row), { kind: "archive", server: "local", id: "ses_ABCDEFGHIJKLMNOPQRSTUVWXYZ" })
   assert.equal(rowTitle(row), "Archived one")
@@ -74,7 +75,8 @@ test("rowFromTarget finds a snooze-archive row and parses server and id", () => 
 test("rowFromTarget ignores the close control, a row being renamed, and everything outside rows", () => {
   const doc = sidebar()
   assert.equal(rowFromTarget(doc.querySelector('[data-tab-key="tab-1"] [data-slot="tab-close"] button')), undefined)
-  assert.equal(rowFromTarget(doc.querySelector('[data-sa-row] [data-slot="tab-close"] button')), undefined)
+  assert.equal(rowFromTarget(doc.querySelector('[data-sa-kind="archived"] [data-sa-row] [data-slot="tab-close"] button')), undefined)
+  assert.equal(rowFromTarget(doc.querySelector('[data-sa-kind="snoozed"] [data-slot="tab-title"]')), undefined, "a snoozed row is not a drag source")
   assert.equal(rowFromTarget(doc.querySelector('[data-tab-key="tab-2"] input')), undefined)
   assert.equal(rowFromTarget(doc.querySelector("main p")), undefined)
   assert.equal(rowFromTarget(null), undefined)

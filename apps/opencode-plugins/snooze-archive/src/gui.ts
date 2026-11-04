@@ -366,7 +366,7 @@ export default Plugin.define({
     const snoozedState = createMemo((): GroupState => {
       tick()
       const ids = ctx.servers.list()
-      const snoozes = entries().filter((entry) => ids.includes(entry.server))
+      const snoozes = entries().filter((entry) => ids.includes(entry.server)).sort((a, b) => a.until - b.until)
       const snoozeShown = snoozeLimit()
       const snoozeStep = moreStep(Math.min(snoozeShown, snoozes.length), snoozes.length, false)
       return { count: snoozes.length, more: snoozeStep ? { label: moreLabel(snoozeStep), run: () => setSnoozeLimit((n) => n + snoozeStep) } : undefined, rows: snoozes.slice(0, snoozeShown).map((entry) => ({

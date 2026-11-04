@@ -18,9 +18,12 @@ function fixture() {
         <div data-slot="tab-close"><button>x</button></div>
       </div></div>
     </div>
-    <div data-sa-row="local\n${ARCHIVED.id}" data-titlebar-tab>
+    <div data-sa-kind="archived"><div data-sa-row="local\n${ARCHIVED.id}" data-titlebar-tab>
       <a data-slot="tab-link" href="#"><span data-slot="tab-title">Archived one</span></a>
-    </div>
+    </div></div>
+    <div data-sa-kind="snoozed"><div data-sa-row="local\nses_SNOOZED" data-titlebar-tab>
+      <a data-slot="tab-link" href="#"><span data-slot="tab-title">Snoozed one</span></a>
+    </div></div>
     <div data-panel><div data-slot="session-dropzone-blur"></div><p>timeline</p></div>
     <aside>elsewhere</aside>`
   const panel = doc.querySelector("[data-panel]") as HTMLElement
@@ -246,6 +249,20 @@ test("a snooze-archive row drags too, without holding back its mousedown", () =>
     f.release(f.panel, 400, 300)
     assert.deepEqual(f.calls.drop, [ARCHIVED])
     assert.equal(f.seen.includes("click:0"), false, "the row's own click action is swallowed after a drag")
+  } finally {
+    f.cleanup()
+  }
+})
+
+test("a snoozed row does not drag: its place is its wake time", () => {
+  const f = fixture()
+  try {
+    const snoozed = doc.querySelector('[data-sa-kind="snoozed"] [data-sa-row]') as HTMLElement
+    f.press(snoozed, 20, 200)
+    f.pointer("pointermove", snoozed, 30, 201)
+    assert.equal(f.ghost(), null)
+    f.release(f.panel, 400, 300)
+    assert.deepEqual(f.calls.drop, [])
   } finally {
     f.cleanup()
   }

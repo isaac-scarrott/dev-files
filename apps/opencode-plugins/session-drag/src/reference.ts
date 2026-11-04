@@ -44,8 +44,8 @@ export function note(target: SessionTarget, commentID: ComposerNote["commentID"]
   }
 }
 
-/** Live session tabs in the sidebar, and the snooze-archive plugin's Snoozed/Archived rows. */
-export const ROW_SELECTOR = '[data-slot="vertical-tabs"] [data-tab-key], [data-sa-row]'
+/** Live session tabs in the sidebar, and the snooze-archive plugin's Archived rows. Snoozed rows stay put: they are ordered by when they wake. */
+export const ROW_SELECTOR = '[data-slot="vertical-tabs"] [data-tab-key], [data-sa-kind="archived"] [data-sa-row]'
 
 const INERT = '[data-slot="tab-close"], [contenteditable="true"], [data-editing="true"], input, textarea, button'
 

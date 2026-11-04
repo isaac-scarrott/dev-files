@@ -6,7 +6,7 @@ extracted from `app.asar` (`src/renderer/...`) and at `gui-plugins/src/...`.
 
 ## What it does
 
-- Press a sidebar session row (a live tab, or a snooze-archive Snoozed/Archived row) and move sideways: a chip with
+- Press a sidebar session row (a live tab, or a snooze-archive Archived row; Snoozed rows are not drag sources) and move sideways: a chip with
   the session's title follows the pointer and the host's own drop overlay (worded "Drop to attach session") rises over the session
   panel. Release inside the panel: a native "Session" chip (title, speech-bubble icon) joins the composer's context
   row and the prompt takes focus. Release anywhere else, or press Esc: the chip disappears and nothing changes.
@@ -49,7 +49,7 @@ the active one, as native. Sideways: the move is swallowed (`stopPropagation` + 
 drag begins; later `pointermove`s are swallowed too, but `pointerup` is never swallowed, so dnd-kit (which never
 activated) stays consistent. A press that ends without moving replays the `mousedown` on `pointerup`.
 
-**(c) Snoozed/Archived rows.** `[data-sa-row="<server>\n<id>"]` rows copy the tab markup but are outside dnd-kit and
+**(c) Archived rows** (Snoozed rows are excluded: they sit in wake order and must stay put; the selector scopes to `[data-sa-kind="archived"]`). `[data-sa-row="<server>\n<id>"]` rows copy the tab markup but are outside dnd-kit and
 act on `click`, not `mousedown`, so nothing is held back for them; the server and id are read from the attribute
 and the title from `[data-slot=tab-title]`. Verified live: the Archived row drags like a tab, and a plain click on
 it still reopens the session.

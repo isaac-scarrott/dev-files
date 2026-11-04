@@ -884,6 +884,21 @@ test("an archived group never opened ignores archive events; refresh reloads the
   } finally { await f.close() }
 })
 
+test("Snoozed rows are ordered by wake time: the soonest first, whatever order they were snoozed in", async () => {
+  const now = Date.now()
+  const entries: Snooze[] = [
+    { server: "server", id: "late", title: "Late", at: now, until: now + 4 * 86_400_000, busy: 0, updated: 1 },
+    { server: "server", id: "soon", title: "Soon", at: now, until: now + 3_600_000, busy: 0, updated: 1 },
+    { server: "server", id: "mid", title: "Mid", at: now, until: now + 86_400_000, busy: 0, updated: 1 },
+  ]
+  const f = fixture(entries)
+  try {
+    f.start(); f.setServers(["server"]); await f.flush()
+    const order = [...f.doc.querySelectorAll<HTMLElement>('[data-sa-kind="snoozed"] [data-sa-row]')].map((row) => row.dataset.saRow?.split("\n")[1])
+    assert.deepEqual(order, ["soon", "mid", "late"])
+  } finally { await f.close() }
+})
+
 test("Snoozed paginates rendering only: 10 rows, label shows what remains, count is exact", async () => {
   const now = Date.now()
   const entries: Snooze[] = Array.from({ length: 12 }, (_, i) => ({ server: "server", id: `z${i}`, title: `Z${i}`, at: now, until: now + 3_600_000 + i, busy: 0, updated: 1 }))
