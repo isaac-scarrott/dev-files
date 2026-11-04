@@ -1,5 +1,5 @@
 import { Base } from "./account.js";
-import { LockedError, originMatches, originOf } from "./contract.js";
+import { LockedError, originMatches, itemOriginOf } from "./contract.js";
 import { apiKeys as keyStore, memoryTokens } from "./keychain.js";
 import { PROBE_MS, classify } from "./probe.js";
 import { reason, run } from "./run.js";
@@ -142,7 +142,7 @@ export class Bitwarden extends Base {
             account: this.id,
             id: item.id,
             title: item.name,
-            origins: (item.login?.uris ?? []).map((uri) => originOf(uri.uri)).filter((origin) => !!origin),
+            origins: (item.login?.uris ?? []).map((uri) => itemOriginOf(uri.uri)).filter((origin) => !!origin),
             hasOtp: !!item.login?.totp,
             fields: ["username", "password", ...(item.login?.totp ? ["otp"] : [])],
         }))

@@ -1,5 +1,5 @@
 import { Base, MISS_TTL_MS } from "./account.js";
-import { LockedError, originMatches, originOf } from "./contract.js";
+import { LockedError, originMatches, itemOriginOf } from "./contract.js";
 import { memoryTokens } from "./keychain.js";
 import { PROBE_MS, classify } from "./probe.js";
 import { reason, run } from "./run.js";
@@ -102,7 +102,7 @@ export class OnePassword extends Base {
                     account: this.id,
                     id: `${vault}/${item.id}`,
                     title: item.title,
-                    origins: (item.urls ?? []).map((url) => originOf(url.href)).filter((origin) => !!origin),
+                    origins: (item.urls ?? []).map((url) => itemOriginOf(url.href)).filter((origin) => !!origin),
                     hasOtp: true,
                     fields: ["username", "password", "otp"],
                 });

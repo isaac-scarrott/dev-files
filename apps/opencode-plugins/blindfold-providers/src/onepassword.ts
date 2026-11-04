@@ -1,6 +1,6 @@
 import type { Managed } from "./managed.js"
 import { Base, MISS_TTL_MS } from "./account.js"
-import { LockedError, originMatches, originOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
+import { LockedError, originMatches, itemOriginOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
 import { memoryTokens, type TokenStore } from "./keychain.js"
 import { PROBE_MS, classify, type Probe } from "./probe.js"
 import { reason, run } from "./run.js"
@@ -128,7 +128,7 @@ export class OnePassword extends Base implements Managed {
           account: this.id,
           id: `${vault}/${item.id}`,
           title: item.title,
-          origins: (item.urls ?? []).map((url) => originOf(url.href)).filter((origin): origin is string => !!origin),
+          origins: (item.urls ?? []).map((url) => itemOriginOf(url.href)).filter((origin): origin is string => !!origin),
           hasOtp: true,
           fields: ["username", "password", "otp"],
         })

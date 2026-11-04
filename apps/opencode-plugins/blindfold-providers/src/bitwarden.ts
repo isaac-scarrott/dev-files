@@ -1,6 +1,6 @@
 import type { Managed } from "./managed.js"
 import { Base } from "./account.js"
-import { LockedError, originMatches, originOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
+import { LockedError, originMatches, itemOriginOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
 import { apiKeys as keyStore, memoryTokens, type KeyStore } from "./keychain.js"
 import { PROBE_MS, classify, type Probe } from "./probe.js"
 import { reason, run } from "./run.js"
@@ -162,7 +162,7 @@ export class Bitwarden extends Base implements Managed {
         account: this.id,
         id: item.id,
         title: item.name,
-        origins: (item.login?.uris ?? []).map((uri) => originOf(uri.uri)).filter((origin): origin is string => !!origin),
+        origins: (item.login?.uris ?? []).map((uri) => itemOriginOf(uri.uri)).filter((origin): origin is string => !!origin),
         hasOtp: !!item.login?.totp,
         fields: ["username", "password", ...(item.login?.totp ? ["otp"] : [])],
       }))

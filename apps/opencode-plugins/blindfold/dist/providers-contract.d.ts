@@ -117,6 +117,11 @@ export declare function registerProvider(provider: Provider): () => void;
 export declare function accounts(): readonly Account[];
 /** `scheme://host[:port]` of a URL, or undefined when it is not an http(s) URL. */
 export declare function originOf(url: string): string | undefined;
+/**
+ * The site a saved login names. Password managers store what was typed or imported, often a bare `www.example.com/login`
+ * with no scheme, which they show and open as https. Read it the same way. The page's own address is never read this way.
+ */
+export declare function itemOriginOf(url: string): string | undefined;
 /** The page is the item's origin, or a subdomain of it: same scheme and port, never a lookalike, never the reverse. */
 export declare function originMatches(itemOrigin: string, pageOrigin: string): boolean;
 /**
