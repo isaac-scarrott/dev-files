@@ -16,6 +16,7 @@ export declare abstract class Base implements Account, AccountInfo {
     readonly label: string;
     readonly allowedOrigins?: readonly string[];
     readonly confirmEveryUse?: boolean;
+    readonly alwaysAllowOtp?: boolean;
     protected session: Session | undefined;
     protected cache: Map<string, {
         at: number;
@@ -30,6 +31,7 @@ export declare abstract class Base implements Account, AccountInfo {
         autoLockMinutes?: number;
         allowedOrigins?: readonly string[];
         confirmEveryUse?: boolean;
+        alwaysAllowOtp?: boolean;
     });
     /** Starts a session and its idle timer. */
     protected open(session: Session): void;

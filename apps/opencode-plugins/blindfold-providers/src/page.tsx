@@ -663,6 +663,17 @@ function AccountSection(props: PageInput & { id: string; data: () => Overview; l
           />
           <Row
             ui={ctx.ui}
+            action="setting-otp"
+            title={t("otp.title")}
+            description={t("otp.description")}
+            control={
+              <div data-action={`otp-${props.id}`}>
+                <ctx.ui.Switch label={t("otp.title")} hideLabel checked={account()!.alwaysAllowOtp} onChange={(checked) => void save({ alwaysAllowOtp: checked })} />
+              </div>
+            }
+          />
+          <Row
+            ui={ctx.ui}
             action="setting-enabled"
             title={t("enabled.title")}
             description={t("enabled.description")}

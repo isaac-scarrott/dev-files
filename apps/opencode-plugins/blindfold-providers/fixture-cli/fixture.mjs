@@ -25,6 +25,8 @@ const VAULT = [
   { id: "op4", vaultId: "vlt_agent", vault: "Agent", title: "Local login (test page)", urls: ["http://127.0.0.1:47321"], username: "ada.fixture@example.test", password: "fixture-local-pw", otp: false },
   { id: "op3", vaultId: "vlt_private", vault: "Private", title: "Bank", urls: ["https://bank.example"], username: "x", password: "fixture-bank-pw", otp: false },
 ]
+// Only for the flow-approval harness (a local multi-step sign-in page); the unit tests count the other items.
+if (process.env.FIXTURE_FLOW_ITEM) VAULT.push({ id: "op5", vaultId: "vlt_agent", vault: "Agent", title: "Local sign-in (flow test)", urls: ["http://127.0.0.1:47341"], username: "grace.fixture@example.test", password: "fixture-flow-pw", otp: true })
 const BW_VAULT = [
   { id: "bw1", organizationId: "org-work", name: "Holibob admin", uris: ["https://admin.holibob.tech"], username: "work.fixture@holibob.test", password: "fixture-holibob-pw", totp: OTP_SEED },
   { id: "bw2", organizationId: "org-work", name: "Google (work)", uris: ["https://accounts.google.com"], username: "work.fixture@example.test", password: "fixture-gwork-pw", totp: null },

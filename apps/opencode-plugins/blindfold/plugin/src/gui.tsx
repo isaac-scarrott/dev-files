@@ -39,6 +39,15 @@ export default Plugin.define({
       and: "and",
       note: "The agent can't see what you enter.",
       noteProvider: "The agent can't see the values.",
+      flowTitle: "Sign in to {{site}}",
+      flowLabel: "Fills",
+      flowOnly: "Only this field",
+      flowAll: "Allow the whole sign-in",
+      noteFlow: "Each is filled once, within {{minutes}} minutes. The agent can't see the values.",
+      noteFlowCode: "Always allow still asks for the one-time code.",
+      "part.username": "email",
+      "part.password": "password",
+      "part.otp": "one-time code",
       unlockFirst: "Unlock {{account}} first.",
       isLocked: "{{account}} is locked",
       fromAccount: "from {{detail}}",
@@ -75,12 +84,15 @@ export default Plugin.define({
       "page.ruleFrom": "From {{account}}",
       "page.ruleFromItem": "From {{account}} · {{item}}",
       "page.ruleFillOnly": " · fill only",
+      "page.ruleFlow": "Sign in to {{site}} with {{item}}",
+      "page.ruleFlowFrom": "From {{account}} · {{parts}} · fill only",
       "page.revoke": "Revoke",
       "page.recent": "Recent use",
       "page.noRecent": "Nothing used yet in this session.",
       "page.outcome.allowed": "Allowed {{name}}",
       "page.outcome.always": "Always allowed {{name}}",
       "page.outcome.rule": "Used {{name}} under a saved rule",
+      "page.outcome.flow": "Filled {{name}} in an approved sign-in",
       "page.outcome.denied": "Denied {{name}}",
       "page.outcome.error": "Could not read {{name}}",
       manage: "Blindfold: manage rules",
@@ -92,6 +104,11 @@ export default Plugin.define({
       "row.provided": "Secrets provided",
       "row.declined": "Secrets declined",
       "row.expired": "Secret request expired",
+      "row.flow": "Signed in",
+      "row.flowArgOne": "with {{account}}: 1 field",
+      "row.flowArg": "with {{account}}: {{count}} fields",
+      "row.flowAlways": "Sign-in always allowed",
+      "row.flowAlwaysArg": "{{site}} with {{item}}",
       failed: "Could not send {{names}}.",
       waiting: "Needs {{names}}",
       waitingBody: "The agent is waiting for you in another session.",
@@ -218,7 +235,7 @@ export default Plugin.define({
           const names = request.fields.map((field) => field.name)
           const entry = createRoot((dispose) => {
             const model = createModel(request.fields, {
-              submit: async (values, extra) => ((await blindfold.submit({ requestID: request.requestID, values, ...(extra ? { picks: extra.picks, remember: extra.remember } : {}) }, options)) as { accepted: boolean }).accepted,
+              submit: async (values, extra) => ((await blindfold.submit({ requestID: request.requestID, values, ...(extra ? { picks: extra.picks, remember: extra.remember, ...(extra.flow ? { flow: true } : {}) } : {}) }, options)) as { accepted: boolean }).accepted,
               unlock: async (account, method, input) => (await blindfold.unlock({ requestID: request.requestID, account, input: { method, ...input } }, options)) as { accepted: boolean; error?: string },
               cancel: async () => ((await blindfold.cancel({ requestID: request.requestID }, options)) as { accepted: boolean }).accepted,
               failed: () => ctx.toast.show({ variant: "error", title: ctx.t("failed", { names: list(names, ctx.t("and")) }) }),
@@ -260,6 +277,12 @@ export default Plugin.define({
           blindfold.events.on("resolved", (event) => {
             const resolved = event.data as SecretResolved
             entries.get(resolved.requestID)?.model.settle(resolved.status)
+          }),
+        )
+        onCleanup(
+          blindfold.events.on("flowed", (event) => {
+            const used = event.data as { requestID: string; count: number }
+            entries.get(used.requestID)?.model.flowed(used.count)
           }),
         )
         onCleanup(

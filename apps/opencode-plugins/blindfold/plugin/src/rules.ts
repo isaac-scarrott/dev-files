@@ -21,6 +21,12 @@ export type SavedRule = {
    * agent's code, so it covers a fill as well, never the other way round.
    */
   via?: "get" | "fill"
+  /**
+   * `flow`: one rule for a whole sign-in on `origin` with `item`, covering the `parts` (username, password, and a one-time
+   * code only where the account allows it). Fill only. Absent or `field`: the rule covers the one `field`.
+   */
+  kind?: "field" | "flow"
+  parts?: string[]
   created: number
 }
 
@@ -65,6 +71,7 @@ export type Use = { account: string; field: string; item?: string; origin?: stri
 /** A saved rule that covers this use, or undefined. An origin use needs the same origin; a name use the same name. */
 export function covering(saved: readonly SavedRule[], use: Use): SavedRule | undefined {
   return saved.find((rule) => {
+    if (rule.kind === "flow") return rule.account === use.account && use.via === "fill" && rule.item === use.item && use.origin !== undefined && rule.origin === use.origin && rule.parts?.includes(use.field) === true
     if (rule.account !== use.account || rule.field !== use.field) return false
     if (rule.via === "fill" && use.via !== "fill") return false
     if (rule.item !== undefined && rule.item !== use.item) return false
@@ -73,14 +80,23 @@ export function covering(saved: readonly SavedRule[], use: Use): SavedRule | und
   })
 }
 
-const KEY = "rules.v1"
+const V1 = "rules.v1"
+const V2 = "rules.v2"
+
+/**
+ * The stored rules of any version as the current list. Version 1 was a bare array of per-field rules; version 2 is
+ * `{ version: 2, rules }` and adds sign-in rules. A v1 rule stays exactly what it was (a field rule).
+ */
+export function migrateRules(value: unknown): SavedRule[] {
+  const list = Array.isArray(value) ? value : value && typeof value === "object" && Array.isArray((value as { rules?: unknown }).rules) ? (value as { rules: unknown[] }).rules : []
+  return list.filter((rule): rule is SavedRule => !!rule && typeof rule === "object" && typeof (rule as SavedRule).id === "string" && typeof (rule as SavedRule).account === "string").map((rule) => ({ ...rule, kind: rule.kind ?? "field" }))
+}
 
 /** The saved rules, kept in the plugin's storage. Only ids, origins, account ids and field names are written. */
 export function savedRules(store: { get(key: string): Promise<unknown>; set(key: string, value: any): Promise<void> }, id: () => string, now: () => number = Date.now) {
-  const load = async (): Promise<SavedRule[]> => {
-    const value = await store.get(KEY)
-    return Array.isArray(value) ? (value as SavedRule[]) : []
-  }
+  // v2 wins when present; otherwise the v1 array is read as is and v2 is written on the first change. v1 is left untouched.
+  const load = async (): Promise<SavedRule[]> => migrateRules((await store.get(V2)) ?? (await store.get(V1)))
+  const write = (rules: SavedRule[]) => store.set(V2, { version: 2, rules })
   return {
     list: load,
     /** Saves a rule unless an equal one exists. */
@@ -88,15 +104,30 @@ export function savedRules(store: { get(key: string): Promise<unknown>; set(key:
       const rules = await load()
       const same = covering(rules, use)
       if (same && same.item === use.item && (same.via ?? "get") === (use.via ?? "get")) return same
-      const rule: SavedRule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, created: now() }
-      await store.set(KEY, [...rules, rule])
+      const rule: SavedRule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, kind: "field", created: now() }
+      await write([...rules, rule])
+      return rule
+    },
+    /** Saves the one rule for a sign-in; an existing one for the same account, item and site takes the new parts. */
+    async addFlow(input: { account: string; item: string; itemTitle?: string; origin: string; parts: string[] }): Promise<SavedRule> {
+      const rules = await load()
+      const same = rules.find((rule) => rule.kind === "flow" && rule.account === input.account && rule.item === input.item && rule.origin === input.origin)
+      if (same) {
+        const parts = [...new Set([...(same.parts ?? []), ...input.parts])]
+        if (parts.length === same.parts?.length) return same
+        const next = { ...same, parts }
+        await write(rules.map((rule) => (rule === same ? next : rule)))
+        return next
+      }
+      const rule: SavedRule = { id: id(), origin: input.origin, account: input.account, item: input.item, itemTitle: input.itemTitle, field: "sign-in", via: "fill", kind: "flow", parts: [...new Set(input.parts)], created: now() }
+      await write([...rules, rule])
       return rule
     },
     async revoke(ruleID: string): Promise<boolean> {
       const rules = await load()
       const next = rules.filter((rule) => rule.id !== ruleID)
       if (next.length === rules.length) return false
-      await store.set(KEY, next)
+      await write(next)
       return true
     },
   }

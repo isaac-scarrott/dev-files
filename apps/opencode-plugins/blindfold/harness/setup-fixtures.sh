@@ -6,11 +6,14 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 DEST=${1:-/private/tmp/bf-fixtures}
 NODE=$(command -v node)
+# FLOW=1: the fixtures also list the local multi-step sign-in item (see harness/flow-page).
+ENVSET=""
+[ -n "${FLOW:-}" ] && ENVSET="FIXTURE_FLOW_ITEM=1 "
 rm -rf "$DEST" /tmp/blindfold-fixture
 mkdir -p "$DEST"
 cp "$HERE/../../blindfold-providers/fixture-cli/fixture.mjs" "$DEST/"
 for tool in op bw security; do
-  printf '#!/bin/sh\nexec "%s" "$(dirname "$0")/fixture.mjs" %s "$@"\n' "$NODE" "$tool" > "$DEST/$tool"
+  printf '#!/bin/sh\n%sexec "%s" "$(dirname "$0")/fixture.mjs" %s "$@"\n' "$ENVSET" "$NODE" "$tool" > "$DEST/$tool"
   chmod +x "$DEST/$tool"
 done
 echo "$DEST"

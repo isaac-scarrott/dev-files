@@ -10,6 +10,7 @@ export class Base {
     label;
     allowedOrigins;
     confirmEveryUse;
+    alwaysAllowOtp;
     session;
     cache = new Map();
     autoLockMs;
@@ -20,6 +21,7 @@ export class Base {
         this.label = options.label;
         this.allowedOrigins = options.allowedOrigins;
         this.confirmEveryUse = options.confirmEveryUse;
+        this.alwaysAllowOtp = options.alwaysAllowOtp;
         this.autoLockMs = Math.round((options.autoLockMinutes ?? 10) * 60_000);
     }
     /** Starts a session and its idle timer. */

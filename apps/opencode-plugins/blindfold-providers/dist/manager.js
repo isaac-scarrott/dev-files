@@ -13,6 +13,7 @@ const toConfig = (stored, bin) => ({
     vaults: stored.vaults,
     organizationId: stored.organizationId,
     confirmEveryUse: stored.confirmEveryUse,
+    alwaysAllowOtp: stored.alwaysAllowOtp,
     bin,
 });
 /**
@@ -130,6 +131,7 @@ export function createManager(initial) {
             vaults: settings.vaults ?? [],
             ...(settings.organizationId ? { organizationId: settings.organizationId } : {}),
             confirmEveryUse: info?.confirmEveryUse ?? settings.confirmEveryUse ?? false,
+            alwaysAllowOtp: info?.alwaysAllowOtp ?? settings.alwaysAllowOtp ?? false,
             credential,
             lock,
             ...(tests.get(id) ? { test: tests.get(id) } : {}),
@@ -149,6 +151,7 @@ export function createManager(initial) {
             vaults: strings(raw.vaults),
             organizationId: typeof raw.organizationId === "string" ? raw.organizationId : undefined,
             confirmEveryUse: raw.confirmEveryUse === true,
+            alwaysAllowOtp: raw.alwaysAllowOtp === true,
         };
     }
     const known = () => new Set([...Object.keys(options()), ...Object.keys(data.accounts)]);

@@ -16,17 +16,19 @@ export abstract class Base implements Account, AccountInfo {
   readonly label: string
   readonly allowedOrigins?: readonly string[]
   readonly confirmEveryUse?: boolean
+  readonly alwaysAllowOtp?: boolean
   protected session: Session | undefined
   protected cache = new Map<string, { at: number; items: readonly ItemRef[] }>()
   readonly autoLockMs: number
   private used = 0
   private timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(options: { id: string; label: string; autoLockMinutes?: number; allowedOrigins?: readonly string[]; confirmEveryUse?: boolean }) {
+  constructor(options: { id: string; label: string; autoLockMinutes?: number; allowedOrigins?: readonly string[]; confirmEveryUse?: boolean; alwaysAllowOtp?: boolean }) {
     this.id = options.id
     this.label = options.label
     this.allowedOrigins = options.allowedOrigins
     this.confirmEveryUse = options.confirmEveryUse
+    this.alwaysAllowOtp = options.alwaysAllowOtp
     this.autoLockMs = Math.round((options.autoLockMinutes ?? 10) * 60_000)
   }
 

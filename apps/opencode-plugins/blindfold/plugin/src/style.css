@@ -82,6 +82,18 @@
   justify-content: space-between;
   gap: 12px;
 }
+[data-blindfold-card] [data-slot='note-group'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+[data-blindfold-card] [data-slot='flow-parts'] {
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
 [data-blindfold-card] [data-slot='note'] {
   color: var(--v2-text-text-faint);
   font-size: 12px;
@@ -198,4 +210,8 @@
   color: var(--v2-state-fg-danger);
   font-size: 12px;
   line-height: 16px;
+}
+/* The ghost button has its own padding: pull it back so its words line up with the note above. */
+[data-blindfold-card] [data-slot='flow-toggle'] {
+  margin-inline-start: -8px;
 }

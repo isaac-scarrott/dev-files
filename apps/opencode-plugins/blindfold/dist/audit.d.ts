@@ -10,7 +10,10 @@ export type AuditEntry = {
     field: string;
     name: string;
     origin?: string;
-    outcome: "allowed" | "always" | "rule" | "denied" | "error";
+    /** `flow`: served under an approved sign-in (see `grant`) without a card of its own. */
+    outcome: "allowed" | "always" | "rule" | "flow" | "denied" | "error";
+    /** The id of the sign-in approval that created or served this use. */
+    grant?: string;
 };
 export declare const defaultAuditFile: () => string;
 /** The last entries stay in memory for the settings page; each is also appended to a JSONL file (mode 0600) unless `file` is false. */

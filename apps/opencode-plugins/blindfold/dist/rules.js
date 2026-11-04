@@ -44,6 +44,8 @@ export const nameRule = (name, rules) => rules.find((rule) => rule.name === name
 /** A saved rule that covers this use, or undefined. An origin use needs the same origin; a name use the same name. */
 export function covering(saved, use) {
     return saved.find((rule) => {
+        if (rule.kind === "flow")
+            return rule.account === use.account && use.via === "fill" && rule.item === use.item && use.origin !== undefined && rule.origin === use.origin && rule.parts?.includes(use.field) === true;
         if (rule.account !== use.account || rule.field !== use.field)
             return false;
         if (rule.via === "fill" && use.via !== "fill")
@@ -55,13 +57,21 @@ export function covering(saved, use) {
         return rule.name !== undefined && rule.name === use.name;
     });
 }
-const KEY = "rules.v1";
+const V1 = "rules.v1";
+const V2 = "rules.v2";
+/**
+ * The stored rules of any version as the current list. Version 1 was a bare array of per-field rules; version 2 is
+ * `{ version: 2, rules }` and adds sign-in rules. A v1 rule stays exactly what it was (a field rule).
+ */
+export function migrateRules(value) {
+    const list = Array.isArray(value) ? value : value && typeof value === "object" && Array.isArray(value.rules) ? value.rules : [];
+    return list.filter((rule) => !!rule && typeof rule === "object" && typeof rule.id === "string" && typeof rule.account === "string").map((rule) => ({ ...rule, kind: rule.kind ?? "field" }));
+}
 /** The saved rules, kept in the plugin's storage. Only ids, origins, account ids and field names are written. */
 export function savedRules(store, id, now = Date.now) {
-    const load = async () => {
-        const value = await store.get(KEY);
-        return Array.isArray(value) ? value : [];
-    };
+    // v2 wins when present; otherwise the v1 array is read as is and v2 is written on the first change. v1 is left untouched.
+    const load = async () => migrateRules((await store.get(V2)) ?? (await store.get(V1)));
+    const write = (rules) => store.set(V2, { version: 2, rules });
     return {
         list: load,
         /** Saves a rule unless an equal one exists. */
@@ -70,8 +80,24 @@ export function savedRules(store, id, now = Date.now) {
             const same = covering(rules, use);
             if (same && same.item === use.item && (same.via ?? "get") === (use.via ?? "get"))
                 return same;
-            const rule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, created: now() };
-            await store.set(KEY, [...rules, rule]);
+            const rule = { id: id(), origin: use.origin, name: use.origin === undefined ? use.name : undefined, account: use.account, item: use.item, itemTitle: use.itemTitle, field: use.field, via: use.via, kind: "field", created: now() };
+            await write([...rules, rule]);
+            return rule;
+        },
+        /** Saves the one rule for a sign-in; an existing one for the same account, item and site takes the new parts. */
+        async addFlow(input) {
+            const rules = await load();
+            const same = rules.find((rule) => rule.kind === "flow" && rule.account === input.account && rule.item === input.item && rule.origin === input.origin);
+            if (same) {
+                const parts = [...new Set([...(same.parts ?? []), ...input.parts])];
+                if (parts.length === same.parts?.length)
+                    return same;
+                const next = { ...same, parts };
+                await write(rules.map((rule) => (rule === same ? next : rule)));
+                return next;
+            }
+            const rule = { id: id(), origin: input.origin, account: input.account, item: input.item, itemTitle: input.itemTitle, field: "sign-in", via: "fill", kind: "flow", parts: [...new Set(input.parts)], created: now() };
+            await write([...rules, rule]);
             return rule;
         },
         async revoke(ruleID) {
@@ -79,7 +105,7 @@ export function savedRules(store, id, now = Date.now) {
             const next = rules.filter((rule) => rule.id !== ruleID);
             if (next.length === rules.length)
                 return false;
-            await store.set(KEY, next);
+            await write(next);
             return true;
         },
     };

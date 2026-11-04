@@ -9,6 +9,9 @@ config.plugins = [
   {
     package: `${repo}/blindfold-providers`,
     options: {
+      // Never the user's own ~/.config/blindfold/accounts.json or login keychain: a private account file and the fixture `security`.
+      accountsFile: `${root}/blindfold-accounts.json`,
+      tokenStore: `${fx}/security`,
       accounts: {
         personal: { provider: "1password", label: "Personal (1Password)", unlock: "serviceAccount", bin: `${fx}/op`, tokenStore: `${fx}/security` },
         work: { provider: "bitwarden", label: "Work (Bitwarden)", bin: `${fx}/bw`, appDataDir: `${fx}/bw-work`, organizationId: "org-work", allowedOrigins: ["*.holibob.tech", "accounts.google.com"], autoLockMinutes: Number(process.argv[3] ?? 10) },
@@ -22,7 +25,8 @@ config.plugins = [
         { origin: "*.holibob.tech", account: "work" },
         { origin: "http://127.0.0.1:47321", account: "personal" },
       ],
-      audit: { file: "/private/tmp/bf-run/audit.jsonl" },
+      audit: { file: process.env.BF_AUDIT ?? "/private/tmp/bf-run/audit.jsonl" },
+      ...(process.env.BF_FLOW_MINUTES ? { flowMinutes: Number(process.env.BF_FLOW_MINUTES) } : {}),
     },
   },
 ]

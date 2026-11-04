@@ -22,6 +22,28 @@ Settled with the user (2026-11-03):
 
 10. **Onboarding lives in blindfold-providers (2026-11-04).** Accounts are added and checked on that plugin's Settings page, Password managers. This page shows a "Set up" call to action when no account exists and "Manage accounts" otherwise. An account with `confirmEveryUse` shows its candidate with `confirm: true`: the card hides Always allow, a submitted `remember` saves nothing and the audit says `allowed`.
 
+11. **Flow approval (2026-11-04).** One approval card per login flow instead of one per field. Settled with the user:
+    1. **Grant.** An Allow on a sign-in card creates an in-memory grant `{ session, tabID, origin, account, item, parts, used, expiresAt }` (`flow.ts`). Later `fill` requests of the same session, tab and origin, for the same item and a part in the grant that is unused, are served with no card; the audit line says `flow` and carries the grant id. Each part once, 3 minutes (option `flowMinutes`, above 0, at most 10). Never persisted.
+    2. **The field set is known from the item.** The agent asks field by field, so the first request's candidate carries `flow: { parts, always, minutes }` (broker): the parts of the item among username, password, otp that no saved rule covers, offered only when at least two and the asked one is among them, for a `fill` on a known tab (not `get`, not a name rule, not a confirm-every-use account). Nothing is read to plan; for 1Password the item list cannot say whether an item has a code, so the code is listed always. No new agent parameter: the card decides.
+    3. **Card.** One card, three buttons (Deny, Always allow, Allow) where Allow means the whole login, and a ghost "Only this field" below the note that turns the offer off (and "Allow the whole sign-in" turns it on again). Title "Sign in to <site>", one row. The server believes the sign-in only if its own copy of the offer matches the candidate chosen (`flowOf`); a card claiming one it was not offered answers for the fields alone. Keyboard unchanged: Escape declines; a provider-only card has no input to press Enter in.
+    4. **Always allow** saves ONE rule (`kind: "flow"`, `parts`) for account, item and origin, fill only. A one-time code is excluded unless the account sets `alwaysAllowOtp` (blindfold-providers, default false); with the rule the code's card has only Deny and Allow (`candidate.once`). Per-field rules keep working. Store: `rules.v2` is `{ version: 2, rules }`; a `rules.v1` array is read as field rules and left in place, v2 is written on the first change (`migrateRules`, tested).
+    5. **`get` has no grant.** A value that goes to the agent's code can be sent anywhere, so a sign-in stays per field there. Grants and sign-in rules apply to `fill` only.
+    6. **Copy.** Sentence case, no jargon. Answered row: "Signed in" + "with Personal (1Password): 3 fields" (the count follows later uses through a `flowed` event, quietly, no toast); for Always allow "Sign-in always allowed" + "<site> with <item>".
+
+### Flow approval: security properties
+
+- **Memory only.** Grants are never written. Lost on restart, on plugin reload and at dispose.
+- **Bound to** session, tab, origin (exact, same scheme, host and port), account, item and part. Another session never sees it (test), nor another tab, a lookalike or http origin, another item of the account, a part not in the set, or a `get`.
+- **The page is still checked at fill time.** The fill script refuses any origin but the approved one before touching a field (unchanged). A refusal ends the tab's grants.
+- **Ends with the tab.** Closing it (`browser_tabs_close`), back or forward, a `browser_navigate` to another origin, or a refused fill revoke its grants. A page that navigates by itself is not seen by the server; the next fill is refused by the page script (the value goes nowhere) and ends the grants.
+- **Each part once, atomically.** `take` marks the part in one synchronous step; requests of a session are also serialised. Three concurrent requests for one part: one is served, the others ask (test). A failed read gives the part back; a request that fails after spending leaves nothing half spent.
+- **A code is read fresh** at each use, never cached, and only once per grant; a retry needs a new card.
+- **Confirm every use** never creates or uses a grant (no offer; a forged `flow: true` is ignored).
+- **Denied, cancelled or failed creates nothing.** The grant and the saved rule are created only after every value was read.
+- **Always allow and a one-time code.** The rule excludes the code unless the account allows it.
+- **Audit.** Names only: `flow` outcome with the grant id on each served field, and the grant id on the card's own lines. No value in any event or log (tests, harness).
+- **Injection.** Inside a valid grant, a field with another label, another site (lookalike) or a `get` still gets a normal card (tests, harness).
+
 ## Host facts (OpenCode 2.2.5)
 
 - **No native way to ask.** The host has a `Form` schema (`@opencode/schema/form`, string fields with `format: "email"`, `required`, `hidden`) but it backs provider sign-in only; the SDK gives a server plugin no way to raise a session form, and the GUI has no timeline extension point (host-architecture §8). So the card is DOM next to the host's row, as `visual-replies` does it.
@@ -74,6 +96,12 @@ All controls are the host's own (`ctx.ui.TextInput` with `type="password"`, `But
 - Keyboard and ARIA: tab order Email, Password, Show Password, Cancel, then the composer; group named by its title; inputs described by their hint; Submit disabled while incomplete; Escape on the eye button declines.
 - End to end through the real Code Mode `execute` runtime with a stub model: `tools.blindfold.get` returned `{ EMAIL, PASSWORD }` to the code, and the model's next request saw only `[REDACTED:...]`.
 - Performance, `scripts/perf.mjs`, plugin idle against the null plugin, realistic thread, median of 3 (hover re-run with 7): all eight scenarios inside the bars (open +8 ms script, reopen 0, idle 0, scroll −2, type −19, switch −5, stream −6, hover +2; the first hover run read +13 against a bar of 10 and passed on the 7-run repeat). No new long tasks or jank frames.
+
+## Verification: flow approval (2026-11-04, private harness, fake values)
+
+`harness/run-flow.sh` (own ports, fixture `op`, a local multi-step page on 127.0.0.1:47341): 32 checks. One card for email, password and code with no further card; the unrelated fourth field asks; a second tab asks; the approval expires (30 s in the harness); Always allow on a sign-in, then a full login that asks only for the code; the rules page row and its Revoke; Deny; hot reload with a sign-in card open; no value in the DOM, the stored messages, the service log or the audit file. Parity spec 33 pass, 0 fail, 8 n/a (as before). Unit: `flow.test.ts` (grant lifecycle, expiry on a fake clock, revoke on tab close and navigation, cross-session, cross-tab, cross-origin, a code once, Always allow rule save, match and revoke, `alwaysAllowOtp`, confirm every use, audit lines, migration, the plan for a first-field request, concurrency, injection) and the flow cases of `model.test.ts`.
+
+Not covered: a page that navigates on its own between steps (the server sees only the tool calls); 1Password items without a code still list "one-time code" in the row.
 
 ## Follow-ups
 

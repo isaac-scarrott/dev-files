@@ -36,6 +36,7 @@ export function cleanSettings(input: unknown, provider: Provider): Omit<Stored, 
     vaults: provider === "1password" ? list(draft.vaults, "vaults", (item) => item.length <= 100 && !/[\n\r]/.test(item), "not a vault name") : undefined,
     organizationId: provider === "bitwarden" ? organizationId : undefined,
     confirmEveryUse: draft.confirmEveryUse === undefined ? undefined : draft.confirmEveryUse === true,
+    alwaysAllowOtp: draft.alwaysAllowOtp === undefined ? undefined : draft.alwaysAllowOtp === true,
     enabled: draft.enabled === undefined ? undefined : draft.enabled === true,
   }
 }

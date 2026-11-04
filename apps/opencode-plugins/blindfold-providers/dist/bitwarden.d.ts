@@ -15,6 +15,7 @@ export type BitwardenOptions = {
     /** Pull the vault after each unlock (default true). */
     syncOnUnlock?: boolean;
     confirmEveryUse?: boolean;
+    alwaysAllowOtp?: boolean;
     /** A saved API key logs in by itself, so unlocking takes only the master password. */
     apiKeys?: KeyStore;
 };

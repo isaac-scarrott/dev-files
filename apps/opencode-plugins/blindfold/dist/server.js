@@ -5,6 +5,7 @@ import { audit as createAudit, defaultAuditFile } from "./audit.js";
 import { createBroker, itemFieldOf } from "./broker.js";
 import { MAX_FIELDS, NAME_PATTERN, parseFields } from "./fields.js";
 import { createFills } from "./fill.js";
+import { createGrants, flowOf, parseFlowMinutes } from "./flow.js";
 import { readOnePassword } from "./legacy-op.js";
 import { accounts as registered, isLocked, originOf } from "./providers-contract.js";
 import { Redactor } from "./redact.js";
@@ -15,6 +16,11 @@ const GET_TOOL = "get";
 const FILL_TOOL = "fill";
 const GET_TOOL_IDS = new Set([`${NAMESPACE}_${GET_TOOL}`, `${NAMESPACE}.${GET_TOOL}`]);
 const EVALUATE_IDS = new Set(["browser_evaluate", "browser.evaluate"]);
+const CLOSE_IDS = new Set(["browser_tabs_close", "browser.tabs.close"]);
+const MOVE_IDS = new Set(["browser_back", "browser.back", "browser_forward", "browser.forward"]);
+const NAVIGATE_IDS = new Set(["browser_navigate", "browser.navigate"]);
+/** The fill script's report when the page is not the origin the fill was for. */
+const REFUSED = /reason\\*"\s*:\s*\\*"origin/;
 const PROMPT_TIMEOUT = 10 * 60_000;
 const ACK_TIMEOUT = 5_000;
 const ONEPASSWORD_PREFIX = "op://";
@@ -84,6 +90,7 @@ function getSettings(options) {
         onepassword: getOnePassword(options),
         rules: parseRules(options.rules),
         auditFile: getAuditFile(options),
+        flowMinutes: parseFlowMinutes(options.flowMinutes),
     };
     if (!settings.shell.enabled && !settings.codemode.enabled) {
         throw new Error("opencode-blindfold needs shell.enabled or codemode.enabled, otherwise secrets cannot be used");
@@ -154,7 +161,8 @@ export default Plugin.define({
         const store = ctx.storage ?? { get: async (key) => memory.get(key), set: async (key, value) => void memory.set(key, value) };
         const saved = savedRules(store, randomUUID);
         const audit = createAudit(settings.auditFile);
-        const broker = createBroker({ accounts: registered, rules: settings.rules, saved: saved.list });
+        const grants = createGrants({ minutes: settings.flowMinutes });
+        const broker = createBroker({ accounts: registered, rules: settings.rules, saved: saved.list, grants });
         const fills = createFills();
         // Plain values are known upfront, so they're redacted and reach shell commands before any get.
         for (const [name, source] of settings.secrets) {
@@ -164,7 +172,7 @@ export default Plugin.define({
         const changed = () => void rpc.events.emit("changed", {}).catch(() => undefined);
         const rpc = await ctx.rpc.register(Blindfold, {
             submit: async (input) => {
-                const { requestID, values, picks = {}, remember = false } = input;
+                const { requestID, values, picks = {}, remember = false, flow = false } = input;
                 const request = pending.get(requestID);
                 if (!request)
                     return { accepted: false };
@@ -183,7 +191,9 @@ export default Plugin.define({
                 });
                 if (!complete || !decided)
                     return { accepted: false };
-                request.finish({ status: "submitted", values, picks: chosen, remember: remember === true });
+                // The sign-in is believed only if this server offered it for exactly the candidate chosen; otherwise the answer is for the fields alone.
+                const choice = flow === true ? flowOf(request.request.fields, (field) => chosen[field.name]) : undefined;
+                request.finish({ status: "submitted", values, picks: chosen, remember: remember === true, requestID, ...(choice && !choice.candidate.confirm ? { flow: { candidate: choice.candidate, offer: choice.flow } } : {}) });
                 return { accepted: true };
             },
             unlock: async (input) => {
@@ -334,8 +344,8 @@ export default Plugin.define({
             }
             return Object.fromEntries(request.wanted.map(({ field }) => [field.name, resolved[field.name] ?? redactor.get(field.name)]));
         }
-        async function withProviders(request, missing) {
-            const asks = request.wanted.map((item) => ({ name: item.field.name, field: item.field, item: item.item, origin: request.origin, via: request.via }));
+        async function withProviders(request, missing, retried = false) {
+            const asks = request.wanted.map((item) => ({ name: item.field.name, field: item.field, item: item.item, origin: request.origin, via: request.via, session: request.sessionID, tabID: request.tabID }));
             let plans = await broker.plan(asks);
             const providerAsks = () => asks.filter((item) => plans.get(item.name)?.source.state === "choose");
             const typed = () => request.wanted.filter((item) => plans.get(item.field.name)?.source.state !== "choose" && missing(item));
@@ -361,9 +371,9 @@ export default Plugin.define({
                 };
                 answer = await ask({ sessionID: request.sessionID, callID: request.callID, messageID: request.messageID, reason: request.reason, ...(request.origin ? { origin: request.origin } : {}), via: request.via, fields: rows() }, request.signal, refresh);
             }
-            const log = (planned, name, outcome, key) => {
+            const log = (planned, name, outcome, key, grant) => {
                 const candidate = planned?.source.candidates.find((item) => item.key === (key ?? planned.source.selected)) ?? planned?.source.candidates[0];
-                audit.add({ time: new Date().toISOString(), session: request.sessionID, via: request.via, account: candidate?.account ?? "", accountLabel: candidate?.label ?? "", ...(candidate?.item ? { item: candidate.item.title } : {}), field: planned?.itemField ?? name, name, ...(request.origin ? { origin: request.origin } : {}), outcome });
+                audit.add({ time: new Date().toISOString(), session: request.sessionID, via: request.via, account: candidate?.account ?? "", accountLabel: candidate?.label ?? "", ...(candidate?.item ? { item: candidate.item.title } : {}), field: planned?.itemField ?? name, name, ...(request.origin ? { origin: request.origin } : {}), outcome, ...(grant ? { grant } : {}) });
             };
             if (answer.status !== "submitted") {
                 if (answer.status === "cancelled")
@@ -371,31 +381,93 @@ export default Plugin.define({
                         log(plans.get(item.name), item.name, "denied");
                 throw new Error(failure(rows().map((field) => field.name), answer.status, providerAsks().length > 0));
             }
-            const resolved = { ...answer.values };
+            // Sign-in approvals that cover a field are spent here, in one synchronous pass, so two requests cannot both use one.
+            const spent = new Map();
+            const give = () => {
+                for (const [name, grant] of spent)
+                    grants.release(grant.id, plans.get(name).itemField);
+                spent.clear();
+            };
             for (const item of providerAsks()) {
                 const planned = plans.get(item.name);
                 const key = answer.picks[item.name] ?? planned.source.selected;
-                try {
-                    const read = await broker.read(planned, key, request.signal);
-                    resolved[item.name] = read.value;
-                    // A name rule (GITHUB_TOKEN) is a configured secret like the `secrets` option: shell commands may name it.
-                    if (nameRule(item.name, settings.rules))
-                        redactor.set(item.name, read.value);
-                    else
-                        redactor.track(item.name, read.value);
-                    if (answer.remember && !read.account.confirmEveryUse) {
-                        await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameRule(item.name, settings.rules)?.ref ? undefined : request.origin, name: item.name, via: request.via });
-                        changed();
-                    }
-                    log(planned, item.name, answer.auto ? "rule" : answer.remember && !planned.source.candidates.find((entry) => entry.key === key)?.confirm ? "always" : "allowed", key);
+                if (!planned.granted.has(key))
+                    continue;
+                const candidate = planned.source.candidates.find((entry) => entry.key === key);
+                const grant = request.tabID && request.origin && candidate?.item ? grants.take({ session: request.sessionID, tabID: request.tabID, origin: request.origin, account: candidate.account, item: candidate.item.id, part: planned.itemField }) : undefined;
+                if (!grant) {
+                    give();
+                    // The approval ended between looking and using it: look again once, which now asks.
+                    if (answer.auto && !retried)
+                        return withProviders(request, missing, true);
+                    throw new Error("The approval for this sign-in has ended. Ask again.");
                 }
-                catch (error) {
-                    log(planned, item.name, "error", key);
-                    if (isLocked(error))
-                        throw new Error(`${planned.source.candidates.find((entry) => entry.key === key)?.label ?? error.account} locked before it could be read. Ask again.`);
-                    throw error;
+                spent.set(item.name, grant);
+            }
+            const resolved = { ...answer.values };
+            let made;
+            const done = [];
+            const offer = answer.flow?.offer;
+            try {
+                for (const item of providerAsks()) {
+                    const planned = plans.get(item.name);
+                    const key = answer.picks[item.name] ?? planned.source.selected;
+                    try {
+                        const read = await broker.read(planned, key, request.signal);
+                        resolved[item.name] = read.value;
+                        // A name rule (GITHUB_TOKEN) is a configured secret like the `secrets` option: shell commands may name it.
+                        if (nameRule(item.name, settings.rules))
+                            redactor.set(item.name, read.value);
+                        else
+                            redactor.track(item.name, read.value);
+                        const nameBound = nameRule(item.name, settings.rules)?.ref !== undefined;
+                        // A one-time code is not remembered unless the account says so; an account that asks every time never remembers.
+                        const savable = !read.account.confirmEveryUse && !(planned.itemField === "otp" && read.account.alwaysAllowOtp !== true);
+                        const grant = spent.get(item.name);
+                        const remembered = answer.remember && (offer ? offer.always.includes(planned.itemField) && !read.account.confirmEveryUse : savable);
+                        if (answer.remember && !offer && savable) {
+                            await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameBound ? undefined : request.origin, name: item.name, via: request.via });
+                            changed();
+                        }
+                        done.push(() => log(planned, item.name, grant ? "flow" : answer.auto ? "rule" : remembered ? "always" : "allowed", key, grant?.id ?? made?.id));
+                    }
+                    catch (error) {
+                        log(planned, item.name, "error", key);
+                        if (isLocked(error))
+                            throw new Error(`${planned.source.candidates.find((entry) => entry.key === key)?.label ?? error.account} locked before it could be read. Ask again.`);
+                        throw error;
+                    }
                 }
             }
+            catch (error) {
+                give();
+                throw error;
+            }
+            // The whole sign-in, approved on this card: one saved rule (Always allow) or a short-lived grant (Allow). Only after every
+            // value was read, so a failure or a denial leaves nothing behind.
+            const flow = answer.flow;
+            if (flow && offer && request.tabID && request.origin && flow.candidate.item) {
+                const account = registered().find((entry) => entry.id === flow.candidate.account);
+                if (account && !account.confirmEveryUse) {
+                    const own = providerAsks().map((item) => plans.get(item.name).itemField);
+                    if (answer.remember) {
+                        const parts = offer.always.filter((part) => part !== "otp" || account.alwaysAllowOtp === true);
+                        await saved.addFlow({ account: account.id, item: flow.candidate.item.id, itemTitle: flow.candidate.item.title, origin: request.origin, parts });
+                        changed();
+                    }
+                    else {
+                        made = grants.create({ session: request.sessionID, tabID: request.tabID, origin: request.origin, account: account.id, item: flow.candidate.item.id, parts: offer.parts, used: own, requestID: answer.requestID });
+                        if (answer.requestID)
+                            void rpc.events.emit("flowed", { requestID: answer.requestID, count: made.used.size }).catch(() => undefined);
+                    }
+                }
+            }
+            for (const write of done)
+                write();
+            // Each field served from an earlier approval is counted on the card that created it.
+            for (const grant of new Set(spent.values()))
+                if (grant.requestID)
+                    void rpc.events.emit("flowed", { requestID: grant.requestID, count: grant.used.size }).catch(() => undefined);
             const typedValues = Object.fromEntries(Object.entries(answer.values));
             const values = remember({ ...request, wanted: request.wanted }, typedValues);
             return { ...values, ...Object.fromEntries(providerAsks().map((item) => [item.name, resolved[item.name]])) };
@@ -494,7 +566,7 @@ export default Plugin.define({
                     description: [
                         "Fills a login (or other fields) into the page open in a browser tab without the values ever reaching you: the user approves in a card, and the page's fields are filled and masked.",
                         "Pass the returned `script` unchanged, and alone, to `tools.browser.evaluate({ tabID, script })` for the same tab; it returns a report per field (ok or why not), never a value.",
-                        "`origin` must be the tab's own origin; the fill is refused on any other page. A field a password manager holds for that site is offered for approval, the rest are typed by the user. `selector` (CSS) or `match` (text of the input's label, placeholder or name) picks the input when the page needs it.",
+                        "One approval can cover a whole sign-in: call fill again for each step the page shows. `origin` must be the tab's own origin; the fill is refused on any other page. A field a password manager holds for that site is offered for approval, the rest are typed by the user. `selector` (CSS) or `match` (text of the input's label, placeholder or name) picks the input when the page needs it.",
                     ].join(" "),
                     input: {
                         type: "object",
@@ -538,6 +610,7 @@ export default Plugin.define({
                             wanted,
                             origin,
                             via: "fill",
+                            tabID,
                             signal: context.signal,
                         });
                         const pageFields = wanted.map((item) => ({ name: item.field.name, kind: itemFieldOf({ name: item.field.name, field: item.field, item: item.item }), ...(item.selector ? { selector: item.selector } : {}), ...(item.match ? { label: item.match } : {}) }));
@@ -548,6 +621,25 @@ export default Plugin.define({
                 });
             }
         });
+        /**
+         * Sign-in approvals end with the tab they were given for. The tools that close a tab or send it elsewhere are seen here;
+         * a page that navigates on its own is not, and is caught at the next fill, where the page script refuses any other
+         * origin (and a refusal for the origin ends the tab's approvals too).
+         */
+        const observeBrowser = (event) => {
+            const input = (event.input ?? {});
+            const tab = typeof input.tabID === "string" ? input.tabID : undefined;
+            if (event.status !== "completed")
+                return;
+            if (CLOSE_IDS.has(event.tool))
+                grants.revokeTab(tab);
+            else if (MOVE_IDS.has(event.tool))
+                grants.revokeTab(tab);
+            else if (NAVIGATE_IDS.has(event.tool))
+                grants.revokeOffOrigin(tab, typeof input.url === "string" ? originOf(input.url) : undefined);
+            else if (EVALUATE_IDS.has(event.tool) && tab !== undefined && REFUSED.test(JSON.stringify(event.result ?? "")))
+                grants.revokeTab(tab);
+        };
         // The placeholder from `fill` becomes the script with the values only here, after the call was recorded: the tool runs
         // with the new input, the stored call keeps the placeholder.
         await ctx.tool.hook("execute.before", (event) => {
@@ -561,6 +653,7 @@ export default Plugin.define({
                 event.input = { ...input, script };
         });
         await ctx.tool.hook("execute.after", (event) => {
+            observeBrowser(event);
             if (redactor.size === 0 || GET_TOOL_IDS.has(event.tool))
                 return;
             if (event.status === "completed") {
@@ -614,6 +707,7 @@ export default Plugin.define({
         }
         return () => {
             fills.clear();
+            grants.clear();
             for (const request of pending.values())
                 request.finish({ status: "unavailable" });
         };
