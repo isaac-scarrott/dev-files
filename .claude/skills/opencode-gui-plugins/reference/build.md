@@ -37,7 +37,7 @@ Setup-level Solid tests need the browser export condition (`tsx --conditions=bro
 - A failing server entry prevents its GUI loading. A GUI-only package needs no dummy server export.
 - Keep DOM and host-window access inside `setup`: the same file evaluates in the main process, where window modules are inert placeholders. Keep Node/Electron operations inside `main` for the inverse reason.
 - Local bundle rebuilds reload the GUI automatically. If stale, use the Plugins Reload action rather than restarting the background service to apply config.
-- Build the bundle and add `exports["./gui-experimental"]` **before** the plugin's first load. A service that resolved a directory without a GUI keeps `features.gui` unset even after the export and file appear and the config or server entry changes (✔ 2.2.5); only a service restart picks it up. Check `GET /api/plugin` for `features.gui` ([host-architecture.md §3](host-architecture.md#3-lifecycle)).
+- Build the bundle and add `exports["./gui-experimental"]` **before** the plugin's first load. A service that resolved a directory without a GUI keeps `features.gui` unset even after the export and file appear and the config or server entry changes (✔ 2.2.5); only a service restart picks it up (the harness's own; the shared one through `scripts/opencode-safe-restart.sh`). Check `GET /api/plugin` for `features.gui` ([host-architecture.md §3](host-architecture.md#3-lifecycle)).
 
 ## Inspect installed source (read-only)
 

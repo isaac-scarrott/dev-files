@@ -6,7 +6,7 @@ of that file still lists the deleted `sidepanel`, `sidebar-repos` and a non-exis
 is only in the working copy until it is committed. Register a plugin by absolute path as its README shows.
 
 Parts that run in the background service (server plugins, a plugin's first load of a GUI export) need the service
-restarted, not just the app: quit the app, then `opencode service restart`. Cmd+R reloads GUI parts.
+restarted, not just the app: `scripts/opencode-safe-restart.sh` (waits for running sessions). Cmd+R reloads GUI parts.
 
 | Package | What it does | Kind |
 | --- | --- | --- |
