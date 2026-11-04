@@ -36,7 +36,7 @@ const expand = (path) => (path.startsWith("~/") ? join(homedir(), path.slice(2))
  * Reads the `accounts` option into account builders. The key of each is its whole configuration, so a reload with the same
  * settings keeps the unlocked session and a changed account starts locked.
  */
-export function parseAccounts(options, fallback) {
+export function parseAccounts(options, fallback, keys) {
     const raw = options.accounts;
     if (raw === undefined)
         return [];
@@ -58,6 +58,7 @@ export function parseAccounts(options, fallback) {
             autoLockMinutes: minutes(config.autoLockMinutes, where("autoLockMinutes")),
             allowedOrigins: strings(config.allowedOrigins, where("allowedOrigins")),
             bin: optionalText(config.bin, where("bin")),
+            confirmEveryUse: config.confirmEveryUse === undefined ? undefined : config.confirmEveryUse === true,
         };
         if (provider === "1password") {
             const unlock = config.unlock ?? "serviceAccount";
@@ -77,7 +78,7 @@ export function parseAccounts(options, fallback) {
                 organizationId: optionalText(config.organizationId, where("organizationId")),
                 syncOnUnlock: config.syncOnUnlock === undefined ? undefined : config.syncOnUnlock === true,
             };
-            return { id, key: JSON.stringify([provider, settings]), make: () => new Bitwarden(settings) };
+            return { id, key: JSON.stringify([provider, settings]), make: () => new Bitwarden({ ...settings, apiKeys: keys }) };
         }
         return fail(where("provider"), "1password or bitwarden");
     });

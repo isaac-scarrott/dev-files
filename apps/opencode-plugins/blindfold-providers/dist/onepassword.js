@@ -1,6 +1,7 @@
 import { Base } from "./account.js";
 import { LockedError, originMatches, originOf } from "./contract.js";
 import { memoryTokens } from "./keychain.js";
+import { PROBE_MS, classify } from "./probe.js";
 import { reason, run } from "./run.js";
 /**
  * 1Password through the `op` CLI, with the desktop-app integration off on every call (OP_BIOMETRIC_UNLOCK_ENABLED=false):
@@ -108,6 +109,54 @@ export class OnePassword extends Base {
             }
         }
         return items;
+    }
+    /** Where a service-account call gets its token now: this session, the keychain, then the service's environment variable. */
+    async token() {
+        return this.session?.env.OP_SERVICE_ACCOUNT_TOKEN ?? (await this.tokens.get(this.id)) ?? (this.tokenEnv ? process.env[this.tokenEnv] : undefined);
+    }
+    /** Whether a token is saved (the keychain or the configured variable), without opening a session. */
+    async hasCredential() {
+        return !!(await this.token());
+    }
+    /**
+     * Connection test: lists the vaults' logins the way a use would and reports how many, never a value. Runs with the
+     * app integration off and gives up after `timeoutMs` (an app dialog never answers).
+     */
+    async probe(signal, timeoutMs = PROBE_MS) {
+        if (this.method !== "serviceAccount")
+            return { ok: false, code: "other", detail: "only service accounts are tested here" };
+        const token = await this.token();
+        if (!token)
+            return { ok: false, code: "no_token" };
+        const env = { ...this.base(), OP_SERVICE_ACCOUNT_TOKEN: token };
+        const scopes = this.vaults.length > 0 ? this.vaults.map((vault) => ({ vault, args: ["--vault", vault] })) : [{ vault: undefined, args: [] }];
+        const items = [];
+        for (const scope of scopes) {
+            const result = await run(this.bin, ["item", "list", "--categories", "Login", "--format", "json", ...scope.args], env, undefined, signal, timeoutMs);
+            if (result.code !== 0 || result.missing || result.timedOut)
+                return classify(result, [token], scope.vault);
+            try {
+                for (const item of JSON.parse(result.stdout || "[]"))
+                    items.push({ id: `${item.vault?.id ?? item.vault?.name ?? ""}/${item.id}`, title: item.title });
+            }
+            catch {
+                return { ok: false, code: "other", detail: "unexpected output from op item list" };
+            }
+        }
+        return { ok: true, code: "ok", count: items.length, items: items.slice(0, 200) };
+    }
+    /** Reads one login's password and reports only whether it could be read. The value is dropped here. */
+    async verify(itemId, signal, timeoutMs = PROBE_MS) {
+        const token = await this.token();
+        if (!token)
+            return { ok: false, code: "no_token" };
+        const [vault, id] = itemId.split("/");
+        if (!vault || !id)
+            return { ok: false, code: "other", detail: "not an item of this account" };
+        const result = await run(this.bin, ["read", "--no-newline", `op://${vault}/${id}/password`], { ...this.base(), OP_SERVICE_ACCOUNT_TOKEN: token }, undefined, signal, timeoutMs);
+        if (result.code !== 0 || result.missing || result.timedOut)
+            return classify(result, [token]);
+        return result.stdout === "" ? { ok: false, code: "other", detail: "the login has no password" } : { ok: true, code: "ok" };
     }
     async findByOrigin(pageOrigin, signal) {
         const env = this.env();

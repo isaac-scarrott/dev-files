@@ -56,6 +56,8 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
   /** The candidate chosen for a provider field: the user's pick, else the server's selection. */
   const key = (field: RequestedField) => chosen()[field.name] ?? field.source?.selected
   const candidate = (field: RequestedField): Candidate | undefined => field.source?.candidates.find((item) => item.key === key(field))
+  /** The chosen account asks on every use, so "Always allow" is not offered. */
+  const alwaysOffered = () => providers().every((field) => candidate(field)?.confirm !== true)
   const providersReady = () => providers().every((field) => candidate(field)?.state === "ready")
   const ready = createMemo(() => typed().every((field) => filled(field) && verdict(field).level !== "invalid") && providersReady())
 
@@ -103,6 +105,7 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
     filled,
     ready,
     candidate,
+    alwaysOffered,
     selectedKey: key,
     /** Whether the field leads its group: the one that shows the choice and the unlock. */
     leads: (field: RequestedField) => providers().find((item) => signature(item) === signature(field)) === field,

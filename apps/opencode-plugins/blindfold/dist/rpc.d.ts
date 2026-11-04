@@ -288,6 +288,9 @@ export declare const Blindfold: {
                                                                 readonly covered: {
                                                                     readonly type: "boolean";
                                                                 };
+                                                                readonly confirm: {
+                                                                    readonly type: "boolean";
+                                                                };
                                                             };
                                                             readonly required: readonly ["key", "account", "label", "state", "methods", "covered"];
                                                             readonly additionalProperties: false;
@@ -429,6 +432,9 @@ export declare const Blindfold: {
                                                     readonly covered: {
                                                         readonly type: "boolean";
                                                     };
+                                                    readonly confirm: {
+                                                        readonly type: "boolean";
+                                                    };
                                                 };
                                                 readonly required: readonly ["key", "account", "label", "state", "methods", "covered"];
                                                 readonly additionalProperties: false;
@@ -521,6 +527,9 @@ export declare const Blindfold: {
                                                         readonly additionalProperties: false;
                                                     };
                                                     readonly covered: {
+                                                        readonly type: "boolean";
+                                                    };
+                                                    readonly confirm: {
                                                         readonly type: "boolean";
                                                     };
                                                 };

@@ -25,8 +25,8 @@ const VALUES = ["fixture-google-pw", "personal.fixture@example.test", "fixture-g
 
 let counter = 0
 /** Accounts registered the way blindfold-providers does it; `stop` unregisters them and locks them. */
-function providers(config: { workFence?: string[]; autoLockMinutes?: number } = {}) {
-  const personal = new OnePassword({ id: "personal", label: "Personal (1Password)", bin: join(root, "fixture-cli/op"), tokens: memoryTokens() })
+function providers(config: { workFence?: string[]; autoLockMinutes?: number; confirmEveryUse?: boolean } = {}) {
+  const personal = new OnePassword({ id: "personal", label: "Personal (1Password)", bin: join(root, "fixture-cli/op"), tokens: memoryTokens(), confirmEveryUse: config.confirmEveryUse })
   const work = new Bitwarden({ id: "work", label: "Work (Bitwarden)", bin: join(root, "fixture-cli/bw"), appDataDir: join(dir, `bw-${++counter}`), organizationId: "org-work", allowedOrigins: config.workFence, autoLockMinutes: config.autoLockMinutes })
   const stops = [
     registerProvider({ kind: "1password", accepts: [1], source: "test", accounts: () => [personal as unknown as Account] }),
@@ -263,6 +263,25 @@ test("work stays inside its fence: a fenced account is not offered for another s
     await ruled.handlers().cancel({ requestID: asked.request.requestID })
     await asked.result.catch(() => undefined)
     await unfenced.stop()
+  } finally {
+    await p.stop()
+  }
+})
+
+test("an account set to confirm every use: no Always allow is offered, a submitted one saves nothing, and the next use asks again", async () => {
+  const p = providers({ confirmEveryUse: true })
+  try {
+    await p.unlockPersonal()
+    const run = await harness(options())
+    const first = await opened(run, "get", { name: "PASSWORD", origin: "https://github.com", reason: "x" })
+    assert.equal(first.request.fields[0].source.candidates[0].confirm, true, "the card hides Always allow for it")
+    await run.handlers().submit({ requestID: first.request.requestID, values: {}, remember: true })
+    await first.result
+    assert.deepEqual(((await run.handlers().overview({})) as { rules: unknown[] }).rules, [], "nothing saved")
+    const second = await opened(run, "get", { name: "PASSWORD", origin: "https://github.com", reason: "x" }, 1)
+    assert.equal(second.request.fields[0].source.candidates[0].covered, false)
+    await run.handlers().submit({ requestID: second.request.requestID, values: {} })
+    await second.result
   } finally {
     await p.stop()
   }

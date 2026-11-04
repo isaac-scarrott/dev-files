@@ -13,6 +13,8 @@ const here = new URL("..", import.meta.url).pathname
 const state = mkdtempSync(join(tmpdir(), "bf-plugin-"))
 process.env.FIXTURE_STATE = state
 const options = {
+  accountsFile: join(state, "accounts.json"),
+  tokenStore: "memory",
   accounts: {
     agent: { provider: "1password", label: "Agent (1Password)", bin: join(here, "fixture-cli/op"), vaults: [] },
     work: { provider: "bitwarden", label: "Work (Bitwarden)", bin: join(here, "fixture-cli/bw"), appDataDir: join(state, "bw"), organizationId: "org-work", allowedOrigins: ["*.holibob.tech"], autoLockMinutes: 5 },

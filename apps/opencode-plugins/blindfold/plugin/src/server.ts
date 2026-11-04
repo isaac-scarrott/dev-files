@@ -401,11 +401,11 @@ export default Plugin.define({
           // A name rule (GITHUB_TOKEN) is a configured secret like the `secrets` option: shell commands may name it.
           if (nameRule(item.name, settings.rules)) redactor.set(item.name, read.value)
           else redactor.track(item.name, read.value)
-          if (answer.remember) {
+          if (answer.remember && !read.account.confirmEveryUse) {
             await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameRule(item.name, settings.rules)?.ref ? undefined : request.origin, name: item.name, via: request.via })
             changed()
           }
-          log(planned, item.name, answer.auto ? "rule" : answer.remember ? "always" : "allowed", key)
+          log(planned, item.name, answer.auto ? "rule" : answer.remember && !planned.source.candidates.find((entry) => entry.key === key)?.confirm ? "always" : "allowed", key)
         } catch (error) {
           log(planned, item.name, "error", key)
           if (isLocked(error)) throw new Error(`${planned.source.candidates.find((entry) => entry.key === key)?.label ?? error.account} locked before it could be read. Ask again.`)

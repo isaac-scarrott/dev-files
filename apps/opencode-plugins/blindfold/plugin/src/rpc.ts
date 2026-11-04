@@ -28,6 +28,7 @@ const candidate = {
     methods: { type: "array", items: { enum: ["masterPassword", "serviceAccount", "apiKey"] } },
     item: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } }, required: ["id", "title"], additionalProperties: false },
     covered: { type: "boolean" },
+    confirm: { type: "boolean" },
   },
   required: ["key", "account", "label", "state", "methods", "covered"],
   additionalProperties: false,

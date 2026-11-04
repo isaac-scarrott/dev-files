@@ -1,5 +1,7 @@
 import { Base } from "./account.js";
 import { LockedError, originMatches, originOf } from "./contract.js";
+import { apiKeys as keyStore, memoryTokens } from "./keychain.js";
+import { PROBE_MS, classify } from "./probe.js";
 import { reason, run } from "./run.js";
 const PASSWORD_VARIABLE = "BLINDFOLD_BW_PASSWORD";
 /**
@@ -14,12 +16,17 @@ export class Bitwarden extends Base {
     appData;
     organizationId;
     sync;
+    keys;
     constructor(options) {
         super(options);
         this.bin = options.bin ?? "bw";
         this.appData = options.appDataDir;
         this.organizationId = options.organizationId;
         this.sync = options.syncOnUnlock ?? true;
+        this.keys = options.apiKeys ?? keyStore(memoryTokens(), memoryTokens());
+    }
+    async hasCredential() {
+        return !!(await this.keys.get(this.id));
     }
     base(extra = {}) {
         return { BITWARDENCLI_APPDATA_DIR: this.appData, BW_NOINTERACTION: "true", ...extra };
@@ -38,15 +45,18 @@ export class Bitwarden extends Base {
         catch {
             return { state: "unavailable", reason: "unexpected output from bw status" };
         }
-        // Logged out needs the API key; logged in needs only the master password.
-        return { state: "locked", methods: status === "unauthenticated" ? ["apiKey"] : ["masterPassword"] };
+        // Logged out needs the API key (unless one is saved); logged in needs only the master password.
+        return { state: "locked", methods: status === "unauthenticated" && !(await this.hasCredential()) ? ["apiKey"] : ["masterPassword"] };
     }
     async unlock(input, signal) {
         if (input.method !== "apiKey" && input.method !== "masterPassword")
             throw new Error(`${this.label}: ${input.method} unlock is not supported`);
-        const secrets = [input.password, ...(input.method === "apiKey" ? [input.clientSecret ?? ""] : [])];
-        if (input.method === "apiKey" && input.clientId && input.clientSecret) {
-            const login = await run(this.bin, ["login", "--apikey"], this.base({ BW_CLIENTID: input.clientId, BW_CLIENTSECRET: input.clientSecret }), undefined, signal);
+        const saved = input.method === "masterPassword" ? await this.keys.get(this.id) : undefined;
+        const given = input.method === "apiKey" && input.clientId && input.clientSecret ? { clientId: input.clientId, clientSecret: input.clientSecret } : undefined;
+        const secrets = [input.password, ...(input.method === "apiKey" ? [input.clientSecret ?? ""] : []), ...(saved ? [saved.clientSecret] : [])];
+        const key = given ?? (saved && (await this.loggedOut(signal)) ? saved : undefined);
+        if (key) {
+            const login = await run(this.bin, ["login", "--apikey"], this.base({ BW_CLIENTID: key.clientId, BW_CLIENTSECRET: key.clientSecret }), undefined, signal);
             if (login.code !== 0 && !/already logged in/i.test(login.stderr + login.stdout))
                 throw new Error(`${this.label}: ${reason(login, secrets)}`);
         }
@@ -58,6 +68,48 @@ export class Bitwarden extends Base {
             await run(this.bin, ["sync"], env, undefined, signal);
         this.open({ env, method: input.method });
         return this.status();
+    }
+    async forget() {
+        await this.lock();
+        await this.keys.delete(this.id);
+    }
+    async loggedOut(signal) {
+        const result = await run(this.bin, ["status"], this.base(), undefined, signal);
+        try {
+            return result.code === 0 && JSON.parse(result.stdout).status === "unauthenticated";
+        }
+        catch {
+            return false;
+        }
+    }
+    /** Connection test: signed in and unlocked, then how many collections the account can list. Counts only. */
+    async probe(signal, timeoutMs = PROBE_MS) {
+        if (!this.session) {
+            const result = await run(this.bin, ["status"], this.base(), undefined, signal, timeoutMs);
+            if (result.code !== 0 || result.missing || result.timedOut)
+                return classify(result);
+            try {
+                const status = JSON.parse(result.stdout).status;
+                return status === "unauthenticated" ? { ok: false, code: (await this.hasCredential()) ? "locked" : "not_logged_in" } : { ok: false, code: "locked" };
+            }
+            catch {
+                return { ok: false, code: "other", detail: "unexpected output from bw status" };
+            }
+        }
+        const args = ["list", "collections", "--nointeraction", ...(this.organizationId ? ["--organizationid", this.organizationId] : [])];
+        const result = await run(this.bin, args, this.session.env, undefined, signal, timeoutMs);
+        if (result.code !== 0 || result.missing || result.timedOut) {
+            const failed = classify(result);
+            if (failed.code === "locked")
+                await super.lock();
+            return failed;
+        }
+        try {
+            return { ok: true, code: "ok", count: JSON.parse(result.stdout || "[]").length };
+        }
+        catch {
+            return { ok: false, code: "other", detail: "unexpected output from bw list collections" };
+        }
     }
     async lock() {
         if (this.session)

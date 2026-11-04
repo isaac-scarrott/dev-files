@@ -3,7 +3,7 @@
 // vendors' docs (DESIGN §1). Fake vault, fake values. Invoked through the `op` and `bw` wrappers next to this file.
 // State (sessions) lives in $FIXTURE_STATE. Every argv is appended to $FIXTURE_STATE/argv.log so tests can prove no
 // secret is ever passed as an argument.
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { createHmac, randomBytes } from "node:crypto"
 import { join } from "node:path"
 
@@ -61,6 +61,14 @@ if (tool === "op") {
     console.log("2.30.3-fixture")
     process.exit(0)
   }
+  // Failure modes for the connection test: FIXTURE_OP_MODE=rate_limit | hang | app_prompt | not_vault
+  // The mode may also be a file, for a CLI started by a service whose environment cannot change: $FIXTURE_STATE/op-mode.
+  const modeFile = join(state, "op-mode")
+  const mode = process.env.FIXTURE_OP_MODE ?? (existsSync(modeFile) ? readFileSync(modeFile, "utf8").trim() : undefined)
+  if (mode === "rate_limit") fail("[ERROR] 2026/11/03 00:00:00 You have made too many requests. Wait and try again (rate limit exceeded)")
+  if (mode === "hang") setInterval(() => undefined, 1000)
+  if (mode === "hang") await new Promise(() => undefined)
+  if (mode === "app_prompt") fail("[ERROR] 2026/11/03 00:00:00 authorization prompt dismissed: the 1Password app integration needs your approval")
   const IDLE = Number(process.env.FIXTURE_OP_IDLE_MS ?? 30 * 60_000)
   // Authorisation: service account (Agent vault only) or a manual-sign-in session token (all vaults, 30 min idle).
   function scope() {
@@ -98,6 +106,8 @@ if (tool === "op") {
     process.exit(0)
   }
   const vaults = scope()
+  const asked = flag("--vault")
+  if (asked && !["Agent", "Private", "vlt_agent", "vlt_private"].includes(asked)) fail(`[ERROR] 2026/11/03 00:00:00 "${asked}" isn't a vault in this account. Specify the vault with its UUID, name, or ID.`)
   const visible = VAULT.filter((item) => vaults.includes(item.vault))
   if (cmd === "item" && sub === "list") {
     // Like op: overview only, no field values; urls carry the origins.
@@ -131,20 +141,38 @@ if (tool === "op") {
 if (tool === "security") {
   // The login keychain, as far as blindfold uses it: add-generic-password through `-i` (stdin), find, delete.
   const file = join(state, "keychain.json")
+  const lock = join(state, "keychain.lock")
+  // Concurrent `security` calls (blindfold deletes both Bitwarden items at once) must not lose each other's update: the real keychain serialises them.
+  const locked = (change) => {
+    for (;;) {
+      try {
+        mkdirSync(lock)
+        break
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+      }
+    }
+    try {
+      const fresh = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
+      change(fresh)
+      writeFileSync(file, JSON.stringify(fresh))
+    } finally {
+      rmSync(lock, { recursive: true, force: true })
+    }
+  }
   const store = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
-  const save = () => writeFileSync(file, JSON.stringify(store))
   const parse = (line) => {
     const words = [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2])
     const get = (flag) => words[words.indexOf(flag) + 1]
     return { command: words[0], service: get("-s"), password: get("-w") }
   }
   if (args[0] === "-i") {
-    for (const line of stdin().split("\n").filter(Boolean)) {
-      const { command, service, password } = parse(line)
-      if (command !== "add-generic-password") fail(`fixture security: unsupported ${command}`, 2)
-      store[service] = password
-    }
-    save()
+    const adds = stdin().split("\n").filter(Boolean).map(parse)
+    for (const { command } of adds) if (command !== "add-generic-password") fail(`fixture security: unsupported ${command}`, 2)
+    locked((fresh) => {
+      for (const { service, password } of adds) fresh[service] = password
+    })
     process.exit(0)
   }
   if (args[0] === "find-generic-password") {
@@ -154,8 +182,8 @@ if (tool === "security") {
     process.exit(0)
   }
   if (args[0] === "delete-generic-password") {
-    delete store[args[args.indexOf("-s") + 1]]
-    save()
+    const service = args[args.indexOf("-s") + 1]
+    locked((fresh) => void delete fresh[service])
     process.exit(0)
   }
   fail(`fixture security: unsupported ${args.join(" ")}`, 2)
@@ -206,6 +234,12 @@ if (tool === "bw") {
     process.exit(0)
   }
   if (!unlocked()) fail(data.loggedIn ? "Vault is locked." : "You are not logged in.")
+  if (cmd === "list" && what === "collections") {
+    const org = flag("--organizationid")
+    if (org && org !== "org-work") fail("Organization not found.")
+    console.log(JSON.stringify([{ object: "collection", id: "col1", organizationId: "org-work", name: "Agents" }, { object: "collection", id: "col2", organizationId: "org-work", name: "Shared" }]))
+    process.exit(0)
+  }
   if (cmd === "list" && what === "items") {
     // Like bw: full decrypted items, values included. The provider must parse in process and never log stdout.
     const url = flag("--url")

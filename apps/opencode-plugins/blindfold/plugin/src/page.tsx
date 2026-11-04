@@ -5,7 +5,7 @@ import { site } from "./card.js"
 
 /** What the page reads and does. Everything goes through the server part; nothing here holds a value. */
 export interface PageInput {
-  readonly ctx: Pick<Context, "t" | "ui">
+  readonly ctx: Pick<Context, "t" | "ui" | "layout">
   readonly load: () => Promise<Overview | undefined>
   readonly revoke: (id: string) => Promise<void>
   readonly lock: (account: string) => Promise<void>
@@ -67,7 +67,7 @@ export function BlindfoldPage(props: PageInput) {
         <section class="settings-section" aria-label={ctx.t("page.accounts")}>
           <h3 class="settings-section-title">{ctx.t("page.accounts")}</h3>
           <div data-component="settings-list">
-            <For each={data()?.accounts} fallback={empty(ctx.t("page.noAccounts"))}>
+            <For each={data()?.accounts} fallback={row(ctx.t("page.noAccountsTitle"), ctx.t("page.noAccounts"), <div data-action="blindfold-setup"><ctx.ui.Button variant="contrast" onClick={() => ctx.layout.settings("blindfold-providers")}>{ctx.t("page.setUp")}</ctx.ui.Button></div>)}>
               {(account) =>
                 row(
                   account.label,
@@ -80,6 +80,9 @@ export function BlindfoldPage(props: PageInput) {
                 )
               }
             </For>
+            <Show when={(data()?.accounts.length ?? 0) > 0}>
+              {row(ctx.t("page.manageTitle"), ctx.t("page.manage"), <div data-action="blindfold-manage"><ctx.ui.Button onClick={() => ctx.layout.settings("blindfold-providers")}>{ctx.t("page.manageOpen")}</ctx.ui.Button></div>)}
+            </Show>
           </div>
         </section>
         <section class="settings-section" aria-label={ctx.t("page.rules")}>

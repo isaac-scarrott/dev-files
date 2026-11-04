@@ -5,15 +5,15 @@ const TIMEOUT_MS = 30_000;
  * service's environment minus every variable of the vendors' CLIs, so nothing inherited can switch on the desktop-app
  * integration or an old session; what it needs is passed in `env`.
  */
-export function run(bin, args, env, input, signal) {
+export function run(bin, args, env, input, signal, timeoutMs = TIMEOUT_MS) {
     return new Promise((resolve) => {
         const base = { ...process.env };
         for (const key of Object.keys(base))
             if (/^(OP_|BW_|BITWARDENCLI_)/.test(key))
                 delete base[key];
-        const child = execFile(bin, args, { env: { ...base, ...env }, timeout: TIMEOUT_MS, signal, maxBuffer: 16 << 20 }, (error, stdout, stderr) => {
+        const child = execFile(bin, args, { env: { ...base, ...env }, timeout: timeoutMs, killSignal: "SIGKILL", signal, maxBuffer: 16 << 20 }, (error, stdout, stderr) => {
             const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
-            resolve({ code, stdout: String(stdout), stderr: String(stderr), missing: error?.code === "ENOENT" });
+            resolve({ code, stdout: String(stdout), stderr: String(stderr), missing: error?.code === "ENOENT", timedOut: !!error && error.killed === true && !signal?.aborted });
         });
         // A CLI that exits before reading its stdin must not crash the plugin.
         child.stdin?.on("error", () => undefined);

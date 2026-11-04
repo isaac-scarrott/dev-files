@@ -14,6 +14,8 @@ export type Candidate = {
     };
     /** A saved "Always allow" rule covers it. */
     covered: boolean;
+    /** The account asks on every use: no "Always allow" for it. */
+    confirm?: boolean;
 };
 /** What the card needs to know about a field's provider: who could serve it, which one is chosen, or why none. */
 export type Source = {

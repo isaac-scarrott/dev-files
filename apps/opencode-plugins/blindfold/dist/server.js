@@ -383,11 +383,11 @@ export default Plugin.define({
                         redactor.set(item.name, read.value);
                     else
                         redactor.track(item.name, read.value);
-                    if (answer.remember) {
+                    if (answer.remember && !read.account.confirmEveryUse) {
                         await saved.add({ account: read.account.id, item: read.candidate.item?.id, itemTitle: read.candidate.item?.title, field: planned.itemField, origin: nameRule(item.name, settings.rules)?.ref ? undefined : request.origin, name: item.name, via: request.via });
                         changed();
                     }
-                    log(planned, item.name, answer.auto ? "rule" : answer.remember ? "always" : "allowed", key);
+                    log(planned, item.name, answer.auto ? "rule" : answer.remember && !planned.source.candidates.find((entry) => entry.key === key)?.confirm ? "always" : "allowed", key);
                 }
                 catch (error) {
                     log(planned, item.name, "error", key);

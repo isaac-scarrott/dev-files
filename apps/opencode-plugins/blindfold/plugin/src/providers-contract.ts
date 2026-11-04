@@ -40,6 +40,8 @@ export interface AccountInfo {
    * origin its items are saved for. Present: the account is a fenced one, never offered anywhere else.
    */
   readonly allowedOrigins?: readonly string[]
+  /** True: every use asks, even where "Always allow" was saved; the card does not offer it for this account. */
+  readonly confirmEveryUse?: boolean
 }
 
 export type LockState =

@@ -15,22 +15,32 @@
       "types": "./dist/contract.d.ts",
       "import": "./dist/contract.js",
       "default": "./dist/contract.js"
+    },
+    "./gui-experimental": "./dist/gui-experimental.cjs",
+    "./rpc": {
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js",
+      "default": "./dist/rpc.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --conditions=browser --import tsx --test test/*.test.ts test/*.test.tsx",
     "smoke": "node test/smoke.mjs",
     "check": "node check.mjs"
   },
   "license": "MIT",
   "dependencies": {
-    "@opencode/plugin": "2.2.5"
+    "@opencode/plugin": "2.2.5",
+    "solid-js": "1.9.10"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "happy-dom": "^21.0.4",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7",
+    "vite-plugin-solid": "^2.11.15"
   }
 }

@@ -12,6 +12,8 @@ export type Candidate = {
   item?: { id: string; title: string }
   /** A saved "Always allow" rule covers it. */
   covered: boolean
+  /** The account asks on every use: no "Always allow" for it. */
+  confirm?: boolean
 }
 
 /** What the card needs to know about a field's provider: who could serve it, which one is chosen, or why none. */
@@ -64,8 +66,8 @@ export function createBroker(deps: BrokerDeps) {
     const add = (account: Account, state: "ready" | "locked", methods: UnlockMethod[], found?: { item: ItemRef; field: FieldRef }) => {
       const key = found ? `${account.id}:${found.item.id}` : account.id
       const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name, via: ask.via }
-      const covered = state === "ready" && covering(saved, use) !== undefined
-      candidates.push({ key, account: account.id, label: account.label, state, methods, ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered })
+      const covered = state === "ready" && !account.confirmEveryUse && covering(saved, use) !== undefined
+      candidates.push({ key, account: account.id, label: account.label, state, methods, ...(account.confirmEveryUse ? { confirm: true } : {}), ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered })
       if (found) refs.set(key, found)
     }
     for (const { account, ref } of tries) {

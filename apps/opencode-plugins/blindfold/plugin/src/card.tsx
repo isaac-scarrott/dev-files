@@ -275,9 +275,11 @@ export function RequestCard(props: CardProps) {
                 <ui.Button variant="neutral" disabled={busy()} onClick={() => void model.cancel()}>
                   {t("deny")}
                 </ui.Button>
-                <ui.Button variant="neutral" disabled={!model.ready() || busy()} onClick={() => void model.submit(true)}>
-                  {t("always")}
-                </ui.Button>
+                <Show when={model.alwaysOffered()}>
+                  <ui.Button variant="neutral" disabled={!model.ready() || busy()} onClick={() => void model.submit(true)}>
+                    {t("always")}
+                  </ui.Button>
+                </Show>
                 <ui.Button variant="contrast" disabled={!model.ready()} busy={busy()} onClick={() => void model.submit()}>
                   {t("allow")}
                 </ui.Button>
