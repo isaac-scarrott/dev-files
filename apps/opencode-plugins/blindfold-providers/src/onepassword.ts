@@ -1,5 +1,5 @@
 import type { Managed } from "./managed.js"
-import { Base } from "./account.js"
+import { Base, MISS_TTL_MS } from "./account.js"
 import { LockedError, originMatches, originOf, type Capabilities, type FieldRef, type ItemRef, type LockState, type UnlockInput } from "./contract.js"
 import { memoryTokens, type TokenStore } from "./keychain.js"
 import { PROBE_MS, classify, type Probe } from "./probe.js"
@@ -183,12 +183,22 @@ export class OnePassword extends Base implements Managed {
 
   async findByOrigin(pageOrigin: string, signal?: AbortSignal) {
     const env = this.env()
+    const matching = (items: readonly ItemRef[]) => items.filter((item) => item.origins.some((origin) => originMatches(origin, pageOrigin)))
     let items = this.cached("list")
+    let readAt = this.cache.get("list")?.at ?? 0
     if (!items) {
       items = await this.list(env, signal)
-      this.cache.set("list", { at: Date.now(), items })
+      readAt = Date.now()
+      this.cache.set("list", { at: readAt, items })
     }
-    return items.filter((item) => item.origins.some((origin) => originMatches(origin, pageOrigin)))
+    const found = matching(items)
+    // A miss on a list read a while ago may only mean the login was added or moved since: look once more.
+    if (found.length === 0 && Date.now() - readAt > MISS_TTL_MS) {
+      items = await this.list(env, signal)
+      this.cache.set("list", { at: Date.now(), items })
+      return matching(items)
+    }
+    return found
   }
 
   async resolve(reference: string) {

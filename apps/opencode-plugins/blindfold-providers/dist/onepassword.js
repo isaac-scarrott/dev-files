@@ -1,4 +1,4 @@
-import { Base } from "./account.js";
+import { Base, MISS_TTL_MS } from "./account.js";
 import { LockedError, originMatches, originOf } from "./contract.js";
 import { memoryTokens } from "./keychain.js";
 import { PROBE_MS, classify } from "./probe.js";
@@ -160,12 +160,22 @@ export class OnePassword extends Base {
     }
     async findByOrigin(pageOrigin, signal) {
         const env = this.env();
+        const matching = (items) => items.filter((item) => item.origins.some((origin) => originMatches(origin, pageOrigin)));
         let items = this.cached("list");
+        let readAt = this.cache.get("list")?.at ?? 0;
         if (!items) {
             items = await this.list(env, signal);
-            this.cache.set("list", { at: Date.now(), items });
+            readAt = Date.now();
+            this.cache.set("list", { at: readAt, items });
         }
-        return items.filter((item) => item.origins.some((origin) => originMatches(origin, pageOrigin)));
+        const found = matching(items);
+        // A miss on a list read a while ago may only mean the login was added or moved since: look once more.
+        if (found.length === 0 && Date.now() - readAt > MISS_TTL_MS) {
+            items = await this.list(env, signal);
+            this.cache.set("list", { at: Date.now(), items });
+            return matching(items);
+        }
+        return found;
     }
     async resolve(reference) {
         const match = reference.match(/^op:\/\/([^/]+)\/([^/]+)\/([^?]+)(\?attribute=otp)?$/);
