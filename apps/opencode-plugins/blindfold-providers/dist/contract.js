@@ -51,6 +51,16 @@ export function originOf(url) {
         return undefined;
     }
 }
+/**
+ * The site a saved login names. Password managers store what was typed or imported, often a bare `www.example.com/login`
+ * with no scheme, which they show and open as https. Read it the same way. The page's own address is never read this way.
+ */
+export function itemOriginOf(url) {
+    const text = url.trim();
+    if (text === "")
+        return undefined;
+    return originOf(text) ?? (/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? undefined : originOf(`https://${text}`));
+}
 /** The page is the item's origin, or a subdomain of it: same scheme and port, never a lookalike, never the reverse. */
 export function originMatches(itemOrigin, pageOrigin) {
     const item = originOf(itemOrigin);

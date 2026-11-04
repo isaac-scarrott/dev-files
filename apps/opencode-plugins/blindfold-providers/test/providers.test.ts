@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Bitwarden } from "../src/bitwarden.js"
-import { LockedError, accounts, originMatches, patternMatches } from "../src/contract.js"
+import { LockedError, accounts, itemOriginOf, originMatches, patternMatches } from "../src/contract.js"
 import { keychainTokens, memoryTokens } from "../src/keychain.js"
 import { OnePassword } from "../src/onepassword.js"
 
@@ -23,6 +23,19 @@ const SERVICE_TOKEN = "ops_fixture_service_token"
 
 const agent = (tokens = memoryTokens(), extra = {}) => new OnePassword({ id: "agent", label: "Agent (1Password)", bin: op, tokens, ...extra })
 const work = (extra = {}) => new Bitwarden({ id: "work", label: "Work (Bitwarden)", bin: bw, appDataDir: join(state, "bw-work"), organizationId: "org-work", ...extra })
+
+test("a saved website with no scheme reads as https; the page's own address stays strict", () => {
+  assert.equal(itemOriginOf("https://www.instagram.com/gaitor.app"), "https://www.instagram.com")
+  assert.equal(itemOriginOf("www.instagram.com/gaitor.app"), "https://www.instagram.com")
+  assert.equal(itemOriginOf(" instagram.com "), "https://instagram.com")
+  assert.equal(itemOriginOf("http://example.test:8080/x"), "http://example.test:8080")
+  assert.equal(itemOriginOf("ftp://example.test"), undefined)
+  assert.equal(itemOriginOf("javascript:alert(1)"), undefined)
+  assert.equal(itemOriginOf(""), undefined)
+  assert.ok(originMatches(itemOriginOf("www.instagram.com/gaitor.app")!, "https://www.instagram.com"))
+  assert.ok(!originMatches(itemOriginOf("instagram.com")!, "http://instagram.com"), "a bare host is https, so an http page never matches")
+  assert.ok(!originMatches(itemOriginOf("instagram.com")!, "https://evil-instagram.com"))
+})
 
 test("origins: subdomain yes, lookalike no, scheme and port must agree; patterns", () => {
   assert.ok(originMatches("https://holibob.tech", "https://admin.holibob.tech"))
