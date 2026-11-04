@@ -20,18 +20,25 @@ const toConfig = (stored, bin) => ({
  * built into live accounts that blindfold looks up on every use. A change rebuilds only the account it touched, so an
  * unlocked session of another account survives, and nothing needs a restart.
  */
-export function createManager(deps) {
-    const store = accountStore(deps.file);
-    let data = store.read();
+export function createManager(initial) {
+    // Each attach brings the options of its load; the latest wins, so an options change reloaded over a still-running
+    // instance (the new setup runs before the old cleanup) is not ignored.
     const attached = new Map();
+    const depsNow = () => [...attached.values()].at(-1)?.deps ?? initial;
+    const signature = (deps) => JSON.stringify([deps.file, deps.bins ?? null, deps.where ?? null]);
+    let current = accountStore(initial.file);
+    const storeNow = () => (current.file === depsNow().file ? current : (current = accountStore(depsNow().file)));
+    const store = { get file() { return storeNow().file; }, read: () => storeNow().read(), write: (value) => storeNow().write(value) };
+    const deps = { get stores() { return depsNow().stores; }, get bins() { return depsNow().bins; } };
+    let data = store.read();
     const live = new Map();
     const broken = new Map();
     const tests = new Map();
     const checks = new Map();
     const listeners = new Set();
     let tools;
-    const binFor = (provider) => deps.bins?.[provider];
-    const options = () => [...attached.values()].at(-1) ?? {};
+    const binFor = (provider) => depsNow().bins?.[provider];
+    const options = () => [...attached.values()].at(-1)?.accounts ?? {};
     function reconcile() {
         const want = new Map();
         for (const [id, raw] of Object.entries(options()))
@@ -45,7 +52,7 @@ export function createManager(deps) {
             try {
                 const [built] = parseAccounts({ accounts: { [id]: raw } }, raw.tokenStore === undefined ? deps.stores.opToken : undefined, deps.stores.bw);
                 if (built)
-                    next.set(id, { key: built.key, source, make: built.make, account: undefined });
+                    next.set(id, { key: `${signature(depsNow())}${built.key}`, source, make: built.make, account: undefined });
             }
             catch (error) {
                 broken.set(id, error instanceof Error ? error.message : String(error));
@@ -174,11 +181,11 @@ export function createManager(deps) {
     return {
         store,
         /** The accounts from opencode.json join (the latest set wins). Throws on a bad option. Returns the detach. */
-        attach(accounts) {
+        attach(accounts, next = initial) {
             if (accounts !== undefined)
-                parseAccounts({ accounts }, deps.stores.opToken, deps.stores.bw);
+                parseAccounts({ accounts }, next.stores.opToken, next.stores.bw);
             const token = Symbol("attached");
-            attached.set(token, (accounts ?? {}));
+            attached.set(token, { accounts: (accounts ?? {}), deps: next });
             data = store.read();
             reconcile();
             notify();

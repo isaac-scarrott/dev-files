@@ -1,7 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import { registerProvider, PROVIDERS_PROTOCOL } from "./contract.js"
 import { keychainStores } from "./keychain.js"
-import { createManager, type Manager } from "./manager.js"
+import { createManager, type Manager, type ManagerDeps } from "./manager.js"
 import { Providers } from "./rpc.js"
 import { defaultStoreFile, type Provider } from "./store.js"
 
@@ -13,16 +13,20 @@ type Shared = { manager: Manager; users: number; unregister: (() => void)[] }
  * The manager lives once per process, not once per location: the server plugin runs for every project, and unlocking Work
  * once must serve all of them. Held on globalThis (like the registry) so it survives a module reload.
  */
+function depsOf(options: Record<string, unknown>): ManagerDeps {
+  return {
+    file: typeof options.accountsFile === "string" ? options.accountsFile : defaultStoreFile(),
+    stores: keychainStores(typeof options.tokenStore === "string" ? options.tokenStore : "keychain"),
+    where: typeof options.tokenStore === "string" ? options.tokenStore : "keychain",
+    bins: typeof options.bins === "object" && options.bins !== null ? (options.bins as Partial<Record<Provider, string>>) : undefined,
+  }
+}
+
 function shared(options: Record<string, unknown>): Shared {
   const holder = globalThis as unknown as Record<symbol, Shared | undefined>
   const existing = holder[SHARED]
   if (existing) return existing
-  const bins = typeof options.bins === "object" && options.bins !== null ? (options.bins as Partial<Record<Provider, string>>) : undefined
-  const manager = createManager({
-    file: typeof options.accountsFile === "string" ? options.accountsFile : defaultStoreFile(),
-    stores: keychainStores(typeof options.tokenStore === "string" ? options.tokenStore : "keychain"),
-    bins,
-  })
+  const manager = createManager(depsOf(options))
   const kinds: Provider[] = ["1password", "bitwarden"]
   // Both vendors are registered for as long as the plugin runs: the accounts are read lazily, so one added or removed on
   // the settings page is seen by the next use with no re-registration.
@@ -39,7 +43,7 @@ export default Plugin.define({
     const { manager } = state
     let detach: () => void
     try {
-      detach = manager.attach(ctx.options.accounts)
+      detach = manager.attach(ctx.options.accounts, depsOf(ctx.options))
     } catch (error) {
       if (state.users === 0) {
         state.unregister.forEach((stop) => stop())

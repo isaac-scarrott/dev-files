@@ -62,7 +62,9 @@ if (tool === "op") {
     process.exit(0)
   }
   // Failure modes for the connection test: FIXTURE_OP_MODE=rate_limit | hang | app_prompt | not_vault
-  const mode = process.env.FIXTURE_OP_MODE
+  // The mode may also be a file, for a CLI started by a service whose environment cannot change: $FIXTURE_STATE/op-mode.
+  const modeFile = join(state, "op-mode")
+  const mode = process.env.FIXTURE_OP_MODE ?? (existsSync(modeFile) ? readFileSync(modeFile, "utf8").trim() : undefined)
   if (mode === "rate_limit") fail("[ERROR] 2026/11/03 00:00:00 You have made too many requests. Wait and try again (rate limit exceeded)")
   if (mode === "hang") setInterval(() => undefined, 1000)
   if (mode === "hang") await new Promise(() => undefined)

@@ -1,7 +1,7 @@
 import type { Account } from "./contract.js";
 import type { KeyStore, TokenStore } from "./keychain.js";
 import type { Probe } from "./probe.js";
-import { type Confirmed, type Provider } from "./store.js";
+import { type AccountStore, type Confirmed, type Provider } from "./store.js";
 export type Stores = {
     opToken: TokenStore;
     bw: KeyStore;
@@ -11,6 +11,8 @@ export type ManagerDeps = {
     stores: Stores;
     /** The CLI to run for each vendor when an account names none (the fixture, in tests). */
     bins?: Partial<Record<Provider, string>>;
+    /** Where credentials rest, as the option said (`keychain`, `memory` or a `security` path): part of what makes an account the same one. */
+    where?: string;
 };
 export type Tool = {
     bin: string;
@@ -62,14 +64,14 @@ export type Overview = {
  * built into live accounts that blindfold looks up on every use. A change rebuilds only the account it touched, so an
  * unlocked session of another account survives, and nothing needs a restart.
  */
-export declare function createManager(deps: ManagerDeps): {
+export declare function createManager(initial: ManagerDeps): {
     store: {
-        file: string;
-        read(): import("./store.js").StoreData;
-        write(data: import("./store.js").StoreData): void;
+        readonly file: string;
+        read: () => import("./store.js").StoreData;
+        write: (value: Parameters<AccountStore["write"]>[0]) => void;
     };
     /** The accounts from opencode.json join (the latest set wins). Throws on a bad option. Returns the detach. */
-    attach(accounts: unknown): () => void;
+    attach(accounts: unknown, next?: ManagerDeps): () => void;
     readonly attached: number;
     /** What blindfold looks up on every use. */
     accounts: () => readonly Account[];

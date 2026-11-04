@@ -9,17 +9,20 @@ const SHARED = Symbol.for("opencode-plugins.blindfold.providers.manager.v1");
  * The manager lives once per process, not once per location: the server plugin runs for every project, and unlocking Work
  * once must serve all of them. Held on globalThis (like the registry) so it survives a module reload.
  */
+function depsOf(options) {
+    return {
+        file: typeof options.accountsFile === "string" ? options.accountsFile : defaultStoreFile(),
+        stores: keychainStores(typeof options.tokenStore === "string" ? options.tokenStore : "keychain"),
+        where: typeof options.tokenStore === "string" ? options.tokenStore : "keychain",
+        bins: typeof options.bins === "object" && options.bins !== null ? options.bins : undefined,
+    };
+}
 function shared(options) {
     const holder = globalThis;
     const existing = holder[SHARED];
     if (existing)
         return existing;
-    const bins = typeof options.bins === "object" && options.bins !== null ? options.bins : undefined;
-    const manager = createManager({
-        file: typeof options.accountsFile === "string" ? options.accountsFile : defaultStoreFile(),
-        stores: keychainStores(typeof options.tokenStore === "string" ? options.tokenStore : "keychain"),
-        bins,
-    });
+    const manager = createManager(depsOf(options));
     const kinds = ["1password", "bitwarden"];
     // Both vendors are registered for as long as the plugin runs: the accounts are read lazily, so one added or removed on
     // the settings page is seen by the next use with no re-registration.
@@ -34,7 +37,7 @@ export default Plugin.define({
         const { manager } = state;
         let detach;
         try {
-            detach = manager.attach(ctx.options.accounts);
+            detach = manager.attach(ctx.options.accounts, depsOf(ctx.options));
         }
         catch (error) {
             if (state.users === 0) {

@@ -231,4 +231,19 @@ test("a bad option still fails setup by name, and the stored accounts keep worki
   assert.equal(manager.attached, 0)
 })
 
+test("an options change loaded before the old instance is cleaned up is honoured: new CLI, new accounts file", async () => {
+  const stores = keychainStores(security)
+  const old = createManager({ file: join(dir, "old.json"), stores, bins: { "1password": join(dir, "no-such-op") } })
+  const first = old.attach(undefined)
+  assert.equal((await old.overview({ fresh: true })).tools["1password"].installed, false)
+  const second = old.attach(undefined, { file: join(dir, "new.json"), stores, bins: { "1password": op } })
+  const view = await old.overview({ fresh: true })
+  assert.equal(view.tools["1password"].installed, true)
+  assert.equal(view.file, join(dir, "new.json"))
+  first()
+  assert.equal(old.attached, 1, "the old instance leaving does not undo it")
+  assert.equal((await old.overview({ fresh: true })).tools["1password"].installed, true)
+  second()
+})
+
 test("cleanup", () => rmSync(dir, { recursive: true, force: true }))

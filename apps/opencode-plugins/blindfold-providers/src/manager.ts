@@ -15,6 +15,8 @@ export type ManagerDeps = {
   stores: Stores
   /** The CLI to run for each vendor when an account names none (the fixture, in tests). */
   bins?: Partial<Record<Provider, string>>
+  /** Where credentials rest, as the option said (`keychain`, `memory` or a `security` path): part of what makes an account the same one. */
+  where?: string
 }
 
 export type Tool = { bin: string; installed: boolean; path?: string; version?: string }
@@ -64,10 +66,17 @@ const toConfig = (stored: Stored, bin: string | undefined) => ({
  * built into live accounts that blindfold looks up on every use. A change rebuilds only the account it touched, so an
  * unlocked session of another account survives, and nothing needs a restart.
  */
-export function createManager(deps: ManagerDeps) {
-  const store: AccountStore = accountStore(deps.file)
+export function createManager(initial: ManagerDeps) {
+  // Each attach brings the options of its load; the latest wins, so an options change reloaded over a still-running
+  // instance (the new setup runs before the old cleanup) is not ignored.
+  const attached = new Map<symbol, { accounts: Record<string, unknown>; deps: ManagerDeps }>()
+  const depsNow = () => [...attached.values()].at(-1)?.deps ?? initial
+  const signature = (deps: ManagerDeps) => JSON.stringify([deps.file, deps.bins ?? null, deps.where ?? null])
+  let current = accountStore(initial.file)
+  const storeNow = (): AccountStore => (current.file === depsNow().file ? current : (current = accountStore(depsNow().file)))
+  const store = { get file() { return storeNow().file }, read: () => storeNow().read(), write: (value: Parameters<AccountStore["write"]>[0]) => storeNow().write(value) }
+  const deps = { get stores() { return depsNow().stores }, get bins() { return depsNow().bins } }
   let data = store.read()
-  const attached = new Map<symbol, Record<string, unknown>>()
   const live = new Map<string, Live>()
   const broken = new Map<string, string>()
   const tests = new Map<string, { at: number; probe: Probe }>()
@@ -75,8 +84,8 @@ export function createManager(deps: ManagerDeps) {
   const listeners = new Set<() => void>()
   let tools: { at: number; value: Record<Provider, Tool> } | undefined
 
-  const binFor = (provider: Provider) => deps.bins?.[provider]
-  const options = () => [...attached.values()].at(-1) ?? {}
+  const binFor = (provider: Provider) => depsNow().bins?.[provider]
+  const options = () => [...attached.values()].at(-1)?.accounts ?? {}
 
   function reconcile() {
     const want = new Map<string, { source: "stored" | "config"; raw: Record<string, unknown> }>()
@@ -87,7 +96,7 @@ export function createManager(deps: ManagerDeps) {
     for (const [id, { source, raw }] of want) {
       try {
         const [built] = parseAccounts({ accounts: { [id]: raw } }, raw.tokenStore === undefined ? deps.stores.opToken : undefined, deps.stores.bw)
-        if (built) next.set(id, { key: built.key, source, make: built.make as () => Managed, account: undefined as never })
+        if (built) next.set(id, { key: `${signature(depsNow())}${built.key}`, source, make: built.make as () => Managed, account: undefined as never })
       } catch (error) {
         broken.set(id, error instanceof Error ? error.message : String(error))
       }
@@ -210,10 +219,10 @@ export function createManager(deps: ManagerDeps) {
   return {
     store,
     /** The accounts from opencode.json join (the latest set wins). Throws on a bad option. Returns the detach. */
-    attach(accounts: unknown): () => void {
-      if (accounts !== undefined) parseAccounts({ accounts }, deps.stores.opToken, deps.stores.bw)
+    attach(accounts: unknown, next: ManagerDeps = initial): () => void {
+      if (accounts !== undefined) parseAccounts({ accounts }, next.stores.opToken, next.stores.bw)
       const token = Symbol("attached")
-      attached.set(token, (accounts ?? {}) as Record<string, unknown>)
+      attached.set(token, { accounts: (accounts ?? {}) as Record<string, unknown>, deps: next })
       data = store.read()
       reconcile()
       notify()
