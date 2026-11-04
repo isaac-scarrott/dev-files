@@ -85,7 +85,7 @@ test("another service process: the stored job is reported through the session an
   assert.equal(host.synthetic.length, 1)
   assert.equal(host.synthetic[0].sessionID, "ses_a")
   assert.equal(host.synthetic[0].resume, false)
-  assert.equal(host.synthetic[0].delivery, "queue")
+  assert.equal(host.synthetic[0].delivery, "steer")
   assert.match(host.synthetic[0].text, /make watch/)
   assert.equal(host.emitted.length, 1)
   assert.equal(host.emitted[0].name, "notify")

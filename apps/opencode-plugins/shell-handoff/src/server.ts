@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin"
-import { bootId } from "./boot.js"
+import { bootId, bootStart } from "./boot.js"
 import { diskFiles } from "./files.js"
 import { parseOptions } from "./options.js"
 import { ShellHandoff } from "./rpc.js"
@@ -48,20 +48,13 @@ export default Plugin.define({
       boot: bootId(),
       location: ctx.location.directory,
       now: Date.now,
+      restartedAt: () => bootStart(bootId()) ?? Date.now(),
       store,
       files: diskFiles(options.dir),
       host: {
         sessionExists: async (sessionID) => Boolean(await ctx.session.get({ sessionID: sessionID as never }).catch(() => undefined)),
         synthetic: async (sessionID, text) => {
-          await ctx.session.synthetic({ sessionID: sessionID as never, text, description: "Background shell jobs lost to a restart", delivery: "queue", resume: false })
-        },
-        alive: (pid) => {
-          try {
-            process.kill(pid, 0)
-            return true
-          } catch (error) {
-            return (error as NodeJS.ErrnoException).code === "EPERM"
-          }
+          await ctx.session.synthetic({ sessionID: sessionID as never, text, description: "Background shell jobs lost to a restart", delivery: "steer", resume: false })
         },
       },
       notify,

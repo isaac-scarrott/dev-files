@@ -31,3 +31,7 @@ if (command === "session") {
   const out = await api(`/api/session/${a}/message`)
   console.log(JSON.stringify(out, null, 1).slice(0, Number(b ?? 6000)))
 } else console.log("unknown command")
+if (command === "synthetic") {
+  await api(`/api/session/${a}/synthetic`, { method: "POST", body: JSON.stringify({ text: process.argv[5] ?? "probe notice", description: "probe", delivery: b, resume: false }) })
+  console.log("queued", b)
+}

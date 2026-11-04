@@ -5,7 +5,7 @@ import { FILE_CAP_BYTES } from "../src/report.js"
 import { harness, background, memoryStore } from "./helpers.js"
 
 const GHP = ["ghp", "_", "abcdefghijklmnopqrstuvwxyz0123"].join("")
-const created = (id: string, extra: Record<string, unknown> = {}) => ({ id, command: "sleep 600", cwd: "/work/repo", pid: 4242, file: "/nonexistent/out", sessionID: "ses_a", started: 1_699_999_000_000, ...extra })
+const created = (id: string, extra: Record<string, unknown> = {}) => ({ id, command: "sleep 600", cwd: "/work/repo", file: "/nonexistent/out", sessionID: "ses_a", started: 1_699_999_000_000, ...extra })
 
 test("records a background shell job with what the host knew", async () => {
   const h = harness()
@@ -17,7 +17,6 @@ test("records a background shell job with what the host knew", async () => {
   assert.equal(stored.sessionID, "ses_a")
   assert.equal(stored.callID, "call_1")
   assert.equal(stored.messageID, "msg_1")
-  assert.equal(stored.pid, 4242)
   assert.equal(stored.startedAt, 1_699_999_000_000)
   assert.equal(stored.boot, "100:1")
 })
@@ -109,7 +108,6 @@ test("restart (new boot id): the job is reported once, written down and cleared"
   first.tracker.created(created("sh_1", { command: "gh stack merge --wait" }))
   await first.tracker.toolEnd(background("sh_1"))
   const second = harness({ store, boot: "200:9", dir: first.dir, clock: { now: 1_699_999_000_000 + 49 * 60_000 } })
-  second.state.alivePids.add(4242)
   await second.tracker.restore()
 
   assert.equal(store.data.has("job/sh_1"), false)
@@ -129,7 +127,6 @@ test("restart (new boot id): the job is reported once, written down and cleared"
   assert.match(file, /ran about 49m/)
   assert.match(file, /session: ses_a; tool call: call_1; message: msg_1; shell: sh_1/)
   assert.match(file, /monitor\.start/)
-  assert.match(file, /pid 4242 still exists/)
   assert.equal(statSync(second.deps.files.path("ses_a")).mode & 0o777, 0o600)
   assert.equal(statSync(second.dir).mode & 0o777, 0o700)
 
@@ -337,4 +334,14 @@ test("each location's instance reports only its own jobs, so several instances n
   assert.deepEqual(b2.sent.map((m) => m.sessionID), ["ses_b"])
   assert.equal(c2.sent.length, 0)
   assert.equal(store.data.size, 0)
+})
+
+test("the loss time is when the new service process started, not when this instance loaded", async () => {
+  const store = memoryStore()
+  const first = harness({ store })
+  first.tracker.created(created("sh_1"))
+  await first.tracker.toolEnd(background("sh_1"))
+  const second = harness({ store, boot: "other", dir: first.dir, clock: { now: 1_699_999_000_000 + 3_600_000 }, restartedAt: 1_699_999_000_000 + 120_000 })
+  await second.tracker.restore()
+  assert.match(second.sent[0].text, /ran 2m\)/)
 })

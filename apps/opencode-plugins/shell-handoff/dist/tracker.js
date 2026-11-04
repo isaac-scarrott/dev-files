@@ -150,7 +150,7 @@ export class Tracker {
     }
     async report(sessionID, jobs) {
         const { files, host, options, now, store } = this.deps;
-        const at = now();
+        const at = Math.min(now(), this.deps.restartedAt());
         const found = await Promise.all(jobs.map(async (job) => ({
             ...job,
             alive: job.pid !== undefined && host.alive(job.pid),

@@ -24,7 +24,6 @@ export interface Host {
   sessionExists(sessionID: string): Promise<boolean>
   /** A queued notice that does not start a turn. */
   synthetic(sessionID: string, text: string): Promise<void>
-  alive(pid: number): boolean
 }
 
 export interface Notice {
@@ -39,7 +38,6 @@ export interface Created {
   id: string
   command: string
   cwd?: string
-  pid?: number
   file?: string
   sessionID?: string
   started?: number
@@ -61,6 +59,8 @@ export interface Deps {
   /** This instance's location: it records and reports only what belongs to it. */
   location: string
   now: () => number
+  /** When this service process started: the earlier one died just before, so this is when its jobs were lost. */
+  restartedAt: () => number
   store: Store
   files: Files
   host: Host
@@ -110,8 +110,8 @@ export class Tracker {
   }
 
   private async enrich(job: Job, info: Created): Promise<void> {
-    const next: Job = { ...job, cwd: info.cwd ?? job.cwd, pid: info.pid ?? job.pid, output: info.file ?? job.output, startedAt: info.started ?? job.startedAt }
-    if (next.cwd === job.cwd && next.pid === job.pid && next.output === job.output && next.startedAt === job.startedAt) return
+    const next: Job = { ...job, cwd: info.cwd ?? job.cwd, output: info.file ?? job.output, startedAt: info.started ?? job.startedAt }
+    if (next.cwd === job.cwd && next.output === job.output && next.startedAt === job.startedAt) return
     this.jobs.set(job.shellID, next)
     await this.deps.store.set(jobKey(job.shellID), next).catch((error) => this.deps.log(`could not update ${job.shellID}: ${String(error)}`))
   }
@@ -146,7 +146,6 @@ export class Tracker {
       sessionID: event.sessionID,
       command: redact(command),
       cwd,
-      pid: seen?.info.pid,
       output: seen?.info.file,
       startedAt: seen?.info.started ?? this.deps.now(),
       timeout,
@@ -212,12 +211,11 @@ export class Tracker {
   }
 
   private async report(sessionID: string, jobs: Job[]): Promise<void> {
-    const { files, host, options, now, store } = this.deps
-    const at = now()
+    const { files, options, now, store } = this.deps
+    const at = Math.min(now(), this.deps.restartedAt())
     const found: Lost[] = await Promise.all(
       jobs.map(async (job) => ({
         ...job,
-        alive: job.pid !== undefined && host.alive(job.pid),
         outputExists: job.output ? await files.exists(job.output).catch(() => false) : false,
       })),
     )

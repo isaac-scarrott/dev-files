@@ -13,3 +13,8 @@ export function bootId() {
     slot[KEY] = id;
     return id;
 }
+/** When the process with this boot id started, in epoch milliseconds; `undefined` for an id that is not ours. */
+export function bootStart(id) {
+    const start = Number(id.split(":")[1]);
+    return Number.isFinite(start) ? start : undefined;
+}

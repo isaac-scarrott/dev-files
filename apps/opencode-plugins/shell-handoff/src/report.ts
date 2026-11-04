@@ -3,8 +3,6 @@ import type { Job } from "./record.js"
 
 /** What was learned about a job at the restart, beyond the record. */
 export interface Lost extends Job {
-  /** The recorded pid still exists: the job may have survived (a crash skips the host's kill). The pid could also be reused. */
-  alive?: boolean
   /** The host's output file for the job is still on disk. */
   outputExists?: boolean
 }
@@ -42,7 +40,6 @@ function section(jobs: readonly Lost[], at: number, sessionID: string): string {
     lines.push(`- started: ${new Date(job.startedAt).toISOString()}; lost: ${new Date(at).toISOString()}; ran about ${duration(at - job.startedAt)}`)
     lines.push(`- session: ${sessionID}${job.callID ? `; tool call: ${job.callID}` : ""}${job.messageID ? `; message: ${job.messageID}` : ""}; shell: ${job.shellID}`)
     if (job.outputExists && job.output) lines.push(`- last output (the host keeps it): ${oneLine(job.output, 400)}`)
-    if (job.alive) lines.push(`- pid ${job.pid} still exists. The job may have survived (or the pid was reused): check with \`ps -p ${job.pid}\` before running it again.`)
     lines.push(`- How to re-arm: run the same command in the same cwd, only if it is still needed. For a long watcher use \`monitor.start\`: monitors are restored after a restart, shell jobs are not.`, "")
   }
   return lines.join("\n")

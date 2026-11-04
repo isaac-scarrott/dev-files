@@ -55,6 +55,8 @@ export interface Deps {
     /** This instance's location: it records and reports only what belongs to it. */
     location: string;
     now: () => number;
+    /** When this service process started: the earlier one died just before, so this is when its jobs were lost. */
+    restartedAt: () => number;
     store: Store;
     files: Files;
     host: Host;
