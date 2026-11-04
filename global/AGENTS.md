@@ -14,6 +14,10 @@ Cross-tool guidelines (Claude Code, opencode, others). Modern harnesses already 
 - For bugs, find what *allowed* the failure, not just where it surfaced. Fix the root cause when that stays in scope; if it would mean a larger refactor, surface that instead of papering over the symptom.
 - After changes, run the narrowest relevant validation (typecheck, lint, related tests) and report actual results. Never claim green without having seen the output.
 
+## Long-running commands
+
+- The shared OpenCode server restarts several times a day, and a restart kills shell jobs, foreground and background. Anything likely to run past ~2 minutes (installs, full test suites, harness runs, CI or deploy waits) goes through `monitor.start` when that tool is available: it wakes you when the command exits, and after a restart it runs the command again from the start, so make it safe to rerun and have it write its log to a file.
+
 ## Artifacts
 
 - Put meaning in the artifact itself: clear names, plain structure, direct words. If it reads unclearly, fix the artifact — don't paper over it with an explanation.
