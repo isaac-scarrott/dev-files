@@ -31,6 +31,7 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/session-drag",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/model-picker",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold-providers",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/shell-handoff",
     {
       "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold",
       "options": {
