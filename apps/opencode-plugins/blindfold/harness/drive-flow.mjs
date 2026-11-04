@@ -65,17 +65,22 @@ const toolContent = (model) => {
     return model
   }
 }
-/** Waits until n blindfold hosts exist in the timeline and the last one is an open card. */
+/** Waits until n blindfold hosts exist in the timeline and one of them is an open card. */
 async function openCard(n, timeout = 90000) {
   await page.waitForFunction((count) => {
     const all = [...document.querySelectorAll("[data-blindfold-request]")]
-    return all.length === count && !!all[count - 1].querySelector("[data-slot=card]")
-  }, n, { timeout })
+    return all.length === count && all.some((host) => !!host.querySelector("[data-slot=card]"))
+  }, n, { timeout }).catch(async (error) => {
+    await shot(`stuck-${n}`)
+    console.log("stuck waiting for card", n, "hosts:", await hosts().count(), "audit:", JSON.stringify(forOrigin().map((l) => [l.name, l.outcome])))
+    throw error
+  })
   await sleep(500)
 }
 const info = () =>
   page.evaluate(() => {
-    const host = [...document.querySelectorAll("[data-blindfold-request]")].at(-1)
+    const all = [...document.querySelectorAll("[data-blindfold-request]")]
+    const host = all.find((item) => item.querySelector("[data-slot=card]")) ?? all.at(-1)
     return {
       title: host.querySelector("[data-slot=title]")?.textContent,
       label: host.querySelector("[data-slot=label]")?.textContent,
@@ -96,6 +101,16 @@ const scheme = async (name, label) => {
     await shot(`${name}-${s}`)
   }
   void label
+}
+
+/** The account may still be locked when the harness has only just started: unlock it in the card, as a user would. */
+async function unlockIfNeeded() {
+  const input = page.locator("[data-blindfold-request] [data-slot=unlock] input")
+  if (!(await input.count())) return
+  await input.fill("ops_fixture_service_token")
+  await input.press("Enter")
+  await page.waitForFunction(() => !document.querySelector("[data-blindfold-request] [data-slot=unlock]"), null, { timeout: 30000 })
+  await sleep(800)
 }
 
 // ---- scripts the stub model runs (Code Mode) ----
@@ -166,14 +181,14 @@ await ask('return "warm"')
 await followUp()
 await sleep(3000)
 
+if (!process.env.BF_ONLY) {
 // ---- 1. One card for the whole sign-in ----
 await ask(withFourth)
 await card().waitFor({ timeout: 90000 })
 await sleep(1000)
-await page.locator("[data-blindfold-request] [data-slot=unlock] input").fill("ops_fixture_service_token")
-await page.locator("[data-blindfold-request] [data-slot=unlock] input").press("Enter")
-await page.waitForFunction(() => !document.querySelector("[data-blindfold-request] [data-slot=unlock]"), null, { timeout: 30000 })
-await sleep(800)
+await shot("00-first-card")
+await unlockIfNeeded()
+console.log("first card:", JSON.stringify(await info()))
 {
   const c = await info()
   check("the first field opens ONE card titled for the sign-in, inline, not a dialog", c.inline && !c.modal && c.title === `Sign in to ${ORIGIN}`, c.title)
@@ -311,18 +326,28 @@ await button("Deny").click()
   check("the answered row reads 'Secrets declined'", /Secrets declined/.test(await rows().first().textContent()))
 }
 
+}
+
 // ---- 8. Hot reload with a card open ----
-await ask(emailOnly)
+// No browser tools here: the host re-runs an interrupted script after a server reload, and the browser tools are not back yet.
+await ask(`const f = await tools.blindfold.fill({ tabID: "tab_hot", origin: ${JSON.stringify(ORIGIN)}, fields: [{ name: "EMAIL" }], reason: "Hot reload" })\nreturn "x"`)
 await openCard(1)
+await unlockIfNeeded()
 const bundle = new URL("../dist/gui-experimental.cjs", import.meta.url).pathname
 const original = readFileSync(bundle, "utf8")
 const styles = () => page.evaluate(() => [...document.querySelectorAll("style[data-plugin]")].filter((el) => el.textContent.includes("data-blindfold-card")).length)
 try {
   const before = await styles()
+  console.log("before reload:", JSON.stringify(await info()))
   writeFileSync(bundle, `${original}\n/* hot reload ${Date.now()} */\n`)
   await sleep(7000)
-  await card().waitFor({ timeout: 20000 })
+  await card().waitFor({ timeout: 20000 }).catch(async (error) => {
+    await shot("stuck-reload")
+    console.log("after reload: hosts", await hosts().count(), "rows", await rows().allTextContents(), "model saw:", toolContent(await followUp(3000)).slice(0, 400))
+    throw error
+  })
   const c = await info()
+  console.log("after reload:", JSON.stringify(c))
   check("a rebuilt bundle reloads in place: one style, one card back, still the sign-in", before === 1 && (await styles()) === 1 && (await hosts().count()) === 1 && c.title === `Sign in to ${ORIGIN}`, JSON.stringify({ before, after: await styles(), title: c.title }))
   await button("Deny").click({ timeout: 15000 })
   await rows().first().waitFor({ timeout: 10000 })
