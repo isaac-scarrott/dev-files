@@ -1,8 +1,6 @@
 // Parity spec for the tab mark: our mark in the first session tab against the host's own status slot in a plain tab.
 // Needs the harness with notifications and sidebar-repos loaded, side tabs, and at least three open session tabs
 // (scripts/seed-session.mjs plus a few more imports). The mark is made by publishing one `info` through the hub's sink.
-// The titlebar pill has no spec: the host draws every TitlebarItem itself (app/src/runtime/plugin/titlebar-items.tsx), so ours is the
-// host's own pill, and its only other user (the updater) is not ready in the harness.
 // Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/notifications/parity.spec.mjs
 
 const SESSION_TABS = "[data-tab-key^=sidecar]"

@@ -1,9 +1,9 @@
-import { Command, createKeyed, Plugin, SettingsPage, Store, Style, TitlebarItem } from "@opencode/plugin/gui"
+import { Command, createKeyed, Plugin, SettingsPage, Store, Style } from "@opencode/plugin/gui"
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { createDomHub } from "../../native-ui/src/dom-hub"
-import { AGGREGATE_GLYPH, normalize, provideSink, publishers, type NotifyInput } from "../../native-ui/src/notify-contract"
+import { normalize, provideSink, publishers, type NotifyInput } from "../../native-ui/src/notify-contract"
 import { createTabMarks, tabMarkCss, TAB_MARK_OWN } from "../../native-ui/src/tab-marks"
-import { Ledger, markEntries, order, pickNext, sessionKey, stops, urgentCount, type SessionRef } from "./ledger"
+import { Ledger, markEntries, order, pickNext, sessionKey, stops, type SessionRef } from "./ledger"
 import { readRpcEvents } from "./events"
 import { NotificationsPage } from "./page"
 import { createSink } from "./sink"
@@ -26,10 +26,6 @@ const definition = Plugin.define({
       "column.mark": "Mark",
       "next.title": "Go to next notification",
       "next.description": "Open the session that needs you, then one that failed, then one that finished",
-      "titlebar.label.one": "{{count}} waiting",
-      "titlebar.label.other": "{{count}} waiting",
-      "titlebar.title.one": "{{count}} session needs you or failed",
-      "titlebar.title.other": "{{count}} sessions need you or failed",
       "kind.needs-you.title": "Needs you",
       "kind.needs-you.description": "A question or permission is waiting. Stays until answered.",
       "kind.error.title": "Error",
@@ -75,7 +71,7 @@ export default Plugin.define({
     const activeSession = () => ctx.tabs.list().find((tab) => tab.active)?.session
     const hasTab = (server: string, sessionID: string) => ctx.tabs.list().some((tab) => tab.session?.server.id === server && tab.session.id === sessionID)
 
-    // Marks, the titlebar count and go-to-next read one ledger of what waits on a session. Plugin-sourced entries are kept in
+    // Marks and go-to-next read one ledger of what waits on a session. Plugin-sourced entries are kept in
     // storage so the marks survive a reload; the host's own events are rebuilt by the signals below.
     const [version, setVersion] = createSignal(0)
     let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -211,7 +207,6 @@ export default Plugin.define({
     })
     // `toast-style` reads this variable; without it (or with no value) a toast shows no key.
     ctx.add(Style, () => (hint() ? `:root { --toast-style-go-next-hint: "${hint()}"; }` : undefined))
-    const urgent = createMemo(() => (version(), urgentCount(ledger.list())))
     ctx.add(
       Command,
       (): Command => ({
@@ -224,13 +219,6 @@ export default Plugin.define({
         run: goNext,
       }),
     )
-    ctx.add(TitlebarItem, (): TitlebarItem | undefined => {
-      const count = urgent()
-      if (count === 0) return undefined
-      const keys = ctx.keybinds.keybind(`${ctx.id}.go-to-next`).join("")
-      const title = ctx.plural("titlebar.title", count)
-      return { id: "next", icon: AGGREGATE_GLYPH, label: ctx.plural("titlebar.label", count), title: keys ? `${title} (${keys})` : title, run: () => void goNext() }
-    })
 
     // Server halves publish RPC events; every `rpc.<id>.notify` on the stream is one notification.
     createKeyed(

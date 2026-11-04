@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { normalize, type NotifyInput } from "../../native-ui/src/notify-contract"
-import { Ledger, MAX_ENTRIES, markEntries, markEntry, order, pickNext, stops, urgentCount, type Candidate } from "./ledger"
+import { Ledger, MAX_ENTRIES, markEntries, markEntry, order, pickNext, stops, type Candidate } from "./ledger"
 
 const n = (input: NotifyInput, source = "monitor", at = 1) => normalize({ ...input, target: input.target ?? { server: "s", session: "a" }, at }, source)!
 const make = () => {
@@ -57,16 +57,6 @@ test("only plugin-sourced, non-persistent entries are stored, and a stored one c
   fresh.ledger.load(stored)
   assert.equal(fresh.ledger.list().length, 1, "loading twice adds nothing")
   assert.equal(fresh.ledger.list()[0]!.host, false)
-})
-
-test("the titlebar counts sessions with a needs-you or error, once each, never done or info", () => {
-  const { ledger } = make()
-  ledger.put(n({ kind: "error", title: "e", key: "1" }), true)
-  ledger.put(n({ kind: "needs-you", title: "q", key: "2" }), true)
-  ledger.put(n({ kind: "done", title: "d", key: "3", target: { server: "s", session: "b" } }), true)
-  ledger.put(n({ kind: "info", title: "i", key: "4", target: { server: "s", session: "c" } }), false)
-  ledger.put(n({ kind: "error", title: "e2", key: "5", target: { server: "s", session: "d" } }), true)
-  assert.equal(urgentCount(ledger.list()), 2)
 })
 
 test("a tab's mark is the highest plugin-sourced kind whose Mark switch is on; host entries never draw one", () => {

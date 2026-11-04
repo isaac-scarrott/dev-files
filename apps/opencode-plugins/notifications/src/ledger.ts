@@ -38,7 +38,7 @@ export const sessionKey = (ref: SessionRef) => `${ref.server}\u0000${ref.session
 export const entryId = (source: string, key: string) => `${source}\u0000${key}`
 
 /**
- * What the hub holds for go-to-next, the titlebar count and the tab marks: one entry per `(source, key)`, whether or not a
+ * What the hub holds for go-to-next and the tab marks: one entry per `(source, key)`, whether or not a
  * toast was shown for it. Created in `setup`; `onChange` runs after every change that alters what is held.
  */
 export class Ledger {
@@ -100,13 +100,6 @@ export class Ledger {
       if (!entry.persistent) this.entries.delete(id)
     }
   }
-}
-
-/** Sessions with a `needs-you` or `error` waiting: what the titlebar counts. */
-export function urgentCount(entries: readonly Entry[]): number {
-  const sessions = new Set<string>()
-  for (const entry of entries) if (entry.kind === "needs-you" || entry.kind === "error") sessions.add(sessionKey(entry))
-  return sessions.size
 }
 
 /** The entry a tab shows: plugin-sourced, its kind's Mark switch on, the highest kind, the newest of those. */
