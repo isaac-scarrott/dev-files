@@ -33,6 +33,7 @@ export type AccountView = {
   vaults: string[]
   organizationId?: string
   confirmEveryUse: boolean
+  alwaysAllowOtp: boolean
   /** A token or API key is saved. A boolean: the credential itself never leaves the server. */
   credential: boolean
   lock: { state: "unlocked" | "locked" | "unavailable" | "disabled"; method?: string; expiresAt?: number; reason?: string }
@@ -58,6 +59,7 @@ const toConfig = (stored: Stored, bin: string | undefined) => ({
   vaults: stored.vaults,
   organizationId: stored.organizationId,
   confirmEveryUse: stored.confirmEveryUse,
+  alwaysAllowOtp: stored.alwaysAllowOtp,
   bin,
 })
 
@@ -169,6 +171,7 @@ export function createManager(initial: ManagerDeps) {
       vaults: settings.vaults ?? [],
       ...(settings.organizationId ? { organizationId: settings.organizationId } : {}),
       confirmEveryUse: info?.confirmEveryUse ?? settings.confirmEveryUse ?? false,
+      alwaysAllowOtp: info?.alwaysAllowOtp ?? settings.alwaysAllowOtp ?? false,
       credential,
       lock,
       ...(tests.get(id) ? { test: tests.get(id)! } : {}),
@@ -189,6 +192,7 @@ export function createManager(initial: ManagerDeps) {
       vaults: strings(raw.vaults),
       organizationId: typeof raw.organizationId === "string" ? raw.organizationId : undefined,
       confirmEveryUse: raw.confirmEveryUse === true,
+      alwaysAllowOtp: raw.alwaysAllowOtp === true,
     }
   }
 

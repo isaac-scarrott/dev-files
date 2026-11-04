@@ -62,7 +62,7 @@ test("saved rules add once, list and revoke through a store", async () => {
   const rules = savedRules({ get: async (key) => memory.get(key), set: async (key, value) => void memory.set(key, value) }, () => `id${++n}`, () => 5)
   const use = { account: "work", field: "password", item: "bw2", itemTitle: "Google (work)", origin: "https://accounts.google.com" }
   const first = await rules.add(use)
-  assert.deepEqual(first, { id: "id1", origin: "https://accounts.google.com", name: undefined, account: "work", item: "bw2", itemTitle: "Google (work)", field: "password", via: undefined, created: 5 })
+  assert.deepEqual(first, { id: "id1", origin: "https://accounts.google.com", name: undefined, account: "work", item: "bw2", itemTitle: "Google (work)", field: "password", via: undefined, kind: "field", created: 5 })
   assert.equal((await rules.add(use)).id, "id1", "an equal rule is not saved twice")
   await rules.add({ ...use, field: "username" })
   assert.equal((await rules.list()).length, 2)

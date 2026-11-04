@@ -1,4 +1,5 @@
 import type { Field } from "./fields.js"
+import { FLOW_PARTS, type FlowOffer, type Grants } from "./flow.js"
 import { isLocked, patternMatches, type Account, type FieldRef, type ItemRef, type LockState, type UnlockMethod } from "./providers-contract.js"
 import { covering, nameRule, permitted, type ConfigRule, type SavedRule } from "./rules.js"
 
@@ -14,15 +15,20 @@ export type Candidate = {
   covered: boolean
   /** The account asks on every use: no "Always allow" for it. */
   confirm?: boolean
+  /** Set when one Allow can cover the whole sign-in with this item (a `fill` of a login on a known tab). */
+  flow?: FlowOffer
+  /** This field is never remembered with Always allow (a one-time code, unless the account allows it). */
+  once?: boolean
 }
 
 /** What the card needs to know about a field's provider: who could serve it, which one is chosen, or why none. */
 export type Source = { state: "choose" | "unavailable"; candidates: Candidate[]; selected?: string; hint?: string }
 
 /** A field the agent asked for, with the part of a vault item it names. */
-export type Ask = { name: string; field: Field; item?: string; origin?: string; via?: "get" | "fill" }
+export type Ask = { name: string; field: Field; item?: string; origin?: string; via?: "get" | "fill"; session?: string; tabID?: string }
 
-export type Planned = { source: Source; refs: Map<string, { item: ItemRef; field: FieldRef }>; itemField: string }
+/** `granted`: candidate key → the sign-in approval that already covers this field (a saved rule takes precedence and is not listed). */
+export type Planned = { source: Source; refs: Map<string, { item: ItemRef; field: FieldRef }>; granted: Map<string, string>; itemField: string }
 
 const PASSWORD_WORDS = new Set(["PASS", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE"])
 const USER_WORDS = new Set(["USER", "USERNAME", "LOGIN", "EMAIL", "MAIL"])
@@ -43,6 +49,8 @@ export type BrokerDeps = {
   accounts: () => readonly Account[]
   rules: readonly ConfigRule[]
   saved: () => Promise<SavedRule[]>
+  /** The sign-in approvals in memory; absent in tests that do not use them. */
+  grants?: Pick<Grants, "peek" | "ttl">
 }
 
 /**
@@ -61,14 +69,24 @@ export function createBroker(deps: BrokerDeps) {
 
     let candidates: Candidate[] = []
     const refs = new Map<string, { item: ItemRef; field: FieldRef }>()
+    const granted = new Map<string, string>()
     const hints: string[] = []
     let searched = false
     const add = (account: Account, state: "ready" | "locked", methods: UnlockMethod[], found?: { item: ItemRef; field: FieldRef }) => {
       const key = found ? `${account.id}:${found.item.id}` : account.id
       const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name, via: ask.via }
-      const covered = state === "ready" && !account.confirmEveryUse && covering(saved, use) !== undefined
-      candidates.push({ key, account: account.id, label: account.label, state, methods, ...(account.confirmEveryUse ? { confirm: true } : {}), ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered })
+      const usable = state === "ready" && !account.confirmEveryUse
+      const byRule = usable && covering(saved, use) !== undefined
+      // A sign-in is only for a fill of a login on a known tab; a name rule and a get never use one.
+      const flowable = usable && found !== undefined && ask.via === "fill" && ask.origin !== undefined && !rule?.ref && ask.session !== undefined && ask.tabID !== undefined
+      const grant = flowable && !byRule ? deps.grants?.peek({ session: ask.session!, tabID: ask.tabID!, origin: ask.origin!, account: account.id, item: found!.item.id, part: itemField }) : undefined
+      const covered = byRule || grant !== undefined
+      const parts = flowable && !covered ? FLOW_PARTS.filter((part) => found!.item.fields.includes(part) && covering(saved, { ...use, field: part }) === undefined) : []
+      const flow: FlowOffer | undefined = parts.length >= 2 && parts.includes(itemField as never) ? { parts, always: parts.filter((part) => part !== "otp" || account.alwaysAllowOtp === true), minutes: deps.grants ? deps.grants.ttl / 60_000 : 0 } : undefined
+      const once = itemField === "otp" && !account.alwaysAllowOtp
+      candidates.push({ key, account: account.id, label: account.label, state, methods, ...(account.confirmEveryUse ? { confirm: true } : {}), ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered, ...(flow ? { flow } : {}), ...(once ? { once: true } : {}) })
       if (found) refs.set(key, found)
+      if (grant) granted.set(key, grant.id)
     }
     for (const { account, ref } of tries) {
       const state = await status(account)
@@ -101,10 +119,10 @@ export function createBroker(deps: BrokerDeps) {
     if (searched || candidates.some((item) => item.state === "ready")) candidates = candidates.filter((item) => item.state === "ready" || named.has(item.account))
     if (candidates.length === 0) {
       const locked = skipped.length > 0 ? ` Not searched, locked: ${skipped.map((item) => item.label).join(", ")}.` : ""
-      return { itemField, refs, source: { state: "unavailable", candidates: [], hint: (hints[0] ?? "No login for this site in your vaults.") + locked } }
+      return { itemField, refs, granted, source: { state: "unavailable", candidates: [], hint: (hints[0] ?? "No login for this site in your vaults.") + locked } }
     }
     const chosen = candidates.find((item) => item.covered) ?? (candidates.length === 1 ? candidates[0] : undefined)
-    return { itemField, refs, source: { state: "choose", candidates, ...(chosen ? { selected: chosen.key } : {}) } }
+    return { itemField, refs, granted, source: { state: "choose", candidates, ...(chosen ? { selected: chosen.key } : {}) } }
   }
 
   return {

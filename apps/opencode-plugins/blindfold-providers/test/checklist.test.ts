@@ -7,7 +7,7 @@ import { en } from "../src/messages.js"
 
 const tools = (op: boolean, bw: boolean): Record<"1password" | "bitwarden", Tool> => ({ "1password": { bin: "op", installed: op }, bitwarden: { bin: "bw", installed: bw } })
 const view = (extra: Partial<AccountView> = {}): AccountView => ({
-  id: "a", provider: "1password", label: "A", source: "stored", enabled: true, allowedOrigins: [], autoLockMinutes: 10, vaults: [], confirmEveryUse: false, credential: false, lock: { state: "locked" }, ...extra,
+  id: "a", provider: "1password", label: "A", source: "stored", enabled: true, allowedOrigins: [], autoLockMinutes: 10, vaults: [], confirmEveryUse: false, alwaysAllowOtp: false, credential: false, lock: { state: "locked" }, ...extra,
 })
 const tones = (account: AccountView, op = true, confirmed = false) => Object.fromEntries(stepsOf(account, { tools: tools(op, true), confirmed: { opAppIntegrationOff: confirmed } }).map((step) => [step.id, step.tone]))
 

@@ -22,6 +22,7 @@ export type OnePasswordOptions = {
   autoLockMinutes?: number
   allowedOrigins?: readonly string[]
   confirmEveryUse?: boolean
+  alwaysAllowOtp?: boolean
 }
 
 type Overview = { id: string; title: string; vault?: { id?: string; name?: string }; urls?: { href: string }[] }

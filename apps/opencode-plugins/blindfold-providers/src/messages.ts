@@ -111,6 +111,8 @@ export const en: Record<string, string> = {
   "replace.button": "Replace…",
   "replace.save": "Save and test",
 
+  "otp.title": "Include one-time codes in Always allow",
+  "otp.description": "Off by default: a code is asked for every time, even after Always allow on a sign-in. Turn on to let a saved sign-in rule fill codes too.",
   "confirm.title": "Confirm every use",
   "confirm.description": "Ask each time, even where you chose Always allow. The card then shows only Deny and Allow.",
   "enabled.title": "Enabled",
