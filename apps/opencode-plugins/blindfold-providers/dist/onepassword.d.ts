@@ -30,6 +30,7 @@ export declare class OnePassword extends Base implements Managed {
     readonly kind = "1password";
     readonly capabilities: Capabilities;
     private readonly bin;
+    private readonly otpOf;
     private readonly method;
     private readonly address;
     private readonly shorthand;
@@ -59,6 +60,11 @@ export declare class OnePassword extends Base implements Managed {
     /** Reads one login's password and reports only whether it could be read. The value is dropped here. */
     verify(itemId: string, signal?: AbortSignal, timeoutMs?: number): Promise<Probe>;
     findByOrigin(pageOrigin: string, signal?: AbortSignal): Promise<ItemRef[]>;
+    /**
+     * The list does not say which parts a login has, so the ones that matched a page are read once to see whether they carry
+     * a one-time password field. Only the field types are kept: the values in the reply are dropped here.
+     */
+    private withParts;
     resolve(reference: string): Promise<{
         item: {
             account: string;

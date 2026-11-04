@@ -119,6 +119,15 @@ if (tool === "op") {
   if (cmd === "item" && sub === "get") {
     const item = visible.find((i) => i.id === args[2] || i.title === args[2])
     if (!item) fail(`[ERROR] 2026/11/03 00:00:00 "${args[2]}" isn't an item. Specify the item with its UUID, name, or domain.`)
+    if (flag("--format") === "json") {
+      // Like op: every field with its value; the plugin reads only which types exist.
+      console.log(JSON.stringify({ id: item.id, title: item.title, fields: [
+        { id: "username", type: "STRING", purpose: "USERNAME", label: "username", value: item.username },
+        { id: "password", type: "CONCEALED", purpose: "PASSWORD", label: "password", value: item.password },
+        ...(item.otp ? [{ id: "otp", type: "OTP", label: "one-time password", value: "otpauth://totp/fixture?secret=" + OTP_SEED, totp: "000000" }] : []),
+      ] }))
+      process.exit(0)
+    }
     if (has("--otp")) {
       if (!item.otp) fail("[ERROR] 2026/11/03 00:00:00 item has no one-time password field")
       process.stdout.write(totp(OTP_SEED) + "\n")

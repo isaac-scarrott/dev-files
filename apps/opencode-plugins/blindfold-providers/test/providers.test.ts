@@ -24,6 +24,22 @@ const SERVICE_TOKEN = "ops_fixture_service_token"
 const agent = (tokens = memoryTokens(), extra = {}) => new OnePassword({ id: "agent", label: "Agent (1Password)", bin: op, tokens, ...extra })
 const work = (extra = {}) => new Bitwarden({ id: "work", label: "Work (Bitwarden)", bin: bw, appDataDir: join(state, "bw-work"), organizationId: "org-work", ...extra })
 
+test("1Password lists a one-time code only for a login that has one; the item is read once, and only its field types are kept", async () => {
+  const account = agent()
+  await account.unlock({ method: "serviceAccount", token: SERVICE_TOKEN })
+  const github = (await account.findByOrigin("https://github.com"))[0]!
+  const google = (await account.findByOrigin("https://accounts.google.com"))[0]!
+  assert.deepEqual(github.fields, ["username", "password", "otp"])
+  assert.equal(github.hasOtp, true)
+  assert.match(await account.read(github, "otp"), /^\d{6}$/)
+  const gets = () => argv().filter((a) => a[0] === "op" && a[1] === "item" && a[2] === "get" && a.includes("json")).length
+  assert.equal(google.hasOtp, !!google.fields.includes("otp"))
+  const before = gets()
+  await account.findByOrigin("https://github.com")
+  assert.equal(gets(), before, "the answer is remembered with the list")
+  assert.ok(!JSON.stringify(github).includes("otpauth"), "no seed in the reference")
+})
+
 test("a saved website with no scheme reads as https; the page's own address stays strict", () => {
   assert.equal(itemOriginOf("https://www.instagram.com/gaitor.app"), "https://www.instagram.com")
   assert.equal(itemOriginOf("www.instagram.com/gaitor.app"), "https://www.instagram.com")
