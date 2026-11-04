@@ -17,6 +17,8 @@ macOS only. `install.sh` hardcodes Library paths.
 - `.githooks/pre-commit` — re-runs `vendor.sh` and re-stages destinations when `vendor.manifest` is in the commit.
 - `scripts/drift.sh` — read-only by default; `--fix` re-vendors, bumps submodules, re-links. Refuses on a dirty tree.
 - `scripts/test-install.sh` — sandboxed bash tests for `install.sh` against a `mktemp -d` HOME. ~1s.
+- `scripts/opencode-safe-restart.sh` — the way to restart the shared OpenCode service: shows what it interrupts, waits for
+  quiet, wakes stranded sessions. `scripts/test-opencode-safe-restart.sh` runs it against a private service (~3 min).
 - `.claude/marketplaces/dev-files/plugins/orchestration-view` — a mod (Claude Code function hooks): the pane over the
   orchestrator/merger ledger. Enabled through `enabledPlugins` in `.claude/settings.json`, loaded from this directory, so
   there is nothing to symlink. Run `claude plugin validate` and `claude plugin test` on its folder before committing.
