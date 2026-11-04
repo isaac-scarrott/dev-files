@@ -158,8 +158,10 @@ test("connection test (1Password): ok with a count and titles, then each failure
   const vault = await manager.test(id)
   assert.deepEqual([vault.code, vault.detail], ["vault_not_found", "Nope"])
 
-  await manager.update({ id, secrets: { token: "ops_wrong_token_value" } })
   await manager.update({ id, settings: { vaults: [] } })
+  assert.equal((await manager.test(id)).ok, true)
+  assert.equal((await manager.overview()).accounts[0]!.lock.state, "unlocked", "the page's status call opened a session with the good token")
+  await manager.update({ id, secrets: { token: "ops_wrong_token_value" } })
   const rejected = await manager.test(id)
   assert.equal(rejected.code, "token_rejected")
   assert.ok(!JSON.stringify(rejected).includes("ops_wrong_token_value"))

@@ -245,7 +245,8 @@ export function createManager(initial) {
         async update(input) {
             const current = editable(input.id);
             const merged = cleanSettings({ ...current, ...(typeof input.settings === "object" && input.settings !== null ? input.settings : {}) }, current.provider);
-            await saveSecrets(input.id, current.provider, input.secrets);
+            if (await saveSecrets(input.id, current.provider, input.secrets))
+                await find(input.id)?.account.lock();
             data = { ...data, accounts: { ...data.accounts, [input.id]: { provider: current.provider, ...merged, enabled: merged.enabled !== false } } };
             tests.delete(input.id);
             checks.delete(input.id);

@@ -61,6 +61,7 @@ export const en: Record<string, string> = {
   "appOff.description":
     "In the 1Password app open Settings, Developer, and turn off “Integrate with 1Password CLI”. This cannot be detected without calling op, which is what raises the “opencode-cli wants access” Touch ID dialog. Tick this when you have done it.",
   "appOff.short": "Confirmed by you: Settings, Developer, “Integrate with 1Password CLI” is off. Change it under “Before you start”.",
+  "appOff.todo": "Not confirmed yet. Turn it off in the 1Password app (Settings, Developer) and tick it under “Before you start”, so no “opencode-cli wants access” dialog can appear.",
   "token.title": "Service account token saved",
   "token.saved": "In your login keychain.",
   "token.missing": "No token saved. Replace it below.",

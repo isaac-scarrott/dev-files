@@ -505,7 +505,7 @@ function AccountSection(props: PageInput & { id: string; data: () => Overview; l
         {/* Checklist */}
         <Row ui={ctx.ui} action="step-cli" tone={tone("cli")} title={t(`cli.${account()!.provider}`)} description={props.data().tools[account()!.provider].installed ? t("cli.found", { version: props.data().tools[account()!.provider].version ?? "", path: props.data().tools[account()!.provider].path ?? "" }) : t("cli.missing.short")} />
         <Show when={account()!.provider === "1password"}>
-          <Row ui={ctx.ui} action="step-appOff" tone={tone("appOff")} title={t("appOff.title")} description={t("appOff.short")} />
+          <Row ui={ctx.ui} action="step-appOff" tone={tone("appOff")} title={t("appOff.title")} description={props.data().confirmed.opAppIntegrationOff ? t("appOff.short") : t("appOff.todo")} />
           <Row ui={ctx.ui} action="step-token" tone={tone("token")} title={t("token.title")} description={account()!.credential ? t("token.saved") : t("token.missing")} />
           {replaceRow("token")}
           {testRow("vault", "vault.title")}
