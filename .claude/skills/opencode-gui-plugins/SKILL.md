@@ -105,7 +105,7 @@ export default Plugin.define({
 - `main(ctx)` runs once in the desktop app's main process, may be async, and is where Node-only work and `ctx.provide(Ipc)` belong. Windows reach it through `ctx.main(Ipc)`.
 - The host assigns the id (`ctx.id`): the server part's `id`, else the package name, else the directory name. It prefixes every command, panel key and stored key. Built-in ids, ids nested under or over them, and the `opencode` namespace are reserved; the plugin then does not load.
 - Rebuild after source changes. Local GUI bundles are watched and reload in every window (`setup` runs again in the same window); an options change reloads too. Use Extensions → Plugins → **Reload** if the running version stays stale.
-- Build the bundle and its `exports` entry before the first load: a service that resolved the directory without a GUI keeps ignoring it until the service restarts ([build.md](reference/build.md)).
+- Build the bundle and its `exports` entry before the first load: a service that resolved the directory without a GUI keeps ignoring it until the service restarts ([build.md](reference/build.md)). Test on a private service (the harness, step 6), never the shared one; restart the shared service only to ship, with `~/git/dev-files/scripts/opencode-safe-restart.sh`, not `opencode service restart`: it waits for running sessions and wakes the ones a restart leaves stranded.
 
 ## Rules that keep a plugin working
 

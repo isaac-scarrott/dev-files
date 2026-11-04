@@ -22,7 +22,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/<name>"]
 ```
-Kind: GUI (`gui-experimental`) or server. Restart the background service (`opencode service restart`) for server plugins, the first load of a GUI export, and an option change; the service outlives the app. Cmd+R for GUI.
+Kind: GUI (`gui-experimental`) or server. Restart the background service (`scripts/opencode-safe-restart.sh`) for server plugins, the first load of a GUI export, and an option change; the service outlives the app. Cmd+R for GUI.
 
 ## Options
 Table of options with defaults, or "None".
