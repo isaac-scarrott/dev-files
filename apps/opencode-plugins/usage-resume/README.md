@@ -27,7 +27,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
   "options": { "prompt": "Continue." }
 }]
 ```
-Kind: server and GUI. The GUI half republishes the server's `notify` event through the hub in [native-ui](../native-ui). Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
+Kind: server and GUI. The GUI half republishes the server's `notify` event through the hub in [native-ui](../native-ui). Restart the background service (`scripts/opencode-safe-restart.sh` in dev-files); the service outlives the app, so quitting alone does not reload it.
 
 ## Options
 Durations are seconds.

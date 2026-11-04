@@ -27,7 +27,7 @@ Register this checkout by absolute path in `~/.config/opencode/opencode.json` (s
 ```json
 { "package": "/path/to/apps/opencode-plugins/blindfold", "options": { "shell": { "enabled": true, "approve": true }, "codemode": { "enabled": true } } }
 ```
-Kind: server, TUI and GUI in one package. Restart the background service (`opencode service restart`) for the first load; Cmd+R reloads the GUI.
+Kind: server, TUI and GUI in one package. Restart the background service (`scripts/opencode-safe-restart.sh` in dev-files) for the first load; Cmd+R reloads the GUI.
 
 ## Options
 `shell`, `codemode`, `secrets` and `1password` are upstream's; `rules` and `audit` are ours. The shown values are the defaults.

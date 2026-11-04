@@ -30,7 +30,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 "plugins": ["/Users/isaac/git/dev-files/apps/opencode-plugins/shell-handoff"]
 ```
 
-Kind: server. Restart the background service (`opencode service restart`) for the first load and for option changes.
+Kind: server. Restart the background service (`scripts/opencode-safe-restart.sh` in dev-files) for the first load and for option changes.
 
 ## Options
 

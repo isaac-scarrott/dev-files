@@ -29,9 +29,9 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/scheduler"]
 ```
-Kind: server and GUI. Restart the background service (quit the app, then `opencode service restart`); the service outlives the app, so quitting alone does not reload it.
+Kind: server and GUI. Restart the background service (`scripts/opencode-safe-restart.sh` in dev-files); the service outlives the app, so quitting alone does not reload it.
 
-The row needs the GUI export: the host decides a plugin's parts when the service starts, so a service started before this package had `./gui-experimental` shows the raw user bubble until `opencode service restart`.
+The row needs the GUI export: the host decides a plugin's parts when the service starts, so a service started before this package had `./gui-experimental` shows the raw user bubble until `scripts/opencode-safe-restart.sh` in dev-files.
 
 ## Options
 Pass them with `{ "package": "/path/to/scheduler", "options": { ... } }`.

@@ -20,7 +20,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`, together with b
 { "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold-providers" },
 { "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold" }
 ```
-Restart the background service once for the first load (`opencode service restart`): the plugin has a GUI half now, and a service that resolved the directory without one keeps ignoring it. After that, everything below happens in the app with no restart. The service needs `op` and, for an npm-installed `bw`, `node` on its PATH (`/opt/homebrew/bin` is on it today).
+Restart the background service once for the first load (`scripts/opencode-safe-restart.sh` in dev-files): the plugin has a GUI half now, and a service that resolved the directory without one keeps ignoring it. After that, everything below happens in the app with no restart. The service needs `op` and, for an npm-installed `bw`, `node` on its PATH (`/opt/homebrew/bin` is on it today).
 
 ## Open Settings > Password managers
 Everything is on one page, top to bottom (or run the command **Password managers: set up**):

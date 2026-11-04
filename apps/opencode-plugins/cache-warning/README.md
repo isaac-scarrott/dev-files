@@ -30,7 +30,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/cache-warning"]
 ```
-Kind: GUI (`gui-experimental`) plus a small server half that reads the transcript tier. Restart the background service (`opencode service restart`) for the first load of the server half or a GUI export, and for an option change. Cmd+R for GUI. Without the server half loaded the tray still works, on `cacheTtlMinutes`.
+Kind: GUI (`gui-experimental`) plus a small server half that reads the transcript tier. Restart the background service (`scripts/opencode-safe-restart.sh` in dev-files) for the first load of the server half or a GUI export, and for an option change. Cmd+R for GUI. Without the server half loaded the tray still works, on `cacheTtlMinutes`.
 
 ## Options
 | Option | Default | Meaning |

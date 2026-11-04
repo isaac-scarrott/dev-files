@@ -22,7 +22,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/notifications"]
 ```
-Kind: GUI (`gui-experimental`). Cmd+R for GUI after a rebuild; restart the background service (`opencode service restart`) for the first load of the GUI export. `scheduler` and `monitor` need a service restart once to emit notifications (they gained an RPC event).
+Kind: GUI (`gui-experimental`). Cmd+R for GUI after a rebuild; restart the background service (`scripts/opencode-safe-restart.sh` in dev-files) for the first load of the GUI export. `scheduler` and `monitor` need a service restart once to emit notifications (they gained an RPC event).
 
 ## Options
 None. Settings > Notifications (plugins) is stored with the app's own plugin storage (three stores: delivery, marks, what is waiting).

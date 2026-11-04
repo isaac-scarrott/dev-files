@@ -20,7 +20,7 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 ```json
 "plugins": ["/path/to/apps/opencode-plugins/toast-style"]
 ```
-Kind: GUI (`gui-experimental`). Cmd+R for GUI; restart the background service (`opencode service restart`) for the first load of the GUI export. Works alone or with [`notifications`](../notifications), which raises the toasts it was designed with. Remove it and the app's toasts look exactly as before.
+Kind: GUI (`gui-experimental`). Cmd+R for GUI; restart the background service (`scripts/opencode-safe-restart.sh` in dev-files) for the first load of the GUI export. Works alone or with [`notifications`](../notifications), which raises the toasts it was designed with. Remove it and the app's toasts look exactly as before.
 
 ## Options
 None. A plugin that knows which key opens the next waiting request may set `--toast-style-go-next-hint` on `:root` (a quoted string, for example `"⌘I"`); the front waiting-request toast then shows it on its first button. `notifications` does, and only while that key opens that toast.
