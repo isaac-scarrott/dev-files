@@ -3,7 +3,7 @@
 // vendors' docs (DESIGN §1). Fake vault, fake values. Invoked through the `op` and `bw` wrappers next to this file.
 // State (sessions) lives in $FIXTURE_STATE. Every argv is appended to $FIXTURE_STATE/argv.log so tests can prove no
 // secret is ever passed as an argument.
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { createHmac, randomBytes } from "node:crypto"
 import { join } from "node:path"
 
@@ -141,20 +141,38 @@ if (tool === "op") {
 if (tool === "security") {
   // The login keychain, as far as blindfold uses it: add-generic-password through `-i` (stdin), find, delete.
   const file = join(state, "keychain.json")
+  const lock = join(state, "keychain.lock")
+  // Concurrent `security` calls (blindfold deletes both Bitwarden items at once) must not lose each other's update: the real keychain serialises them.
+  const locked = (change) => {
+    for (;;) {
+      try {
+        mkdirSync(lock)
+        break
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+      }
+    }
+    try {
+      const fresh = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
+      change(fresh)
+      writeFileSync(file, JSON.stringify(fresh))
+    } finally {
+      rmSync(lock, { recursive: true, force: true })
+    }
+  }
   const store = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {}
-  const save = () => writeFileSync(file, JSON.stringify(store))
   const parse = (line) => {
     const words = [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2])
     const get = (flag) => words[words.indexOf(flag) + 1]
     return { command: words[0], service: get("-s"), password: get("-w") }
   }
   if (args[0] === "-i") {
-    for (const line of stdin().split("\n").filter(Boolean)) {
-      const { command, service, password } = parse(line)
-      if (command !== "add-generic-password") fail(`fixture security: unsupported ${command}`, 2)
-      store[service] = password
-    }
-    save()
+    const adds = stdin().split("\n").filter(Boolean).map(parse)
+    for (const { command } of adds) if (command !== "add-generic-password") fail(`fixture security: unsupported ${command}`, 2)
+    locked((fresh) => {
+      for (const { service, password } of adds) fresh[service] = password
+    })
     process.exit(0)
   }
   if (args[0] === "find-generic-password") {
@@ -164,8 +182,8 @@ if (tool === "security") {
     process.exit(0)
   }
   if (args[0] === "delete-generic-password") {
-    delete store[args[args.indexOf("-s") + 1]]
-    save()
+    const service = args[args.indexOf("-s") + 1]
+    locked((fresh) => void delete fresh[service])
     process.exit(0)
   }
   fail(`fixture security: unsupported ${args.join(" ")}`, 2)
