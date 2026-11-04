@@ -4,7 +4,6 @@ export interface Job {
     sessionID: string;
     command: string;
     cwd?: string;
-    pid?: number;
     /** The host's output file for the job. */
     output?: string;
     startedAt: number;

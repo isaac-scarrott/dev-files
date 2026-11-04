@@ -52,7 +52,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 test("the events and hooks of one background job, then a hot reload and a restart", async () => {
   const host = fakeHost()
   const stop = (await plugin.setup(host.ctx)) as () => Promise<void>
-  host.push({ type: "shell.created", data: { info: { id: "sh_1", command: "sleep 600", cwd: "/work", pid: 1, file: "/f", metadata: { sessionID: "ses_a" }, time: { started: Date.now() - 3000 } } } })
+  host.push({ type: "shell.created", data: { info: { id: "sh_1", command: "sleep 600", cwd: "/work", file: "/f", metadata: { sessionID: "ses_a" }, time: { started: Date.now() - 3000 } } } })
   await settle()
   await host.hooks.get("tool:execute.after")!({ tool: "shell", sessionID: "ses_a", messageID: "m", id: "c", input: { command: "sleep 600", background: true }, status: "completed", result: { metadata: { status: "running", shellID: "sh_1" } } })
   assert.ok(host.storage.has("job/sh_1"))

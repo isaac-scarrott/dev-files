@@ -31,8 +31,6 @@ function section(jobs, at, sessionID) {
         lines.push(`- session: ${sessionID}${job.callID ? `; tool call: ${job.callID}` : ""}${job.messageID ? `; message: ${job.messageID}` : ""}; shell: ${job.shellID}`);
         if (job.outputExists && job.output)
             lines.push(`- last output (the host keeps it): ${oneLine(job.output, 400)}`);
-        if (job.alive)
-            lines.push(`- pid ${job.pid} still exists. The job may have survived (or the pid was reused): check with \`ps -p ${job.pid}\` before running it again.`);
         lines.push(`- How to re-arm: run the same command in the same cwd, only if it is still needed. For a long watcher use \`monitor.start\`: monitors are restored after a restart, shell jobs are not.`, "");
     }
     return lines.join("\n");

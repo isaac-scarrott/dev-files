@@ -101,7 +101,7 @@ export default Plugin.define({
               case "shell.created": {
                 const info = event.data.info
                 const sessionID = info.metadata?.sessionID
-                tracker.created({ id: info.id, command: info.command, cwd: info.cwd, pid: info.pid, file: info.file, sessionID: typeof sessionID === "string" ? sessionID : undefined, started: info.time.started })
+                tracker.created({ id: info.id, command: info.command, cwd: info.cwd, file: info.file, sessionID: typeof sessionID === "string" ? sessionID : undefined, started: info.time.started })
                 break
               }
               case "shell.exited":

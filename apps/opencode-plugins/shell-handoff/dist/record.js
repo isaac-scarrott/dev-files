@@ -24,7 +24,6 @@ export function parseJob(value) {
         // Defence in depth: whatever was stored is redacted again before it is shown.
         command: redact(command),
         cwd: str(o.cwd),
-        pid: num(o.pid),
         output: str(o.output),
         startedAt,
         timeout: num(o.timeout),

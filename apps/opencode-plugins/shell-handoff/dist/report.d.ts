@@ -1,8 +1,6 @@
 import type { Job } from "./record.js";
 /** What was learned about a job at the restart, beyond the record. */
 export interface Lost extends Job {
-    /** The recorded pid still exists: the job may have survived (a crash skips the host's kill). The pid could also be reused. */
-    alive?: boolean;
     /** The host's output file for the job is still on disk. */
     outputExists?: boolean;
 }

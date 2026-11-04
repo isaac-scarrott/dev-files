@@ -22,7 +22,6 @@ export interface Host {
     sessionExists(sessionID: string): Promise<boolean>;
     /** A queued notice that does not start a turn. */
     synthetic(sessionID: string, text: string): Promise<void>;
-    alive(pid: number): boolean;
 }
 export interface Notice {
     title: string;
@@ -30,12 +29,11 @@ export interface Notice {
     session?: string;
     key: string;
 }
-/** What `shell.created` says about a job: the host's own view, including what its restart record lacks (cwd, pid, file). */
+/** What `shell.created` says about a job: the host's own view, including what its restart record lacks (cwd, output file). */
 export interface Created {
     id: string;
     command: string;
     cwd?: string;
-    pid?: number;
     file?: string;
     sessionID?: string;
     started?: number;
