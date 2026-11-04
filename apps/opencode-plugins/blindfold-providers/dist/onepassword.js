@@ -160,8 +160,11 @@ export class OnePassword extends Base {
     }
     async findByOrigin(pageOrigin, signal) {
         const env = this.env();
-        const items = this.cached("list") ?? (await this.list(env, signal));
-        this.cache.set("list", { at: Date.now(), items });
+        let items = this.cached("list");
+        if (!items) {
+            items = await this.list(env, signal);
+            this.cache.set("list", { at: Date.now(), items });
+        }
         return items.filter((item) => item.origins.some((origin) => originMatches(origin, pageOrigin)));
     }
     async resolve(reference) {

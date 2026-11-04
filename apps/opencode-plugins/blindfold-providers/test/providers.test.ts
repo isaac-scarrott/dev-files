@@ -101,6 +101,29 @@ test("item lists are cached for the session: one listing serves many origins", a
   assert.equal(argv().filter((a) => a[0] === "op" && a[1] === "item" && a[2] === "list").length, before)
 })
 
+test("the item list expires 5 minutes after it was read, however often it is used in between", async () => {
+  const account = agent()
+  await account.unlock({ method: "serviceAccount", token: SERVICE_TOKEN })
+  const lists = () => argv().filter((a) => a[0] === "op" && a[1] === "item" && a[2] === "list").length
+  const real = Date.now
+  const start = real()
+  try {
+    let at = start
+    Date.now = () => at
+    const before = lists()
+    for (const minute of [1, 2, 3, 4]) {
+      at = start + minute * 60_000
+      await account.findByOrigin("https://github.com")
+    }
+    assert.equal(lists(), before, "within five minutes the cached list serves every lookup")
+    at = start + 6 * 60_000
+    await account.findByOrigin("https://github.com")
+    assert.equal(lists(), before + 1, "use must not keep a stale list alive: after five minutes it is read again")
+  } finally {
+    Date.now = real
+  }
+})
+
 test("master password (documented option): signin on stdin with the app integration off, then lists the whole account", async () => {
   const account = new OnePassword({ id: "personal", label: "Personal (1Password)", bin: op, method: "masterPassword", address: "my.1password.com" })
   assert.deepEqual(await account.status(), { state: "locked", methods: ["masterPassword"] })
