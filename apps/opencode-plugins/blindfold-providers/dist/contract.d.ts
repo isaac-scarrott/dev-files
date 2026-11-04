@@ -33,6 +33,11 @@ export interface AccountInfo {
     readonly allowedOrigins?: readonly string[];
     /** True: every use asks, even where "Always allow" was saved; the card does not offer it for this account. */
     readonly confirmEveryUse?: boolean;
+    /**
+     * True: "Always allow" on a sign-in may include the one-time code. Default false: a code always asks, even under a saved
+     * rule, so a saved rule cannot sign in without the user.
+     */
+    readonly alwaysAllowOtp?: boolean;
 }
 export type LockState = {
     readonly state: "unlocked";

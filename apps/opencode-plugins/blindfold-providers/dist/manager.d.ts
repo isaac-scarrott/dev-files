@@ -32,6 +32,7 @@ export type AccountView = {
     vaults: string[];
     organizationId?: string;
     confirmEveryUse: boolean;
+    alwaysAllowOtp: boolean;
     /** A token or API key is saved. A boolean: the credential itself never leaves the server. */
     credential: boolean;
     lock: {

@@ -11,6 +11,7 @@ export type Stored = {
     /** Bitwarden: only items of this organisation. */
     organizationId?: string;
     confirmEveryUse?: boolean;
+    alwaysAllowOtp?: boolean;
 };
 /** Steps only the user can do and that cannot be detected without touching the vendor's app. */
 export type Confirmed = {

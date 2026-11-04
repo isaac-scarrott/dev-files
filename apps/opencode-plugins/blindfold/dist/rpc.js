@@ -22,6 +22,13 @@ const candidate = {
         item: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } }, required: ["id", "title"], additionalProperties: false },
         covered: { type: "boolean" },
         confirm: { type: "boolean" },
+        flow: {
+            type: "object",
+            properties: { parts: { type: "array", items: { type: "string" } }, always: { type: "array", items: { type: "string" } }, minutes: { type: "number" } },
+            required: ["parts", "always", "minutes"],
+            additionalProperties: false,
+        },
+        once: { type: "boolean" },
     },
     required: ["key", "account", "label", "state", "methods", "covered"],
     additionalProperties: false,
@@ -71,7 +78,8 @@ export const Blindfold = Rpc.define({
     id: "blindfold",
     methods: {
         // `values` are the typed fields; `picks` chooses a candidate per provider field (default: the selected one);
-        // `remember` is "Always allow": a saved rule for each provider field.
+        // `remember` is "Always allow": a saved rule for each provider field. `flow` says the user approved the whole sign-in the
+        // card offered (the server checks it against its own copy of the offer).
         submit: {
             input: {
                 type: "object",
@@ -80,6 +88,7 @@ export const Blindfold = Rpc.define({
                     values: { type: "object", additionalProperties: { type: "string", minLength: 1 } },
                     picks: { type: "object", additionalProperties: { type: "string" } },
                     remember: { type: "boolean" },
+                    flow: { type: "boolean" },
                 },
                 required: ["requestID", "values"],
                 additionalProperties: false,
@@ -137,6 +146,15 @@ export const Blindfold = Rpc.define({
                 type: "object",
                 properties: { requestID: { type: "string" }, fields: requestedSchema.properties.fields },
                 required: ["requestID", "fields"],
+                additionalProperties: false,
+            },
+        },
+        // A sign-in approved on this card was used: how many of its fields have been filled so far.
+        flowed: {
+            schema: {
+                type: "object",
+                properties: { requestID: { type: "string" }, count: { type: "number" } },
+                required: ["requestID", "count"],
                 additionalProperties: false,
             },
         },

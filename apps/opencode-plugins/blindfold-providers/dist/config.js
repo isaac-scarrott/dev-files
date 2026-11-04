@@ -59,6 +59,7 @@ export function parseAccounts(options, fallback, keys) {
             allowedOrigins: strings(config.allowedOrigins, where("allowedOrigins")),
             bin: optionalText(config.bin, where("bin")),
             confirmEveryUse: config.confirmEveryUse === undefined ? undefined : config.confirmEveryUse === true,
+            alwaysAllowOtp: config.alwaysAllowOtp === undefined ? undefined : config.alwaysAllowOtp === true,
         };
         if (provider === "1password") {
             const unlock = config.unlock ?? "serviceAccount";

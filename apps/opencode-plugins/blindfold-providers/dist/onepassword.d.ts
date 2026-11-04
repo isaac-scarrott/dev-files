@@ -20,6 +20,7 @@ export type OnePasswordOptions = {
     autoLockMinutes?: number;
     allowedOrigins?: readonly string[];
     confirmEveryUse?: boolean;
+    alwaysAllowOtp?: boolean;
 };
 /**
  * 1Password through the `op` CLI, with the desktop-app integration off on every call (OP_BIOMETRIC_UNLOCK_ENABLED=false):

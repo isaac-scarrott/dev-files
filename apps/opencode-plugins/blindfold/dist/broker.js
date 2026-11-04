@@ -1,3 +1,4 @@
+import { FLOW_PARTS } from "./flow.js";
 import { isLocked, patternMatches } from "./providers-contract.js";
 import { covering, nameRule, permitted } from "./rules.js";
 const PASSWORD_WORDS = new Set(["PASS", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE"]);
@@ -35,15 +36,26 @@ export function createBroker(deps) {
             return undefined;
         let candidates = [];
         const refs = new Map();
+        const granted = new Map();
         const hints = [];
         let searched = false;
         const add = (account, state, methods, found) => {
             const key = found ? `${account.id}:${found.item.id}` : account.id;
             const use = { account: account.id, field: itemField, item: found?.item.id, origin: rule?.ref ? undefined : ask.origin, name: ask.name, via: ask.via };
-            const covered = state === "ready" && !account.confirmEveryUse && covering(saved, use) !== undefined;
-            candidates.push({ key, account: account.id, label: account.label, state, methods, ...(account.confirmEveryUse ? { confirm: true } : {}), ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered });
+            const usable = state === "ready" && !account.confirmEveryUse;
+            const byRule = usable && covering(saved, use) !== undefined;
+            // A sign-in is only for a fill of a login on a known tab; a name rule and a get never use one.
+            const flowable = usable && found !== undefined && ask.via === "fill" && ask.origin !== undefined && !rule?.ref && ask.session !== undefined && ask.tabID !== undefined;
+            const grant = flowable && !byRule ? deps.grants?.peek({ session: ask.session, tabID: ask.tabID, origin: ask.origin, account: account.id, item: found.item.id, part: itemField }) : undefined;
+            const covered = byRule || grant !== undefined;
+            const parts = flowable && !covered ? FLOW_PARTS.filter((part) => found.item.fields.includes(part) && covering(saved, { ...use, field: part }) === undefined) : [];
+            const flow = parts.length >= 2 && parts.includes(itemField) ? { parts, always: parts.filter((part) => part !== "otp" || account.alwaysAllowOtp === true), minutes: deps.grants ? deps.grants.ttl / 60_000 : 0 } : undefined;
+            const once = itemField === "otp" && !account.alwaysAllowOtp;
+            candidates.push({ key, account: account.id, label: account.label, state, methods, ...(account.confirmEveryUse ? { confirm: true } : {}), ...(found ? { item: { id: found.item.id, title: found.item.title } } : {}), covered, ...(flow ? { flow } : {}), ...(once ? { once: true } : {}) });
             if (found)
                 refs.set(key, found);
+            if (grant)
+                granted.set(key, grant.id);
         };
         for (const { account, ref } of tries) {
             const state = await status(account);
@@ -84,10 +96,10 @@ export function createBroker(deps) {
             candidates = candidates.filter((item) => item.state === "ready" || named.has(item.account));
         if (candidates.length === 0) {
             const locked = skipped.length > 0 ? ` Not searched, locked: ${skipped.map((item) => item.label).join(", ")}.` : "";
-            return { itemField, refs, source: { state: "unavailable", candidates: [], hint: (hints[0] ?? "No login for this site in your vaults.") + locked } };
+            return { itemField, refs, granted, source: { state: "unavailable", candidates: [], hint: (hints[0] ?? "No login for this site in your vaults.") + locked } };
         }
         const chosen = candidates.find((item) => item.covered) ?? (candidates.length === 1 ? candidates[0] : undefined);
-        return { itemField, refs, source: { state: "choose", candidates, ...(chosen ? { selected: chosen.key } : {}) } };
+        return { itemField, refs, granted, source: { state: "choose", candidates, ...(chosen ? { selected: chosen.key } : {}) } };
     }
     return {
         async plan(asks) {

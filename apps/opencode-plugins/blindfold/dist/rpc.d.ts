@@ -28,6 +28,9 @@ export declare const Blindfold: {
                     readonly remember: {
                         readonly type: "boolean";
                     };
+                    readonly flow: {
+                        readonly type: "boolean";
+                    };
                 };
                 readonly required: readonly ["requestID", "values"];
                 readonly additionalProperties: false;
@@ -291,6 +294,31 @@ export declare const Blindfold: {
                                                                 readonly confirm: {
                                                                     readonly type: "boolean";
                                                                 };
+                                                                readonly flow: {
+                                                                    readonly type: "object";
+                                                                    readonly properties: {
+                                                                        readonly parts: {
+                                                                            readonly type: "array";
+                                                                            readonly items: {
+                                                                                readonly type: "string";
+                                                                            };
+                                                                        };
+                                                                        readonly always: {
+                                                                            readonly type: "array";
+                                                                            readonly items: {
+                                                                                readonly type: "string";
+                                                                            };
+                                                                        };
+                                                                        readonly minutes: {
+                                                                            readonly type: "number";
+                                                                        };
+                                                                    };
+                                                                    readonly required: readonly ["parts", "always", "minutes"];
+                                                                    readonly additionalProperties: false;
+                                                                };
+                                                                readonly once: {
+                                                                    readonly type: "boolean";
+                                                                };
                                                             };
                                                             readonly required: readonly ["key", "account", "label", "state", "methods", "covered"];
                                                             readonly additionalProperties: false;
@@ -435,6 +463,31 @@ export declare const Blindfold: {
                                                     readonly confirm: {
                                                         readonly type: "boolean";
                                                     };
+                                                    readonly flow: {
+                                                        readonly type: "object";
+                                                        readonly properties: {
+                                                            readonly parts: {
+                                                                readonly type: "array";
+                                                                readonly items: {
+                                                                    readonly type: "string";
+                                                                };
+                                                            };
+                                                            readonly always: {
+                                                                readonly type: "array";
+                                                                readonly items: {
+                                                                    readonly type: "string";
+                                                                };
+                                                            };
+                                                            readonly minutes: {
+                                                                readonly type: "number";
+                                                            };
+                                                        };
+                                                        readonly required: readonly ["parts", "always", "minutes"];
+                                                        readonly additionalProperties: false;
+                                                    };
+                                                    readonly once: {
+                                                        readonly type: "boolean";
+                                                    };
                                                 };
                                                 readonly required: readonly ["key", "account", "label", "state", "methods", "covered"];
                                                 readonly additionalProperties: false;
@@ -532,6 +585,31 @@ export declare const Blindfold: {
                                                     readonly confirm: {
                                                         readonly type: "boolean";
                                                     };
+                                                    readonly flow: {
+                                                        readonly type: "object";
+                                                        readonly properties: {
+                                                            readonly parts: {
+                                                                readonly type: "array";
+                                                                readonly items: {
+                                                                    readonly type: "string";
+                                                                };
+                                                            };
+                                                            readonly always: {
+                                                                readonly type: "array";
+                                                                readonly items: {
+                                                                    readonly type: "string";
+                                                                };
+                                                            };
+                                                            readonly minutes: {
+                                                                readonly type: "number";
+                                                            };
+                                                        };
+                                                        readonly required: readonly ["parts", "always", "minutes"];
+                                                        readonly additionalProperties: false;
+                                                    };
+                                                    readonly once: {
+                                                        readonly type: "boolean";
+                                                    };
                                                 };
                                                 readonly required: readonly ["key", "account", "label", "state", "methods", "covered"];
                                                 readonly additionalProperties: false;
@@ -554,6 +632,21 @@ export declare const Blindfold: {
                     };
                 };
                 readonly required: readonly ["requestID", "fields"];
+                readonly additionalProperties: false;
+            };
+        };
+        readonly flowed: {
+            readonly schema: {
+                readonly type: "object";
+                readonly properties: {
+                    readonly requestID: {
+                        readonly type: "string";
+                    };
+                    readonly count: {
+                        readonly type: "number";
+                    };
+                };
+                readonly required: readonly ["requestID", "count"];
                 readonly additionalProperties: false;
             };
         };
