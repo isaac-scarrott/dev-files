@@ -107,9 +107,13 @@
   line-height: 16px;
   overflow-wrap: anywhere;
 }
+[data-bfp-steps] li {
+  display: list-item;
+}
 [data-bfp-steps] {
   margin: 0 0 10px;
   padding-inline-start: 20px;
+  list-style: decimal;
   display: flex;
   flex-direction: column;
   gap: 6px;
