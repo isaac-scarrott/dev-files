@@ -75,6 +75,7 @@ Optional. Everything below can still be set in `~/.config/opencode/opencode.json
 | `autoLockMinutes` | `10` | idle minutes before the in-memory session is dropped (Bitwarden also runs `bw lock`) |
 | `allowedOrigins` | any site the item is saved for | host patterns this account may fill: `accounts.google.com`, `*.example.com` (that domain and subdomains), or `http://localhost:3000`; https only unless written out |
 | `confirmEveryUse` | `false` | no Always allow for this account; every use asks |
+| `alwaysAllowOtp` | `false` | Always allow on a sign-in may include the one-time code; off, a code asks every time even under a saved rule |
 | `bin` | `op` / `bw` | the CLI to run |
 | `unlock` (1Password) | `serviceAccount` | `serviceAccount`, or `masterPassword` (whole account; not verified against the real CLI) |
 | `vaults` (1Password) | all the token can see | vault names to list |

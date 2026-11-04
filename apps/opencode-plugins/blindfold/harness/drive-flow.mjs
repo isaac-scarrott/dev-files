@@ -357,7 +357,15 @@ try {
 }
 await sleep(4000)
 
-// ---- 9. Nothing durable holds a value ----
+// ---- 9. A last declined sign-in, left on screen for the parity spec (run-flow.sh BF_PARITY=1) ----
+await ask(emailOnly)
+await openCard(1)
+await button("Deny").click()
+await rows().first().waitFor({ timeout: 15000 })
+await sleep(1500)
+await shot("06-declined-row")
+
+// ---- 10. Nothing durable holds a value ----
 {
   const listed = JSON.parse(await api("/api/session"))
   const items = Array.isArray(listed) ? listed : listed.data

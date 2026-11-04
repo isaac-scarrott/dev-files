@@ -327,6 +327,7 @@ that would send the swapped text somewhere) it stays inert. Typed fallback value
 - **`get` versus `fill`.** For `fill` the page script checks the page's own origin, so a wrong claim fills nothing. For `get`
   the origin is the agent's claim and the value goes to its code: you approve a card that names the site and the account, and
   that is the whole check. An Always allow saved on a `fill` covers fills only; one saved on a `get` covers both. Prefer `fill` for pages.
+- **Flow approval (2026-11-04).** A fill card for a login is now one card for the whole sign-in, not one per field; blindfold's DESIGN (decision 11) has the rules. For this model: grants are memory only and bound to session, tab, origin, item and part; the page script still checks the live origin; a one-time code is read fresh and once; confirm-every-use accounts never get a grant; Always allow saves one rule (username and password) and a code stays out of it unless the account sets `alwaysAllowOtp` (a setting on the account's page, default off); `get` has none. The sign-in is a decision about the page the user can see, so the agent cannot widen it: the offer comes from the item's parts, not from anything the agent sends.
 - **Residual risks.** A malicious page can read a filled field's `value` (true of any autofill). `bw serve` is not used
   (unauthenticated localhost). R1 remains exfiltratable for typed values.
 
@@ -364,7 +365,9 @@ on a provider row (v1.1 below).
 
 - **Expose `otp` and `login(origin)` as tools?** Not as separate tools in v1. `get({ fields: [{ name: "OTP", kind:
   "otp" }], origin })` and `fill` cover both, keep one approval surface, and avoid a second path that could skip the
-  card. A `login(origin)` convenience (username + password + OTP in one card, then fill) is roadmap once R2 is proven.
+  card. A `login(origin)` convenience (username + password + OTP in one card, then fill) is roadmap once R2 is proven. **Done as flow approval
+  (2026-11-04)**, without a new tool: the card for the first `fill` field offers the whole sign-in and later fills are
+  served from the grant.
 - **v1 (no biometrics, both vendors from day one):**
   - `blindfold-providers` server plugin: `OnePassword` (service account, master password; app path off) and
     `Bitwarden` (API key + master password, master password), several accounts of each, auto-lock, env/stdin only.
@@ -373,7 +376,7 @@ on a provider row (v1.1 below).
   - Fill: R2 (Q1 passed).
 - **v1.1:** echo re-mask after navigation (the observer dies with the document); screenshot OCR backstop; "Type it instead"
   on a provider row; tag rules if a uniform tag exists; per-origin remembered choice without a rule.
-- **Later:** `login(origin)`; `write` (save a generated password); SSH keys; Bitwarden self-hosted; JS SDK desktop auth
+- **Later:** `write` (save a generated password); SSH keys; Bitwarden self-hosted; JS SDK desktop auth
   for 1Password (one approval per process, if it runs in Bun and the user wants the app path once Touch ID is fixed);
   passkeys only if a vendor exposes signing (none does today).
 

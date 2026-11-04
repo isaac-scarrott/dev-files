@@ -211,3 +211,7 @@
   font-size: 12px;
   line-height: 16px;
 }
+/* The ghost button has its own padding: pull it back so its words line up with the note above. */
+[data-blindfold-card] [data-slot='flow-toggle'] {
+  margin-inline-start: -8px;
+}
