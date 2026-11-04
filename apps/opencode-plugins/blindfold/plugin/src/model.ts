@@ -1,6 +1,7 @@
 import { batch, createMemo, createSignal } from "solid-js"
 import type { Candidate } from "./broker.js"
 import { check, normalize, type Check } from "./fields.js"
+import { flowOf } from "./flow.js"
 import type { RequestedField, SecretResolved } from "./rpc.js"
 
 /** `provided`, `declined` and `expired` are final; the card shows a one-line row for them and no input. */
@@ -19,7 +20,7 @@ export const UNLOCK_INPUTS: Record<UnlockMethod, readonly UnlockKey[]> = {
 
 export interface Io {
   /** Sends the typed values and the chosen candidates; false when the server no longer has the request (answered elsewhere or expired). `remember` is "Always allow". */
-  submit(values: Record<string, string>, extra?: { picks: Record<string, string>; remember: boolean }): Promise<boolean>
+  submit(values: Record<string, string>, extra?: { picks: Record<string, string>; remember: boolean; flow: boolean }): Promise<boolean>
   /** Deny, or Cancel on a card with no provider row. */
   cancel(): Promise<boolean>
   /** Sends an unlock; `error` is the vendor's first line when it failed. */
@@ -44,6 +45,10 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
   const [unlocking, setUnlocking] = createSignal<string | undefined>(undefined)
   const [unlockFailed, setUnlockFailed] = createSignal<Record<string, string>>({})
   const [summary, setSummary] = createSignal("")
+  // "Only this field": the user turned the whole sign-in down on the card.
+  const [only, setOnly] = createSignal(false)
+  // What the answered row says about a sign-in that was approved: the account, the item, and how many fields it has served.
+  const [signIn, setSignIn] = createSignal<{ account: string; item: string; always: boolean; count: number } | undefined>(undefined)
 
   const isProvider = (field: RequestedField) => field.source?.state === "choose"
   const typed = () => rows().filter((field) => !isProvider(field))
@@ -57,7 +62,10 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
   const key = (field: RequestedField) => chosen()[field.name] ?? field.source?.selected
   const candidate = (field: RequestedField): Candidate | undefined => field.source?.candidates.find((item) => item.key === key(field))
   /** The chosen account asks on every use, so "Always allow" is not offered. */
-  const alwaysOffered = () => providers().every((field) => candidate(field)?.confirm !== true)
+  const alwaysOffered = () => providers().every((field) => candidate(field)?.confirm !== true && (flowOn() || candidate(field)?.once !== true))
+  /** The whole sign-in this card can approve: every provider field chooses one candidate that offers it. */
+  const offer = createMemo(() => flowOf(providers(), (field) => chosen()[field.name]))
+  const flowOn = () => offer() !== undefined && !only()
   const providersReady = () => providers().every((field) => candidate(field)?.state === "ready")
   const ready = createMemo(() => typed().every((field) => filled(field) && verdict(field).level !== "invalid") && providersReady())
 
@@ -109,6 +117,16 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
     selectedKey: key,
     /** Whether the field leads its group: the one that shows the choice and the unlock. */
     leads: (field: RequestedField) => providers().find((item) => signature(item) === signature(field)) === field,
+    offer,
+    flowOn,
+    onlyThisField: only,
+    toggleOnly: () => setOnly(!only()),
+    signIn,
+    /** The approval was used again: how many fields it has served so far. */
+    flowed(count: number) {
+      const now = signIn()
+      if (now && !now.always) setSignIn({ ...now, count })
+    },
     choose(name: string, next: string) {
       const field = providers().find((item) => item.name === name)
       if (!field) return
@@ -167,15 +185,19 @@ export function createModel(initial: readonly RequestedField[], io: Io) {
       const answer = Object.fromEntries(typed().map((field) => [field.name, normalize(field.kind, value(field.name))]))
       const picks = Object.fromEntries(providers().map((field) => [field.name, key(field)!]))
       describe()
+      const approving = flowOn() ? offer() : undefined
+      if (approving) setSignIn({ account: approving.candidate.label, item: approving.candidate.item?.title ?? "", always: remember, count: providers().length })
       setPhase("sending")
-      const accepted = await io.submit(answer, { picks, remember }).catch(() => undefined)
+      const accepted = await io.submit(answer, { picks, remember, flow: approving !== undefined }).catch(() => undefined)
       if (accepted === undefined) {
         setPhase("open")
+        setSignIn(undefined)
         io.failed()
         return
       }
       clear()
       if (phase() === "sending") setPhase(accepted ? "provided" : "expired")
+      if (!accepted) setSignIn(undefined)
     },
     async cancel() {
       if (phase() !== "open") return

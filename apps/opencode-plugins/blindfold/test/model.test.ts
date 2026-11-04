@@ -126,7 +126,7 @@ const candidate = (account: string, state: "ready" | "locked", extra = {}) => ({
 const row = (name: string, candidates: ReturnType<typeof candidate>[], selected?: string): RequestedField => ({ ...resolveField({ name }), source: { state: "choose", candidates, ...(selected ? { selected } : {}) } })
 
 function mountProvider(rows: RequestedField[], io: Partial<Io> = {}) {
-  const sent: { values: Record<string, string>; extra?: { picks: Record<string, string>; remember: boolean } }[] = []
+  const sent: { values: Record<string, string>; extra?: { picks: Record<string, string>; remember: boolean; flow: boolean } }[] = []
   const unlocks: { account: string; input: unknown }[] = []
   const model = createRoot(() =>
     createModel(rows, {
@@ -145,7 +145,7 @@ test("a provider row with one ready candidate is ready without typing; Allow sen
   assert.equal(model.ready(), true)
   assert.equal(model.next(), undefined, "nothing to type")
   await model.submit(true)
-  assert.deepEqual(sent, [{ values: {}, extra: { picks: { PASSWORD: "personal:i1" }, remember: true } }])
+  assert.deepEqual(sent, [{ values: {}, extra: { picks: { PASSWORD: "personal:i1" }, remember: true, flow: false } }])
   assert.equal(model.phase(), "provided")
   assert.equal(model.summary(), "PASSWORD (personal label)")
 })
@@ -156,7 +156,7 @@ test("two candidates need a choice before Allow; the choice is what is sent", as
   model.choose("PASSWORD", "work:i2")
   assert.equal(model.ready(), true)
   await model.submit()
-  assert.deepEqual(sent[0]!.extra, { picks: { PASSWORD: "work:i2" }, remember: false })
+  assert.deepEqual(sent[0]!.extra, { picks: { PASSWORD: "work:i2" }, remember: false, flow: false })
 })
 
 test("a locked pick blocks Allow; unlock sends the typed credential once and empties it, and the update unblocks", async () => {
@@ -197,7 +197,7 @@ test("a typed field and a provider field together: both are needed", async () =>
   model.set("RECOVERY", "abc")
   assert.equal(model.ready(), true)
   await model.submit()
-  assert.deepEqual(sent[0], { values: { RECOVERY: "abc" }, extra: { picks: { PASSWORD: "personal:i1" }, remember: false } })
+  assert.deepEqual(sent[0], { values: { RECOVERY: "abc" }, extra: { picks: { PASSWORD: "personal:i1" }, remember: false, flow: false } })
 })
 
 test("Deny declines; the server settling a request (an unlock completed it) shows the answered row", async () => {
@@ -208,4 +208,61 @@ test("Deny declines; the server settling a request (an unlock completed it) show
   auto.model.settle("submitted")
   assert.equal(auto.model.phase(), "provided")
   assert.equal(auto.model.summary(), "PASSWORD (work label)")
+})
+
+// ---- flow approval ----------------------------------------------------------------------------------------------------
+
+const offer = { parts: ["username", "password", "otp"], always: ["username", "password"], minutes: 3 }
+const signIn = (flow: typeof offer | null = offer) =>
+  ["EMAIL", "PASSWORD"].map((name) => ({
+    ...resolveField({ name }),
+    source: { state: "choose" as const, selected: "p:1", candidates: [{ key: "p:1", account: "p", label: "Personal (1Password)", state: "ready" as const, methods: [], item: { id: "1", title: "Google" }, covered: false, ...(flow ? { flow } : {}) }] },
+  }))
+
+function mountFlow(rows = signIn(), io: Partial<Io> = {}) {
+  const sent: { values: Record<string, string>; extra?: { picks: Record<string, string>; remember: boolean; flow: boolean } }[] = []
+  const model = createRoot(() => createModel(rows, { submit: async (values, extra) => (sent.push({ values, extra }), true), cancel: async () => true, failed: () => {}, ...io }))
+  return { model, sent }
+}
+
+test("a card whose candidate offers a sign-in is in flow mode, and Allow sends flow: true", async () => {
+  const { model, sent } = mountFlow()
+  assert.equal(model.flowOn(), true)
+  assert.equal(model.alwaysOffered(), true)
+  await model.submit()
+  assert.deepEqual(sent[0]!.extra, { picks: { EMAIL: "p:1", PASSWORD: "p:1" }, remember: false, flow: true })
+  assert.deepEqual(model.signIn(), { account: "Personal (1Password)", item: "Google", always: false, count: 2 })
+  model.flowed(3)
+  assert.equal(model.signIn()!.count, 3)
+})
+
+test("'Only this field' turns the sign-in off and back on; the answer then carries flow: false", async () => {
+  const { model, sent } = mountFlow()
+  model.toggleOnly()
+  assert.deepEqual([model.flowOn(), model.offer() !== undefined], [false, true])
+  await model.submit(true)
+  assert.equal(sent[0]!.extra!.flow, false)
+  assert.equal(model.signIn(), undefined)
+  const again = mountFlow()
+  again.model.toggleOnly()
+  again.model.toggleOnly()
+  assert.equal(again.model.flowOn(), true)
+})
+
+test("Always allow on a sign-in is remembered as such and the row says so; later uses do not change it", async () => {
+  const { model } = mountFlow()
+  await model.submit(true)
+  assert.equal(model.signIn()!.always, true)
+  model.flowed(5)
+  assert.equal(model.signIn()!.count, 2)
+})
+
+test("no sign-in without an offer on every provider field; a code field hides Always allow unless flow mode covers it", () => {
+  assert.equal(mountFlow(signIn(null)).model.flowOn(), false)
+  const mixed = signIn()
+  mixed[1]!.source.candidates[0] = { ...mixed[1]!.source.candidates[0]!, key: "p:2" }
+  mixed[1]!.source.selected = "p:2"
+  assert.equal(mountFlow(mixed).model.flowOn(), false, "two items are not one sign-in")
+  const code = signIn(null).slice(0, 1).map((row) => ({ ...row, source: { ...row.source, candidates: [{ ...row.source.candidates[0]!, once: true }] } }))
+  assert.equal(mountFlow(code).model.alwaysOffered(), false)
 })

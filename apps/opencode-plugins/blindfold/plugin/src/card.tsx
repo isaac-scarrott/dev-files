@@ -32,6 +32,7 @@ export const site = (origin: string) => (origin.startsWith("https://") ? origin.
 /** "Fill PASSWORD for accounts.google.com from Personal (1Password)?" Names and labels only. */
 export function title(props: CardProps) {
   const { t, model } = props
+  if (model.flowOn() && props.origin) return t("flowTitle", { site: site(props.origin) })
   const names = list(model.fields.map((field) => (model.isProvider(field) ? field.name : field.label)), t("and"))
   if (model.providers().length === 0) return t("title", { names: list(model.fields.map((field) => field.label), t("and")) })
   const base = props.origin ? t(props.via === "fill" ? "fill" : "use", { names, site: site(props.origin) }) : t("useNamed", { names })
@@ -153,16 +154,19 @@ function ProviderRow(props: CardProps & { field: RequestedField }) {
   const { ui, t, model, field } = props
   const source = field.source!
   const picked = () => model.candidate(field)
-  const detail = (item: { account: string; label: string; item?: { title: string } }) => (item.item ? `${item.label} · ${item.item.title}` : item.label)
+  const flowOn = () => model.flowOn()
+  const parts = () => (picked()?.flow?.parts ?? []).map((part) => t(`part.${part}`)).join(", ")
+  const detail = (item: { account: string; label: string; item?: { title: string } }) => (item.item ? `${item.label} ${flowOn() ? "›" : "·"} ${item.item.title}` : item.label)
   const lead = () => model.leads(field)
   const status = () => {
     const item = picked()
     if (!item) return t("chooseBelow")
-    return item.state === "locked" ? t("isLocked", { account: item.label }) : t("fromAccount", { detail: detail(item) })
+    if (item.state === "locked") return t("isLocked", { account: item.label })
+    return flowOn() ? `${detail(item)} · ${parts()}` : t("fromAccount", { detail: detail(item) })
   }
   return (
     <div data-slot="field" data-field={field.name} data-provider="">
-      <div data-slot="label">{field.label}</div>
+      <div data-slot="label">{flowOn() ? t("flowLabel") : field.label}</div>
       <Show when={source.candidates.length > 1 && lead()}>
         <div role="radiogroup" aria-label={t("choose", { label: field.label })} data-slot="choices">
           <For each={source.candidates}>
@@ -178,6 +182,9 @@ function ProviderRow(props: CardProps & { field: RequestedField }) {
           </For>
         </div>
       </Show>
+      <Show when={flowOn() && source.candidates.length > 1 && lead()}>
+        <div data-slot="flow-parts">{parts()}</div>
+      </Show>
       <Show when={source.candidates.length === 1 || !lead()}>
         <div data-slot="source" data-state={picked()?.state}>
           <ui.Icon name={picked()?.state === "locked" ? "lock" : "check"} size="small" />
@@ -192,8 +199,18 @@ function ProviderRow(props: CardProps & { field: RequestedField }) {
 }
 
 /** The answered request as the host's own one-line tool row, so it reads as part of the thread. */
-function Settled(props: Pick<CardProps, "t" | "model">) {
-  const names = () => props.model.summary() || list(props.model.fields.map((field) => field.name), props.t("and"))
+function Settled(props: Pick<CardProps, "t" | "model" | "origin">) {
+  const flow = () => (props.model.phase() === "provided" ? props.model.signIn() : undefined)
+  const title = () => {
+    const sign = flow()
+    return sign ? props.t(sign.always ? "row.flowAlways" : "row.flow") : props.t(`row.${props.model.phase()}`)
+  }
+  const names = () => {
+    const sign = flow()
+    if (!sign) return props.model.summary() || list(props.model.fields.map((field) => field.name), props.t("and"))
+    if (sign.always) return props.t("row.flowAlwaysArg", { site: site(props.origin ?? ""), item: sign.item })
+    return props.t(sign.count === 1 ? "row.flowArgOne" : "row.flowArg", { account: sign.account, count: String(sign.count) })
+  }
   return (
     <div data-component="tool-part-wrapper" data-blindfold-row={props.model.phase()} role="status">
       <div data-component="collapsible" data-variant="normal" class="tool-collapsible" data-compact="true" data-rail="false" data-has-action="true">
@@ -203,7 +220,7 @@ function Settled(props: Pick<CardProps, "t" | "model">) {
               <div data-slot="basic-tool-tool-info">
                 <div data-slot="basic-tool-tool-info-structured">
                   <div data-slot="basic-tool-tool-info-main">
-                    <span data-slot="basic-tool-tool-title">{props.t(`row.${props.model.phase()}`)}</span>
+                    <span data-slot="basic-tool-tool-title">{title()}</span>
                     <span data-slot="basic-tool-tool-arg">{names()}</span>
                   </div>
                 </div>
@@ -231,6 +248,14 @@ export function RequestCard(props: CardProps) {
   const provider = () => model.providers().length > 0
   const locked = () => model.providers().map((field) => model.candidate(field)).find((item) => item?.state === "locked")
   const busy = () => model.phase() === "sending"
+  const note = () => {
+    if (locked()) return t("unlockFirst", { account: locked()!.label })
+    const offer = model.flowOn() ? model.offer()?.flow : undefined
+    if (!offer) return provider() ? t("noteProvider") : t("note")
+    const minutes = String(offer.minutes)
+    const code = offer.parts.includes("otp") && !offer.always.includes("otp")
+    return `${t("noteFlow", { minutes })}${code ? ` ${t("noteFlowCode")}` : ""}`
+  }
 
   onMount(() => {
     // Escape inside the card declines; it must not also reach the app's own Escape (which stops the running session).
@@ -244,7 +269,7 @@ export function RequestCard(props: CardProps) {
 
   return (
     <div data-blindfold-card data-phase={model.phase()} ref={root}>
-      <Show when={model.phase() === "open" || model.phase() === "sending"} fallback={<Settled t={t} model={model} />}>
+      <Show when={model.phase() === "open" || model.phase() === "sending"} fallback={<Settled t={t} model={model} origin={props.origin} />}>
         <div role="group" aria-labelledby={titleId} data-slot="card">
           <div data-slot="head">
             <ui.Icon name="lock" size="small" />
@@ -254,10 +279,30 @@ export function RequestCard(props: CardProps) {
           </div>
           <p data-slot="reason">{props.reason}</p>
           <div data-slot="fields">
-            <For each={model.fields}>{(field) => (model.isProvider(field) ? <ProviderRow {...props} field={field} /> : <FieldRow {...props} field={field} onEnter={enter} />)}</For>
+            <For each={model.fields}>
+              {(field) =>
+                model.isProvider(field) ? (
+                  // One row stands for the whole sign-in, so the other provider fields add nothing.
+                  <Show when={!model.flowOn() || model.providers()[0] === field}>
+                    <ProviderRow {...props} field={field} />
+                  </Show>
+                ) : (
+                  <FieldRow {...props} field={field} onEnter={enter} />
+                )
+              }
+            </For>
           </div>
           <div data-slot="foot">
-            <span data-slot="note">{locked() ? t("unlockFirst", { account: locked()!.label }) : provider() ? t("noteProvider") : t("note")}</span>
+            <div data-slot="note-group">
+              <span data-slot="note">{note()}</span>
+              <Show when={model.offer() !== undefined && !locked()}>
+                <span data-slot="flow-toggle">
+                  <ui.Button variant="ghost" size="small" disabled={busy()} onClick={() => model.toggleOnly()}>
+                    {model.onlyThisField() ? t("flowAll") : t("flowOnly")}
+                  </ui.Button>
+                </span>
+              </Show>
+            </div>
             <div data-slot="actions">
               <Show
                 when={provider()}
