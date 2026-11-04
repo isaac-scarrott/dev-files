@@ -5,6 +5,8 @@ export type Session = {
 };
 /** An item list stays this long in memory: service accounts allow 1,000 requests a day. */
 export declare const LIST_TTL_MS: number;
+/** A lookup that found nothing is trusted this long: a login just saved or moved into the vault shows up on the next try. */
+export declare const MISS_TTL_MS = 15000;
 /**
  * What both vendors share: an in-memory session, an idle timer that locks it, and a short cache of item references (never
  * values). A subclass says how to unlock, list and read.

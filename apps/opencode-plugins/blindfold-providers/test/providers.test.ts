@@ -124,6 +124,28 @@ test("the item list expires 5 minutes after it was read, however often it is use
   }
 })
 
+test("a lookup that finds nothing reads the vault again once the list is more than 15 seconds old", async () => {
+  const account = agent()
+  await account.unlock({ method: "serviceAccount", token: SERVICE_TOKEN })
+  const lists = () => argv().filter((a) => a[0] === "op" && a[1] === "item" && a[2] === "list").length
+  const real = Date.now
+  const start = real()
+  try {
+    let at = start
+    Date.now = () => at
+    const before = lists()
+    assert.equal((await account.findByOrigin("https://nowhere.example")).length, 0)
+    assert.equal(lists(), before, "a fresh list is trusted")
+    at = start + 20_000
+    await account.findByOrigin("https://nowhere.example")
+    assert.equal(lists(), before + 1, "an older list is read again before answering no")
+    await account.findByOrigin("https://nowhere.example")
+    assert.equal(lists(), before + 1, "and not again straight after")
+  } finally {
+    Date.now = real
+  }
+})
+
 test("master password (documented option): signin on stdin with the app integration off, then lists the whole account", async () => {
   const account = new OnePassword({ id: "personal", label: "Personal (1Password)", bin: op, method: "masterPassword", address: "my.1password.com" })
   assert.deepEqual(await account.status(), { state: "locked", methods: ["masterPassword"] })

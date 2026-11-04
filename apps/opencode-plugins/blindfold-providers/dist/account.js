@@ -1,6 +1,8 @@
 import { LockedError } from "./contract.js";
 /** An item list stays this long in memory: service accounts allow 1,000 requests a day. */
 export const LIST_TTL_MS = 5 * 60_000;
+/** A lookup that found nothing is trusted this long: a login just saved or moved into the vault shows up on the next try. */
+export const MISS_TTL_MS = 15_000;
 /**
  * What both vendors share: an in-memory session, an idle timer that locks it, and a short cache of item references (never
  * values). A subclass says how to unlock, list and read.
@@ -49,7 +51,7 @@ export class Base {
     }
     cached(key) {
         const hit = this.cache.get(key);
-        return hit && Date.now() - hit.at < LIST_TTL_MS ? hit.items : undefined;
+        return hit && Date.now() - hit.at < (hit.items.length === 0 ? MISS_TTL_MS : LIST_TTL_MS) ? hit.items : undefined;
     }
     async status() {
         if (this.session)
