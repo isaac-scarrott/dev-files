@@ -5,6 +5,7 @@ import { actionsCss, labels, type ActionName, type Target } from "./actions"
 import { iconCss } from "./icons"
 import { menuCss } from "./menu"
 import { createSessionMenus } from "./sessionmenu"
+import { isLocationGone } from "./location"
 import { appendPage, archivedActivity, dropArchived, emptyPage, loadArchivePage, removeSession, setArchived, upsertArchived, type ArchivedSession, type ArchivePage } from "./archive"
 import { FIRST_PAGE, firstOf, moreLabel, moreStep } from "./page"
 import { tabRowActionCss } from "../../native-ui/src"
@@ -210,11 +211,18 @@ export default Plugin.define({
       clearWoke(server.id, id)
       if (server.data.session.get(id)?.time?.archived !== undefined) void unarchiveOnSend(server, id)
     }
+    // Sessions whose folder is gone (see location.ts): their requests cannot be read and cannot exist.
+    const goneFolders = new Set<string>()
+    const syncRequests = (server: ServerRef, ids: string[]) => Promise.all(ids.flatMap((id) =>
+      [server.data.session.permission.sync(id), server.data.session.form.sync(id)].map((read) =>
+        Promise.resolve(read).catch((cause) => { if (!isLocationGone(cause)) throw cause; goneFolders.add(sessionKey(server.id, id)) }),
+      ),
+    ))
     const observe = (server: ServerRef, id: string, info: ArchivedSession | undefined) => {
       const family = server.data.session.family(id)
       const requests = [id, ...(family ?? [])].map((sessionID) => ({
-        permissions: server.data.session.permission.list(sessionID),
-        forms: server.data.session.form.list(sessionID),
+        permissions: server.data.session.permission.list(sessionID) ?? (goneFolders.has(sessionKey(server.id, sessionID)) ? [] : undefined),
+        forms: server.data.session.form.list(sessionID) ?? (goneFolders.has(sessionKey(server.id, sessionID)) ? [] : undefined),
       }))
       return {
         hydrated: Array.isArray(family) && requests.every((request) => Array.isArray(request.permissions) && Array.isArray(request.forms)) && Number.isFinite(info?.time?.updated),
@@ -234,9 +242,7 @@ export default Plugin.define({
         const initial = observe(server, entry.id, server.data.session.get(entry.id))
         const initialReason = wakeReason(entry, initial, Date.now())
         if (initialReason) { wake(entry, false, initialReason === "archived"); return }
-        await Promise.all([entry.id, ...(server.data.session.family(entry.id) ?? [])].flatMap((id) => [
-          server.data.session.permission.sync(id), server.data.session.form.sync(id),
-        ]))
+        await syncRequests(server, [entry.id, ...(server.data.session.family(entry.id) ?? [])])
         if (disposed) return
         const current = entries().find((s) => s.server === entry.server && s.id === entry.id && s.at === entry.at)
         if (!current) return
@@ -284,9 +290,7 @@ export default Plugin.define({
         const server = session.server
         await server.data.session.sync(session.id, { children: true })
         if (disposed) return
-        await Promise.all([session.id, ...(server.data.session.family(session.id) ?? [])].flatMap((id) => [
-          server.data.session.permission.sync(id), server.data.session.form.sync(id),
-        ]))
+        await syncRequests(server, [session.id, ...(server.data.session.family(session.id) ?? [])])
         if (disposed) return
         const info = await server.client.session.get({ sessionID: session.id }, { signal: ctx.signal })
         if (disposed) return
