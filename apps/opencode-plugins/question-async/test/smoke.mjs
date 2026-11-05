@@ -44,7 +44,7 @@ async function run() {
 
   // Calling the tool returns at once and emits an "asked" event; nothing delivered yet.
   const result = await tool.execute({ questions }, { sessionID: "ses_1" })
-  assert.match(result.output, /continue with other work/i)
+  assert.match(result.content, /continue with other work/i)
   assert.equal(emitted.length, 1)
   assert.equal(emitted[0].name, "asked")
   assert.equal(emitted[0].data.sessionID, "ses_1")
