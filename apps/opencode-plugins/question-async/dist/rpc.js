@@ -47,6 +47,9 @@ export const QuestionBackground = Rpc.define({
             output: reply,
         },
         dismiss: { input: requestID, output: reply },
+        // Diagnostic only: the GUI calls this the instant it receives "asked", before it tries to show anything, so the
+        // server can tell "no GUI ever heard the event" apart from "it heard it, but showing a dialog failed".
+        ack: { input: requestID, output: reply },
     },
     events: {
         // A question_background tool call, for the GUI to show as the app's own dialogs.

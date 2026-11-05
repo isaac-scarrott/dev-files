@@ -10,6 +10,8 @@ export default Plugin.define({
                 const asked = event.data;
                 const options = { location: event.location };
                 void (async () => {
+                    // Diagnostic: proves this GUI half received the event at all, before touching dialogs.
+                    await rpc.ack({ requestID: asked.requestID }, options).catch(() => undefined);
                     const answers = [];
                     for (const question of asked.questions) {
                         const picked = await ctx.dialogs.select({
