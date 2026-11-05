@@ -1,20 +1,8 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { Plugin } from "@opencode/plugin"
 import { answeredText, dismissedText } from "./logic.js"
 import { QuestionBackground, questionSchema, type Question } from "./rpc.js"
 
-const STATUS_FILE = join(homedir(), ".local", "share", "opencode", "question-async", "status.json")
-async function writeStatus(status: Record<string, unknown>) {
-  try {
-    await mkdir(join(homedir(), ".local", "share", "opencode", "question-async"), { recursive: true })
-    await writeFile(STATUS_FILE, JSON.stringify({ ...status, at: new Date().toISOString() }, null, 2))
-  } catch {
-    // Diagnostics are best-effort.
-  }
-}
 
 const TOOL = "question_background"
 
@@ -72,11 +60,6 @@ export default Plugin.define({
         })
         return { accepted: true }
       },
-      ack: async (input) => {
-        const { requestID } = input as { requestID: string }
-        void writeStatus({ event: "ack", requestID, hasPending: pending.has(requestID) })
-        return { accepted: true }
-      },
     })
 
     await ctx.tool.transform((editor) => {
@@ -88,7 +71,6 @@ export default Plugin.define({
           const { questions } = input as { questions: Question[] }
           const requestID = randomUUID()
           pending.set(requestID, { sessionID: toolCtx.sessionID, questions })
-          void writeStatus({ event: "emitting", requestID, sessionID: toolCtx.sessionID })
           await rpc.events.emit("asked", { requestID, sessionID: toolCtx.sessionID, questions })
           return {
             content:

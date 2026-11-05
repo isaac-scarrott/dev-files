@@ -103,28 +103,6 @@ export declare const QuestionBackground: {
                 readonly additionalProperties: false;
             };
         };
-        readonly ack: {
-            readonly input: {
-                readonly type: "object";
-                readonly properties: {
-                    readonly requestID: {
-                        readonly type: "string";
-                    };
-                };
-                readonly required: readonly ["requestID"];
-                readonly additionalProperties: false;
-            };
-            readonly output: {
-                readonly type: "object";
-                readonly properties: {
-                    readonly accepted: {
-                        readonly type: "boolean";
-                    };
-                };
-                readonly required: readonly ["accepted"];
-                readonly additionalProperties: false;
-            };
-        };
     };
     readonly events: {
         readonly asked: {
