@@ -85,6 +85,8 @@ native-parity with — it already looks exactly like the rest of the app.
   restart calls back to a server that no longer has the request; the call is rejected quietly (not delivered to
   the wrong session), and the dialog should be closed with no error shown. Not yet handled more gracefully than
   that — acceptable for v1 since restarts are rare and the cost is "that one question needs re-asking."
-- **Not yet confirmed end-to-end against a real dialog.** The server half is tested directly (`test/logic.test.ts`,
-  `test/smoke.mjs`) and the tool is confirmed to register and execute correctly via `opencode run --standalone`.
-  The GUI half's actual dialog behavior hasn't been exercised against a live Desktop session yet.
+- **First load needs a service restart.** The host reads a plugin's GUI export only on its first load. This plugin first
+  loaded as server-only, so its GUI half stayed ignored (`GET /api/plugin` showed `features: {server}`) until
+  `scripts/opencode-safe-restart.sh`. Ship the GUI export before a plugin's first load.
+- **Verified end to end** on 2.2.5: tool call returns in ~2 ms, the dialog opens, the answer arrives in the session as a
+  message.
