@@ -10,6 +10,8 @@ const QUESTION_TOOL = {
   execute: async (input) => ({ output: `answered: ${JSON.stringify(input)}` }),
 }
 
+const fakeRegistration = { dispose: async () => undefined }
+
 function fakeEditor(tools) {
   return {
     get: (id) => (tools[id] ? { id, ...tools[id] } : undefined),
@@ -33,7 +35,7 @@ async function run() {
   const synthetics = []
   const logs = []
   const ctx = {
-    tool: { transform: async (cb) => void cb(fakeEditor(tools)) },
+    tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
     session: { synthetic: async (input) => void synthetics.push(input) },
   }
   const originalWrite = process.stderr.write.bind(process.stderr)
@@ -66,7 +68,7 @@ async function runMissingTool() {
   const tools = {} // no "question" tool at all
   const logs = []
   const ctx = {
-    tool: { transform: async (cb) => void cb(fakeEditor(tools)) },
+    tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
     session: { synthetic: async () => { throw new Error("must not be called") } },
   }
   const originalWrite = process.stderr.write.bind(process.stderr)
@@ -89,7 +91,7 @@ async function runUnrecognizedSchema() {
   const originalExecute = tools.question.execute
   const logs = []
   const ctx = {
-    tool: { transform: async (cb) => void cb(fakeEditor(tools)) },
+    tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
     session: { synthetic: async () => { throw new Error("must not be called") } },
   }
   const originalWrite = process.stderr.write.bind(process.stderr)
