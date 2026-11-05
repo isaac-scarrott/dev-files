@@ -66,7 +66,7 @@ export default Plugin.define({
                     pending.set(requestID, { sessionID: toolCtx.sessionID, questions });
                     await rpc.events.emit("asked", { requestID, sessionID: toolCtx.sessionID, questions });
                     return {
-                        output: "The question was sent to the user. Continue with other work now; their answer (or that they closed it) will arrive later as a new message.",
+                        content: "The question was sent to the user. Continue with other work now; their answer (or that they closed it) will arrive later as a new message.",
                     };
                 },
             });
