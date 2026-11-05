@@ -1,26 +1,15 @@
-// Loads the built server entry the way the host does, then exercises it against a fake ToolEditor + session.synthetic
-// standing in for the real host, to catch wiring bugs server.ts's own logic can't be unit-tested for (field names,
-// the actual transform/update call sequence).
+// Loads the built server entry the way the host does, then exercises it against fakes for ctx.rpc, ctx.tool and
+// ctx.session.synthetic standing in for the real host, to catch wiring bugs the unit tests on logic.ts can't reach.
 import assert from "node:assert/strict"
-
-const QUESTION_TOOL = {
-  name: "question",
-  description: "Asks the user questions",
-  input: { type: "object", properties: { questions: { type: "array" } } },
-  execute: async (input) => ({ output: `answered: ${JSON.stringify(input)}` }),
-}
 
 const fakeRegistration = { dispose: async () => undefined }
 
 function fakeEditor(tools) {
   return {
     get: (id) => (tools[id] ? { id, ...tools[id] } : undefined),
-    update: (id, fn) => {
-      if (!tools[id]) return
-      fn(tools[id])
-    },
-    add: () => undefined,
-    remove: () => undefined,
+    update: (id, fn) => { if (tools[id]) fn(tools[id]) },
+    add: (tool) => { tools[tool.name] = tool },
+    remove: (id) => delete tools[id],
     namespace: () => undefined,
     list: () => Object.entries(tools).map(([id, tool]) => ({ id, ...tool })),
   }
@@ -31,82 +20,61 @@ async function run() {
   const plugin = mod.default
   if (plugin?.id !== "question-async" || typeof plugin.setup !== "function") throw new Error("missing plugin export")
 
-  const tools = { question: { ...QUESTION_TOOL } }
+  const tools = {}
   const synthetics = []
-  const logs = []
+  let handlers
+  let emitted = []
   const ctx = {
     tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
+    rpc: {
+      register: async (_contract, methods) => {
+        handlers = methods
+        return { events: { emit: async (name, data) => void emitted.push({ name, data }) } }
+      },
+    },
     session: { synthetic: async (input) => void synthetics.push(input) },
   }
-  const originalWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = (chunk) => { logs.push(String(chunk)); return true }
-  try {
-    await plugin.setup(ctx)
-  } finally {
-    process.stderr.write = originalWrite
-  }
 
-  assert.ok(logs.some((line) => line.includes("override active")), `expected an active log line, got: ${logs.join("")}`)
-  assert.equal(tools.question.input.properties.blocking.type, "boolean")
+  await plugin.setup(ctx)
 
-  const blocking = await tools.question.execute({ questions: [{ question: "Q?" }] }, { sessionID: "ses_smoke" })
-  assert.equal(blocking.output, 'answered: {"questions":[{"question":"Q?"}]}')
+  const tool = tools.question_background
+  assert.ok(tool, "question_background tool registered")
 
-  const nonBlocking = await tools.question.execute({ questions: [{ question: "Q?" }], blocking: false }, { sessionID: "ses_smoke" })
-  assert.match(nonBlocking.output, /continue with other work/i)
-  await new Promise((r) => setImmediate(r))
+  const questions = [{ question: "Dark or light?", header: "Theme", options: [{ label: "Dark", description: "d" }, { label: "Light", description: "l" }] }]
+
+  // Calling the tool returns at once and emits an "asked" event; nothing delivered yet.
+  const result = await tool.execute({ questions }, { sessionID: "ses_1" })
+  assert.match(result.output, /continue with other work/i)
+  assert.equal(emitted.length, 1)
+  assert.equal(emitted[0].name, "asked")
+  assert.equal(emitted[0].data.sessionID, "ses_1")
+  assert.deepEqual(emitted[0].data.questions, questions)
+  const requestID = emitted[0].data.requestID
+  assert.ok(requestID, "has a requestID")
+  assert.equal(synthetics.length, 0, "nothing delivered until answered")
+
+  // The GUI answers: delivered as a synthetic message naming the question and the answer.
+  const answered = await handlers.answer({ requestID, answers: [["Dark"]] })
+  assert.deepEqual(answered, { accepted: true })
   assert.equal(synthetics.length, 1)
-  assert.equal(synthetics[0].sessionID, "ses_smoke")
-  assert.match(synthetics[0].text, /answered your non-blocking question/)
+  assert.equal(synthetics[0].sessionID, "ses_1")
+  assert.match(synthetics[0].text, /"Dark or light\?"="Dark"/)
 
-  console.log("ok question-async server (active override, blocking + non-blocking paths)")
-}
+  // Answering again (stale requestID, already consumed) is rejected, not delivered twice.
+  const again = await handlers.answer({ requestID, answers: [["Light"]] })
+  assert.deepEqual(again, { accepted: false })
+  assert.equal(synthetics.length, 1)
 
-async function runMissingTool() {
-  const mod = await import("../dist/server.js")
-  const plugin = mod.default
-  const tools = {} // no "question" tool at all
-  const logs = []
-  const ctx = {
-    tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
-    session: { synthetic: async () => { throw new Error("must not be called") } },
-  }
-  const originalWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = (chunk) => { logs.push(String(chunk)); return true }
-  try {
-    await plugin.setup(ctx)
-  } finally {
-    process.stderr.write = originalWrite
-  }
-  assert.ok(logs.some((line) => line.includes("override inactive") && line.includes("was not found")), `expected an inactive log line, got: ${logs.join("")}`)
-  console.log("ok question-async server (missing tool degrades, never throws)")
-}
+  // A second ask, dismissed instead of answered.
+  emitted = []
+  await tool.execute({ questions }, { sessionID: "ses_2" })
+  const requestID2 = emitted[0].data.requestID
+  const dismissed = await handlers.dismiss({ requestID: requestID2 })
+  assert.deepEqual(dismissed, { accepted: true })
+  assert.equal(synthetics.length, 2)
+  assert.match(synthetics[1].text, /dismissed without an answer/)
 
-async function runUnrecognizedSchema() {
-  const mod = await import("../dist/server.js")
-  const plugin = mod.default
-  // Stands in for a Zod-like (or otherwise non-JSON-Schema) input: no `type`/`properties`.
-  const tools = { question: { ...QUESTION_TOOL, input: { _def: {}, extend: () => undefined } } }
-  const originalInput = tools.question.input
-  const originalExecute = tools.question.execute
-  const logs = []
-  const ctx = {
-    tool: { transform: async (cb) => { cb(fakeEditor(tools)); return fakeRegistration } },
-    session: { synthetic: async () => { throw new Error("must not be called") } },
-  }
-  const originalWrite = process.stderr.write.bind(process.stderr)
-  process.stderr.write = (chunk) => { logs.push(String(chunk)); return true }
-  try {
-    await plugin.setup(ctx)
-  } finally {
-    process.stderr.write = originalWrite
-  }
-  assert.ok(logs.some((line) => line.includes("override inactive") && line.includes("isn't a plain JSON object schema")), `expected an inactive log line, got: ${logs.join("")}`)
-  assert.equal(tools.question.input, originalInput, "schema left untouched")
-  assert.equal(tools.question.execute, originalExecute, "execute left untouched")
-  console.log("ok question-async server (unrecognized schema degrades, native tool untouched)")
+  console.log("ok question-async server (question_background: ask, answer, dismiss, stale requestID)")
 }
 
 await run()
-await runMissingTool()
-await runUnrecognizedSchema()
