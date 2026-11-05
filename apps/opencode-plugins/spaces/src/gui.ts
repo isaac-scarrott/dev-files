@@ -96,20 +96,23 @@ export default Plugin.define({
       strip.dispose()
     })
 
+    const draw = () => {
+      const current = state()
+      strip.update(
+        current.spaces.map((space) => ({ id: space.id, name: space.name, emoji: space.emoji, ...(space.accent ? { accent: space.accent } : {}) })),
+        current.active,
+      )
+    }
+    // The store's value keeps its identity as it is written, so a key over the fields is what tells the strip to redraw.
     createKeyed(
-      () => ctx.stores.spaces.value,
       () => {
-        const current = state()
-        strip.update(
-          current.spaces.map((space) => ({ id: space.id, name: space.name, emoji: space.emoji, ...(space.accent ? { accent: space.accent } : {}) })),
-          current.active,
-        )
+        const current = ctx.stores.spaces.value as State
+        const spaces = Array.isArray(current.spaces) ? current.spaces : []
+        return `${spaces.map((space) => `${space?.id}:${space?.name}:${space?.emoji}:${space?.accent ?? ""}`).join("|")}#${current.active}`
       },
+      () => draw(),
     )
-    strip.update(
-      state().spaces.map((space) => ({ id: space.id, name: space.name, emoji: space.emoji, ...(space.accent ? { accent: space.accent } : {}) })),
-      state().active,
-    )
+    draw()
 
     ctx.add(Command, () => ({
       id: "spaces.new",
