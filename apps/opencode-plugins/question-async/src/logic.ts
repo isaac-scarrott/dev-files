@@ -1,13 +1,69 @@
 import type { Question } from "./rpc.js"
 
+export type FieldOption = { value: string; label: string; description?: string }
+export type Field = {
+  key: string
+  type: "string" | "multiselect"
+  title: string
+  description: string
+  options: FieldOption[]
+  custom: true
+}
+
+/** The host's own `question` tool makes forms with this metadata; the dock and the attention mark key on it. */
+export const FORM_TITLE = "Questions"
+
+export const fieldKey = (index: number) => `q${index}`
+
+/** One field per question, the same mapping the built-in `question` tool uses: header → title, question → description. */
+export function toFields(questions: readonly Question[]): [Field, ...Field[]] {
+  const fields = questions.map(
+    (q, i): Field => ({
+      key: fieldKey(i),
+      type: q.multiple ? "multiselect" : "string",
+      title: q.header,
+      description: q.question,
+      options: q.options.map((o) => ({ value: o.label, label: o.label, description: o.description })),
+      custom: true,
+    }),
+  )
+  return fields as [Field, ...Field[]]
+}
+
+export type FormMetadata = {
+  kind: "question"
+  requestID: string
+  tool: { messageID: string; id: string }
+}
+
+export function formMetadata(requestID: string, messageID: string, callID: string): FormMetadata {
+  return { kind: "question", requestID, tool: { messageID, id: callID } }
+}
+
+/** A form answer ({q0: "Dark", q1: ["A", "B"]}) as one array of chosen labels or typed text per question, in order. */
+export function answersFromForm(questions: readonly Question[], answer: Record<string, unknown>): string[][] {
+  return questions.map((_, i) => {
+    const value = answer[fieldKey(i)]
+    if (Array.isArray(value)) return value.map(String)
+    if (value === undefined || value === null || value === "") return []
+    return [String(value)]
+  })
+}
+
 /** The message delivered back into the session once every question has an answer. */
 export function answeredText(questions: readonly Question[], answers: readonly (readonly string[])[]): string {
   const lines = questions.map((q, i) => `"${q.question}"="${answers[i]?.length ? answers[i]!.join(", ") : "Unanswered"}"`)
   return `The user answered your background questions: ${lines.join(", ")}. You can now continue with the user's answers in mind.`
 }
 
-/** The message delivered when the user closes the dialog without answering. */
+/** The message delivered when the user dismisses the question without answering. */
 export function dismissedText(questions: readonly Question[]): string {
   const summary = questions.map((q) => q.question).join("; ") || "your question"
   return `Your background question (${summary}) was dismissed without an answer.`
+}
+
+/** The message delivered when no window could show the question. */
+export function failedText(questions: readonly Question[], reason: string): string {
+  const summary = questions.map((q) => q.question).join("; ") || "your question"
+  return `Your background question (${summary}) could not be shown to the user: ${reason}`
 }

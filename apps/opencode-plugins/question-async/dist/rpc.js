@@ -14,6 +14,7 @@ export const questionSchema = {
         question: { type: "string", description: "Complete question" },
         header: { type: "string", description: "Very short label (max 30 chars)" },
         options: { type: "array", items: optionSchema, description: "Available choices" },
+        multiple: { type: "boolean", description: "Allow selecting multiple choices" },
     },
     required: ["question", "header", "options"],
     additionalProperties: false,
@@ -30,37 +31,46 @@ const requestID = {
     required: ["requestID"],
     additionalProperties: false,
 };
+const asked = {
+    type: "object",
+    properties: {
+        requestID: { type: "string" },
+        sessionID: { type: "string" },
+        messageID: { type: "string" },
+        callID: { type: "string" },
+        questions: { type: "array", items: questionSchema },
+    },
+    required: ["requestID", "sessionID", "messageID", "callID", "questions"],
+    additionalProperties: false,
+};
 export const QuestionBackground = Rpc.define({
     id: "question-async",
     methods: {
-        // The GUI's answers, one array of chosen labels (or typed text) per question, in order.
-        answer: {
+        // The first window to claim a request creates its form; any other window is refused, so one question is one form.
+        claim: { input: requestID, output: reply },
+        // Requests no window has claimed yet, for a window that opened after the tool call.
+        pending: {
+            input: { type: "object", properties: {}, additionalProperties: false },
+            output: {
+                type: "object",
+                properties: { requests: { type: "array", items: asked } },
+                required: ["requests"],
+                additionalProperties: false,
+            },
+        },
+        // The form could not be created; the agent is told instead of waiting forever.
+        failed: {
             input: {
                 type: "object",
-                properties: {
-                    requestID: { type: "string" },
-                    answers: { type: "array", items: { type: "array", items: { type: "string" } } },
-                },
-                required: ["requestID", "answers"],
+                properties: { requestID: { type: "string" }, reason: { type: "string" } },
+                required: ["requestID", "reason"],
                 additionalProperties: false,
             },
             output: reply,
         },
-        dismiss: { input: requestID, output: reply },
     },
     events: {
-        // A question_background tool call, for the GUI to show as the app's own dialogs.
-        asked: {
-            schema: {
-                type: "object",
-                properties: {
-                    requestID: { type: "string" },
-                    sessionID: { type: "string" },
-                    questions: { type: "array", items: questionSchema },
-                },
-                required: ["requestID", "sessionID", "questions"],
-                additionalProperties: false,
-            },
-        },
+        // A question_background tool call, for a window to turn into the host's own question form.
+        asked: { schema: asked },
     },
 });

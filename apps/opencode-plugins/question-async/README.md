@@ -31,14 +31,9 @@ either loads or it doesn't, the same as any other plugin tool.
 
 ## How it answers
 
-The tool's `execute` doesn't show any UI itself. It stores the pending questions, emits an `asked` RPC event, and
-returns immediately. The plugin's GUI half listens for that event and shows the app's own `ctx.dialogs.select` /
-`ctx.dialogs.prompt` dialogs — the same dialog primitives the host itself uses elsewhere, so there's no separate
-card UI to keep in parity. Each question offers a single choice or free text; there's no multi-select (`ctx.dialogs.select`
-only supports one pick). Once every question is answered, or the user closes a dialog without answering, the GUI
-calls back into the server, which delivers the result into the session as a synthetic message
-(`ctx.session.synthetic`, `delivery: "queue"` — same mechanism `shell-handoff` uses for its notices).
-
-A question still pending across a server restart is lost (the in-memory map is gone); the user's dialog, if still
-open, calls back to a server that no longer remembers the request, so it's rejected quietly rather than delivered
-to the wrong place.
+The tool's `execute` stores the request and returns at once. The plugin's GUI half turns it into a host form
+(`client.session.form.create`, shaped like the built-in `question` tool's), so the user gets the host's own question
+card, with the same attention mark, multi-select (`multiple: true` on a question) and free-text answer. The server
+half hears `form.replied` / `form.cancelled` and delivers the result into the session as a synthetic message
+(`ctx.session.synthetic`, `delivery: "queue"`). Not reproduced: the "Questions · N answered" row in the timeline
+(host tool renderer, keyed by tool name). See `DESIGN.md` for evidence and deviations.

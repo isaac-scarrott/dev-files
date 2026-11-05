@@ -1,9 +1,10 @@
 import { createKeyed, Plugin } from "@opencode/plugin/gui"
 import { onCleanup } from "solid-js"
+import { FORM_TITLE, formMetadata, toFields } from "./logic.js"
 import { QuestionBackground, type Asked } from "./rpc.js"
 
-const CUSTOM = "__question_background_custom__"
-
+// The host draws its own question card, attention mark and answered summary for any form like the built-in `question`
+// tool's. This half only creates that form; the server half hears the reply from the host and delivers it.
 export default Plugin.define({
   setup(ctx) {
     createKeyed(
@@ -11,40 +12,27 @@ export default Plugin.define({
       (client) => {
         const rpc = client.rpc(QuestionBackground)
 
-        onCleanup(
-          rpc.events.on("asked", (event) => {
-            const asked = event.data as Asked
-            const options = { location: event.location }
+        async function show(asked: Asked, location?: unknown) {
+          const options = location ? { location: location as never } : undefined
+          const claim = (await rpc.claim({ requestID: asked.requestID }, options)) as { accepted: boolean }
+          if (!claim.accepted) return
+          try {
+            await client.session.form.create({
+              sessionID: asked.sessionID,
+              title: FORM_TITLE,
+              metadata: formMetadata(asked.requestID, asked.messageID, asked.callID),
+              fields: toFields(asked.questions),
+            })
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error)
+            ctx.toast.show({ title: "Could not show the question", description: reason, variant: "error" })
+            await rpc.failed({ requestID: asked.requestID, reason }, options)
+          }
+        }
 
-            void (async () => {
-              const answers: string[][] = []
-              for (const question of asked.questions) {
-                const picked = await ctx.dialogs.select({
-                  title: question.question,
-                  options: [
-                    ...question.options.map((option) => ({ title: option.label, description: option.description, value: option.label })),
-                    { title: "Type your own answer", value: CUSTOM },
-                  ],
-                })
-                if (picked === undefined) {
-                  await rpc.dismiss({ requestID: asked.requestID }, options)
-                  return
-                }
-                if (picked === CUSTOM) {
-                  const text = await ctx.dialogs.prompt({ title: question.question })
-                  if (text === undefined) {
-                    await rpc.dismiss({ requestID: asked.requestID }, options)
-                    return
-                  }
-                  answers.push([text])
-                } else {
-                  answers.push([picked])
-                }
-              }
-              await rpc.answer({ requestID: asked.requestID, answers }, options)
-            })()
-          }),
-        )
+        onCleanup(rpc.events.on("asked", (event) => void show(event.data as Asked, event.location)))
+
+        void rpc.pending({}).then((reply) => (reply as { requests: Asked[] }).requests.forEach((asked) => void show(asked)))
       },
     )
   },

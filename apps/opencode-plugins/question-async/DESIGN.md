@@ -61,32 +61,49 @@ Carried over from design 2's reasoning, and still true here: there's no scenario
 to load that leaves the agent stuck, because `question` was never touched to begin with. If `question_background`
 isn't available, that's just the old behavior — always blocking — not a broken state.
 
-## How it answers, concretely
+## How it answers, concretely (design 4: the host's own form)
 
-`question_background`'s `execute` does no UI work. It stores `{sessionID, questions}` keyed by a generated
-`requestID`, emits an `asked` RPC event (`@opencode/schema/rpc`'s `Rpc.define`, the same contract shape `blindfold`
-uses — see `src/rpc.ts`), and returns immediately with a message telling the agent to continue.
+The host (2.2.5) has native forms: `client.session.form.create({sessionID, title, metadata, fields})`, with events
+`form.created` / `form.replied` / `form.cancelled`. The built-in `question` tool is one underneath: its form is
+`{title: "Questions", metadata: {kind: "question", tool: {messageID, id}}, fields: [{key: "q0", type: "string", title: header,
+description: question, options, custom: true}]}` (read from `client.session.form.list` while a native question was pending).
+Creating the same shape from a plugin makes the host draw its own question dock, so there is no card to keep in parity.
 
-The GUI half (`src/gui.ts`) subscribes to `asked` and, for each question in order, calls `ctx.dialogs.select` (the
-app's own picker dialog) with the question's options plus a "Type your own answer" entry that falls through to
-`ctx.dialogs.prompt`. Closing any dialog without answering calls back with `dismiss`; completing every question
-calls back with `answer`. Either way, the server delivers a `ctx.session.synthetic` message (`delivery: "queue"`,
-not `"steer"`, so it doesn't interrupt whatever the agent is doing when the answer lands — the same choice
-`shell-handoff` makes for its own notices).
+- **Tool `execute`** (server) stores `{requestID, sessionID, messageID, callID, questions}` (also in `ctx.storage`), emits
+  `asked`, returns at once.
+- **GUI half** claims the request over RPC (first window wins, so one question is one form), then calls
+  `client.session.form.create`. A window that opens later asks `pending` for unclaimed requests. A create failure
+  toasts and tells the server (`failed`), which delivers that to the agent instead of leaving it waiting.
+- **Server** subscribes to `form.created` (records the formID from `metadata.requestID`), `form.replied` and
+  `form.cancelled`, and delivers with `ctx.session.synthetic` (`delivery: "queue"`). Delivery deletes the pending entry
+  first, so a repeated event delivers nothing. Events for forms it did not make are ignored.
+- **Mapping**: `header`→field `title`, `question`→`description`, options→options (`value` = label), free text via
+  `custom: true`, `multiple: true`→a `multiselect` field. All questions of a call are one form.
 
-Because `ctx.dialogs.select`/`prompt` are the host's own dialog primitives, there's no separate card UI to keep in
-native-parity with — it already looks exactly like the rest of the app.
+## Evidence (2.2.5, private harness, stub model)
 
-## Known limits (v1)
+- Same dock as native: screenshots of the built-in card and the form card are pixel-identical in layout (title row
+  "1 of 2 questions", step dashes, option rows with numbers, "Type your own answer…", Dismiss / Next / Submit, ⌘⏎
+  tooltip). Multi-select shows checkboxes and "Select all answers that apply".
+- Non-blocking: the stub's turn finished ("Done.") while the card was still open.
+- Answer round trip: Dark + Alpha/Beta arrived as `The user answered your background questions: "Which theme?"="Dark",
+  "Which extras?"="Alpha, Beta"…`. Dismiss arrived as the dismissed message.
+- The card survives a window reload (the form lives on the service).
+- Attention mark: a session with a pending form shows `[data-mark="attention"]` on its tab while another tab is viewed,
+  same as a pending native question.
 
-- **No multi-select.** `ctx.dialogs.select` returns one picked value; the native tool's `multiple: true` option has
-  no equivalent here. The tool's description says so.
-- **Lost across a server restart.** The pending-questions map is in memory only. A dialog left open across a
-  restart calls back to a server that no longer has the request; the call is rejected quietly (not delivered to
-  the wrong session), and the dialog should be closed with no error shown. Not yet handled more gracefully than
-  that — acceptable for v1 since restarts are rare and the cost is "that one question needs re-asking."
-- **First load needs a service restart.** The host reads a plugin's GUI export only on its first load. This plugin first
-  loaded as server-only, so its GUI half stayed ignored (`GET /api/plugin` showed `features: {server}`) until
-  `scripts/opencode-safe-restart.sh`. Ship the GUI export before a plugin's first load.
-- **Verified end to end** on 2.2.5: tool call returns in ~2 ms, the dialog opens, the answer arrives in the session as a
-  message.
+## Accepted deviations
+
+- **No "Questions · N answered" row afterwards.** That summary is a host tool renderer registered by tool *name*
+  (`question`, reading `metadata.answers`); plugins have no registry for tool renderers. Our call is shown as the
+  code-mode "Used 1 Execute" row, and nothing replaces it once answered. The answer is still in the thread as the
+  delivered message. Closest option, not built: none without a host API.
+- **Answered forms leave the dock** and are not listed afterwards (`session.form.list` returns pending only).
+- **The attention mark is not visible on the tab you are viewing**, native or not.
+
+## Known limits
+
+- **Lost UI across a restart before the form exists.** A request not yet turned into a form is kept in `ctx.storage`
+  and offered to the next window that opens (`pending`). A request whose form exists keeps working across restarts.
+- **First load needs a service restart.** The host reads a plugin's GUI export only on its first load. Ship the GUI
+  export before a plugin's first load.
