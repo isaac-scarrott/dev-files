@@ -199,6 +199,7 @@ private struct AccountRow: View {
 
     /// A failed poll with recent numbers on screen isn't worth flagging; it only matters once they go stale.
     private var caption: String {
+        if account.heldBack { return "Paused · keeping extra usage off" }
         guard let problem = account.problem else { return identity }
         guard let fetchedAt = account.fetchedAt else { return problem }
         guard now.timeIntervalSince(fetchedAt) > 15 * 60 else { return identity }

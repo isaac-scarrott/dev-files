@@ -12,6 +12,7 @@ extension [AccountUsage] {
             a.sevenDay = week.map { UsageWindow(utilization: $0.0, resetsAt: $0.1.map { Date.now.addingTimeInterval($0) }) }
             a.fetchedAt = fetchedAgo.map { Date.now.addingTimeInterval(-$0) }
             a.problem = problem
+            a.heldBack = id == "f"
             return a
         }
         let h: TimeInterval = 3600, d: TimeInterval = 86400

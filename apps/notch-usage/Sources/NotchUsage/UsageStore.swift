@@ -32,6 +32,10 @@ struct AccountUsage: Identifiable, Equatable, Codable {
     var sevenDay: UsageWindow?
     var fetchedAt: Date?
     var problem: String?
+    /// Whether the account bills past 100% instead of refusing, as last reported.
+    var extraUsage: Bool?
+    /// The guard has taken this account out of cliproxy's rotation to keep it off extra usage.
+    var heldBack = false
     /// Recent 5h readings, for the burn rate.
     var history: [Sample] = []
 
@@ -54,6 +58,8 @@ struct AccountUsage: Identifiable, Equatable, Codable {
         sevenDay = try c.decodeIfPresent(UsageWindow.self, forKey: .sevenDay)
         fetchedAt = try c.decodeIfPresent(Date.self, forKey: .fetchedAt)
         problem = try c.decodeIfPresent(String.self, forKey: .problem)
+        extraUsage = try c.decodeIfPresent(Bool.self, forKey: .extraUsage)
+        heldBack = try c.decodeIfPresent(Bool.self, forKey: .heldBack) ?? false
         history = try c.decodeIfPresent([Sample].self, forKey: .history) ?? []
     }
 }
@@ -72,8 +78,12 @@ private struct UsageResponse: Decodable {
 
         var window: UsageWindow { UsageWindow(utilization: utilization, resetsAt: resets_at) }
     }
+    struct ExtraUsage: Decodable {
+        let is_enabled: Bool?
+    }
     let five_hour: Window?
     let seven_day: Window?
+    let extra_usage: ExtraUsage?
 }
 
 private struct ProfileResponse: Decodable, Sendable {
@@ -151,8 +161,13 @@ final class UsageStore: ObservableObject {
     nonisolated private static let historyKept: TimeInterval = 2 * 3600
     nonisolated private static let profileMaxAge: TimeInterval = 86400
 
+    private static let heldKey = "extraUsageGuardHeld"
+
     private var schedules: [String: Schedule] = [:]
     private var refreshing = false
+    /// Auth files the guard disabled itself. Kept across launches: a held account is skipped by everything else,
+    /// so forgetting it would leave it disabled for good.
+    private var held = Set(UserDefaults.standard.stringArray(forKey: UsageStore.heldKey) ?? [])
 
     init(preview: [AccountUsage]? = nil) {
         if let preview { accounts = preview; return }
@@ -180,7 +195,7 @@ final class UsageStore: ObservableObject {
         defer { refreshing = false }
 
         let now = Date.now
-        let creds = Self.loadCredentials()
+        let creds = Self.loadCredentials(held: held)
         let previous = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let due = creds.filter { schedules[$0.id, default: Schedule()].nextAttempt <= now }
 
@@ -195,9 +210,10 @@ final class UsageStore: ObservableObject {
             }
         }
 
-        let merged = creds.map { cred in
+        var merged = creds.map { cred in
             results[cred.id] ?? previous[cred.id] ?? AccountUsage(id: cred.id, label: cred.label, org: cred.org)
         }
+        applyGuard(to: &merged, now: now)
         guard merged != accounts else { return }
         withAnimation(.spring(response: 0.5, dampingFraction: 1)) { accounts = merged }
         saveSnapshot()
@@ -227,7 +243,61 @@ final class UsageStore: ObservableObject {
         try? data.write(to: Self.snapshotURL, options: .atomic)
     }
 
-    private static func loadCredentials() -> [Credential] {
+    /// Disables or re-enables accounts on extra usage so cliproxy stops routing to one that is about to bill
+    /// overage. Runs on stored readings too, not only fresh ones: a held account's token may have expired, and its
+    /// last reset time is then all that says when it is safe again.
+    private func applyGuard(to accounts: inout [AccountUsage], now: Date) {
+        let before = held
+        for i in accounts.indices {
+            let id = accounts[i].id
+            let url = Self.authDir.appendingPathComponent(id)
+            if held.contains(id), !Self.fileIsDisabled(url) { held.remove(id) }
+            let windows = [accounts[i].fiveHour, accounts[i].sevenDay].compactMap { $0 }
+                .map { ExtraUsageGuard.Window(utilization: $0.utilization, resetsAt: $0.resetsAt) }
+            switch ExtraUsageGuard.action(extraUsage: accounts[i].extraUsage, held: held.contains(id), windows: windows, now: now) {
+            case .hold:
+                if Self.writeDisabled(true, to: url) {
+                    held.insert(id)
+                    NSLog("extra-usage guard: paused %@", id)
+                }
+            case .release:
+                if Self.writeDisabled(false, to: url) {
+                    held.remove(id)
+                    schedules[id, default: Schedule()].nextAttempt = now
+                    NSLog("extra-usage guard: resumed %@", id)
+                }
+            case .none:
+                break
+            }
+            accounts[i].heldBack = held.contains(id)
+        }
+        if held != before { UserDefaults.standard.set(Array(held), forKey: Self.heldKey) }
+    }
+
+    nonisolated private static func fileIsDisabled(_ url: URL) -> Bool {
+        (try? Data(contentsOf: url)).map(ExtraUsageGuard.isDisabled(in:)) ?? false
+    }
+
+    /// Written in place, never by replacing the file: cliproxy ignores a replaced file whose content looks
+    /// unchanged to it, so an atomic write would leave the account in rotation.
+    nonisolated private static func writeDisabled(_ disabled: Bool, to url: URL) -> Bool {
+        // Read right before writing: cliproxy rewrites the file whenever it refreshes the token.
+        guard let old = try? Data(contentsOf: url), let new = ExtraUsageGuard.setDisabled(disabled, in: old) else { return false }
+        if new == old { return true }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return false }
+        defer { try? handle.close() }
+        do {
+            // Overwrite, then trim: the file is never empty while cliproxy might read it.
+            try handle.seek(toOffset: 0)
+            try handle.write(contentsOf: new)
+            try handle.truncate(atOffset: UInt64(new.count))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func loadCredentials(held: Set<String>) -> [Credential] {
         let files = (try? FileManager.default.contentsOfDirectory(at: authDir, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.lastPathComponent.hasPrefix("claude-") && $0.pathExtension == "json" }
@@ -235,7 +305,7 @@ final class UsageStore: ObservableObject {
             .compactMap { url in
                 guard let data = try? Data(contentsOf: url),
                       let file = try? JSONDecoder().decode(CredentialFile.self, from: data),
-                      file.disabled != true else { return nil }
+                      file.disabled != true || held.contains(url.lastPathComponent) else { return nil }
                 let parts = file.email.split(separator: "@", maxSplits: 1)
                 let domain = parts.count > 1 ? parts[1].split(separator: ".").first.map(String.init) ?? "" : ""
                 let org = file.organization_name ?? ""
@@ -271,6 +341,8 @@ final class UsageStore: ObservableObject {
             usage.fiveHour = previous.fiveHour
             usage.sevenDay = previous.sevenDay
             usage.fetchedAt = previous.fetchedAt
+            usage.extraUsage = previous.extraUsage
+            usage.heldBack = previous.heldBack
             usage.history = previous.history
         }
         var outcome = Outcome.failed
@@ -289,6 +361,7 @@ final class UsageStore: ObservableObject {
                 usage.fiveHour = body.five_hour?.window.carryingExhaustion(from: usage.fiveHour, at: now)
                 usage.sevenDay = body.seven_day?.window.carryingExhaustion(from: usage.sevenDay, at: now)
                 usage.fetchedAt = now
+                usage.extraUsage = body.extra_usage?.is_enabled
                 if let five = usage.fiveHour {
                     usage.history = usage.history.filter { now.timeIntervalSince($0.at) < historyKept }
                         + [Sample(at: now, utilization: five.utilization, resetsAt: five.resetsAt)]
