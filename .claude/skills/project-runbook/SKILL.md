@@ -11,7 +11,7 @@ Two roles never blur. **Facts** are yours: find them with sub-agents, queries, p
 
 1. **Open the runbook first.** Create it before any research (a Claude Doc when docs tools exist, otherwise a markdown file at a path the user picks), seeded from `RUNBOOK.md`: every section as a pending block, plus the Contracts and Decision log tabs, so a missing piece shows as a visible placeholder. Done when the user has its link and the top says it is the source of truth.
 
-2. **Investigate in parallel.** Fan out background agents over everything the decisions will rest on: existing code and data models, prior attempts and why they failed, live data volumes and coverage, designs, external practice and data sources. Brief each with the context and a word budget, ask for file:line evidence with evidence and inference marked apart. Done when every area the first decisions touch has a report, recorded under Research with durable file paths (never `/tmp`).
+2. **Investigate in parallel.** Fan out background scouts over everything the decisions will rest on: existing code and data models, prior attempts and why they failed, live data volumes and coverage, designs, external practice and data sources. Brief each with the context and a word budget, ask for file:line evidence with evidence and inference marked apart. Done when every area the first decisions touch has a report, recorded under Research with durable file paths (never `/tmp`).
 
    Also map the **neighbouring work**: other projects, branches and PRs that touch the same surfaces, so each decision names what it leaves to them and what it assumes from them.
 
@@ -34,7 +34,7 @@ Two roles never blur. **Facts** are yours: find them with sub-agents, queries, p
 
 5. **Plan the next milestone in the weeds.** Grill that milestone item by item (samples, prompts, thresholds, who does what, where code lives, what the user will look at, pass bars) as questions numbered by milestone (M1.1, M1.2…). Plan later milestones only once the previous one's results are in. Done when every item in the milestone has a plan the user approved.
 
-6. **Dispatch by number.** "Dispatch 3c" sends a background agent to that item with a brief drawn from the runbook. Name the house-rule skills it must load, and check its report says it did; a skill mentioned in passing gets skipped, so review the result against the repo's conventions before calling it done. Set its status to In progress; record the report, plan or PR link in its Outcome; move it to Merging on PR and Done on merge or finished study. Close a milestone only when its check passes, writing up the result and what changed from the plan.
+6. **Dispatch by number.** "Dispatch 3c" sends a background agent to that item, at the item's tier (AGENTS.md, "Sub-agent tiers"), with a brief drawn from the runbook. Name the house-rule skills it must load, and check its report says it did; a skill mentioned in passing gets skipped, so review the result against the repo's conventions before calling it done. Set its status to In progress; record the report, plan or PR link in its Outcome; move it to Merging on PR and Done on merge or finished study. Close a milestone only when its check passes, writing up the result and what changed from the plan.
 
 7. **Keep it resumable.** At every pause update the runbook's Where we are: date, current milestone, what is waiting on whom, the next action, what is parked. Done when a fresh session reading only the runbook could continue.
 

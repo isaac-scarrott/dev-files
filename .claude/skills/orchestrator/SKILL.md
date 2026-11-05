@@ -19,6 +19,7 @@ When principles pull against each other, these three decide.
 
 - Keep your own context for decisions: delegate wide reading, research and implementation, and read the conclusion rather than the file dumps.
 - Do small, mechanical, high-conflict edits yourself: shared indexes, manifests, registries, generated lists, config test lists. Builders list the lines they need in their reports. You apply them once, at landing time.
+- Dispatch each builder at its tier (AGENTS.md, "Sub-agent tiers"): the read-only trace that opens a brief, a red check's log and a root-cause hunt go to a scout, a tightly briefed mechanical change to a worker, and the rest to a builder.
 - Scale the fleet to the work. Group related items so one builder owns one coherent area. A builder that already holds the context is cheaper to message again than a fresh one, but only for work in the same area. Unrelated work goes to a fresh builder, because a queue on one agent is a delay to the user.
 - Parallelise everything that doesn't share files, and serialise only what does. Land each piece the moment it is verified, rather than waiting to batch it with slower siblings.
 

@@ -18,6 +18,20 @@ Cross-tool guidelines (Claude Code, opencode, others). Modern harnesses already 
 
 - The shared OpenCode server restarts several times a day, and a restart kills shell jobs, foreground and background. Anything likely to run past ~2 minutes (installs, full test suites, harness runs, CI or deploy waits) goes through `monitor.start` when that tool is available: it wakes you when the command exits, and after a restart it runs the command again from the start, so make it safe to rerun and have it write its log to a file.
 
+## Sub-agent tiers
+
+Every sub-agent dispatch goes to the cheapest tier that can finish it: orchestrator builders, project-runbook items, merger resolvers, grilling fact-finds, Explore passes, any fan-out. Planning, specs, grilling the user, review and landing stay in the dispatching session, which reads what comes back before acting on it.
+
+| Tier | Gets | Runs on |
+|---|---|---|
+| **scout** | finding code, research, root-cause traces, CI, deploy and monitoring log triage, "what changed", read-only queries, summarising long output | a cheap model, read-only |
+| **worker** | one scoped change with a written acceptance check: mechanical edits, renames, generated-file conflicts, tests, fixtures, docs, small single-area fixes | a cheap model; commits, never pushes |
+| **builder** | feature code across several files, design and visual work (screenshots, mocks), source conflicts, money, auth, data or migrations | the strong model |
+
+- Each harness maps the tiers in its own config. Dispatch to the agent named after the tier when one exists; otherwise set the dispatch's model to the cheapest one the harness offers for scout and worker.
+- Brief a scout or worker tightly: the files or area, the acceptance check, a word budget for the report. Work that can't be briefed that tightly is builder work.
+- **Escalate** to the builder tier, passing on what was found, when a scout or worker fails its check twice, loops, or stubs the hard part. On a quota or rate-limit error, retry the same tier on another cheap model first.
+
 ## Artifacts
 
 - Put meaning in the artifact itself: clear names, plain structure, direct words. If it reads unclearly, fix the artifact — don't paper over it with an explanation.
