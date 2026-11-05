@@ -1,12 +1,48 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Plugin } from "@opencode/plugin";
 import { appendBlockingNote, createAsyncExecute, hasBlocking, isJsonObjectSchema, withBlocking } from "./override.js";
 const QUESTION_TOOL = "question";
+const STATUS_FILE = join(homedir(), ".local", "share", "opencode", "question-async", "status.json");
+/** Shallow, crash-proof description of whatever shape the native tool's schema turns out to be, for diagnosis without
+ * a debugger: typeof/keys only, never the schema's own (possibly huge or circular) content. */
+function describeSchema(input) {
+    try {
+        if (input === null || input === undefined)
+            return { typeofValue: typeof input };
+        const record = input;
+        return {
+            typeofValue: typeof input,
+            constructorName: input?.constructor?.name,
+            keys: typeof input === "object" ? Object.keys(record).slice(0, 20) : undefined,
+            type: record.type,
+            hasProperties: typeof record.properties,
+            hasExtend: typeof record.extend,
+            hasDef: typeof record._def,
+            hasParse: typeof record.parse,
+        };
+    }
+    catch (error) {
+        return { describeError: String(error) };
+    }
+}
+async function writeStatus(status) {
+    try {
+        await mkdir(join(homedir(), ".local", "share", "opencode", "question-async"), { recursive: true });
+        await writeFile(STATUS_FILE, JSON.stringify({ ...status, at: new Date().toISOString() }, null, 2));
+    }
+    catch {
+        // Diagnostics are best-effort; never let them affect setup.
+    }
+}
 export default Plugin.define({
     id: "question-async",
     async setup(ctx) {
         const log = (message) => void process.stderr.write(`[question-async] ${message}\n`);
         let active = false;
         let reason = "not probed yet";
+        let schemaSeen = {};
         try {
             await ctx.tool.transform((editor) => {
                 const existing = editor.get(QUESTION_TOOL);
@@ -14,6 +50,7 @@ export default Plugin.define({
                     reason = `the "${QUESTION_TOOL}" tool was not found; non-blocking questions are unavailable this session, blocking questions are unaffected`;
                     return;
                 }
+                schemaSeen = describeSchema(existing.input);
                 if (!isJsonObjectSchema(existing.input)) {
                     reason = `the "${QUESTION_TOOL}" tool's schema isn't a plain JSON object schema; non-blocking questions are unavailable this session, blocking questions are unaffected`;
                     return;
@@ -56,5 +93,6 @@ export default Plugin.define({
             reason = `probing the "${QUESTION_TOOL}" tool threw: ${String(error)}; non-blocking questions are unavailable this session, blocking questions are unaffected`;
         }
         log(`non-blocking override ${active ? "active" : `inactive (${reason})`}`);
+        await writeStatus({ active, reason, schemaSeen });
     },
 });
