@@ -50,14 +50,14 @@ export interface Preset { id: PresetId; label: string; until: number }
 
 export function presets(now: Date): Preset[] {
   const base = fieldsOf(+now)
-  const wall = (days: number, h: number) => resolveLocal({ ...base, d: base.d + days, h, mi: 0 }).at
-  const evening = wall(0, 18)
+  const wall = (days: number, h: number, mi = 0) => resolveLocal({ ...base, d: base.d + days, h, mi }).at
+  const endOfWorkday = wall(0, 16, 30)
   // Next Monday; on a Monday that is a week away.
   const toMonday = (8 - now.getDay()) % 7 || 7
   return [
     { id: "1h", label: "In 1 hour", until: +now + HOUR },
     { id: "3h", label: "In 3 hours", until: +now + 3 * HOUR },
-    ...(evening > +now ? [{ id: "evening" as const, label: "This evening", until: evening }] : []),
+    ...(endOfWorkday > +now ? [{ id: "evening" as const, label: "End of workday", until: endOfWorkday }] : []),
     { id: "tomorrow", label: "Tomorrow", until: wall(1, 9) },
     { id: "week", label: "Next week", until: wall(toMonday, 9) },
   ]

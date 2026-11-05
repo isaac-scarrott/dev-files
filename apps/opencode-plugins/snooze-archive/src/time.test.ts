@@ -12,7 +12,7 @@ const clock = (t: number) => { const d = new Date(t); return `${d.getFullYear()}
 
 const ZONES = ["Europe/London", "America/New_York", "Asia/Kolkata", "Asia/Kathmandu", "Australia/Lord_Howe", "Pacific/Auckland", "UTC"]
 
-test("elapsed presets are exact durations; calendar presets are wall-clock 09:00 / 18:00 in every zone", () => {
+test("elapsed presets are exact durations; calendar presets are wall-clock 09:00 / 16:30 in every zone", () => {
   for (const tz of ZONES) zone(tz, () => {
     for (const text of ["2026-03-07T23:30:00", "2026-03-28T23:30:00", "2026-10-03T12:00:00", "2026-10-24T23:30:00", "2026-10-31T23:30:00", "2026-04-04T12:00:00"]) {
       const now = new Date(text)
@@ -30,9 +30,9 @@ test("elapsed presets are exact durations; calendar presets are wall-clock 09:00
   })
 })
 
-test("This evening only while 18:00 is ahead; next week is a week out on a Monday", () => zone("Europe/London", () => {
-  assert.ok(presets(new Date("2026-11-02T17:59")).some((p) => p.id === "evening"))
-  assert.equal(presets(new Date("2026-11-02T18:00")).some((p) => p.id === "evening"), false)
+test("End of workday only while 16:30 is ahead; next week is a week out on a Monday", () => zone("Europe/London", () => {
+  assert.ok(presets(new Date("2026-11-02T16:29")).some((p) => p.id === "evening"))
+  assert.equal(presets(new Date("2026-11-02T16:30")).some((p) => p.id === "evening"), false)
   assert.equal(presets(new Date("2026-11-02T23:59")).some((p) => p.id === "evening"), false)
   assert.equal(clock(presets(new Date("2026-11-02T08:00")).find((p) => p.id === "week")!.until), "2026-11-09 09:00")
   assert.equal(clock(presets(new Date("2026-11-01T08:00")).find((p) => p.id === "week")!.until), "2026-11-02 09:00", "Sunday → next day")
@@ -94,8 +94,8 @@ test("hints: time today and tomorrow, weekday for later days; 12/24 hour honoure
   const now = Date.parse("2026-11-02T10:00:00Z")
   const list = presets(new Date(now))
   const hint = (id: string, o = {}) => formatHint(list.find((p) => p.id === id)!, now, { locale: "en-GB", ...o })
-  assert.equal(hint("1h"), "11:00"); assert.equal(hint("evening"), "18:00"); assert.equal(hint("tomorrow"), "9:00"); assert.equal(hint("week"), "Mon 9:00")
-  assert.equal(hint("evening", { locale: "en-US", hour12: true }), "6:00 PM")
+  assert.equal(hint("1h"), "11:00"); assert.equal(hint("evening"), "16:30"); assert.equal(hint("tomorrow"), "9:00"); assert.equal(hint("week"), "Mon 9:00")
+  assert.equal(hint("evening", { locale: "en-US", hour12: true }), "4:30 PM")
   assert.match(formatWake(Date.parse("2026-11-04T14:05:00Z"), now, { locale: "en-GB" }), /Wed.*4 Nov.*14:05/)
   assert.match(formatWake(Date.parse("2027-01-04T14:05:00Z"), now, { locale: "en-GB" }), /2027/)
 }))
