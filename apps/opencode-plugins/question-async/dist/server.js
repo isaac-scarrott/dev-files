@@ -40,59 +40,66 @@ export default Plugin.define({
     id: "question-async",
     async setup(ctx) {
         const log = (message) => void process.stderr.write(`[question-async] ${message}\n`);
-        let active = false;
-        let reason = "not probed yet";
-        let schemaSeen = {};
-        try {
-            await ctx.tool.transform((editor) => {
+        let calls = 0;
+        // `ctx.tool.transform` registers this to run on every future tool-list build, not once at setup. Each run gets
+        // its own fresh editor reflecting the current state, so the probe and the write both happen here, every time.
+        const registration = await ctx.tool.transform((editor) => {
+            calls += 1;
+            let active = false;
+            let reason = "not probed yet";
+            let schemaSeen = {};
+            try {
                 const existing = editor.get(QUESTION_TOOL);
                 if (!existing) {
-                    reason = `the "${QUESTION_TOOL}" tool was not found; non-blocking questions are unavailable this session, blocking questions are unaffected`;
-                    return;
+                    reason = `the "${QUESTION_TOOL}" tool was not found; non-blocking questions are unavailable this build, blocking questions are unaffected`;
                 }
-                schemaSeen = describeSchema(existing.input);
-                if (!isJsonObjectSchema(existing.input)) {
-                    reason = `the "${QUESTION_TOOL}" tool's schema isn't a plain JSON object schema; non-blocking questions are unavailable this session, blocking questions are unaffected`;
-                    return;
+                else {
+                    schemaSeen = describeSchema(existing.input);
+                    if (!isJsonObjectSchema(existing.input)) {
+                        reason = `the "${QUESTION_TOOL}" tool's schema isn't a plain JSON object schema; non-blocking questions are unavailable this build, blocking questions are unaffected`;
+                    }
+                    else {
+                        const originalInput = existing.input;
+                        const originalDescription = existing.description;
+                        const originalExecute = existing.execute;
+                        try {
+                            editor.update(QUESTION_TOOL, (tool) => {
+                                tool.input = withBlocking(originalInput);
+                                tool.description = appendBlockingNote(originalDescription);
+                                tool.execute = createAsyncExecute({
+                                    original: originalExecute,
+                                    sessionIDOf: (toolCtx) => toolCtx.sessionID,
+                                    synthetic: (input) => ctx.session.synthetic({ ...input, delivery: "queue" }),
+                                    log,
+                                });
+                            });
+                            const after = editor.get(QUESTION_TOOL);
+                            if (!hasBlocking(after?.input)) {
+                                reason = `the update to "${QUESTION_TOOL}" did not take effect; non-blocking questions are unavailable this build, blocking questions are unaffected`;
+                            }
+                            else {
+                                active = true;
+                                reason = "active";
+                            }
+                        }
+                        catch (error) {
+                            // Never leave a half-mutated tool in place: put the original back and treat this as a failed probe.
+                            editor.update(QUESTION_TOOL, (tool) => {
+                                tool.input = originalInput;
+                                tool.description = originalDescription;
+                                tool.execute = originalExecute;
+                            });
+                            reason = `updating the "${QUESTION_TOOL}" tool threw: ${String(error)}; reverted, blocking questions are unaffected`;
+                        }
+                    }
                 }
-                const originalInput = existing.input;
-                const originalDescription = existing.description;
-                const originalExecute = existing.execute;
-                try {
-                    editor.update(QUESTION_TOOL, (tool) => {
-                        tool.input = withBlocking(originalInput);
-                        tool.description = appendBlockingNote(originalDescription);
-                        tool.execute = createAsyncExecute({
-                            original: originalExecute,
-                            sessionIDOf: (toolCtx) => toolCtx.sessionID,
-                            synthetic: (input) => ctx.session.synthetic({ ...input, delivery: "queue" }),
-                            log,
-                        });
-                    });
-                }
-                catch (error) {
-                    // Never leave a half-mutated tool in place: put the original back and treat this as a failed probe.
-                    editor.update(QUESTION_TOOL, (tool) => {
-                        tool.input = originalInput;
-                        tool.description = originalDescription;
-                        tool.execute = originalExecute;
-                    });
-                    reason = `updating the "${QUESTION_TOOL}" tool threw: ${String(error)}; reverted, blocking questions are unaffected`;
-                    return;
-                }
-                const after = editor.get(QUESTION_TOOL);
-                if (!hasBlocking(after?.input)) {
-                    reason = `the update to "${QUESTION_TOOL}" did not take effect; non-blocking questions are unavailable this session, blocking questions are unaffected`;
-                    return;
-                }
-                active = true;
-                reason = "active";
-            });
-        }
-        catch (error) {
-            reason = `probing the "${QUESTION_TOOL}" tool threw: ${String(error)}; non-blocking questions are unavailable this session, blocking questions are unaffected`;
-        }
-        log(`non-blocking override ${active ? "active" : `inactive (${reason})`}`);
-        await writeStatus({ active, reason, schemaSeen });
+            }
+            catch (error) {
+                reason = `probing the "${QUESTION_TOOL}" tool threw: ${String(error)}; non-blocking questions are unavailable this build, blocking questions are unaffected`;
+            }
+            log(`non-blocking override ${active ? "active" : `inactive (${reason})`} (build #${calls})`);
+            void writeStatus({ active, reason, schemaSeen, calls });
+        });
+        return () => void registration.dispose();
     },
 });
