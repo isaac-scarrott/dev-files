@@ -45,14 +45,14 @@
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 28px;
-  height: 28px;
+  width: 21px;
+  height: 21px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 5px;
   background: transparent;
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 19.5px;
+  font-size: 14.6px;
   line-height: 1;
   /* A space you are not in is grey and quiet; the one you are in keeps its own colours and gets no box behind it. */
   filter: grayscale(1);
@@ -78,15 +78,15 @@
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: calc(28px * var(--spaces-pull, 0));
-  height: 28px;
+  width: calc(21px * var(--spaces-pull, 0));
+  height: 21px;
   margin-left: calc(2px * var(--spaces-pull, 0));
   border: 1px dashed var(--v2-border-border-base, rgba(127, 127, 127, 0.35));
-  border-radius: 7px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16)) calc(var(--spaces-pull, 0) * 100%), transparent);
   color: var(--v2-text-text-faint, inherit);
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 17px;
+  font-size: 13px;
   line-height: 1;
   opacity: calc(0.25 + var(--spaces-pull, 0) * 0.75);
   overflow: hidden;
