@@ -1,6 +1,6 @@
 # The ledger
 
-A table of the current state of every piece of work in flight, shared by all sessions on one repo. It shows who holds the baton, what the head is, and where each PR stands. It holds state, not history: rows are overwritten in place, and a merged PR's row is deleted once its deploy has been reported.
+A table of the current state of every PR in flight, shared by all sessions on one repo. It shows who holds the baton, what the head is, and where each PR stands. It holds state, not history: rows are overwritten in place, and a merged PR's row is deleted once its deploy has been reported.
 
 ## Location
 
@@ -39,6 +39,6 @@ The `orchestration-view` mod draws this file as a pane, so what you record here 
 
 The merger announces itself in a row keyed `merger`: `holder` is its session name (the name peers address it by), `state` is `active`, and `note` carries `seen <UTC time>`. It writes the row when it starts, rewrites `holder` after every restart (peer names are re-derived each run; the SessionStart hook `scripts/session-start.sh` prints the new one and the command), and refreshes `note` on every ready-for-merge it acts on. Orchestrators find the merger here, not through `ListAgents`. A `seen` older than an hour while ready-for-merge messages go unanswered means the merger may be gone: tell the owner rather than guess a replacement.
 
-## Decisions
+## Standing rules
 
-Standing rules the owner sets, such as "be proactive" or "never queue at night", go under a `## Decisions` heading at the foot of the same file. Each is one line with a date. Keep them to rules that still apply, and remove any the owner withdraws.
+Standing rules the owner sets live in the project's [state file](STATE.md), under Rules, and nowhere else. This file holds PR rows only.
