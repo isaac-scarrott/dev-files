@@ -12,6 +12,8 @@ export interface Space {
   emoji: string
   accent?: string
   lastSession?: SpaceSession
+  /** The tab that was on screen in this space, so a draft is restored too. */
+  lastTab?: string
 }
 
 export interface Assignment extends SpaceSession {
@@ -170,6 +172,18 @@ export function rememberLastSession(state: State, session: SpaceSession & { spac
   }
 }
 
+/** What was on screen in a space: the tab itself (a draft has no session) and its session when it has one. */
+export function rememberTab(state: State, space: string, tab: string, session?: SpaceSession): State {
+  return {
+    ...state,
+    spaces: state.spaces.map((space_) =>
+      space_.id === space
+        ? { ...space_, lastTab: tab, ...(session ? { lastSession: { server: session.server, id: session.id } } : {}) }
+        : space_,
+    ),
+  }
+}
+
 /** What is left of a decoded store after a schema change or a hand-edited value: never throws, never loses the first space. */
 export function settle(state: Partial<State> | undefined): State {
   const base = initialState()
@@ -182,6 +196,7 @@ export function settle(state: Partial<State> | undefined): State {
       emoji: typeof space.emoji === "string" && space.emoji !== "" ? space.emoji : DEFAULT_EMOJI[index % DEFAULT_EMOJI.length]!,
       ...(typeof space.accent === "string" ? { accent: space.accent } : {}),
       ...(space.lastSession && typeof space.lastSession.server === "string" && typeof space.lastSession.id === "string" ? { lastSession: space.lastSession } : {}),
+      ...(typeof space.lastTab === "string" ? { lastTab: space.lastTab } : {}),
     }))
   if (spaces.length === 0) return base
   const ids = new Set(spaces.map((space) => space.id))

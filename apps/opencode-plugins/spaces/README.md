@@ -7,8 +7,8 @@ or a row of dots at the bottom of the sidebar.
 
 - **Every session belongs to one space**, and a space holds many. A session that was already open joins the first space;
   anything you start joins the space you are in.
-- **The sidebar shows the space you are in.** Other spaces' sessions stay open, hidden. Switching to one shows them again
-  and returns to the session that space had open.
+- **The sidebar shows the space you are in.** Other spaces' sessions stay open, hidden. Switching to one shows it again
+  and lands on the session that space had on screen.
 - **Trackpad swipes** over the sidebar change space, the way Arc does: two fingers left and right. Swiping past the last
   space reveals the strip's plus; swipe a little further and it fills, creating a space.
 - **The strip** at the bottom of the sidebar carries one dot per space, the active one lit. Drag a dot sideways to

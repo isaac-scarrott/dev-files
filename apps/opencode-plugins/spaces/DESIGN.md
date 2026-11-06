@@ -93,6 +93,19 @@ space…** (only offered with two or more spaces).
   hidden row, six spaces in the strip, light and dark, reload persistence, and a coexistence pass with `sidebar-repos`
   and `session-drag` (rows still filter, strip intact).
 
+## Switching back to a space
+
+Each space remembers the tab that was on screen (`lastTab`, and its session when it has one). The tab on screen is
+recorded wherever every tab change passes (`sync`), not by an effect guessing at what counts as navigation, and again as
+a space is left. Arriving focuses that tab when it still belongs to the space; failing that, its last session; failing
+that, the first session the space owns — so a switch always lands inside the space rather than leaving another space's
+thread on screen. A focus the plugin performs is remembered for one routed change, so it is not mistaken for the user
+opening a session elsewhere and switched away from again.
+
+Navigation from elsewhere (Home, Search, the palette) lands in the space the session belongs to, but only for a real
+change of the routed tab, never within 600ms of a switch the plugin just made — otherwise creating a space and starting
+a session in it bounced straight back.
+
 ## Reordering
 
 Dragging a dot sideways moves its space. The pure move is `reorderSpace`: the array changes, the active space keeps its

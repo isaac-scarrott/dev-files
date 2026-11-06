@@ -17,6 +17,7 @@ import {
   promoteDraft,
   reconcile,
   rememberLastSession,
+  rememberTab,
   reorderSpace,
   renameSpace,
   selectSpace,
@@ -276,4 +277,14 @@ test("reordering to the same slot, or out of range, changes nothing", () => {
   assert.deepEqual(reorderSpace(state, 0, 99).spaces.map((space) => space.id), ["sp_a", "sp_b", state.spaces[0]!.id])
   const one = initialState()
   assert.equal(reorderSpace(one, 0, 0), one, "one space has nowhere to go")
+})
+
+test("a space remembers the tab on screen, draft or session", () => {
+  let state = addSpace(addSpace(initialState(), S("sp_a")), S("sp_b"))
+  state = rememberTab(state, "sp_a", "draft:1")
+  assert.equal(state.spaces[1]!.lastTab, "draft:1")
+  assert.equal(state.spaces[1]!.lastSession, undefined)
+  state = rememberTab(state, "sp_a", "s\n/x", { server: "s", id: "A" })
+  assert.deepEqual(state.spaces[1]!.lastSession, { server: "s", id: "A" })
+  assert.equal(state.spaces[2]!.lastTab, undefined, "only its own space")
 })
