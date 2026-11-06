@@ -161,10 +161,11 @@ is never undone by the click that made it.
 
 ## Reordering
 
-Dragging a dot sideways moves its space. The pure move is `reorderSpace`: the array changes, the active space keeps its
-id (so the highlight follows it to the new slot), and assignments are untouched because they name spaces by id. A press
-that travels less than 4px stays a click; a real drag sets a marker so the click that follows the drop does not also
-switch space.
+Dragging a dot sideways moves its space. The dot follows the pointer and every dot it passes slides one slot the other
+way, so the row shows the order as you choose it rather than only after the drop; letting go asks for exactly the order
+on screen. The pure move is `reorderSpace`: the array changes, the active space keeps its id (so the highlight follows
+it to the new slot), and assignments are untouched because they name spaces by id. A press that travels less than 4px
+stays a click; a real drag sets a marker so the click that follows the drop does not also switch space.
 
 ## What is deliberately not here
 

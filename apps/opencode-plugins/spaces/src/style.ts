@@ -20,11 +20,13 @@ export const css = `
 [data-spaces-strip][data-spaces-empty] {
   display: none;
 }
-/* A dot being dragged lifts out of the row and follows the pointer; the row stays put so the drop slot is obvious. */
+/* A dot being dragged lifts out of the row and follows the pointer; the dots it passes slide across to make room, so the
+   order you see while dragging is the order you get on release. */
 [data-spaces-strip][data-spaces-dragging] [data-spaces-dot] {
   cursor: grabbing;
+  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1);
 }
-[data-spaces-strip][data-spaces-dragging] [data-spaces-dot][style*="translateX"] {
+[data-spaces-strip][data-spaces-dragging] [data-spaces-dot].spaces-dot-dragging {
   transition: none;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.22));
 }
@@ -111,6 +113,7 @@ export const css = `
 }
 @media (prefers-reduced-motion: reduce) {
   [data-spaces-dot] { transition: none; }
+  [data-spaces-strip][data-spaces-dragging] [data-spaces-dot] { transition: none; }
   [data-spaces-strip][data-spaces-tick] [data-spaces-dot]:last-of-type,
   [data-spaces-strip][data-spaces-tick] [data-spaces-ghost] { animation: none; }
 }

@@ -82,6 +82,28 @@ test("dragging a dot two slots right asks for that reorder, and does not also sw
   assert.deepEqual(picked, [], "the click that ends a drag is swallowed")
 })
 
+test("the row moves while dragging: dots the pointer passes slide into the slot it left", () => {
+  const { doc } = host()
+  const moved: [number, number][] = []
+  const strip = createStrip(doc, { select: plain, reorder: (from, to) => void moved.push([from, to]) }, plain)
+  strip.place()
+  strip.update(spaces(4), 0)
+  const dots = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)]
+  const dot = dots[0]!
+  const Pointer = doc.defaultView!.PointerEvent as unknown as typeof PointerEvent
+  dot.setPointerCapture = () => undefined
+  dot.dispatchEvent(new Pointer("pointerdown", { bubbles: true, clientX: 100, clientY: 10, button: 0, pointerId: 3 }))
+  dot.dispatchEvent(new Pointer("pointermove", { bubbles: true, clientX: 130, clientY: 10, pointerId: 3 }))
+  assert.deepEqual(moved, [], "nothing is reordered until the drop")
+  assert.equal(dot.style.transform, "translateX(30px)", "the dragged dot follows the pointer")
+  assert.equal(dots[1]!.style.transform, "translateX(-24px)", "the dot it passed makes room")
+  assert.equal(dots[2]!.style.transform, "")
+  dot.dispatchEvent(new Pointer("pointerup", { bubbles: true, clientX: 130, clientY: 10, pointerId: 3 }))
+  assert.deepEqual(moved, [[0, 1]])
+  assert.equal(dot.style.transform, "", "the drop hands the row back to the real order")
+  assert.equal(dots[1]!.style.transform, "")
+})
+
 test("a small wobble is still a click, and switching works", () => {
   const { doc } = host()
   const picked: number[] = []

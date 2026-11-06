@@ -87,46 +87,66 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
     ghost.hidden = !visible || fill <= 0
   }
 
-  /** Drag a dot sideways to move its space. The dot follows the pointer; the drop slot decides the new index. */
+  /** Drag a dot sideways to move its space. The dot follows the pointer and the dots it passes slide across to make
+   * room, so the row shows the order you are choosing while you drag; letting go asks for exactly that order. */
   const attachDrag = (dot: HTMLElement, index: number) => {
     dot.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return
       const startX = event.clientX
       const startIndex = index
+      const row = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)]
       let moved = false
+      let target = startIndex
       dot.setPointerCapture?.(event.pointerId)
-      // One slot's width: the distance to the next dot, or the dot's own size when nothing has been laid out yet.
+      // One slot's width, read before anything moves: the distance between two dots, or the dot's own size when nothing
+      // has been laid out yet.
       const slot = () => {
-        const first = doc.querySelector<HTMLElement>(`[${DOT}]`)
-        const second = doc.querySelectorAll<HTMLElement>(`[${DOT}]`)[1]
+        const [first, second] = row
         if (!first || !second) return 24
         const step = second.getBoundingClientRect().x - first.getBoundingClientRect().x
         return step >= 12 ? step : 24
       }
+      const step = slot()
       const onMove = (move: PointerEvent) => {
         const dx = move.clientX - startX
         if (!moved && Math.abs(dx) < DRAG) return
-        moved = true
-        stripElement()?.setAttribute("data-spaces-dragging", "")
+        if (!moved) {
+          moved = true
+          stripElement()?.setAttribute("data-spaces-dragging", "")
+          dot.classList.add("spaces-dot-dragging")
+        }
+        target = Math.max(0, Math.min(startIndex + Math.round(dx / step), row.length - 1))
         dot.style.transform = `translateX(${dx}px)`
         dot.style.zIndex = "1"
+        // Every dot the dragged one has passed takes the slot it left, so the row opens where it will land.
+        for (const [position, item] of row.entries()) {
+          if (item === dot) continue
+          const shift =
+            position > startIndex && position <= target ? -step :
+            position < startIndex && position >= target ? step : 0
+          item.style.transform = shift === 0 ? "" : `translateX(${shift}px)`
+        }
       }
-      const onUp = (up: PointerEvent) => {
+      const finish = (up: PointerEvent | undefined) => {
         dot.removeEventListener("pointermove", onMove)
-        dot.removeEventListener("pointerup", onUp)
-        dot.removeEventListener("pointercancel", onUp)
+        dot.removeEventListener("pointerup", finish)
+        dot.removeEventListener("pointercancel", cancel)
         stripElement()?.removeAttribute("data-spaces-dragging")
+        dot.classList.remove("spaces-dot-dragging")
         dot.style.transform = ""
         dot.style.zIndex = ""
+        for (const item of row) item.style.transform = ""
         if (!moved) return
         dot.setAttribute("data-spaces-dragged", "")
-        const step = slot()
-        const to = Math.max(0, Math.min(startIndex + Math.round((up.clientX - startX) / step), spaces.length - 1))
+        if (!up) return
+        // The pointer's last word decides the slot, in case it came to rest a shade past the last move event.
+        const to = Math.max(0, Math.min(startIndex + Math.round((up.clientX - startX) / step), row.length - 1))
         if (to !== startIndex) handlers.reorder(startIndex, to)
       }
+      const cancel = () => finish(undefined)
       dot.addEventListener("pointermove", onMove)
-      dot.addEventListener("pointerup", onUp)
-      dot.addEventListener("pointercancel", onUp)
+      dot.addEventListener("pointerup", finish)
+      dot.addEventListener("pointercancel", cancel)
     })
   }
 
