@@ -4,6 +4,6 @@
   "native-ui/src/popover.tsx|no-effect": 1,
   "no-project/src/sweep.ts|no-module-state": 1,
   "scheduler/src/hub.ts|no-module-state": 1,
-  "snooze-archive/src/testui.ts|no-effect": 2,
+  "session-ui/src/testui.ts|no-effect": 2,
   "usage-resume/src/hub.ts|no-module-state": 1
 }

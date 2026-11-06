@@ -19,7 +19,8 @@
   "plugins": [
     "/Users/isaac/git/dev-files/apps/opencode-plugins/sidebar-repos",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/timeline-rail",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/snooze-archive",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/snooze",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/archive",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/visual-replies",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/no-project",
     {
@@ -32,6 +33,7 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/model-picker",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold-providers",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/shell-handoff",
+    "/Users/isaac/git/dev-files/apps/opencode-plugins/question-async",
     {
       "package": "/Users/isaac/git/dev-files/apps/opencode-plugins/blindfold",
       "options": {
@@ -44,12 +46,10 @@
         }
       }
     },
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/usage-resume",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/claude-proxy",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/scheduler",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/monitor",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/file-viewer",
-    "/Users/isaac/git/dev-files/apps/opencode-plugins/cache-warning",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/notifications",
     "/Users/isaac/git/dev-files/apps/opencode-plugins/toast-style"
   ],
