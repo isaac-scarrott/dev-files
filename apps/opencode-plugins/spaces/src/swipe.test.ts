@@ -21,6 +21,17 @@ test("a horizontal burst past the threshold changes space once, and its tail is 
   assert.equal(state.phase, "cool")
 })
 
+test("however long the swipe runs without pausing, it changes space only once", () => {
+  // A trackpad swipe with momentum: hundreds of events, 16ms apart, far past any timeout.
+  const { kinds } = run(burst(-6, 400))
+  assert.equal(kinds.filter((kind) => kind === "switch").length, 1)
+})
+
+test("a second, deliberate swipe after a pause changes space again", () => {
+  const { kinds } = run([...burst(20, 6, 0), ...burst(20, 6, 300)])
+  assert.equal(kinds.filter((kind) => kind === "switch").length, 2)
+})
+
 test("swiping left goes back a space, swiping right goes on", () => {
   assert.deepEqual(run(burst(-25, 5)).actions.find((action) => action.type === "switch"), { type: "switch", direction: -1 })
   assert.deepEqual(run(burst(25, 5)).actions.find((action) => action.type === "switch"), { type: "switch", direction: 1 })

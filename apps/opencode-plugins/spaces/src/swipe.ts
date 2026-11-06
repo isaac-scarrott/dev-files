@@ -30,7 +30,7 @@ export interface SwipeOptions {
   create?: number
   /** A gap this long ends the gesture: a momentum tail never pauses that long. */
   gap?: number
-  /** After a change, wheels are ignored this long, which swallows the rest of that tail. */
+  /** Kept for callers that set it; a gesture is now latched until it pauses, which is stricter than a timeout. */
   cooldown?: number
 }
 
@@ -44,12 +44,12 @@ export function swipe(state: SwipeState, event: { dx: number; dy: number; at: nu
   // A pause ends the gesture; a momentum tail never pauses that long.
   let current: SwipeState = paused ? { ...idleSwipe(), at: 0 } : state
 
-  // The tail of a change is still arriving: ignore it rather than undoing the switch.
-  if (current.phase === "cool" && event.at - current.at < limits.cooldown) {
-    if (!paused) current = { ...current, at: event.at }
-    return { state: current, action: { type: "none" } }
+  // One change per gesture: while the finger (and its momentum) keeps sending events, nothing more happens. Only a pause
+  // longer than `gap` ends the gesture and arms another change.
+  if (current.phase === "cool") {
+    if (!paused) return { state: { ...current, at: event.at }, action: { type: "none" } }
+    current = { ...idleSwipe(), at: current.at }
   }
-  if (current.phase === "cool") current = { ...idleSwipe(), at: current.at }
 
   if (current.phase === "idle") {
     if (Math.abs(event.dx) < 2 && Math.abs(event.dy) < 2) return { state: { ...current, at: event.at }, action: { type: "none" } }
