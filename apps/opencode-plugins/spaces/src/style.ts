@@ -48,26 +48,31 @@ export const css = `
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 13px;
+  font-size: 19.5px;
   line-height: 1;
-  opacity: 0.55;
-  transition: opacity 140ms ease, background-color 140ms ease, border-color 140ms ease;
+  /* A space you are not in is grey and quiet; the one you are in keeps its own colours and gets no box behind it. */
+  filter: grayscale(1);
+  opacity: 0.4;
+  transition: opacity 140ms ease, background-color 140ms ease, filter 140ms ease;
 }
 [data-spaces-dot]:hover {
-  opacity: 0.85;
+  opacity: 0.75;
+  filter: grayscale(0.5);
   background: var(--v2-overlay-simple-overlay-hover, rgba(127, 127, 127, 0.12));
 }
 [data-spaces-dot].spaces-dot-active {
   opacity: 1;
-  background: var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16));
-  border-color: var(--spaces-accent, var(--v2-border-border-base, rgba(127, 127, 127, 0.35)));
+  filter: none;
+}
+[data-spaces-dot].spaces-dot-active:hover {
+  background: var(--v2-overlay-simple-overlay-hover, rgba(127, 127, 127, 0.12));
 }
 /* The new space's slot: it exists only while a pull opens it, and fills as the pull goes on. */
 [data-spaces-ghost] {
@@ -76,15 +81,15 @@ export const css = `
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: calc(22px * var(--spaces-pull, 0));
-  height: 22px;
+  width: calc(28px * var(--spaces-pull, 0));
+  height: 28px;
   margin-left: calc(2px * var(--spaces-pull, 0));
   border: 1px dashed var(--v2-border-border-base, rgba(127, 127, 127, 0.35));
-  border-radius: 6px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16)) calc(var(--spaces-pull, 0) * 100%), transparent);
   color: var(--v2-text-text-faint, inherit);
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 13px;
+  font-size: 17px;
   line-height: 1;
   opacity: calc(0.25 + var(--spaces-pull, 0) * 0.75);
   overflow: hidden;
