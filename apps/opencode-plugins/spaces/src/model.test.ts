@@ -6,6 +6,7 @@ import {
   defaultEmoji,
   deleteSpace,
   forgetSession,
+  hiddenTabs,
   initialState,
   isActive,
   MAX_ASSIGNED,
@@ -14,10 +15,12 @@ import {
   moveSession,
   newSpaceId,
   promoteDraft,
+  reconcile,
   rememberLastSession,
   renameSpace,
   selectSpace,
   selectSpaceId,
+  restoreTarget,
   settle,
   spaceOf,
 } from "./model"
@@ -200,4 +203,57 @@ test("settle keeps assignments whose space survives, and drops ones pointing at 
   })
   assert.equal(state.assigned.length, 1)
   assert.equal(spaceOf(state, { session: { server: "s", id: "ses_1" } }), "sp_b")
+})
+
+test("a tab that was already open at startup joins the first space, a later one the active space", () => {
+  let state = addSpace(initialState(), S("sp_a"))
+  const startup = new Set(["ses:A"])
+  const known = new Set<string>()
+  state = reconcile(state, [{ key: "ses:A", session: { server: "s", id: "A" } }], startup, 1, known)
+  assert.equal(spaceOf(state, { session: { server: "s", id: "A" } }), state.spaces[0]!.id)
+  state = reconcile(state, [
+    { key: "ses:A", session: { server: "s", id: "A" } },
+    { key: "ses:B", session: { server: "s", id: "B" } },
+  ], startup, 2, known)
+  assert.equal(spaceOf(state, { session: { server: "s", id: "B" } }), "sp_a")
+})
+
+test("reconcile leaves an existing assignment alone and drafts in their own space", () => {
+  let state = addSpace(initialState(), S("sp_a"))
+  state = moveSession(state, { server: "s", id: "A" }, "sp_a", 1)
+  state = moveDraft(state, "draft:1", state.spaces[0]!.id)
+  const before = state
+  state = reconcile(state, [{ key: "ses:A", session: { server: "s", id: "A" } }, { key: "draft:1" }], new Set(), 2, new Set())
+  assert.deepEqual(state.assigned, before.assigned)
+  assert.deepEqual(state.drafts, before.drafts)
+})
+
+test("a draft that became a session keeps its space, and the draft is consumed", () => {
+  let state = addSpace(initialState(), S("sp_a"))
+  state = moveDraft(state, "draft:x", "sp_a")
+  state = reconcile(state, [{ key: "s/new", session: { server: "s", id: "N" } }], new Set(), 3, new Set())
+  assert.equal(spaceOf(state, { session: { server: "s", id: "N" } }), "sp_a")
+  assert.equal(state.drafts.length, 0)
+})
+
+test("hidden tabs are exactly the ones of other spaces", () => {
+  let state = addSpace(initialState(), S("sp_a"))
+  state = moveSession(state, { server: "s", id: "B" }, "sp_a", 1)
+  state = selectSpace(state, 0)
+  const tabs = [
+    { key: "ses:A", session: { server: "s", id: "A" } },
+    { key: "ses:B", session: { server: "s", id: "B" } },
+    { key: "draft:1" },
+  ]
+  assert.deepEqual(hiddenTabs(state, tabs), ["ses:B"])
+  state = selectSpace(state, 1)
+  assert.deepEqual(hiddenTabs(state, tabs), ["ses:A", "draft:1"])
+})
+
+test("a switch targets the space's last session, and nothing when it has none", () => {
+  let state = addSpace(addSpace(initialState(), S("sp_a")), S("sp_b"))
+  state = rememberLastSession(state, { server: "s", id: "L", space: "sp_a" })
+  assert.deepEqual(restoreTarget(state, "sp_a"), { server: "s", id: "L" })
+  assert.equal(restoreTarget(state, "sp_b"), undefined)
+  assert.equal(restoreTarget(state, "nope"), undefined)
 })

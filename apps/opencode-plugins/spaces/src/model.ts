@@ -194,3 +194,49 @@ export function settle(state: Partial<State> | undefined): State {
     .slice(-MAX_DRAFTS)
   return { version: VERSION, active: clampActive({ active: state.active ?? 0, spaces }), spaces, assigned, drafts }
 }
+
+/** A tab as the host lists it: a key, whether it is routed, and its session when it has one. */
+export interface TabLike {
+  key: string
+  active?: boolean
+  session?: SpaceSession
+}
+
+/**
+ * Gives every tab a space: one it already has, its startup space the first time this plugin sees a tab that was already
+ * open, else the active space. Drafts that vanished are pruned, and a draft's space follows the session its tab became.
+ */
+export function reconcile(state: State, tabs: readonly TabLike[], startup: ReadonlySet<string>, at: number, known: Set<string>): State {
+  let next = state
+  const live = new Set(tabs.map((tab) => tab.key))
+  const vanished = next.drafts.filter((draft) => !live.has(draft.tab))
+  if (vanished.length > 0) next = { ...next, drafts: next.drafts.filter((draft) => live.has(draft.tab)) }
+  const activeId = next.spaces[clampActive(next)]!.id
+  for (const tab of tabs) {
+    if (next.drafts.some((draft) => draft.tab === tab.key)) continue
+    if (tab.session && next.assigned.some((item) => item.server === tab.session!.server && item.id === tab.session!.id)) continue
+    if (tab.session && vanished.length > 0) {
+      // The draft whose tab became this session: its space comes along, and the draft is consumed.
+      const draft = vanished[vanished.length - 1]!
+      vanished.pop()
+      next = moveSession(next, tab.session, draft.space, at)
+      known.add(tab.key)
+      continue
+    }
+    const space = !known.has(tab.key) && startup.has(tab.key) ? firstSpaceId(next) : activeId
+    next = tab.session ? moveSession(next, tab.session, space, at) : moveDraft(next, tab.key, space)
+    known.add(tab.key)
+  }
+  return next
+}
+
+/** Tab keys whose rows belong to another space, and so are hidden. */
+export function hiddenTabs(state: State, tabs: readonly TabLike[]): string[] {
+  const activeId = state.spaces[clampActive(state)]!.id
+  return tabs.filter((tab) => spaceOf(state, tab) !== activeId).map((tab) => tab.key)
+}
+
+/** Where a switch should land: the session the space last had open, if it still has one. */
+export function restoreTarget(state: State, spaceId: string): SpaceSession | undefined {
+  return state.spaces.find((space) => space.id === spaceId)?.lastSession
+}

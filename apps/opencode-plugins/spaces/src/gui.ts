@@ -1,7 +1,8 @@
 import { Command, createKeyed, Plugin, Store, Style } from "@opencode/plugin/gui"
 import { Schema } from "effect"
 import { onCleanup } from "solid-js"
-import { addSpace, defaultEmoji, initialState, newSpaceId, selectSpaceId, settle, type State } from "./model"
+import { createRowFilter } from "./dom"
+import { addSpace, clampActive, defaultEmoji, hiddenTabs, initialState, newSpaceId, reconcile, rememberLastSession, restoreTarget, selectSpace, selectSpaceId, settle, type State, type TabLike } from "./model"
 import { accentColor, css } from "./style"
 import { createStrip } from "./strip"
 
@@ -59,6 +60,35 @@ export default Plugin.define({
       (space) => accentColor(space.accent),
     )
 
+    // Rows are hidden by attribute; the host keeps its own list, so navigation is guarded in milestone 5.
+    const filter = createRowFilter(document, () => new Set(hiddenTabs(state(), tabs())))
+
+    // Which tabs were already open when this plugin started: they belong to the first space, not to whatever is active.
+    const startup = new Set<string>()
+    const known = new Set<string>()
+    let seeded = false
+    const tabs = (): TabLike[] =>
+      ctx.tabs.list().map((tab) => ({
+        key: tab.key,
+        ...(tab.active ? { active: true } : {}),
+        ...(tab.session ? { session: { server: tab.session.server.id, id: tab.session.id } } : {}),
+      }))
+
+    /** Gives new tabs a space, then shows the active space's rows. One place, so both stay in step. */
+    const sync = () => {
+      const list = tabs()
+      if (!seeded) {
+        for (const tab of list) startup.add(tab.key)
+        seeded = true
+      }
+      const current = state()
+      const next = reconcile(current, list, startup, Date.now(), known)
+      if (next !== current) update(() => next)
+      filter.poke()
+    }
+
+    const sidebar = () => document.querySelector<HTMLElement>('[data-slot="vertical-tabs"]')
+
     const createSpace = () => {
       const current = state()
       const id = newSpaceId(current.spaces)
@@ -76,6 +106,9 @@ export default Plugin.define({
         timer = undefined
       }
       const parent = strip.place() ? document.querySelector('[data-slot="vertical-tabs-mount"]') : undefined
+      const side = sidebar()
+      if (side) filter.start(side)
+      sync()
       observer?.disconnect()
       observer = undefined
       if (!parent) return
@@ -93,6 +126,7 @@ export default Plugin.define({
     onCleanup(() => {
       if (timer !== undefined) clearInterval(timer)
       observer?.disconnect()
+      filter.stop()
       strip.dispose()
     })
 
@@ -113,6 +147,61 @@ export default Plugin.define({
       () => draw(),
     )
     draw()
+
+    // Tabs, the active space and the assignments all feed one pass: reconcile (assign or migrate), then hide.
+    createKeyed(
+      () => {
+        const current = ctx.stores.spaces.value as State
+        const spaces = Array.isArray(current.spaces) ? current.spaces : []
+        const assigned = Array.isArray(current.assigned) ? current.assigned : []
+        const drafts = Array.isArray(current.drafts) ? current.drafts : []
+        const list = ctx.tabs.list()
+        return [
+          spaces.map((space) => space?.id).join("|"),
+          current.active,
+          assigned.map((item) => `${item?.server}/${item?.id}=${item?.space}`).join("|"),
+          drafts.map((item) => `${item?.tab}=${item?.space}`).join("|"),
+          list.map((tab) => `${tab.key}:${tab.active ? "a" : ""}:${tab.session ? `${tab.session.server.id}/${tab.session.id}` : ""}`).join("|"),
+        ].join("#")
+      },
+      () => sync(),
+    )
+
+    // A switch lands on the space's last session; a space that has none stays empty, as chosen.
+    createKeyed(
+      () => {
+        const current = ctx.stores.spaces.value as State
+        const spaces = Array.isArray(current.spaces) ? current.spaces : []
+        return `${spaces[clampActive({ active: current.active, spaces })]?.id ?? ""}`
+      },
+      (id) => {
+        if (!id) return
+        const target = restoreTarget(state(), id)
+        if (!target) return
+        const tab = ctx.tabs.list().find((item) => item.session?.server.id === target.server && item.session?.id === target.id)
+        if (tab && !tab.active) ctx.tabs.focus(tab.key)
+      },
+    )
+
+    // The active space remembers the session on screen, so a switch away and back returns to it.
+    createKeyed(
+      () => {
+        const routed = ctx.sessions.current()
+        return routed ? `${routed.server.id}/${routed.id}` : ""
+      },
+      () => {
+        const routed = ctx.sessions.current()
+        if (!routed) return
+        const current = state()
+        const space = current.spaces[clampActive(current)]!.id
+        const assigned = current.assigned.find((item) => item.server === routed.server.id && item.id === routed.id)
+        if (!assigned || assigned.space !== space) return
+        const last = current.spaces.find((item) => item.id === space)?.lastSession
+        if (last?.server === routed.server.id && last?.id === routed.id) return
+        update((now) => rememberLastSession(now, { server: routed.server.id, id: routed.id, space }))
+      },
+    )
+    sync()
 
     ctx.add(Command, () => ({
       id: "spaces.new",

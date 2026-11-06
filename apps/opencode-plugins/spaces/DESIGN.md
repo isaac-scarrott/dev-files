@@ -47,8 +47,21 @@ The strip (`src/strip.ts`) is one injected row:
 Commands are the palette's (`ctx.add(Command, …)`), not keybinds yet: **New space…** (asks for a name) and **Switch
 space…** (only offered with two or more spaces).
 
-## Milestone 2 and later
+## Milestone 2: the sidebar shows one space
 
-See `SPIKE.md` milestones: filter the rows; rename/emoji/delete and move-to-space; swipe (wheel state machine, elastic
-overscroll, plus reveal/fill); keyboard guard; hardening (fail open when the sidebar anchor is missing, all-plugins pass,
-perf, parity report, README).
+- **Membership.** `reconcile()` gives every tab a space exactly once: an assignment or draft it already has wins; a tab
+  that was open when the plugin started joins the first space; anything appearing later joins the active space. A draft
+  whose tab became a real session hands its space to that session. Stale drafts are pruned.
+- **Hiding.** One attribute per row plus one rule in our style sheet
+  (`[data-slot="vertical-tabs"] [data-tab-key][data-spaces-hidden]{display:none!important}`). A pass over 119 rows is
+  ~0.1ms, and the observer watches `childList` + `attributeFilter:["data-tab-key"]`, so our own writes wake nothing.
+- **The active row may be hidden.** Switching to a space with nothing in it leaves an empty sidebar while the timeline
+  keeps the previous session (the user's choice: no surprise tabs). Starting a session there puts a row in that space.
+- **Restoring.** The routed session is recorded as the active space's `lastSession`; switching to a space focuses its
+  `lastSession` when it has one.
+
+## Milestone 3 and later
+
+See `SPIKE.md` milestones: rename/emoji/delete and move-to-space; swipe (wheel state machine, elastic overscroll, plus
+reveal/fill); keyboard guard; hardening (fail open when the sidebar anchor is missing, all-plugins pass, perf, parity
+report, README).

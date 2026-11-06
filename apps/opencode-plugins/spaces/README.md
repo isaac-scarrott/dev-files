@@ -3,15 +3,17 @@
 Arc's Spaces for OpenCode sessions: group your open sessions into named spaces, and switch between them with one row of
 dots at the bottom of the sidebar.
 
-> **Status: milestone 1 of 6.** Spaces can be created and switched, and the choice survives a reload. The sidebar is not
-> filtered yet; that is milestone 2 (see `DESIGN.md`).
+> **Status: milestone 2 of 6.** Spaces can be created and switched, and the sidebar shows only the active space's
+> sessions. Rename, delete and moving a session between spaces arrive in milestone 3 (see `DESIGN.md`).
 
 ## What it does
 
 - **New space…** in the command palette creates a space (named `Space N`, with its own emoji). The bottom of the sidebar
   grows a strip of space dots once there are two, and clicking a dot switches to that space.
 - **Switch space…** in the palette lists your spaces.
-- Nothing changes while you have a single space: the strip stays hidden.
+- **The sidebar shows the active space.** Sessions of other spaces stay open but are hidden. A new session joins the
+  space you are in, and switching back returns to the session that space had open.
+- Nothing changes while you have a single space: the strip stays hidden and every session is shown.
 
 ## Install
 
@@ -36,8 +38,9 @@ None yet.
   layout changes. It is drawn from the store, so both windows agree.
 - This plugin depends on no other plugin and behaves the same on vanilla OpenCode.
 
-## Known limits (milestone 1)
+## Known limits (milestone 2)
 
-- The sidebar still shows every open session; filtering arrives in milestone 2.
-- The host's `Alt+Arrow` and `Cmd+1..9` still walk all sessions, hidden or not (milestone 5).
+- The host's `Alt+Arrow` and `Cmd+1..9` still walk every session, hidden or not, so they can land on a session you cannot
+  see (milestone 5 guards them).
 - A space cannot yet be renamed, given another emoji, or deleted (milestone 3).
+- Home still lists every session; the filter is on the sidebar only.

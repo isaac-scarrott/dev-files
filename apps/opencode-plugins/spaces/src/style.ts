@@ -2,6 +2,10 @@
 // through tokens the host defines, so light/dark and future themes follow without our guessing colours.
 
 export const css = `
+/* Filtering: the filter marks rows, this rule is what hides them. Scoped to the sidebar list, so nothing else can match. */
+[data-slot="vertical-tabs"] [data-tab-key][data-spaces-hidden] {
+  display: none !important;
+}
 [data-spaces-strip] {
   display: flex;
   align-items: center;
