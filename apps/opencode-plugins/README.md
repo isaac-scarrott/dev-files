@@ -29,6 +29,7 @@ restarted, not just the app: `scripts/opencode-safe-restart.sh` (waits for runni
 | [`snooze`](snooze) | Snoozed sidebar group (paged, whole-sidebar scroll, upward expand) and Snooze in every session menu; wakes at the deadline or on attention, and a woken session shows a clock (the shared tab mark) published as info to the hub; works on its own | GUI |
 | [`timeline-rail`](timeline-rail) | Tick rail in the chat gutter for the newest 10 prompts, after t3-code's minimap: hover card, chevrons, keyboard, click to jump | GUI |
 | [`toast-style`](toast-style) | Every toast in the app in one quiet card: the app's own font and motion restored (solid-sonner's stylesheet overrides them today), the glyph on the title row with full-width text and buttons, two-line description, contrast button and key hint on a waiting request, "+N more" chip, softer exit and reduced motion; no glyph colour; one selector file with a live markup probe | GUI |
+| [`usage-resume`](usage-resume) | A session stopped at a Claude usage limit waits for the earliest cliproxy account reset, re-checks usage, then queues one "Continue."; opt-in pill above the composer, timeline notice, gives up after 3 tries, survives restarts and sleep | server, GUI |
 | [`visual-replies`](visual-replies) | `publish_html` tool: agent HTML pages render inline in a sandboxed iframe | GUI + server |
 
 Each package has a README with what it does, how to install it, its options and its credits. Design notes are in `DESIGN.md` where a package has one.
