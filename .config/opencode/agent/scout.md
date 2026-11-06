@@ -5,6 +5,13 @@ model: opencode-go/deepseek-v4.1-flash
 steps: 130
 permission:
   edit: deny
+  "paper*": deny
+  "linear*": deny
+  "posthog*": deny
+  "mobbin*": deny
+  "ticktick*": deny
+  "orchestrate*": deny
+  "scheduler*": deny
   bash:
     "*": allow
     "git push*": deny

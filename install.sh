@@ -112,6 +112,8 @@ LINKS=(
   "$HOME/.config/opencode/agent/code-simplifier.md|.claude/agents/code-simplifier.md"
   "$HOME/.config/opencode/agent/scout.md|.config/opencode/agent/scout.md"
   "$HOME/.config/opencode/agent/worker.md|.config/opencode/agent/worker.md"
+  "$HOME/.claude/agents/scout.md|.claude/agents/scout.md"
+  "$HOME/.claude/agents/worker.md|.claude/agents/worker.md"
   "$HOME/.config/opencode/command/commit.md|.claude/commands/commit.md"
   "$HOME/.config/opencode/command/commitpr.md|.claude/commands/commitpr.md"
   "$HOME/.config/opencode/command/simplify.md|.claude/commands/simplify.md"
