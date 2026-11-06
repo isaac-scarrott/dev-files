@@ -6,7 +6,6 @@
                                          <pr> is a PR number, or a slug for work with no PR yet.
                                          A change of state stamps "since", so a watcher can age the row.
   ledger.py drop <pr>                    remove a row
-  ledger.py decide "<rule>"              append a standing owner decision, dated
   ledger.py path                         print the ledger's path
 
 Run from anywhere inside the repo. Writes take a lock, so concurrent sessions don't interleave.
@@ -27,32 +26,22 @@ def ledger_path() -> str:
     return os.path.join(directory, "ledger.md")
 
 
-def read(path: str) -> tuple[list[dict], list[str]]:
+def read(path: str) -> list[dict]:
     rows: list[dict] = []
-    decisions: list[str] = []
     if not os.path.exists(path):
-        return rows, decisions
-    section = "rows"
+        return rows
     for line in open(path):
         line = line.rstrip("\n")
-        if line.startswith("## Decisions"):
-            section = "decisions"
-            continue
-        if section == "decisions":
-            if line.startswith("- "):
-                decisions.append(line)
-            continue
         if line.startswith("|") and not line.startswith("|---") and not line.startswith("| pr "):
             cells = [cell.strip() for cell in line.strip("|").split("|")]
             rows.append(dict(zip(COLUMNS, cells + [""] * (len(COLUMNS) - len(cells)))))
-    return rows, decisions
+    return rows
 
 
-def write(path: str, rows: list[dict], decisions: list[str]) -> None:
+def write(path: str, rows: list[dict]) -> None:
     rows.sort(key=lambda row: row["pr"])
     lines = ["# PR ledger", "", "| " + " | ".join(COLUMNS) + " |", "|" + "---|" * len(COLUMNS)]
     lines += ["| " + " | ".join(row.get(column, "").replace("|", "/") for column in COLUMNS) + " |" for row in rows]
-    lines += ["", "## Decisions", ""] + decisions
     temporary = path + ".tmp"
     open(temporary, "w").write("\n".join(lines) + "\n")
     os.replace(temporary, path)
@@ -87,7 +76,7 @@ def main(argv: list[str]) -> None:
         print(open(path).read() if os.path.exists(path) else "(empty ledger)")
         return
     with Lock(path):
-        rows, decisions = read(path)
+        rows = read(path)
         if command == "set":
             pr, pairs = arguments[0].lstrip("#"), arguments[1:]
             row = next((row for row in rows if row["pr"] == pr), None)
@@ -106,11 +95,9 @@ def main(argv: list[str]) -> None:
                 row["since"] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M")
         elif command == "drop":
             rows = [row for row in rows if row["pr"] != arguments[0].lstrip("#")]
-        elif command == "decide":
-            decisions.append(f"- {datetime.date.today().isoformat()}: {' '.join(arguments)}")
         else:
             sys.exit(__doc__)
-        write(path, rows, decisions)
+        write(path, rows)
     print(open(path).read())
 
 
