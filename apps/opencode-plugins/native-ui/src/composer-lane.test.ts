@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { Window } from "happy-dom"
-import { attach, visibleLane } from "./lane"
+import { attach, visibleLane } from "./composer-lane"
 
 const window = new Window()
 const doc = window.document as unknown as Document

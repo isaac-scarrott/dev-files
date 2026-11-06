@@ -67,7 +67,7 @@ export function MenuItem(props: ParentProps<MenuItemProps>) {
   )
 }
 
-/** The host's separator is a bare <hr> (Kobalte's Menu.Separator) with no role attribute; snooze-archive anchors on it. */
+/** The host's separator is a bare <hr> (Kobalte's Menu.Separator) with no role attribute; the session-menu extension anchors on it. */
 export function MenuSeparator() {
   return <hr data-orientation="horizontal" data-slot="menu-v2-separator" data-appearance="compact" />
 }

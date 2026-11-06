@@ -4,7 +4,7 @@ import type { DomHub } from "./dom-hub"
 import { elementsChangedBut } from "./dom-hub"
 
 // A mark in the trailing status slot of a vertical tab, for an event that starts no turn (a snooze woke, a monitor
-// ended, a schedule failed). Generalised from snooze-archive/src/woke.ts: same slot, same hover swap with the close
+// ended, a schedule failed). Generalised from snooze/src/woke.ts: same slot, same hover swap with the close
 // button, same title fade; the glyph and colour follow the severity. Host events (done, error, a pending request) already
 // show the host's own dot or attention mark, so they never get one of these.
 //
@@ -20,7 +20,7 @@ export interface TabMarkSpec {
   readonly severity: TabMarkSeverity
   /** The accessible name of the mark. */
   readonly label: string
-  /** A drawing of its own instead of the severity's: snooze-archive's clock. It keeps its own colour. */
+  /** A drawing of its own instead of the severity's: the snooze plugin's clock. It keeps its own colour. */
   readonly glyph?: "clock"
 }
 
@@ -31,7 +31,7 @@ const NS = "http://www.w3.org/2000/svg"
 
 // The mark draws the host's own artwork for the kind: a `<use>` of the app's icon sprite, the way the toast's glyph does, so
 // the two are the same drawing. 14px is the host's small icon and the size of its busy ring in this slot. The clock is
-// snooze-archive's own drawing and keeps its colour.
+// the snooze plugin's own drawing and keeps its colour.
 const CLOCK = ["M8 4.5V8l2.5 1.5"]
 const SIZE = "14"
 
@@ -136,7 +136,7 @@ export function createTabMarks(options: TabMarksOptions) {
 
 const SHOWN = ':not([data-status="attention"], [data-active="true"])'
 
-// Positioning, the hover swap and the title fade are the clock's (snooze-archive): the 20px slot box at the row's end.
+// Positioning, the hover swap and the title fade are the clock's (the snooze plugin): the 20px slot box at the row's end.
 export const tabMarkCss = `
 [data-titlebar-tab] [data-notify-mark] { position: absolute; inset-block: 0; inset-inline-end: 0; display: none; place-items: center; width: 20px; height: 20px; margin-block: auto; pointer-events: none; color: var(--v2-state-fg-info); }
 [data-titlebar-tab] [data-notify-mark][data-severity="success"] { color: var(--v2-state-fg-success, var(--v2-text-text-muted)); }

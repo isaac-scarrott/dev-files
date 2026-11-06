@@ -1,6 +1,6 @@
 import { onCleanup } from "solid-js"
 
-// Parametrised by what the plugin injects (it began as snooze-archive's observer, which now uses this one). A plugin that
+// Parametrised by what the plugin injects (it began as the snooze plugin's observer, which now uses this one). A plugin that
 // injects into the sidebar creates one of these per window; `own` lists its injected nodes so its own writes never wake it.
 // The one MutationObserver of the plugin. The host has no extension point for tab rows, the session menus or the
 // sidebar's scroll region, so those are read from its DOM; this is the single place that watches it.
