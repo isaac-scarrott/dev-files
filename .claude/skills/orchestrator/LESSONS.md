@@ -12,6 +12,7 @@ Judgement calls that proved their worth.
 
 - **One pass, then the user looks.** A design gets one pass and goes to the user. Run a critique loop only when they ask for one; unprompted rounds drift toward clever and away from what was asked.
 - **A design stays a design until the user says build.** It reaches a builder, an implementor or a PR on the user's word, never your judgement.
+- **Sign the states, order and wording before any UI build.** One page the owner approves: every state, the order things appear, the exact labels. The availability picker was rebuilt about eight times because each round of feedback arrived after a build (Nov 2026).
 - **States come from the product's own fixtures.** Before drawing or hand-building a state, look for the harness, storybook or fixture that renders it, and capture that.
 
 ## Landing stacks
@@ -19,6 +20,9 @@ Judgement calls that proved their worth.
 - **Restack ahead of the merge.** Rebase each child onto its parent's new head as soon as that head exists, rather than waiting for the parent to merge. Then the child can queue the moment its parent lands.
 - **Prove "known" before you say it.** A failure that also fails on trunk, or on the PR's base, is known. One you haven't checked is "unclassified". Checking out the old head in a spare worktree and running the one failing test is usually a few minutes, and saves the merger from asking.
 - **Hooks are checks.** A push that skips hooks (`--no-verify`) skips the formatter and linter too, and CI fails on them after the merge queue has already moved on. Run the formatter on the touched files first, or push with hooks on.
+- **Check for an existing fix before dispatching one.** A production deploy failed on shell size; the merger already had the trim open as a PR. `gh pr list --search` first, then brief.
+- **A hold sent to the merger can arrive after the merge.** For a change to a PR that may already have landed, check `gh pr view` first; if it merged, ask the builder for a follow-up PR off trunk, not a push to the old branch.
+- **A reported regression needs its sample size.** "p90 went from 3 to 21 minutes" was four long runs out of 34, from a lockfile rule that had not changed since September. A read-only scout found it in one pass; no fix was needed.
 - **A retarget isn't a push.** On repos whose CI triggers only on opened/synchronize, a stacked PR retargeted to trunk runs no checks and sits BLOCKED. Push to it, or run `gh pr update-branch`.
 
 ## Working with the user
@@ -29,9 +33,17 @@ Judgement calls that proved their worth.
 - **Apply a new rule from the next unit of work** when retrofitting it would break working layers, and say which layers you left.
 - **Offer an easy way to change course.** When a new instruction arrives mid-flight, restate the adjusted plan in a line, including what is paused and what continues.
 
+- **Human review wants a guided click-through, not a document.** Sixty navigation examples as markdown were too hard to follow; what worked was one task per screen: a plain sentence of context, one highlighted control to press on a realistic mock, then the few things that should now be true with a yes, no or explain choice. Start there (Nov 2026).
+- **A tweak brief names the one property, and what must not change.** "Make the tab bar the same width as the content" came back with equal-width tabs added; the owner called it scope creep. Builders add the sensible neighbour unless the brief says the neighbour stays as it is.
+- **A one-line correction with no target is a question, not a guess.** When feedback could mean two items, ask which with the question tool, listing the candidates.
 - **Look at a builder's artefact yourself before showing the user.** A report or page a sub-agent produced is a claim until you have opened it: check every picture and every comparison, not just the summary. Showing an unchecked report cost the user's trust in the tool (11 Oct 2026, page-diagnose).
 - **A sub-agent does not inherit the user's permission.** When the user approves a blocked write in the main session, the sub-agent is still blocked. Have the sub-agent prepare the change as a plan file (read-only), and apply it from the main session.
 - **Feedback on an output is feedback on the tool.** When the user corrects a report, a frame or a brief, put the correction where the next run will read it (the skill, its code, the repo's design doc) in the same turn, and say where it went.
+
+## Running builders
+
+- **A pause is an interrupt plus a scheduled resume.** Interrupt each running builder, then schedule one task that names each session id, says which to leave alone (finished ones), and tells it to check `git status` and its pushed head before continuing.
+- **Builders cut off by a usage or rate limit stay cut off.** Read each one's state when the limit lifts, and re-prompt the ones that stopped. Their worktrees may be gone too: a builder resumed after `/tmp` was wiped had to move to a durable folder.
 
 ## Pricing the plan
 
