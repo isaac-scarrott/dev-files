@@ -2,12 +2,16 @@ import { Command, createKeyed, Plugin, Store, Style } from "@opencode/plugin/gui
 import { Schema } from "effect"
 import { onCleanup } from "solid-js"
 import { createRowFilter } from "./dom"
-import { createSpaceMenus } from "./menus"
 import { createKeyGuard } from "./keys"
-import { bindWheel } from "./wheel"
-import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberTab, renameSpace, reorderSpace, selectSpace, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
+import { createSpaceMenus } from "./menus"
+import {
+  ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId,
+  reconcile, rememberTab, renameSpace, reorderSpace, selectSpace, selectSpaceId, settle, spaceOf,
+  type State, type TabLike,
+} from "./model"
 import { accentColor, css, swipeCss } from "./style"
 import { createStrip } from "./strip"
+import { bindWheel } from "./wheel"
 
 const SpaceSchema = Schema.Struct({
   id: Schema.String,
@@ -40,8 +44,7 @@ export default Plugin.define({
     const activeId = () => state().spaces[clampActive(state())]!.id
     const update = (change: (current: State) => State) => {
       ctx.stores.spaces.update((draft) => {
-        const before = settle(draft as State)
-        const next = change(before)
+        const next = change(settle(draft as State))
         draft.version = next.version
         draft.active = next.active
         draft.spaces = next.spaces as never
@@ -50,32 +53,127 @@ export default Plugin.define({
       })
     }
 
+    const tabs = (): TabLike[] =>
+      ctx.tabs.list().map((tab) => ({
+        key: tab.key,
+        ...(tab.active ? { active: true } : {}),
+        ...(tab.session ? { session: { server: tab.session.server.id, id: tab.session.id } } : {}),
+      }))
+    const routed = () => ctx.tabs.list().find((tab) => tab.active)
+    const sessionOf = (tab: ReturnType<typeof routed>) => (tab?.session ? { server: tab.session.server.id, id: tab.session.id } : undefined)
+    const sessionExists = (server: string, id: string) => !!ctx.servers.get(server)?.data.session.get(id)
+    const belongs = (current: State, tab: TabLike) =>
+      current.drafts.some((draft) => draft.tab === tab.key) ||
+      (tab.session ? current.assigned.some((item) => item.server === tab.session!.server && item.id === tab.session!.id) : false)
+
+    /** Records the tab on screen as its space's last one. */
+    const rememberCurrent = () => {
+      const tab = routed()
+      if (!tab) return
+      const current = state()
+      const session = sessionOf(tab)
+      const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
+      const space = current.spaces.find((item) => item.id === owner)
+      if (space?.lastTab === tab.key) return
+      update((now) => rememberTab(now, owner, tab.key, session))
+    }
+
+    /** Arrives in a space: the tab it had on screen, else its last session, else the first session it owns. */
+    let restoring: string | undefined
+    const arrive = (id: string) => {
+      const current = state()
+      const space = current.spaces.find((item) => item.id === id)
+      if (!space) return
+      const list = ctx.tabs.list()
+      const owned = (tab: (typeof list)[number]) => {
+        const session = sessionOf(tab)
+        if (session && !sessionExists(session.server, session.id)) return false
+        return spaceOf(current, { key: tab.key, ...(session ? { session } : {}) }) === id
+      }
+      const hold = (key: string) => {
+        restoring = key
+        setTimeout(() => { if (restoring === key) restoring = undefined }, 1500)
+      }
+      const byTab = space.lastTab ? list.find((tab) => tab.key === space.lastTab && owned(tab)) : undefined
+      if (byTab?.active) return
+      if (byTab) {
+        hold(byTab.key)
+        return ctx.tabs.focus(byTab.key)
+      }
+      const last = space.lastSession
+      const bySession = last ? list.find((tab) => tab.session?.server.id === last.server && tab.session?.id === last.id && owned(tab)) : undefined
+      if (bySession?.active) return
+      if (bySession) {
+        hold(bySession.key)
+        return ctx.tabs.focus(bySession.key)
+      }
+      if (last && sessionExists(last.server, last.id) && spaceOf(current, { session: last }) === id) {
+        hold(space.lastTab ?? "")
+        void ctx.tabs.open({ server: last.server, id: last.id }, { focus: true })
+        return
+      }
+      const first = list.find((tab) => owned(tab))
+      if (first && !first.active) {
+        hold(first.key)
+        ctx.tabs.focus(first.key)
+      }
+    }
+
+    /** The one way to change space: remember where you were, move, then land in the new space's tab. */
+    const switchTo = (index: number) => {
+      const current = state()
+      const target = Math.max(0, Math.min(index, current.spaces.length - 1))
+      if (target === clampActive(current)) return
+      rememberCurrent()
+      update((now) => selectSpace(now, target))
+      const id = state().spaces[target]?.id
+      if (id) arrive(id)
+    }
+    const switchToId = (id: string) => {
+      const index = state().spaces.findIndex((space) => space.id === id)
+      if (index >= 0) switchTo(index)
+    }
+
+    // ---- sidebar: filter, strip, keys, swipe -------------------------------------------------------------
+    const filter = createRowFilter(document, () => new Set(hiddenTabs(state(), tabs())))
+    const sidebar = () => document.querySelector<HTMLElement>('[data-slot="vertical-tabs"]')
+
     const strip = createStrip(
       document,
       {
-        reorder(from, to) {
-          update((current) => reorderSpace(current, from, to))
-        },
-        select(index) {
-          switchTo(index)
-        },
+        select: (index) => switchTo(index),
+        reorder: (from, to) => update((current) => reorderSpace(current, from, to)),
       },
       (space) => accentColor(space.accent),
     )
 
-    // Rows are hidden by attribute; the host keeps its own list, so navigation is guarded in milestone 5.
-    const filter = createRowFilter(document, () => new Set(hiddenTabs(state(), tabs())))
+    const createSpace = () => {
+      rememberCurrent()
+      const current = state()
+      update((now) => addSpace(now, { id: newSpaceId(current.spaces), name: `Space ${now.spaces.length + 1}`, emoji: defaultEmoji(now.spaces) }))
+    }
 
-    // Two-finger swipes over the sidebar change space; past the last one, the new-space slot opens under the pull.
+    const guard = createKeyGuard({
+      visible: () => tabs().filter((tab) => spaceOf(state(), tab) === activeId()).map((tab) => tab.key),
+      focused: () => routed()?.key,
+      focus: (key) => ctx.tabs.focus(key),
+      handled: () => undefined,
+      lost: () => undefined,
+    })
+    let detachGuard: () => void = () => undefined
+    const applyGuard = () => {
+      detachGuard()
+      detachGuard = state().spaces.length > 1 ? guard.attach(document) : () => undefined
+    }
+    onCleanup(() => detachGuard())
+    createKeyed(() => state().spaces.length > 1, () => applyGuard())
+
     let lastPull = 0
     const wheel = bindWheel(document, {
       ready: () => state().spaces.length > 1,
       atEnd: () => state().active >= state().spaces.length - 1,
-      switchTo(direction) {
-        const current = state()
-        const index = current.active + direction
-        if (index < 0 || index >= current.spaces.length) return
-        switchTo(index)
+      switchTo: (direction) => {
+        switchTo(state().active + direction)
         const side = sidebar()
         side?.setAttribute("data-spaces-switch", direction === 1 ? "next" : "previous")
         setTimeout(() => side?.removeAttribute("data-spaces-switch"), 200)
@@ -83,7 +181,6 @@ export default Plugin.define({
       create: () => createSpace(),
       pull: (value) => {
         strip.pull(value)
-        // A short detent each way the pull crosses half: in as the slot opens, out as it closes again.
         const crossed = (lastPull < 0.5) !== (value < 0.5)
         lastPull = value
         if (!crossed) return
@@ -95,39 +192,38 @@ export default Plugin.define({
     })
     onCleanup(() => wheel.stop())
 
-    // The host's own Alt+Arrow and Mod+1..9 walk every tab, hidden ones included. While spaces are filtering, they walk
-    // the rows on screen instead; with a single space there is nothing to guard and the host keeps its keys.
-    const guard = createKeyGuard({
-      visible: () => tabs().filter((tab) => spaceOf(state(), tab) === activeId()).map((tab) => tab.key),
-      focused: () => ctx.tabs.list().find((tab) => tab.active)?.key,
-      focus: (key) => ctx.tabs.focus(key),
-      handled: () => undefined,
-      lost: () => undefined,
-    })
-    let detach: () => void = () => undefined
-    const applyGuard = () => {
-      detach()
-      detach = state().spaces.length > 1 ? guard.attach(document) : () => undefined
-    }
-    onCleanup(() => detach())
-    createKeyed(
-      () => state().spaces.length > 1,
-      () => applyGuard(),
-    )
-
-    // Which tabs were already open when this plugin started: they belong to the first space, not to whatever is active.
+    // ---- tabs and spaces ---------------------------------------------------------------------------------
     const startup = new Set<string>()
     const known = new Set<string>()
     let seeded = false
-    const tabs = (): TabLike[] =>
-      ctx.tabs.list().map((tab) => ({
-        key: tab.key,
-        ...(tab.active ? { active: true } : {}),
-        ...(tab.session ? { session: { server: tab.session.server.id, id: tab.session.id } } : {}),
-      }))
 
-    /** Gives new tabs a space, then shows the active space's rows. One place, so both stay in step. */
+    // A deleted session must not linger as a tab pointing at nothing, nor stay remembered.
+    const watched = new Set<string>()
+    const watchServers = () => {
+      for (const serverId of ctx.servers.list()) {
+        if (watched.has(serverId)) continue
+        const ref = ctx.servers.get(serverId)
+        if (!ref) continue
+        watched.add(serverId)
+        ref.data.on("session.deleted", (event) => {
+          const id = event.data.sessionID
+          for (const tab of ctx.tabs.list()) {
+            if (tab.session?.server.id === serverId && tab.session.id === id) ctx.tabs.close(tab.key)
+          }
+          update((now) => ({
+            ...now,
+            assigned: now.assigned.filter((item) => !(item.server === serverId && item.id === id)),
+            spaces: now.spaces.map((space) => {
+              const last = space.lastSession
+              return last && last.server === serverId && last.id === id ? { ...space, lastSession: undefined, lastTab: undefined } : space
+            }),
+          }))
+        })
+      }
+    }
+
     const sync = () => {
+      watchServers()
       const list = tabs()
       if (!seeded) {
         for (const tab of list) startup.add(tab.key)
@@ -135,8 +231,6 @@ export default Plugin.define({
       }
       const current = state()
       let next = reconcile(current, list, startup, Date.now(), known)
-      // The tab on screen is always the space's last one; kept here, where every tab and store change passes, rather than
-      // by an effect that has to guess whether a change was navigation.
       const activeTab = list.find((tab) => tab.active)
       if (activeTab) {
         const owner = spaceOf(next, activeTab)
@@ -147,24 +241,12 @@ export default Plugin.define({
       filter.poke()
     }
 
-    const sidebar = () => document.querySelector<HTMLElement>('[data-slot="vertical-tabs"]')
-
-    const createSpace = () => {
-      rememberCurrent()
-      const current = state()
-      const id = newSpaceId(current.spaces)
-      const emoji = defaultEmoji(current.spaces)
-      update((now) => addSpace(now, { id, name: `Space ${now.spaces.length + 1}`, emoji }))
-    }
-
-    // The strip lives inside the sidebar, which the host mounts late and may replace on a layout change. Try now, then keep
-    // trying until it lands; afterwards re-place only when the host detaches our row.
+    // The strip lives inside the sidebar, which the host mounts late and may replace; nothing is hidden until it is there
+    // and has a real box (a layout we do not understand shows everything and says so once).
     let timer: ReturnType<typeof setInterval> | undefined
     let observer: MutationObserver | undefined
     let warned = false
     let attempts = 0
-    // Nothing is hidden unless the sidebar is there and our strip has a box: a layout we do not understand shows every
-    // session and says so once, instead of filtering with no visible control (see DESIGN.md).
     let filtering = false
     const standDown = () => {
       if (!filtering && warned) return
@@ -190,7 +272,7 @@ export default Plugin.define({
       observer = undefined
       if (!parent) return
       observer = new MutationObserver(() => {
-        if (!document.querySelector(`[data-spaces-strip]`)) ensure()
+        if (!document.querySelector("[data-spaces-strip]")) ensure()
       })
       observer.observe(parent, { childList: true })
       strip.place()
@@ -201,7 +283,6 @@ export default Plugin.define({
       timer = setInterval(() => {
         attempts += 1
         if (strip.place()) return landed()
-        // A layout with no sidebar at all (top tabs, Inbox): say so once, then stop trying until something changes.
         if (attempts === 20) standDown()
       }, 400)
     }
@@ -220,7 +301,6 @@ export default Plugin.define({
         current.active,
       )
     }
-    // The store's value keeps its identity as it is written, so a key over the fields is what tells the strip to redraw.
     createKeyed(
       () => {
         const current = ctx.stores.spaces.value as State
@@ -231,7 +311,6 @@ export default Plugin.define({
     )
     draw()
 
-    // Tabs, the active space and the assignments all feed one pass: reconcile (assign or migrate), then hide.
     createKeyed(
       () => {
         const current = ctx.stores.spaces.value as State
@@ -250,81 +329,9 @@ export default Plugin.define({
       () => sync(),
     )
 
-    // What the routed tab is, and which space it belongs to.
-    const routed = () => ctx.tabs.list().find((tab) => tab.active)
-    const tabSession = (tab: ReturnType<typeof routed>) =>
-      tab?.session ? { server: tab.session.server.id, id: tab.session.id } : undefined
-
-    /** Records the tab on screen as its space's last one. Called as a space is left, so no reactive guesswork is involved. */
-    const rememberCurrent = () => {
-      const tab = routed()
-      if (!tab) return
-      const current = state()
-      const session = tabSession(tab)
-      const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
-      const space = current.spaces.find((item) => item.id === owner)
-      if (space?.lastTab === tab.key) return
-      update((now) => rememberTab(now, owner, tab.key, session))
-    }
-
-    /** Arrives in a space: the tab it had on screen, if that tab still belongs to it. */
-    const arrive = (id: string) => {
-      const current = state()
-      const space = current.spaces.find((item) => item.id === id)
-      if (!space) return
-      const tabs = ctx.tabs.list()
-      const owned = (tab: (typeof tabs)[number]) => {
-        const session = tabSession(tab)
-        return spaceOf(current, { key: tab.key, ...(session ? { session } : {}) }) === id
-      }
-      const byTab = space.lastTab ? tabs.find((tab) => tab.key === space.lastTab && owned(tab)) : undefined
-      if (byTab?.active) return
-      if (byTab) {
-        restoring = byTab.key
-        return ctx.tabs.focus(byTab.key)
-      }
-      const bySession = space.lastSession
-        ? tabs.find((tab) => tab.session?.server.id === space.lastSession!.server && tab.session?.id === space.lastSession!.id && owned(tab))
-        : undefined
-      if (bySession?.active) return
-      if (bySession) {
-        restoring = bySession.key
-        return ctx.tabs.focus(bySession.key)
-      }
-      if (space.lastSession && spaceOf(current, { session: space.lastSession }) === id) {
-        restoring = space.lastTab
-        void ctx.tabs.open({ server: space.lastSession.server, id: space.lastSession.id }, { focus: true })
-        return
-      }
-      // Nothing remembered (a space that has never been left with a tab on screen): land on its first session, so a switch
-      // always shows the space rather than another one's thread.
-      const first = tabs.find((tab) => owned(tab))
-      if (first && !first.active) {
-        restoring = first.key
-        setTimeout(() => { if (restoring === first.key) restoring = undefined }, 1500)
-        ctx.tabs.focus(first.key)
-      }
-    }
-
-    /** One way to change space: remember where you were, move, then land in the new space's last tab. */
-    const switchTo = (index: number) => {
-      const current = state()
-      const target = Math.max(0, Math.min(index, current.spaces.length - 1))
-      if (target === clampActive(current)) return
-      rememberCurrent()
-      update((now) => selectSpace(now, target))
-      const id = state().spaces[target]?.id
-      if (id) arrive(id)
-    }
-    const switchToId = (id: string) => {
-      const index = state().spaces.findIndex((space) => space.id === id)
-      if (index >= 0) switchTo(index)
-    }
-
-    // Navigation from elsewhere (Home, Search, the palette) lands in the space the session belongs to. Only a real change
-    // of the routed tab counts; a switch this plugin made is not navigation and must not bounce.
+    // The session on screen decides the space: a notification, Home, Search or the palette taking you to a session also
+    // takes you to its space. A focus this plugin performed is exempt, so arriving does not bounce.
     let lastRouted: string | undefined
-    let restoring: string | undefined
     createKeyed(
       () => routed()?.key ?? "",
       (key) => {
@@ -337,29 +344,20 @@ export default Plugin.define({
           return
         }
         const current = state()
-        const session = tabSession(tab)
-        const belongs = current.drafts.some((draft) => draft.tab === tab.key) ||
-          (session ? current.assigned.some((item) => item.server === session.server && item.id === session.id) : false)
-        if (!belongs) return
-        const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
-        const active = current.spaces[clampActive(current)]!.id
-        // The session on screen decides the space: a notification, Home, Search or the palette taking you to a session
-        // also takes you to its space. Only a focus this plugin performed is exempt (see `restoring`).
-        if (owner !== active) switchToId(owner)
+        if (!belongs(current, { key: tab.key, ...(sessionOf(tab) ? { session: sessionOf(tab)! } : {}) })) return
+        const owner = spaceOf(current, { key: tab.key, ...(sessionOf(tab) ? { session: sessionOf(tab)! } : {}) })
+        if (owner !== current.spaces[clampActive(current)]!.id) switchToId(owner)
       },
     )
 
-    // "The session on screen decides the space" also holds when that session did not change: clicking into the session
-    // area while the sidebar shows another space (because the last switch landed somewhere empty) re-aligns it. Clicks in
-    // the sidebar are excluded, so choosing a space there is not undone.
+    // Same rule when the session did not change: clicking into the session area re-aligns a sidebar left on an empty
+    // space. Clicks in the sidebar are excluded, so choosing a space there is not undone.
     const realign = () => {
       const tab = routed()
       if (!tab) return
       const current = state()
-      const session = tabSession(tab)
-      const belongs = current.drafts.some((draft) => draft.tab === tab.key) ||
-        (session ? current.assigned.some((item) => item.server === session.server && item.id === session.id) : false)
-      if (!belongs) return
+      const session = sessionOf(tab)
+      if (!belongs(current, { key: tab.key, ...(session ? { session } : {}) })) return
       const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
       if (owner !== current.spaces[clampActive(current)]!.id) switchToId(owner)
     }
@@ -371,15 +369,14 @@ export default Plugin.define({
     document.addEventListener("pointerdown", onPointerDown, true)
     onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
 
-    // The session a command acts on: what is routed, else the first tab that has one.
+    // ---- commands and menus ------------------------------------------------------------------------------
     const targetSession = () => {
-      const routedSession = routed()?.session
-      if (routedSession) return { server: routedSession.server.id, id: routedSession.id }
+      const current = routed()?.session
+      if (current) return { server: current.server.id, id: current.id }
       const tab = ctx.tabs.list().find((item) => item.session)
       return tab?.session ? { server: tab.session.server.id, id: tab.session.id } : undefined
     }
 
-    /** Rename, emoji, colour: only what the action needs is asked, and with one space it is not asked which. */
     const editSpace = async (action: "rename" | "emoji" | "accent") => {
       const current = state()
       const picked = current.spaces.length === 1 ? current.spaces[0]!.id : await ctx.dialogs.select({
@@ -429,7 +426,6 @@ export default Plugin.define({
       filter.poke()
     }
 
-    // "Move to space ▸" in the host's own tab, Home-row and header menus. Only with two or more spaces.
     const menus = createSpaceMenus(document, (session) => {
       const current = state()
       if (current.spaces.length < 2) return []
@@ -461,7 +457,7 @@ export default Plugin.define({
     })
     onCleanup(() => menus.stop())
     onCleanup(menus.start((inspect) => {
-      const observer = new MutationObserver((records) => {
+      const menuObserver = new MutationObserver((records) => {
         for (const record of records) {
           for (const node of record.addedNodes) {
             if (node.nodeType !== 1) continue
@@ -471,8 +467,8 @@ export default Plugin.define({
           }
         }
       })
-      observer.observe(document.body, { childList: true, subtree: true })
-      return () => observer.disconnect()
+      menuObserver.observe(document.body, { childList: true, subtree: true })
+      return () => menuObserver.disconnect()
     }))
 
     ctx.add(Command, () => ({
@@ -484,14 +480,13 @@ export default Plugin.define({
         const current = state()
         const name = await ctx.dialogs.prompt({ title: "Name this space", placeholder: `Space ${current.spaces.length + 1}` })
         if (name === undefined) return
-        const id = newSpaceId(current.spaces)
-        update((now) => addSpace(now, { id, name: name.trim() === "" ? `Space ${now.spaces.length + 1}` : name.trim(), emoji: defaultEmoji(now.spaces) }))
+        rememberCurrent()
+        update((now) => addSpace(now, { id: newSpaceId(now.spaces), name: name.trim() === "" ? `Space ${now.spaces.length + 1}` : name.trim(), emoji: defaultEmoji(now.spaces) }))
       },
     }))
 
     ctx.add(Command, () => {
-      const current = state()
-      if (current.spaces.length < 2) return undefined
+      if (state().spaces.length < 2) return undefined
       return {
         id: "spaces.switch",
         title: "Switch space…",
@@ -504,26 +499,17 @@ export default Plugin.define({
             options: now.spaces.map((space) => ({ title: `${space.emoji}  ${space.name}`, value: space.id })),
           })
           if (picked === undefined) return
-          update((current) => selectSpaceId(current, picked))
+          switchToId(picked)
         },
       }
     })
 
-    const stepSpace = (direction: 1 | -1) => {
+    const step = (direction: 1 | -1) => {
       const current = state()
-      if (current.spaces.length < 2) return
-      switchTo(current.active + direction)
+      if (current.spaces.length > 1) switchTo(current.active + direction)
     }
-    ctx.add(Command, () => {
-      const current = state()
-      if (current.spaces.length < 2) return undefined
-      return { id: "spaces.next", title: "Next space", section: "navigation" as const, bind: "ctrl+alt+arrowright", keywords: "spaces", run: () => stepSpace(1) }
-    })
-    ctx.add(Command, () => {
-      const current = state()
-      if (current.spaces.length < 2) return undefined
-      return { id: "spaces.previous", title: "Previous space", section: "navigation" as const, bind: "ctrl+alt+arrowleft", keywords: "spaces", run: () => stepSpace(-1) }
-    })
+    ctx.add(Command, () => (state().spaces.length < 2 ? undefined : { id: "spaces.next", title: "Next space", section: "navigation" as const, bind: "ctrl+alt+arrowright", keywords: "spaces", run: () => step(1) }))
+    ctx.add(Command, () => (state().spaces.length < 2 ? undefined : { id: "spaces.previous", title: "Previous space", section: "navigation" as const, bind: "ctrl+alt+arrowleft", keywords: "spaces", run: () => step(-1) }))
 
     for (const [id, title, action] of [
       ["spaces.rename", "Rename space…", "rename"],
@@ -534,8 +520,7 @@ export default Plugin.define({
     }
 
     ctx.add(Command, () => {
-      const current = state()
-      if (current.spaces.length < 2) return undefined
+      if (state().spaces.length < 2) return undefined
       return {
         id: "spaces.move",
         title: "Move session to space…",
@@ -543,8 +528,7 @@ export default Plugin.define({
         keywords: "spaces move",
         async run() {
           const session = targetSession()
-          if (!session) return
-          await moveToSpace(session)
+          if (session) await moveToSpace(session)
         },
       }
     })
