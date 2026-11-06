@@ -93,9 +93,16 @@ space…** (only offered with two or more spaces).
   hidden row, six spaces in the strip, light and dark, reload persistence, and a coexistence pass with `sidebar-repos`
   and `session-drag` (rows still filter, strip intact).
 
+## Reordering
+
+Dragging a dot sideways moves its space. The pure move is `reorderSpace`: the array changes, the active space keeps its
+id (so the highlight follows it to the new slot), and assignments are untouched because they name spaces by id. A press
+that travels less than 4px stays a click; a real drag sets a marker so the click that follows the drop does not also
+switch space.
+
 ## What is deliberately not here
 
-- **Dragging a row onto a dot.** The harness could not start the host's own drag (`[data-dragging]` appeared, the list
+- **Dragging a session row onto a dot** (dots themselves are draggable; sessions move through the menu). The harness could not start the host's own drag (`[data-dragging]` appeared, the list
   never reordered), and a second drag system over the host's dnd-kit risks moving rows across a hidden boundary. The
   menu and palette cover the action.
 - **Tinting the sidebar per space.** Would mean overriding host background variables on host elements. The accent lives

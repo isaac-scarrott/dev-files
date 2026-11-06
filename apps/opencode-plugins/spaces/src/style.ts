@@ -20,6 +20,14 @@ export const css = `
 [data-spaces-strip][data-spaces-empty] {
   display: none;
 }
+/* A dot being dragged lifts out of the row and follows the pointer; the row stays put so the drop slot is obvious. */
+[data-spaces-strip][data-spaces-dragging] [data-spaces-dot] {
+  cursor: grabbing;
+}
+[data-spaces-strip][data-spaces-dragging] [data-spaces-dot][style*="translateX"] {
+  transition: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.22));
+}
 [data-spaces-track] {
   display: flex;
   align-items: center;

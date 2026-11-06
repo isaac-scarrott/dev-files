@@ -28,7 +28,7 @@ const spaces = (count: number) => Array.from({ length: count }, (_, index) => ({
 
 test("the strip lands in the sidebar column, just before its footer", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   assert.equal(strip.place(), true)
   const element = doc.querySelector(`[${STRIP}]`)!
   assert.equal(element.parentElement?.getAttribute("class"), "flex size-full flex-col")
@@ -37,7 +37,7 @@ test("the strip lands in the sidebar column, just before its footer", () => {
 
 test("one space shows nothing, two show a dot each with the active one marked", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   strip.place()
   const element = doc.querySelector<HTMLElement>(`[${STRIP}]`)!
   strip.update(spaces(1), 0)
@@ -55,7 +55,7 @@ test("one space shows nothing, two show a dot each with the active one marked", 
 test("clicking a dot reports its index, and clicks do not reach the host", () => {
   const { doc } = host()
   const picked: number[] = []
-  const strip = createStrip(doc, { select: (index) => void picked.push(index) }, plain)
+  const strip = createStrip(doc, { select: (index) => void picked.push(index), reorder: plain }, plain)
   strip.place()
   strip.update(spaces(3), 0)
   const dots = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)]
@@ -63,9 +63,45 @@ test("clicking a dot reports its index, and clicks do not reach the host", () =>
   assert.deepEqual(picked, [2])
 })
 
+test("dragging a dot two slots right asks for that reorder, and does not also switch space", () => {
+  const { doc } = host()
+  const picked: number[] = []
+  const moved: [number, number][] = []
+  const strip = createStrip(doc, { select: (index) => void picked.push(index), reorder: (from, to) => void moved.push([from, to]) }, plain)
+  strip.place()
+  strip.update(spaces(4), 0)
+  const dots = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)]
+  const dot = dots[0]!
+  const Pointer = doc.defaultView!.PointerEvent as unknown as typeof PointerEvent
+  dot.setPointerCapture = () => undefined
+  dot.dispatchEvent(new Pointer("pointerdown", { bubbles: true, clientX: 100, clientY: 10, button: 0, pointerId: 1 }))
+  dot.dispatchEvent(new Pointer("pointermove", { bubbles: true, clientX: 130, clientY: 10, pointerId: 1 }))
+  dot.dispatchEvent(new Pointer("pointerup", { bubbles: true, clientX: 148, clientY: 10, pointerId: 1 }))
+  assert.deepEqual(moved, [[0, 2]])
+  dot.dispatchEvent(new (doc.defaultView!.MouseEvent)("click", { bubbles: true }))
+  assert.deepEqual(picked, [], "the click that ends a drag is swallowed")
+})
+
+test("a small wobble is still a click, and switching works", () => {
+  const { doc } = host()
+  const picked: number[] = []
+  const moved: [number, number][] = []
+  const strip = createStrip(doc, { select: (index) => void picked.push(index), reorder: (from, to) => void moved.push([from, to]) }, plain)
+  strip.place()
+  strip.update(spaces(3), 1)
+  const dot = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)][1]!
+  const Pointer = doc.defaultView!.PointerEvent as unknown as typeof PointerEvent
+  dot.setPointerCapture = () => undefined
+  dot.dispatchEvent(new Pointer("pointerdown", { bubbles: true, clientX: 100, clientY: 10, button: 0, pointerId: 2 }))
+  dot.dispatchEvent(new Pointer("pointerup", { bubbles: true, clientX: 102, clientY: 10, pointerId: 2 }))
+  dot.dispatchEvent(new (doc.defaultView!.MouseEvent)("click", { bubbles: true }))
+  assert.deepEqual(moved, [])
+  assert.deepEqual(picked, [1])
+})
+
 test("nothing in the strip invites a click, and a pull opens the new-space slot", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   strip.place()
   strip.update(spaces(3), 0)
   assert.equal(doc.querySelectorAll("[data-spaces-add]").length, 0, "no plus unless it is being pulled")
@@ -84,7 +120,7 @@ test("nothing in the strip invites a click, and a pull opens the new-space slot"
 
 test("accent tokens become host colours on the active dot only where given", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, (space) => (space.accent ? `var(--v2-state-fg-${space.accent})` : undefined))
+  const strip = createStrip(doc, { select: plain, reorder: plain }, (space) => (space.accent ? `var(--v2-state-fg-${space.accent})` : undefined))
   strip.place()
   strip.update([{ id: "a", name: "A", emoji: "🌱" }, { id: "b", name: "B", emoji: "🌿", accent: "info" }], 1)
   const dots = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)]
@@ -94,7 +130,7 @@ test("accent tokens become host colours on the active dot only where given", () 
 
 test("placing twice keeps one strip, and dispose removes it", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   strip.place()
   strip.place()
   assert.equal(doc.querySelectorAll(`[${STRIP}]`).length, 1)
@@ -105,16 +141,16 @@ test("placing twice keeps one strip, and dispose removes it", () => {
 test("without a sidebar the strip stays out, and placing again recovers when it appears", () => {
   const { doc } = host()
   doc.body.innerHTML = "<div></div>"
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   assert.equal(strip.place(), false)
   assert.equal(doc.querySelectorAll(`[${STRIP}]`).length, 0)
   const { doc: again } = host()
-  assert.equal(createStrip(again, { select: plain }, plain).place(), true)
+  assert.equal(createStrip(again, { select: plain, reorder: plain }, plain).place(), true)
 })
 
 test("so many spaces that they overflow: every dot is still drawn, so the track can scroll", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   strip.place()
   strip.update(spaces(12), 7)
   assert.equal(doc.querySelectorAll(`[${DOT}]`).length, 12)
@@ -123,7 +159,7 @@ test("so many spaces that they overflow: every dot is still drawn, so the track 
 
 test("a stale active index still marks exactly one dot", () => {
   const { doc } = host()
-  const strip = createStrip(doc, { select: plain }, plain)
+  const strip = createStrip(doc, { select: plain, reorder: plain }, plain)
   strip.place()
   strip.update(spaces(2), 99)
   const selected = [...doc.querySelectorAll<HTMLElement>(`[${DOT}]`)].filter((dot) => dot.getAttribute("aria-selected") === "true")

@@ -16,6 +16,8 @@ export interface StripSpace {
 
 export interface StripHandlers {
   select(index: number): void
+  /** A dot was dragged from one slot to another. */
+  reorder(from: number, to: number): void
 }
 
 export interface Strip {
@@ -42,6 +44,8 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
   let spaces: readonly StripSpace[] = []
   let active = 0
   let fill = 0
+  /** How far a press must travel before it is a drag rather than a click. */
+  const DRAG = 4
 
   const draw = () => {
     if (!element) return
@@ -68,14 +72,65 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
         dot.addEventListener("click", (event) => {
           event.preventDefault()
           event.stopPropagation()
+          // A drag ends with a click too; suppress that one so dropping a dot does not also switch space.
+          if (dot.hasAttribute("data-spaces-dragged")) {
+            dot.removeAttribute("data-spaces-dragged")
+            return
+          }
           handlers.select(index)
         })
+        attachDrag(dot, index)
         return dot
       }),
       ghost,
     )
     ghost.hidden = !visible || fill <= 0
   }
+
+  /** Drag a dot sideways to move its space. The dot follows the pointer; the drop slot decides the new index. */
+  const attachDrag = (dot: HTMLElement, index: number) => {
+    dot.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return
+      const startX = event.clientX
+      const startIndex = index
+      let moved = false
+      dot.setPointerCapture?.(event.pointerId)
+      // One slot's width: the distance to the next dot, or the dot's own size when nothing has been laid out yet.
+      const slot = () => {
+        const first = doc.querySelector<HTMLElement>(`[${DOT}]`)
+        const second = doc.querySelectorAll<HTMLElement>(`[${DOT}]`)[1]
+        if (!first || !second) return 24
+        const step = second.getBoundingClientRect().x - first.getBoundingClientRect().x
+        return step >= 12 ? step : 24
+      }
+      const onMove = (move: PointerEvent) => {
+        const dx = move.clientX - startX
+        if (!moved && Math.abs(dx) < DRAG) return
+        moved = true
+        stripElement()?.setAttribute("data-spaces-dragging", "")
+        dot.style.transform = `translateX(${dx}px)`
+        dot.style.zIndex = "1"
+      }
+      const onUp = (up: PointerEvent) => {
+        dot.removeEventListener("pointermove", onMove)
+        dot.removeEventListener("pointerup", onUp)
+        dot.removeEventListener("pointercancel", onUp)
+        stripElement()?.removeAttribute("data-spaces-dragging")
+        dot.style.transform = ""
+        dot.style.zIndex = ""
+        if (!moved) return
+        dot.setAttribute("data-spaces-dragged", "")
+        const step = slot()
+        const to = Math.max(0, Math.min(startIndex + Math.round((up.clientX - startX) / step), spaces.length - 1))
+        if (to !== startIndex) handlers.reorder(startIndex, to)
+      }
+      dot.addEventListener("pointermove", onMove)
+      dot.addEventListener("pointerup", onUp)
+      dot.addEventListener("pointercancel", onUp)
+    })
+  }
+
+  const stripElement = () => doc.querySelector<HTMLElement>(`[${STRIP}]`)
 
   const build = () => {
     const strip = doc.createElement("div")

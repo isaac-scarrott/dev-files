@@ -11,8 +11,9 @@ or a row of dots at the bottom of the sidebar.
   and returns to the session that space had open.
 - **Trackpad swipes** over the sidebar change space, the way Arc does: two fingers left and right. Swiping past the last
   space reveals the strip's plus; swipe a little further and it fills, creating a space.
-- **The strip** at the bottom of the sidebar carries one dot per space, the active one lit, a plus at the end. With a
-  single space it takes no room and nothing is filtered.
+- **The strip** at the bottom of the sidebar carries one dot per space, the active one lit. Drag a dot sideways to
+  reorder the spaces; the space you are in stays active wherever it lands. With a single space it takes no room and
+  nothing is filtered.
 - **Commands** (palette, and `Ctrl+Alt+←/→` for next/previous): New space…, Switch space…, Rename space…, Change space
   emoji…, Change space colour…, Delete space…, Move session to space….
 - **Move to space** is also in the session's own right-click menu, above Delete…, on a tab row, a Home row and the

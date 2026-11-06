@@ -240,3 +240,22 @@ export function hiddenTabs(state: State, tabs: readonly TabLike[]): string[] {
 export function restoreTarget(state: State, spaceId: string): SpaceSession | undefined {
   return state.spaces.find((space) => space.id === spaceId)?.lastSession
 }
+
+/**
+ * Moves a space to another position, keeping the same space active and leaving every assignment alone: they name spaces
+ * by id, so only the order changes.
+ */
+export function reorderSpace(state: State, from: number, to: number): State {
+  const count = state.spaces.length
+  if (count < 2) return state
+  const start = Math.max(0, Math.min(from, count - 1))
+  const end = Math.max(0, Math.min(to, count - 1))
+  if (start === end) return state
+  const active = state.spaces[clampActive(state)]!.id
+  const spaces = [...state.spaces]
+  const [moved] = spaces.splice(start, 1)
+  if (!moved) return state
+  spaces.splice(end, 0, moved)
+  const index = spaces.findIndex((space) => space.id === active)
+  return { ...state, spaces, active: index < 0 ? 0 : index }
+}

@@ -17,6 +17,7 @@ import {
   promoteDraft,
   reconcile,
   rememberLastSession,
+  reorderSpace,
   renameSpace,
   selectSpace,
   selectSpaceId,
@@ -256,4 +257,23 @@ test("a switch targets the space's last session, and nothing when it has none", 
   assert.deepEqual(restoreTarget(state, "sp_a"), { server: "s", id: "L" })
   assert.equal(restoreTarget(state, "sp_b"), undefined)
   assert.equal(restoreTarget(state, "nope"), undefined)
+})
+
+test("reordering moves the space and keeps the same one active", () => {
+  let state = initialState()
+  state = addSpace(state, S("sp_a"))
+  state = addSpace(state, S("sp_b"))
+  assert.equal(state.spaces[clampActive(state)]!.id, "sp_b")
+  const moved = reorderSpace(state, 2, 0)
+  assert.deepEqual(moved.spaces.map((space) => space.id), ["sp_b", state.spaces[0]!.id, "sp_a"])
+  assert.equal(moved.spaces[moved.active]!.id, "sp_b", "the active space follows its new position")
+  assert.deepEqual(moved.assigned, state.assigned)
+})
+
+test("reordering to the same slot, or out of range, changes nothing", () => {
+  let state = addSpace(addSpace(initialState(), S("sp_a")), S("sp_b"))
+  assert.equal(reorderSpace(state, 1, 1), state)
+  assert.deepEqual(reorderSpace(state, 0, 99).spaces.map((space) => space.id), ["sp_a", "sp_b", state.spaces[0]!.id])
+  const one = initialState()
+  assert.equal(reorderSpace(one, 0, 0), one, "one space has nowhere to go")
 })

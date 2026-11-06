@@ -5,7 +5,7 @@ import { createRowFilter } from "./dom"
 import { createKeyGuard } from "./keys"
 import { bindWheel } from "./wheel"
 import { createSpaceMenus } from "./menus"
-import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberLastSession, renameSpace, restoreTarget, selectSpace, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
+import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberLastSession, renameSpace, reorderSpace, restoreTarget, selectSpace, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
 import { accentColor, css, swipeCss } from "./style"
 import { createStrip } from "./strip"
 
@@ -51,6 +51,9 @@ export default Plugin.define({
     const strip = createStrip(
       document,
       {
+        reorder(from, to) {
+          update((current) => reorderSpace(current, from, to))
+        },
         select(index) {
           update((current) => ({
             ...current,
