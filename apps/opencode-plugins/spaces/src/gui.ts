@@ -57,9 +57,6 @@ export default Plugin.define({
             active: Math.max(0, Math.min(index, current.spaces.length - 1)),
           }))
         },
-        create() {
-          createSpace()
-        },
       },
       (space) => accentColor(space.accent),
     )
@@ -67,7 +64,8 @@ export default Plugin.define({
     // Rows are hidden by attribute; the host keeps its own list, so navigation is guarded in milestone 5.
     const filter = createRowFilter(document, () => new Set(hiddenTabs(state(), tabs())))
 
-    // Two-finger swipes over the sidebar change space; past the last one, the strip's plus fills and creates a space.
+    // Two-finger swipes over the sidebar change space; past the last one, the new-space slot opens under the pull.
+    let lastPull = 0
     const wheel = bindWheel(document, {
       ready: () => state().spaces.length > 1,
       atEnd: () => state().active >= state().spaces.length - 1,
@@ -81,9 +79,17 @@ export default Plugin.define({
         setTimeout(() => side?.removeAttribute("data-spaces-switch"), 200)
       },
       create: () => createSpace(),
-      reveal: (on) => document.querySelector("[data-spaces-strip]")?.toggleAttribute("data-spaces-reveal", on),
-      progress: () => undefined,
-      animate: () => undefined,
+      pull: (value) => {
+        strip.pull(value)
+        // A short detent each way the pull crosses half: in as the slot opens, out as it closes again.
+        const crossed = (lastPull < 0.5) !== (value < 0.5)
+        lastPull = value
+        if (!crossed) return
+        const element = document.querySelector("[data-spaces-strip]")
+        if (!element) return
+        element.setAttribute("data-spaces-tick", "")
+        setTimeout(() => element.removeAttribute("data-spaces-tick"), 180)
+      },
     })
     onCleanup(() => wheel.stop())
 

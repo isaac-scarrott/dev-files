@@ -7,8 +7,10 @@ export const css = `
   display: none !important;
 }
 [data-spaces-strip] {
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   min-height: 28px;
   margin: 2px 8px 2px;
@@ -21,6 +23,7 @@ export const css = `
 [data-spaces-track] {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
@@ -58,31 +61,45 @@ export const css = `
   background: var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16));
   border-color: var(--spaces-accent, var(--v2-border-border-base, rgba(127, 127, 127, 0.35)));
 }
-[data-spaces-add] {
+/* The new space's slot: it exists only while a pull opens it, and fills as the pull goes on. */
+[data-spaces-ghost] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  width: 22px;
+  box-sizing: border-box;
+  width: calc(22px * var(--spaces-pull, 0));
   height: 22px;
-  padding: 0;
-  border: 1px solid transparent;
+  margin-left: calc(2px * var(--spaces-pull, 0));
+  border: 1px dashed var(--v2-border-border-base, rgba(127, 127, 127, 0.35));
   border-radius: 6px;
-  background: transparent;
+  background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16)) calc(var(--spaces-pull, 0) * 100%), transparent);
   color: var(--v2-text-text-faint, inherit);
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1;
-  opacity: 0;
-  transition: opacity 140ms ease;
+  opacity: calc(0.25 + var(--spaces-pull, 0) * 0.75);
+  overflow: hidden;
+  transition: none;
 }
-[data-spaces-strip]:hover [data-spaces-add],
-[data-spaces-add]:focus-visible {
-  opacity: 0.7;
+[data-spaces-ghost][data-spaces-armed] {
+  border-style: solid;
+  border-color: var(--spaces-accent, var(--v2-state-fg-info, currentColor));
 }
-[data-spaces-add]:hover {
-  opacity: 1;
-  background: var(--v2-overlay-simple-overlay-hover, rgba(127, 127, 127, 0.12));
+/* The tick that says the pull crossed into the slot and out of it again: a short scale, like a detent. */
+@keyframes spaces-detent {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+[data-spaces-strip][data-spaces-tick] [data-spaces-dot]:last-of-type,
+[data-spaces-strip][data-spaces-tick] [data-spaces-ghost] {
+  animation: spaces-detent 160ms cubic-bezier(0.3, 0, 0.2, 1);
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-spaces-dot], [data-spaces-add] { transition: none; }
+  [data-spaces-dot] { transition: none; }
+  [data-spaces-strip][data-spaces-tick] [data-spaces-dot]:last-of-type,
+  [data-spaces-strip][data-spaces-tick] [data-spaces-ghost] { animation: none; }
 }
 `
 
@@ -95,13 +112,7 @@ export function accentColor(accent: string | undefined): string | undefined {
 
 /** The swipe, and what a change looks like: the list slides in from the side the swipe came from. */
 export const swipeCss = `
-[data-spaces-strip][data-spaces-reveal] [data-spaces-add] {
-  opacity: 1;
-  transform: scale(1.15);
-}
-[data-spaces-strip] [data-spaces-add] {
-  transition: opacity 140ms ease, transform 160ms cubic-bezier(0.2, 0, 0, 1);
-}
+
 @keyframes spaces-in-next {
   from { opacity: 0.35; transform: translateX(14px); }
   to { opacity: 1; transform: none; }

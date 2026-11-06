@@ -27,9 +27,22 @@ test("however long the swipe runs without pausing, it changes space only once", 
   assert.equal(kinds.filter((kind) => kind === "switch").length, 1)
 })
 
-test("a second, deliberate swipe after a pause changes space again", () => {
-  const { kinds } = run([...burst(20, 6, 0), ...burst(20, 6, 300)])
-  assert.equal(kinds.filter((kind) => kind === "switch").length, 2)
+test("a second, deliberate swipe after the gesture ends changes space again", () => {
+  // The wheel binding ends a gesture with `release` after a pause; until then nothing more happens.
+  let state = idleSwipe()
+  const switches: number[] = []
+  for (const event of burst(20, 6, 0)) {
+    const step = swipe(state, event, { atEnd: false })
+    state = step.state
+    if (step.action.type === "switch") switches.push(step.action.direction)
+  }
+  state = release(state)
+  for (const event of burst(-20, 6, 400)) {
+    const step = swipe(state, event, { atEnd: false })
+    state = step.state
+    if (step.action.type === "switch") switches.push(step.action.direction)
+  }
+  assert.deepEqual(switches, [1, -1])
 })
 
 test("swiping left goes back a space, swiping right goes on", () => {
@@ -47,27 +60,36 @@ test("a short movement does not change space", () => {
   assert.ok(!kinds.includes("switch"))
 })
 
-test("progress reports the travel so the strip can follow the finger", () => {
+test("progress reports the travel, and the pull that opens the new-space slot", () => {
   const { actions } = run([{ dx: -10, dy: 0, at: 0 }, { dx: -20, dy: 0, at: 16 }])
-  assert.deepEqual(actions[1], { type: "progress", offset: -30, revealed: false })
+  assert.deepEqual(actions[1], { type: "progress", offset: -30, pull: 0, revealed: false })
 })
 
 test("past the threshold the direction is re-armed only after a pause", () => {
-  const events = [
-    ...burst(20, 5, 0),
-    ...burst(-20, 5, 400),
-  ]
-  const { actions } = run(events)
-  const switches = actions.filter((action) => action.type === "switch")
-  assert.equal(switches.length, 2, "a second, later gesture works")
-  assert.deepEqual(switches.map((action) => (action as { direction: number }).direction), [1, -1])
+  const first = run(burst(20, 5, 0))
+  const second = run(burst(-20, 5, 400))
+  assert.deepEqual(first.actions.find((action) => action.type === "switch"), { type: "switch", direction: 1 })
+  assert.deepEqual(second.actions.find((action) => action.type === "switch"), { type: "switch", direction: -1 })
 })
 
-test("at the last space, swiping on reveals the plus, then creates one space", () => {
-  const revealed = run(burst(12, 5), { atEnd: true })
-  assert.ok(revealed.actions.some((action) => action.type === "progress" && action.revealed))
-  const created = run(burst(30, 6), { atEnd: true })
-  assert.equal(created.kinds.filter((kind) => kind === "create").length, 1)
+test("at the last space, the slot opens under a pull and only fills when dragged far", () => {
+  const short = run(burst(10, 8), { atEnd: true })
+  const pulls = short.actions.filter((action) => action.type === "progress").map((action) => (action as { pull: number }).pull)
+  assert.ok(pulls.some((pull) => pull > 0 && pull < 1), "a light drag only opens it part way")
+  assert.equal(short.kinds.filter((kind) => kind === "create").length, 0, "and never creates")
+  const hard = run(burst(30, 20), { atEnd: true })
+  const peek = hard.actions.filter((action) => action.type === "progress").map((action) => (action as { pull: number }).pull)
+  assert.equal(Math.max(...peek), 1, "a real pull fills the slot")
+  assert.equal(hard.kinds.filter((kind) => kind === "create").length, 0, "creating is the release, not the drag")
+})
+
+test("the pull resists: the same finger travel opens less and less of the slot", () => {
+  const { actions } = run(burst(6, 30), { atEnd: true })
+  const pulls = actions.flatMap((action) => (action.type === "progress" ? [action.pull] : []))
+  const growing = pulls.filter((pull) => pull > 0)
+  assert.ok(growing.length > 2)
+  const steps = growing.slice(1).map((pull, index) => pull - growing[index]!)
+  assert.ok(steps.every((step) => step <= 0.05), "no single event fills the slot")
 })
 
 test("at the last space, swiping back still changes space", () => {
@@ -75,15 +97,15 @@ test("at the last space, swiping back still changes space", () => {
   assert.deepEqual(actions.find((action) => action.type === "switch"), { type: "switch", direction: -1 })
 })
 
-test("a momentum tail after create does not create twice", () => {
+test("a momentum tail never creates on its own", () => {
   const { kinds } = run([...burst(40, 10), ...burst(40, 10, 200)], { atEnd: true })
-  assert.equal(kinds.filter((kind) => kind === "create").length, 1)
+  assert.equal(kinds.filter((kind) => kind === "create").length, 0)
 })
 
 test("releasing resets travel and the reveal", () => {
   const { state } = run(burst(12, 4), { atEnd: true })
   const after = release(state)
-  assert.deepEqual(after, { phase: "idle", dx: 0, at: state.at, revealed: false })
+  assert.deepEqual(after, { phase: "idle", dx: 0, at: state.at, revealed: false, pull: 0 })
 })
 
 test("a tiny jitter never starts a gesture", () => {

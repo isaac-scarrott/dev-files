@@ -4,8 +4,8 @@
 
 export const STRIP = "data-spaces-strip"
 export const DOT = "data-spaces-dot"
+export const GHOST = "data-spaces-ghost"
 const TRACK = "data-spaces-track"
-const ADD = "data-spaces-add"
 
 export interface StripSpace {
   id: string
@@ -16,7 +16,6 @@ export interface StripSpace {
 
 export interface StripHandlers {
   select(index: number): void
-  create(): void
 }
 
 export interface Strip {
@@ -24,6 +23,8 @@ export interface Strip {
   place(): boolean
   /** Draws the spaces. With fewer than two the strip takes no room and shows nothing. */
   update(spaces: readonly StripSpace[], active: number): void
+  /** The new-space slot, 0..1: how far a pull has filled it. 0 hides it entirely. */
+  pull(value: number): void
   /** The strip is wanted by this layout: false hides it without forgetting the element. */
   enabled(on: boolean): void
   dispose(): void
@@ -40,14 +41,17 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
   let shown = true
   let spaces: readonly StripSpace[] = []
   let active = 0
+  let fill = 0
 
   const draw = () => {
     if (!element) return
     const visible = shown && spaces.length >= 2
     element.toggleAttribute("data-spaces-empty", !visible)
     const track = element.querySelector<HTMLElement>(`[${TRACK}]`)
-    const add = element.querySelector<HTMLElement>(`[${ADD}]`)
-    if (!track || !add) return
+    const ghost = element.querySelector<HTMLElement>(`[${GHOST}]`)
+    if (!track || !ghost) return
+    ghost.style.setProperty("--spaces-pull", String(fill))
+    ghost.toggleAttribute("data-spaces-armed", fill >= 1)
     track.replaceChildren(
       ...spaces.map((space, index) => {
         const dot = doc.createElement("button")
@@ -68,8 +72,9 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
         })
         return dot
       }),
+      ghost,
     )
-    add.hidden = !visible
+    ghost.hidden = !visible || fill <= 0
   }
 
   const build = () => {
@@ -79,18 +84,14 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
     strip.setAttribute("aria-label", "Spaces")
     const track = doc.createElement("div")
     track.setAttribute(TRACK, "")
-    const add = doc.createElement("button")
-    add.type = "button"
-    add.setAttribute(ADD, "")
-    add.setAttribute("aria-label", "New space")
-    add.title = "New space"
-    add.textContent = "+"
-    add.addEventListener("click", (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      handlers.create()
-    })
-    strip.replaceChildren(track, add)
+    // The slot the new space would take: invisible until a pull opens it, so nothing invites a click and nothing is
+    // added to the strip on hover.
+    const ghost = doc.createElement("div")
+    ghost.setAttribute(GHOST, "")
+    ghost.setAttribute("aria-hidden", "true")
+    ghost.textContent = "+"
+    track.append(ghost)
+    strip.replaceChildren(track)
     return strip
   }
 
@@ -112,6 +113,12 @@ export function createStrip(doc: Document, handlers: StripHandlers, css: (space:
     update(next, nextActive) {
       spaces = next
       active = Math.max(0, Math.min(nextActive, Math.max(0, next.length - 1)))
+      draw()
+    },
+    pull(value) {
+      const next = Math.max(0, Math.min(1, value))
+      if (next === fill) return
+      fill = next
       draw()
     },
     enabled(on) {
