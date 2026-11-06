@@ -71,11 +71,63 @@ space…** (only offered with two or more spaces).
 ## Milestone 4: swipe
 
 - The wheel machine (`src/swipe.ts`) is pure and tested: axis lock (a vertical scroll stays the host's), threshold,
-  one change per gesture, a cooldown that swallows a momentum tail, and, at the last space, reveal then create.
+  one change per gesture, and, at the last space, reveal then create. What a gesture is, and how its edges are found,
+  is the next section.
 - The listener is on the document and acts only over `[data-slot="vertical-tabs-sidebar"]`: the sidebar is mounted late
   and can be replaced, so binding to the element at setup left the handler attached to nothing (caught in the harness).
 - The list slides in from the side swiped from (160ms, `cubic-bezier(0.2, 0, 0, 1)`), and the plus scales up as it is
   revealed. Reduced motion turns both off.
+
+## What a swipe gesture is
+
+A gesture is one stroke of the fingers plus the momentum tail macOS sends after they lift. It changes space at most
+once. A second stroke is a second gesture even while the first one's tail is still running, because touching the
+trackpad cancels the tail. The first version latched after a change until 320ms of silence, so a quick second swipe
+was swallowed. A tail at 0.94 a frame runs about a second, so the next change could come 1.3s after the last at best.
+The latch is gone. After a change the machine watches for evidence that a new gesture has started:
+
+- **`WheelEvent.momentum`.** Chromium 151 shipped it (spec: Pointer Events, `momentum`), and OpenCode 2.2.5 runs
+  Chrome 152 with the getter present. It is true only for the OS's inertia. A tail is never a new gesture, a finger
+  event after a momentum one always is, and inertia with no gesture under way starts nothing. When the flag is there,
+  this settles it. CDP cannot produce a momentum event, so on hardware it is unverified; the live check dispatches
+  constructed events through the real listener.
+- **The stream's shape**, for engines or devices that never set the flag. A tail only decays. A new stroke shows as
+  the stream falling to a third of its peak (`DECAYED`), then climbing two events running (`CLIMB_EVENTS`) to at least
+  twice the trough and 4px/frame above it (`CLIMB_RATIO`, `CLIMB_PIXELS`). The travel since the trough carries into
+  the new gesture.
+- **A pause of 150ms** (`GESTURE_GAP`), measured on `event.timeStamp`. Chromium stamps input with the OS event time,
+  so a busy page cannot open a gap inside a tail.
+- **A swing back**: two events running against the committed direction, 6px or more.
+
+Each event is read two ways, in pixels per 16ms frame. `burst` is the event's delta over the stream's usual spacing
+(the median of the last six intervals), so a late event cannot shrink it. `speed` is the travel of the last three
+events over their time, so Chromium merging events that queued while the page was busy cannot swell it. An event is
+low only if it is low both ways, and high only if it is high both ways. Either reading alone failed: by delta, the
+merged events after a switch looked like a new spike. By speed, a CDP stall (the harness's events land 18-35ms apart,
+with stalls up to 188ms right after a switch re-renders) looked like a dip. And with a fixed frame cap, the two
+readings disagreed by 1.6× at 25ms spacing.
+
+The wheel binding's idle timer (the same 150ms, wall clock) only lets go of the slot. A full pull creates, and the
+rest of that gesture is swallowed as after a change. It no longer resets the machine: that is the events' own times'
+job, so a page too busy to deliver events for a while cannot split one gesture in two.
+
+Measured (fuzz of 6000 gestures per run. Strokes ease to their lift speed, then momentum decays at 0.88-0.97 a
+frame. Hardware model: 8 or 16ms spacing, with merges when the page is busy. CDP model: irregular spacing and stalls):
+
+| | flag | shape only |
+|---|---|---|
+| one gesture changes space more than once | 0 | 0 in 48,000, both models |
+| second swipe, no landing gap, first tail cut after 5 / 10 / 20 / 30 / 45 events | caught at once | 60% / 74% / 82% / 89% / 94% caught |
+
+Live, in the harness (side tabs, trusted CDP wheel over the sidebar, stamped 16ms apart like a trackpad):
+
+- 74 events, 66 of them a decaying tail: one change.
+- A tail cut by a fresh stroke with no pause: two.
+- Three back-to-back swipes: three with the flag, at any tail length. Without it: three once each tail runs about 20
+  events (320ms); shorter tails read as one gesture.
+- At the last space, a full pull and release creates one space.
+
+`deltaMode` is always 0 (pixels) on Chromium (SPIKE C), so no line or page scaling is applied.
 
 ## Milestone 5: keys
 
