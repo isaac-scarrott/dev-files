@@ -16,6 +16,14 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         #expect(abs(p.exhaustsAt!.timeIntervalSince(expected)) < 1)
     }
 
+    @Test func monthProjectsFromTheWholeBillingWindow() {
+        // 10 days into a 30-day window at 40%: on pace for 120%, out after 15 more days.
+        let reset = now.addingTimeInterval(hours(20 * 24))
+        let p = Forecast.project(.month, current: .init(at: now, utilization: 40, resetsAt: reset), history: [])
+        #expect(abs(p.projected! - 120) < 0.01)
+        #expect(abs(p.exhaustsAt!.timeIntervalSince(now.addingTimeInterval(hours(15 * 24)))) < 1)
+    }
+
     @Test func fiveHourFollowsRecentPaceOverWindowAverage() {
         // 80% used early in the window, but flat for the last half hour: you've stopped, so no wall.
         let reset = now.addingTimeInterval(hours(3))

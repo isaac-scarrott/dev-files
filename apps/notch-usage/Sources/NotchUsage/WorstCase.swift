@@ -1,6 +1,30 @@
 import Foundation
 
 /// `--worst-case` renders these instead of live data, to check layout against hostile input.
+extension [GoAccount] {
+    static var worstCase: [GoAccount] {
+        func account(_ id: String, _ label: String,
+                     rolling: (Double, TimeInterval?)?, weekly: (Double, TimeInterval?)?,
+                     monthly: (Double, TimeInterval?)?,
+                     fetchedAgo: TimeInterval? = 0, problem: String? = nil) -> GoAccount {
+            var a = GoAccount(id: id, label: label)
+            a.rolling = rolling.map { UsageWindow(utilization: $0.0, resetsAt: $0.1.map { Date.now.addingTimeInterval($0) }) }
+            a.weekly = weekly.map { UsageWindow(utilization: $0.0, resetsAt: $0.1.map { Date.now.addingTimeInterval($0) }) }
+            a.monthly = monthly.map { UsageWindow(utilization: $0.0, resetsAt: $0.1.map { Date.now.addingTimeInterval($0) }) }
+            a.fetchedAt = fetchedAgo.map { Date.now.addingTimeInterval(-$0) }
+            a.problem = problem
+            return a
+        }
+        let h: TimeInterval = 3600, d: TimeInterval = 86400
+        return [
+            account("go1", "OpenCode Go", rolling: (142, 40), weekly: (61, 3 * d), monthly: (18, 27 * d)),
+            account("go2", "team-key-with-a-long-name", rolling: (0, 4 * h), weekly: (99.6, 6 * d), monthly: (84.9, 2 * d),
+                    fetchedAgo: h, problem: "Signed out"),
+            account("go3", "OpenCode Go", rolling: nil, weekly: nil, monthly: nil, fetchedAgo: nil, problem: "Offline"),
+        ]
+    }
+}
+
 extension [AccountUsage] {
     static var worstCase: [AccountUsage] {
         func account(_ id: String, _ label: String, org: String, plan: String? = nil,

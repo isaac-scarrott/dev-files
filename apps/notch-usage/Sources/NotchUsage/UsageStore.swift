@@ -137,9 +137,12 @@ private struct Schedule: Codable {
 private struct Snapshot: Codable {
     var accounts: [AccountUsage]
     var schedules: [String: Schedule]
+    // Optional so a snapshot written before OpenCode Go support still loads.
+    var goAccounts: [GoAccount]?
+    var goSchedules: [String: Schedule]?
 }
 
-private enum Outcome: Sendable {
+enum Outcome: Sendable {
     case ok
     /// Also used for auth failures: retrying a dead token sooner than a rate limit would buys nothing.
     case rateLimited(retryAfter: TimeInterval?)
@@ -149,6 +152,7 @@ private enum Outcome: Sendable {
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var accounts: [AccountUsage] = []
+    @Published private(set) var goAccounts: [GoAccount] = []
 
     private static let authDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".cli-proxy-api")
@@ -158,23 +162,31 @@ final class UsageStore: ObservableObject {
     private static let maxBackoff: TimeInterval = 30 * 60
     private static let failureRetry: TimeInterval = 60
     private static let tick: Duration = .seconds(30)
-    nonisolated private static let historyKept: TimeInterval = 2 * 3600
+    nonisolated static let historyKept: TimeInterval = 2 * 3600
     nonisolated private static let profileMaxAge: TimeInterval = 86400
 
     private static let heldKey = "extraUsageGuardHeld"
 
     private var schedules: [String: Schedule] = [:]
+    /// Keys poll on their own schedule: a Go 429 must not delay the Claude accounts.
+    private var goSchedules: [String: Schedule] = [:]
     private var refreshing = false
     /// Auth files the guard disabled itself. Kept across launches: a held account is skipped by everything else,
     /// so forgetting it would leave it disabled for good.
     private var held = Set(UserDefaults.standard.stringArray(forKey: UsageStore.heldKey) ?? [])
 
-    init(preview: [AccountUsage]? = nil) {
-        if let preview { accounts = preview; return }
+    init(preview: [AccountUsage]? = nil, go: [GoAccount]? = nil) {
+        if preview != nil || go != nil {
+            accounts = preview ?? []
+            goAccounts = go ?? []
+            return
+        }
         if let data = try? Data(contentsOf: Self.snapshotURL),
            let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
             accounts = snapshot.accounts
             schedules = snapshot.schedules
+            goAccounts = snapshot.goAccounts ?? []
+            goSchedules = snapshot.goSchedules ?? [:]
         }
         Task { [weak self] in
             while !Task.isCancelled {
@@ -193,7 +205,11 @@ final class UsageStore: ObservableObject {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
+        await refreshClaude()
+        await refreshGo()
+    }
 
+    private func refreshClaude() async {
         let now = Date.now
         let creds = Self.loadCredentials(held: held)
         let previous = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -219,6 +235,39 @@ final class UsageStore: ObservableObject {
         saveSnapshot()
     }
 
+    /// Each key is its own pool with its own three windows, so it is polled and scheduled apart from Claude.
+    private func refreshGo() async {
+        let creds = GoCredentials.load()
+        guard !creds.isEmpty else {
+            guard !goAccounts.isEmpty else { return }
+            withAnimation(.spring(response: 0.5, dampingFraction: 1)) { goAccounts = [] }
+            saveSnapshot()
+            return
+        }
+
+        let now = Date.now
+        let previous = Dictionary(goAccounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let due = creds.filter { goSchedules[$0.id, default: Schedule()].nextAttempt <= now }
+
+        var results: [String: GoAccount] = [:]
+        await withTaskGroup(of: (GoAccount, Outcome).self) { group in
+            for cred in due {
+                group.addTask { await GoAccount.fetch(cred, previous: previous[cred.id]) }
+            }
+            for await (account, outcome) in group {
+                results[account.id] = account
+                goSchedules[account.id] = Self.reschedule(goSchedules[account.id, default: Schedule()], after: outcome, now: now)
+            }
+        }
+
+        let merged = creds.map { cred in
+            results[cred.id] ?? previous[cred.id] ?? GoAccount(id: cred.id, label: cred.label)
+        }
+        guard merged != goAccounts else { return }
+        withAnimation(.spring(response: 0.5, dampingFraction: 1)) { goAccounts = merged }
+        saveSnapshot()
+    }
+
     private static func reschedule(_ schedule: Schedule, after outcome: Outcome, now: Date) -> Schedule {
         // Jitter keeps the accounts from all firing in the same second.
         let jitter = TimeInterval.random(in: 0...20)
@@ -237,7 +286,8 @@ final class UsageStore: ObservableObject {
     }
 
     private func saveSnapshot() {
-        let snapshot = Snapshot(accounts: accounts, schedules: schedules)
+        let snapshot = Snapshot(accounts: accounts, schedules: schedules,
+                                goAccounts: goAccounts, goSchedules: goSchedules)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? FileManager.default.createDirectory(at: Self.snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: Self.snapshotURL, options: .atomic)
@@ -316,7 +366,7 @@ final class UsageStore: ObservableObject {
             }
     }
 
-    nonisolated private static func makeDecoder() -> JSONDecoder {
+    nonisolated static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
         let plain = Date.ISO8601FormatStyle()

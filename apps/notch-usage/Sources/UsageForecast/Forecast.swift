@@ -17,12 +17,25 @@ public struct Sample: Codable, Equatable, Sendable {
 }
 
 public enum WindowKind: Sendable {
-    case fiveHour, week
+    case fiveHour, week, month
 
-    public var length: TimeInterval { self == .fiveHour ? 5 * 3600 : 7 * 86400 }
+    public var length: TimeInterval {
+        switch self {
+        case .fiveHour: 5 * 3600
+        case .week: 7 * 86400
+        // Billing months vary by a day or two; the allowance is what matters, not the exact edge.
+        case .month: 30 * 86400
+        }
+    }
 
     /// The shortest stretch a rate is drawn from; anything shorter is noise.
-    var minSpan: TimeInterval { self == .fiveHour ? 10 * 60 : 6 * 3600 }
+    var minSpan: TimeInterval {
+        switch self {
+        case .fiveHour: 10 * 60
+        case .week: 6 * 3600
+        case .month: 24 * 3600
+        }
+    }
 }
 
 public struct Projection: Equatable, Sendable {
@@ -37,6 +50,15 @@ public struct Projection: Equatable, Sendable {
     public let projected: Double?
     /// When the window hits 100%, if that happens before it resets. In the past when already there.
     public let exhaustsAt: Date?
+
+    public init(at: Date, utilization: Double, resetsAt: Date?, rate: Double?, projected: Double?, exhaustsAt: Date?) {
+        self.at = at
+        self.utilization = utilization
+        self.resetsAt = resetsAt
+        self.rate = rate
+        self.projected = projected
+        self.exhaustsAt = exhaustsAt
+    }
 
     public var isExhausted: Bool { utilization >= 100 }
     public var runsOutBeforeReset: Bool { exhaustsAt != nil }
@@ -118,6 +140,11 @@ public struct PoolMember: Sendable {
 public struct Blackout: Equatable, Sendable {
     public let start: Date
     public let end: Date?
+
+    public init(start: Date, end: Date?) {
+        self.start = start
+        self.end = end
+    }
 }
 
 /// When an account is out of one window: from `start` until `end`, or for good if `end` is nil.

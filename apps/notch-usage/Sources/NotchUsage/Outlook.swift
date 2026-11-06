@@ -40,6 +40,37 @@ struct PoolOutlook {
 }
 
 extension [AccountUsage] {
+    /// The compact's one pair for the whole pool: capacity-weighted usage, so a 20x account's points
+    /// count four times a 5x account's. The pool's own forecast decides the amber, so a moderate
+    /// average still warns when the pool as a whole runs out before the window resets. No faint arc:
+    /// on a 12pt ring a projection reads as usage, not as a forecast.
+    func combinedOutlook(now: Date) -> Outlook {
+        let pool = poolOutlook(now: now)
+        func pooled(_ window: (AccountUsage) -> UsageWindow?, wall: Blackout?) -> Projection? {
+            let members = compactMap { account in window(account).map { (account, $0) } }
+            var weighted = 0.0
+            var total = 0.0
+            for (account, window) in members {
+                let weight = Swift.max(account.capacity ?? assumedCapacity, 0.1)
+                weighted += weight * window.utilization
+                total += weight
+            }
+            guard total > 0 else { return nil }
+            return Projection(at: now, utilization: weighted / total, resetsAt: wall?.end, rate: nil,
+                              projected: nil, exhaustsAt: wall?.start)
+        }
+        return Outlook(
+            fiveHour: pooled({ $0.fiveHour }, wall: pool.fiveHour),
+            week: pooled({ $0.sevenDay }, wall: pool.week)
+        )
+    }
+
+    /// True when every account that has reported has had its 5h limit lifted, so the pair has no 5h ring.
+    var poolNoFiveHourLimit: Bool {
+        let reporting = filter { $0.fetchedAt != nil && $0.sevenDay != nil }
+        return !reporting.isEmpty && reporting.allSatisfy { $0.fiveHour == nil }
+    }
+
     func poolOutlook(now: Date) -> PoolOutlook {
         let outlooks = map(\.outlook)
         let members = zip(self, outlooks).map { account, outlook in

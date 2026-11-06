@@ -15,7 +15,9 @@ let package = Package(
         .executableTarget(
             name: "NotchUsage",
             dependencies: ["DynamicNotchKit", "UsageForecast"],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            resources: [.process("Resources")],
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .testTarget(
             name: "UsageForecastTests",

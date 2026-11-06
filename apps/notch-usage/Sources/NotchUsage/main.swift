@@ -66,7 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 MainActor.assumeIsolated {
-    let store = CommandLine.arguments.contains("--worst-case") ? UsageStore(preview: .worstCase) : UsageStore()
+    let store = CommandLine.arguments.contains("--worst-case")
+        ? UsageStore(preview: .worstCase, go: .worstCase)
+        : UsageStore()
     let delegate = AppDelegate(store: store)
     app.delegate = delegate
     app.run()
