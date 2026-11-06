@@ -132,6 +132,10 @@ test("wiring: toggle over rpc, session.created seeding, a limit failure, resume 
     const offEvent = { sessionID: "off", error: { type: "unknown", message: "Claude Code subscription limit reached." }, decision: { retry: true } } as any
     await a.retry()!(offEvent)
     assert.deepEqual(offEvent.decision, { retry: true })
+    // A cliproxy cooldown ends the run's own retries nowhere: OpenCode's short retry may still get through.
+    const cooldownEvent = { sessionID: "on", error: { type: "provider.rate-limit", message: "API Error: Request rejected (429) · All credentials for model claude-opus-5-5 are cooling down" }, decision: { retry: true } } as any
+    await a.retry()!(cooldownEvent)
+    assert.deepEqual(cooldownEvent.decision, { retry: true })
 
     const log = await readFile(path.join(dir, "samples", "usage-resume.log"), "utf8")
     assert.match(log, /loaded for \/work: auto-resume is opt-in/)

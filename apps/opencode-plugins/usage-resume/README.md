@@ -7,6 +7,9 @@ When a Claude usage limit stops a session you opted in, it waits for your accoun
 ## What it does
 - **Off by default.** While a session is stopped at a usage limit, a pill above the composer ("Resume after limit") turns it on for that session; it is not shown otherwise and never in subagent sessions. Settings > Preferences > "Auto-resume after usage limit" sets whether new sessions start with it on; a session's own toggle always wins.
 - Detects the Claude Agent provider's "usage limit reached" failure and stops OpenCode's useless short retries.
+- Also recognises cliproxy's "All credentials for model claude-… are cooling down" 429 (OpenCode's `provider.rate-limit`,
+  which drops the status, body and reset time): there the retry is left to OpenCode, and once the run has stopped the
+  plugin resumes on the usage reading instead of a stated time.
 - Works out when any of your cliproxy Claude accounts has the limiting window free again, waits for that reset plus a margin, re-checks real usage, then queues one "Continue." prompt.
 - Tells you through the shared notification system ([notifications](../notifications) when installed, else a toast of its own with Open): an error "Usage limit reached, resumes 14:05" (or "Usage limit reached" with "Auto-resume is off for this session." when you did not opt in), an info "Resumes 15:10" when the time moves, and an error when it gives up after the attempt cap. A resume that works says nothing: it starts a turn and the run reports for itself.
 - Adds a timeline notice with the resume time. Survives restarts and sleep: deadlines are checked every 30 seconds.

@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { detectUsageLimit, type ErrorLike, type UsageLimit } from "./detect.js"
+import { detectProviderCooldown, detectUsageLimit, type ErrorLike, type UsageLimit } from "./detect.js"
 import type { Options } from "./options.js"
 import { decide, type Waiting } from "./plan.js"
 import { LIMIT_LIKE, oneLine, type Samples } from "./diag.js"
@@ -162,7 +162,7 @@ export class Resumer {
     // Every location's instance hears every session's events; only the one serving the session's location acts.
     if (info && info.location.directory !== this.directory) return
     this.log(`${sessionID}: run failed type=${error.type ?? "?"} status=${error.status ?? "-"} message="${oneLine(error.message)}"`)
-    const limit = detectUsageLimit(error, at)
+    const limit = detectUsageLimit(error, at) ?? detectProviderCooldown(error)
     if (!limit) {
       if (LIMIT_LIKE.test(`${error.message ?? ""} ${error.response?.body ?? ""}`)) {
         this.log(`${sessionID}: error reads like a limit but is not one the detector knows; not resuming`)

@@ -20,9 +20,15 @@ error mapper):
   time is only in the message. A bare 429 (no rejected event) has no reset time.
 - The app's own `provider.free-limit` / `go-limit` / `budget-limit` types are OpenCode Zen/Go/Console limits. They carry
   `retryAfterMs` or `resetsAt` and are not Claude accounts, so they are ignored.
+- CLIProxyAPI says "All credentials for model claude-… are cooling down" when every account is out for that model. OpenCode
+  rethrows it as `{ type: "provider.rate-limit", message }` with the status and body stripped (observed in the harness and
+  in `unmatched-limit-like-error.json`), so its `reset_seconds` / `Retry-After` never arrives. It is a wall for the same
+  reason a 5-hour limit is, but the only honest schedule is the usage endpoint.
 
 The detector therefore matches the message text, and also a 429 whose body mentions a limit or a `resets_at`, and uses
 `retryAfterMs` as a last resort for the reset time. A reset more than 8 days away is treated as a misparse.
+`detectProviderCooldown` handles the cooldown separately, and only after a run has failed: the retry hook would otherwise
+end OpenCode's own short retry of a 429 that may clear in seconds.
 Not parsed: the CLI's free text ("resets 2pm (Europe/London)"). The provider appends the ISO time whenever it knows it,
 and the usage endpoint covers the rest.
 

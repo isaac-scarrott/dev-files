@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
-import { detectUsageLimit } from "./detect.js"
+import { detectProviderCooldown, detectUsageLimit } from "./detect.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import { createLog, Samples } from "./diag.js"
 import { acquireUsage, createUsageSource } from "./hub.js"
@@ -142,6 +142,30 @@ test("ignores other failures and OpenCode's own limits", () => {
   assert.equal(detectUsageLimit({ type: "provider.rate-limit", status: 429, message: "slow down", response: { body: "{}" } }, T0), undefined)
   assert.equal(detectUsageLimit({ type: "provider.auth", message: "Run `claude auth login`" }, T0), undefined)
   assert.equal(detectUsageLimit(undefined, T0), undefined)
+})
+
+test("a cliproxy cooldown is a wall with no stated reset, and only for Claude", () => {
+  const cooling = { type: "provider.rate-limit", message: "API Error: Request rejected (429) · All credentials for model claude-opus-5-5 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.)" }
+  assert.deepEqual(detectProviderCooldown(cooling), { kind: "cooldown" })
+  assert.equal(detectUsageLimit(cooling, T0), undefined, "the retry hook leaves it to OpenCode")
+  assert.equal(detectProviderCooldown({ ...cooling, message: "All credentials for model gpt-5.5 are cooling down" }), undefined)
+  assert.equal(detectProviderCooldown({ type: "provider.auth", message: cooling.message }), undefined)
+})
+
+test("a cooldown resumes on the usage reading, once the margin has passed", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0)
+  const r = await e.make()
+  const cooling = { type: "provider.rate-limit", message: "API Error: Request rejected (429) · All credentials for model claude-opus-5-5 are cooling down" }
+  await r.onFailed("ses_1", cooling, T0)
+  assert.equal(r.waiting()[0]!.kind, "cooldown")
+  assert.equal(r.waiting()[0]!.dueAt, T0 + DEFAULTS.marginMs)
+  assert.match(e.notices[0]!, /Resumes automatically at/)
+
+  e.clock.t = T0 + DEFAULTS.marginMs
+  await r.tick()
+  assert.equal(e.prompts.length, 1)
+  assert.equal(e.prompts[0]!.text, "Continue.")
 })
 
 test("a reset implausibly far away is not trusted", () => {

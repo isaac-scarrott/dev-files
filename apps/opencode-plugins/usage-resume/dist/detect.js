@@ -13,6 +13,10 @@ const ISO_AFTER_RESETS = /resets?\s+at\s+(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2
 const BODY_RESET = /"(?:resets_at|resetsAt|reset_at)"\s*:\s*(?:"([^"]+)"|(\d{9,13}))/;
 const KIND = /limit reached \(([a-z _-]+)\)/i;
 const MAX_AHEAD_MS = 8 * 86_400_000;
+// CLIProxyAPI's refusal when every Claude account is cooling down for a model. OpenCode rethrows it as
+// `provider.rate-limit` with the status and body stripped, so the reset time it carries ("reset_seconds",
+// "Retry-After") never reaches us: only usage readings can say when to try again.
+const COOLDOWN_TEXT = /all credentials for model [\w.-]*claude[\w.-]* are cooling down/i;
 function epoch(value, base) {
     if (value === undefined)
         return undefined;
@@ -49,5 +53,18 @@ export function detectUsageLimit(error, at) {
     const resetsAt = epoch(iso, at) ?? epoch(fromBody?.[1] ?? (fromBody?.[2] ? Number(fromBody[2]) : undefined), at) ?? epoch(fromRetry, at);
     const kind = KIND.exec(message)?.[1]?.trim().toLowerCase();
     return { kind, resetsAt };
+}
+/**
+ * Whether the run was refused because every cliproxy account is cooling down for Claude. It is a usage wall the same way
+ * a 5-hour limit is, but it names no reset time, so the resumer waits on the usage endpoint instead of a stated time.
+ * Deliberately not part of `detectUsageLimit`: that one drives the retry hook, and a short 429 is better left to
+ * OpenCode's own retry than ended early.
+ */
+export function detectProviderCooldown(error) {
+    if (!error || error.type !== "provider.rate-limit")
+        return undefined;
+    if (!COOLDOWN_TEXT.test(error.message ?? ""))
+        return undefined;
+    return { kind: "cooldown" };
 }
 //# sourceMappingURL=detect.js.map

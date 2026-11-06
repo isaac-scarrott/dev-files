@@ -1,4 +1,4 @@
-import { detectUsageLimit } from "./detect.js";
+import { detectProviderCooldown, detectUsageLimit } from "./detect.js";
 import { decide } from "./plan.js";
 import { LIMIT_LIKE, oneLine } from "./diag.js";
 import { availability } from "./usage.js";
@@ -127,7 +127,7 @@ export class Resumer {
         if (info && info.location.directory !== this.directory)
             return;
         this.log(`${sessionID}: run failed type=${error.type ?? "?"} status=${error.status ?? "-"} message="${oneLine(error.message)}"`);
-        const limit = detectUsageLimit(error, at);
+        const limit = detectUsageLimit(error, at) ?? detectProviderCooldown(error);
         if (!limit) {
             if (LIMIT_LIKE.test(`${error.message ?? ""} ${error.response?.body ?? ""}`)) {
                 this.log(`${sessionID}: error reads like a limit but is not one the detector knows; not resuming`);
