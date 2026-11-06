@@ -21,10 +21,9 @@ test("a horizontal burst past the threshold changes space once, and its tail is 
   assert.equal(state.phase, "cool")
 })
 
-test("swiping right goes back a space", () => {
-  const { actions } = run(burst(25, 5))
-  const change = actions.find((action) => action.type === "switch")
-  assert.deepEqual(change, { type: "switch", direction: -1 })
+test("swiping left goes back a space, swiping right goes on", () => {
+  assert.deepEqual(run(burst(-25, 5)).actions.find((action) => action.type === "switch"), { type: "switch", direction: -1 })
+  assert.deepEqual(run(burst(25, 5)).actions.find((action) => action.type === "switch"), { type: "switch", direction: 1 })
 })
 
 test("a vertical scroll is left to the list", () => {
@@ -44,8 +43,8 @@ test("progress reports the travel so the strip can follow the finger", () => {
 
 test("past the threshold the direction is re-armed only after a pause", () => {
   const events = [
-    ...burst(-20, 5, 0),
-    ...burst(20, 5, 400),
+    ...burst(20, 5, 0),
+    ...burst(-20, 5, 400),
   ]
   const { actions } = run(events)
   const switches = actions.filter((action) => action.type === "switch")
@@ -54,25 +53,24 @@ test("past the threshold the direction is re-armed only after a pause", () => {
 })
 
 test("at the last space, swiping on reveals the plus, then creates one space", () => {
-  const revealEvents = burst(-12, 5)
-  const revealed = run(revealEvents, { atEnd: true })
+  const revealed = run(burst(12, 5), { atEnd: true })
   assert.ok(revealed.actions.some((action) => action.type === "progress" && action.revealed))
-  const created = run(burst(-30, 6), { atEnd: true })
+  const created = run(burst(30, 6), { atEnd: true })
   assert.equal(created.kinds.filter((kind) => kind === "create").length, 1)
 })
 
 test("at the last space, swiping back still changes space", () => {
-  const { actions } = run(burst(25, 5), { atEnd: true })
+  const { actions } = run(burst(-25, 5), { atEnd: true })
   assert.deepEqual(actions.find((action) => action.type === "switch"), { type: "switch", direction: -1 })
 })
 
 test("a momentum tail after create does not create twice", () => {
-  const { kinds } = run([...burst(-40, 10), ...burst(-40, 10, 200)], { atEnd: true })
+  const { kinds } = run([...burst(40, 10), ...burst(40, 10, 200)], { atEnd: true })
   assert.equal(kinds.filter((kind) => kind === "create").length, 1)
 })
 
 test("releasing resets travel and the reveal", () => {
-  const { state } = run(burst(-12, 4), { atEnd: true })
+  const { state } = run(burst(12, 4), { atEnd: true })
   const after = release(state)
   assert.deepEqual(after, { phase: "idle", dx: 0, at: state.at, revealed: false })
 })

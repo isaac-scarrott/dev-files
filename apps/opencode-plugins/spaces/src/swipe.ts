@@ -67,15 +67,15 @@ export function swipe(state: SwipeState, event: { dx: number; dy: number; at: nu
   const base = { ...current, at: event.at, dx }
 
   if (!limits.atEnd) {
-    if (Math.abs(dx) >= limits.threshold) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "switch", direction: dx < 0 ? 1 : -1 } }
+    if (Math.abs(dx) >= limits.threshold) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "switch", direction: dx > 0 ? 1 : -1 } }
     return { state: base, action: { type: "progress", offset: dx, revealed: false } }
   }
 
-  // At the last space, swiping on (leftward, negative) is the way to a new one.
-  if (dx <= -limits.create) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "create" } }
-  if (dx <= -limits.reveal) return { state: { ...base, revealed: true }, action: { type: "progress", offset: dx, revealed: true } }
-  if (dx < 0) return { state: { ...base, revealed: false }, action: { type: "progress", offset: dx, revealed: false } }
-  if (dx >= limits.threshold) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "switch", direction: -1 } }
+  // At the last space, swiping on (rightward, positive) is the way to a new one.
+  if (dx >= limits.create) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "create" } }
+  if (dx >= limits.reveal) return { state: { ...base, revealed: true }, action: { type: "progress", offset: dx, revealed: true } }
+  if (dx > 0) return { state: { ...base, revealed: false }, action: { type: "progress", offset: dx, revealed: false } }
+  if (dx <= -limits.threshold) return { state: { ...base, phase: "cool", dx: 0, revealed: false }, action: { type: "switch", direction: -1 } }
   return { state: base, action: { type: "progress", offset: dx, revealed: false } }
 }
 
