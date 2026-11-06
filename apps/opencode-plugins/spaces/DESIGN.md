@@ -36,6 +36,9 @@ The strip (`src/strip.ts`) is one injected row:
 - Placed in the sidebar's own flex column, immediately before `[data-slot="vertical-tabs-footer"]`, so it moves with the
   sidebar's collapse and resize and never floats over the list. Verified shape from the spike: 248×34 above the footer.
 - Hidden (`data-spaces-empty`, no height) until there are two spaces.
+- Sits on the chat panel's bottom line: the panel is inset `--shell-bottom-inset` from the window, the sidebar mount pads
+  10px, so the row drops the 2px difference into that padding with `top` (painting only, so the footer never moves). The
+  dot's hover box therefore lines up with the panel's bottom edge.
 - One button per space, emoji as its face, `role="tab"`, `aria-selected` on the active one, the space name as its title
   and label; a plus at the end creates one. Clicks stop propagation so the host's row handling never sees them.
 - Styled only through host tokens (`--v2-text-*`, `--v2-background-bg-layer-02`, `--v2-overlay-simple-overlay-hover`) so

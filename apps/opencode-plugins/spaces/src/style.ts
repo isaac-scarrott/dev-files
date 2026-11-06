@@ -12,10 +12,14 @@ export const css = `
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 28px;
-  margin: 2px 8px 2px;
+  min-height: 23px;
+  margin: 2px 8px 0;
   padding: 0 2px;
   flex: 0 0 auto;
+  /* The chat panel beside the sidebar sits --shell-bottom-inset from the window edge, while the sidebar mount pads 10px.
+     The dots' bottom edge belongs on the panel's, so the row drops the difference into that padding without taking
+     layout space (which would move the footer). */
+  top: calc(10px - var(--shell-bottom-inset, 8px));
 }
 [data-spaces-strip][data-spaces-empty] {
   display: none;
