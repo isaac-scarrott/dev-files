@@ -16,7 +16,7 @@ Cross-tool guidelines (Claude Code, opencode, others). Modern harnesses already 
 
 ## Long-running commands
 
-- The shared OpenCode server restarts several times a day, and a restart kills shell jobs, foreground and background. Anything likely to run past ~2 minutes (installs, full test suites, harness runs, CI or deploy waits) goes through `monitor.start` when that tool is available: it wakes you when the command exits, and after a restart it runs the command again from the start, so make it safe to rerun and have it write its log to a file.
+- The shared OpenCode server restarts several times a day, and a restart kills shell jobs, foreground and background. Anything likely to run past ~2 minutes (installs, full test suites, harness runs, CI or deploy waits) goes through `monitor.start` when that tool is available (it is often a Code Mode tool: `await tools.monitor.start({...})` inside `execute`), never a foreground or sleep-polled shell: it wakes you when the command exits, and after a restart it runs the command again from the start. So make it safe to rerun: write its log to a file, skip work already done, and never clear state another live process may still be using.
 
 ## Sub-agent tiers
 
