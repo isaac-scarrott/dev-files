@@ -29,24 +29,6 @@ func durationText(until date: Date, from now: Date) -> String {
     return "\(m)m"
 }
 
-private func clockText(_ date: Date) -> String {
-    date.formatted(.dateTime.hour().minute())
-}
-
-/// Predicted times are only as good as the pace behind them; to the minute would claim otherwise.
-private extension Date {
-    func rounded(to interval: TimeInterval) -> Date {
-        Date(timeIntervalSinceReferenceDate: (timeIntervalSinceReferenceDate / interval).rounded() * interval)
-    }
-}
-
-/// "Fri 19:00" — or just the time when it's today.
-private func dayText(_ date: Date) -> String {
-    Calendar.current.isDateInToday(date)
-        ? clockText(date)
-        : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
-}
-
 struct Ring: View {
     let projection: Projection?
     let size: CGFloat
@@ -181,13 +163,13 @@ struct CompactNextOut: View {
     }
 }
 
-/// Relative while it's close ("in 40m"), a clock time later today ("16:30"), then a day ("Sat 07:15").
-/// Forecasts are rounded to 5 minutes, never into the past.
+/// Every time the notch shows is a countdown: "in 2h 45m" here and "back in 3h 30m" there, never a clock
+/// reading beside a duration. Elapsed and remaining time have to be read the same way to compare them.
+/// Rounded to five minutes, which is as precise as a forecast gets, and never into the past.
 func whenText(_ date: Date, now: Date) -> String {
-    let rounded = date.rounded(to: 5 * 60)
-    let t = rounded > now ? rounded : rounded.addingTimeInterval(5 * 60)
-    if date.timeIntervalSince(now) < 3 * 3600 { return "in \(durationText(until: date, from: now))" }
-    return dayText(t)
+    let rounded = (date.timeIntervalSince(now) / (5 * 60)).rounded() * (5 * 60)
+    guard rounded >= 60 else { return "now" }
+    return "in \(durationText(until: now.addingTimeInterval(rounded), from: now))"
 }
 
 private struct WindowColumn: View {
