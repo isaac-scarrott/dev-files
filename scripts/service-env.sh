@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Copies the login shell's tool environment into the OpenCode background service's own settings.
+# SHELL is set to bash rather than copied: agents write bash idioms, and the login shell is zsh.
 #
 # Why: the desktop app starts the service at login with launchd's minimal environment
 # (PATH=/usr/bin:/bin:/usr/sbin:/sbin), so agents' shells could not find gh, node, pnpm, java and the rest after a reboot.
@@ -18,6 +19,7 @@ set -euo pipefail
 CLI=${OPENCODE_CLI:-"$HOME/Library/Application Support/ai.opencode.desktop/cli/2.2.5-arm64/opencode-cli"}
 CONFIG=${OPENCODE_SERVICE_CONFIG:-"$HOME/.config/opencode/service.json"}
 ALLOW="PATH JAVA_HOME ANDROID_HOME ANDROID_SDK_ROOT BUN_INSTALL PNPM_HOME NVM_DIR HOMEBREW_PREFIX HOMEBREW_CELLAR HOMEBREW_REPOSITORY EDITOR"
+SHELL_BIN=/bin/bash
 apply=0
 restart=0
 for arg in "$@"; do
@@ -32,6 +34,7 @@ done
 
 # One login shell prints the allow-listed variables as NUL-separated NAME=VALUE pairs.
 login_env=$(zsh -lic 'for n in '"$ALLOW"'; do eval "v=\${$n-}"; [ -n "$v" ] && printf "%s=%s\0" "$n" "$v"; done' 2>/dev/null | tr '\0' '\n')
+login_env+=$'\n'"SHELL=$SHELL_BIN"
 
 APPLY=$apply CONFIG=$CONFIG LOGIN_ENV=$login_env node -e '
 const fs = require("fs")
