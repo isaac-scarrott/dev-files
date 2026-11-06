@@ -13,7 +13,7 @@ const target = (ctx: Context, session: SessionRef, fallback = session.id): Sessi
   title: title(ctx, session.server.id, session.id) ?? fallback,
 })
 
-/** A live tab row names a shell tab; a snooze-archive row carries its server and session id. */
+/** A live tab row names a shell tab; an archive plugin row carries its server and session id. */
 function resolveRow(ctx: Context, row: HTMLElement): SessionTarget | undefined {
   const ref = rowRef(row)
 

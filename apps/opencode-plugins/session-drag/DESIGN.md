@@ -6,7 +6,7 @@ extracted from `app.asar` (`src/renderer/...`) and at `gui-plugins/src/...`.
 
 ## What it does
 
-- Press a sidebar session row (a live tab, or a snooze-archive Archived row; Snoozed rows are not drag sources) and move sideways: a chip with
+- Press a sidebar session row (a live tab, or a archive plugin Archived row; Snoozed rows are not drag sources) and move sideways: a chip with
   the session's title follows the pointer and the host's own drop overlay (worded "Drop to attach session") rises over the session
   panel. Release inside the panel: a native "Session" chip (title, speech-bubble icon) joins the composer's context
   row and the prompt takes focus. Release anywhere else, or press Esc: the chip disappears and nothing changes.
@@ -122,7 +122,7 @@ seeded sessions, side-tabs layout):
 | Plain click on draft row (no session) | switch on press, 9ms (untouched) |
 | Release over sidebar | ghost + overlay during, nothing attached after |
 | Esc mid-drag | ghost removed at once (earlier design: `leave` fade, measured live before the change), following release attaches nothing |
-| Archived row (snooze-archive) | ghost, overlay, chip count +1; plain click still reopens the session |
+| Archived row (archive plugin) | ghost, overlay, chip count +1; plain click still reopens the session |
 | Palette "Reference session…" | select dialog lists the other session with its directory; Enter attaches the chip |
 | Reduced motion | nothing animates, so no branch |
 

@@ -239,7 +239,7 @@ test("Escape cancels the drag and the release that follows drops nothing", () =>
   }
 })
 
-test("a snooze-archive row drags too, without holding back its mousedown", () => {
+test("an archive plugin row drags too, without holding back its mousedown", () => {
   const f = fixture()
   try {
     f.press(f.archived, 20, 200)

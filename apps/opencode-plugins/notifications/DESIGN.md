@@ -110,7 +110,6 @@ Not mapped: subagent sessions' `done` (host skips `parentID`; the parent's run c
 | orchestrator-tools (server) | Peer message received | `info` | recipient session | `orchestrator-tools:peer:<messageID>` | M | injected row (stays) |
 | orchestrator-tools | (not built today: `notify_when_idle`) | `done` | the awaited session | | covered by host `done` | n/a |
 | blindfold | Secret requested | `needs-you`, persistent | the session | `blindfold:secret:<name>` | T, M, S (later) | inline card in the thread (blindfold fork; it already toasts "Needs ...", with Show, when its session is off screen) |
-| cache-warning | none today ("Not done: no notification or sound") | | | | stays out | |
 | claude-proxy, file-viewer, model-picker, session-drag, timeline-rail, sidebar-repos, visual-replies, no-project | none | | | | | |
 
 A wake (monitor, scheduler, peer, usage-resume resume) ends as a normal turn, so its outcome arrives as the host-derived `done`/`error` for free. The `info` notification marks the moment *before* that and the events that start no turn.

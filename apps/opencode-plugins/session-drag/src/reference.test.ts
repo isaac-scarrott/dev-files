@@ -64,7 +64,7 @@ test("rowFromTarget finds the live tab row from its title", () => {
   assert.equal(rowLink(row!).getAttribute("href"), "/s/1")
 })
 
-test("rowFromTarget finds a snooze-archive row and parses server and id", () => {
+test("rowFromTarget finds an archive plugin row and parses server and id", () => {
   const doc = sidebar()
   const row = rowFromTarget(doc.querySelector('[data-sa-kind="archived"] [data-sa-row] [data-slot="tab-title"]'))
   assert.ok(row)
