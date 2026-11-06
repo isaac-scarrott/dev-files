@@ -60,8 +60,53 @@ space…** (only offered with two or more spaces).
 - **Restoring.** The routed session is recorded as the active space's `lastSession`; switching to a space focuses its
   `lastSession` when it has one.
 
-## Milestone 3 and later
+## Milestone 3: managing spaces
 
-See `SPIKE.md` milestones: rename/emoji/delete and move-to-space; swipe (wheel state machine, elastic overscroll, plus
-reveal/fill); keyboard guard; hardening (fail open when the sidebar anchor is missing, all-plugins pass, perf, parity
-report, README).
+- Commands for rename, emoji, colour, delete (confirmed first; its sessions return to the first space, matching the
+  store's fallback owner) and move-to-space. Only what is needed is asked; with one space, rename does not ask which.
+- **Move to space ▸** is written into the host's own menu markup above Delete…, with submenu, chevron, disabled current
+  space, arrow-key handling and the host's own close. The technique is the one `snooze`/`archive` proved; it is copied
+  here rather than imported so spaces still works alone. Only our nodes are removed when a menu re-renders or the plugin
+  goes away.
+
+## Milestone 4: swipe
+
+- The wheel machine (`src/swipe.ts`) is pure and tested: axis lock (a vertical scroll stays the host's), threshold,
+  one change per gesture, a cooldown that swallows a momentum tail, and, at the last space, reveal then create.
+- The listener is on the document and acts only over `[data-slot="vertical-tabs-sidebar"]`: the sidebar is mounted late
+  and can be replaced, so binding to the element at setup left the handler attached to nothing (caught in the harness).
+- The list slides in from the side swiped from (160ms, `cubic-bezier(0.2, 0, 0, 1)`), and the plus scales up as it is
+  revealed. Reduced motion turns both off.
+
+## Milestone 5: keys
+
+- A window-capture `keydown` takes `Alt+↑/↓` and `Mod+1..9` while more than one space exists, and moves over the rows on
+  screen instead. Nothing reaches the host's handlers (`stopImmediatePropagation`), so a hidden session cannot be
+  selected. A single space leaves the host's keys untouched.
+- Next/Previous space are commands with `ctrl+alt+arrowright`/`left`, shown and remappable in Settings → Shortcuts.
+
+## Milestone 6: hardening
+
+- **Fail open.** Nothing is hidden unless the sidebar exists and the strip has a real box. A layout without a sidebar
+  (top tabs, Inbox) or a moved anchor leaves every session visible and says so once, instead of filtering with no
+  visible control.
+- Verified in the harness: switch by swipe and by click, overscroll → plus → create, `Alt+Arrow` never routing to a
+  hidden row, six spaces in the strip, light and dark, reload persistence, and a coexistence pass with `sidebar-repos`
+  and `session-drag` (rows still filter, strip intact).
+
+## What is deliberately not here
+
+- **Dragging a row onto a dot.** The harness could not start the host's own drag (`[data-dragging]` appeared, the list
+  never reordered), and a second drag system over the host's dnd-kit risks moving rows across a hidden boundary. The
+  menu and palette cover the action.
+- **Tinting the sidebar per space.** Would mean overriding host background variables on host elements. The accent lives
+  on the strip's dots, as agreed.
+- **Live drag-following of the list during a swipe.** The host owns the list; we slide it after the change instead of
+  transforming it mid-gesture, which avoids fighting its scroll container.
+
+## Fragility, and why it is acceptable
+
+The filter is knowledge the host does not have: selection, ordering and keyboard navigation run off the real tab list.
+We intercept the keys that would expose that difference, and every write is an attribute the host ignores. Selectors are
+documented ones (`vertical-tabs`, `vertical-tabs-scroll`, `data-tab-key`, `vertical-tabs-footer`); if a host update moves
+them, the plugin fails open and says so rather than hiding sessions it cannot show.

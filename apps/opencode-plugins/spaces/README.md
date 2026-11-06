@@ -1,19 +1,23 @@
 # Spaces
 
-Arc's Spaces for OpenCode sessions: group your open sessions into named spaces, and switch between them with one row of
-dots at the bottom of the sidebar.
-
-> **Status: milestone 2 of 6.** Spaces can be created and switched, and the sidebar shows only the active space's
-> sessions. Rename, delete and moving a session between spaces arrive in milestone 3 (see `DESIGN.md`).
+Arc's Spaces for OpenCode sessions: group your open sessions into named spaces, and move between them with the trackpad
+or a row of dots at the bottom of the sidebar.
 
 ## What it does
 
-- **New space…** in the command palette creates a space (named `Space N`, with its own emoji). The bottom of the sidebar
-  grows a strip of space dots once there are two, and clicking a dot switches to that space.
-- **Switch space…** in the palette lists your spaces.
-- **The sidebar shows the active space.** Sessions of other spaces stay open but are hidden. A new session joins the
-  space you are in, and switching back returns to the session that space had open.
-- Nothing changes while you have a single space: the strip stays hidden and every session is shown.
+- **Every session belongs to one space**, and a space holds many. A session that was already open joins the first space;
+  anything you start joins the space you are in.
+- **The sidebar shows the space you are in.** Other spaces' sessions stay open, hidden. Switching to one shows them again
+  and returns to the session that space had open.
+- **Trackpad swipes** over the sidebar change space, the way Arc does: two fingers left and right. Swiping past the last
+  space reveals the strip's plus; swipe a little further and it fills, creating a space.
+- **The strip** at the bottom of the sidebar carries one dot per space, the active one lit, a plus at the end. With a
+  single space it takes no room and nothing is filtered.
+- **Commands** (palette, and `Ctrl+Alt+←/→` for next/previous): New space…, Switch space…, Rename space…, Change space
+  emoji…, Change space colour…, Delete space…, Move session to space….
+- **Move to space** is also in the session's own right-click menu, above Delete…, on a tab row, a Home row and the
+  session header menu.
+- **The host's own keys follow the space**: `Alt+↑/↓` and `Cmd+1..9` walk the rows on screen, never a hidden session.
 
 ## Install
 
@@ -23,24 +27,33 @@ Register by absolute path in `~/.config/opencode/opencode.json`:
 "plugins": ["/path/to/apps/opencode-plugins/spaces"]
 ```
 
-Kind: GUI (`gui-experimental`). A GUI half is only read on a plugin's first load, so if you add this while the service is
-running, restart it once (`scripts/opencode-safe-restart.sh`); after that, Cmd+R is enough.
+Kind: GUI (`gui-experimental`). A GUI half is read only on a plugin's first load, so if you add this while the service is
+running, restart it once (`scripts/opencode-safe-restart.sh`); after that Cmd+R is enough.
+
+The sidebar filter needs the **Side tabs** layout (Settings → Preferences). In top tabs or Inbox the strip stays hidden,
+nothing is filtered, and a single notice says so.
 
 ## Options
 
-None yet.
+None.
 
 ## How it works
 
-- State is the plugin's own store (`Store.global`): the spaces, which one is active, which session belongs to which, and
-  each space's last session. Nothing is written to the host's config, and nothing is visible to vanilla OpenCode.
+- State is the plugin's own store: the spaces, the active one, which session belongs to which, and each space's last
+  session. Nothing touches the host's config, and nothing is visible to vanilla OpenCode.
 - The strip is one injected row inside the sidebar's own column, above its footer, so it follows collapse, resize and
-  layout changes. It is drawn from the store, so both windows agree.
-- This plugin depends on no other plugin and behaves the same on vanilla OpenCode.
+  layout changes.
+- Rows are filtered with one attribute plus one scoped rule; the sidebar list itself is never rebuilt.
+- The plugin imports no other plugin, so it behaves the same on a plain OpenCode and beside other GUI plugins.
 
-## Known limits (milestone 2)
+## Known limits
 
-- The host's `Alt+Arrow` and `Cmd+1..9` still walk every session, hidden or not, so they can land on a session you cannot
-  see (milestone 5 guards them).
-- A space cannot yet be renamed, given another emoji, or deleted (milestone 3).
+- The filter is not something the host knows about. Selection, reorder and "recently closed" still see hidden sessions;
+  the keys above are intercepted to compensate, and the strip's dots are the source of truth for which space you are in.
+- **Clicking** a session that belongs to another space switches to that space (as agreed), but a *hidden* row cannot be
+  clicked; reach those sessions through Home, Search or the palette.
 - Home still lists every session; the filter is on the sidebar only.
+- A session whose space you delete moves to the first space, which is also where anything unassigned lives.
+- Reorder-by-drag under a filter is untested on real hardware.
+
+See `DESIGN.md` for the mechanism, the decisions and the evidence.

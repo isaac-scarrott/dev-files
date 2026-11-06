@@ -28,9 +28,10 @@ export function bindWheel(doc: Document, handlers: WheelHandlers) {
   }
   const onWheel = (event: WheelEvent) => {
     if (!handlers.ready()) return
-    // Never fight a text field, a menu, or the browser's own zoom.
+    // Only over the sidebar, and never over a text field or a menu.
     const target = event.target as HTMLElement | null
-    if (event.ctrlKey || target?.closest?.("input, textarea, [contenteditable=true], [role=menu]")) return
+    if (!target?.closest?.('[data-slot="vertical-tabs-sidebar"]')) return
+    if (event.ctrlKey || target.closest("input, textarea, [contenteditable=true], [role=menu]")) return
     const atEnd = handlers.atEnd()
     const step = swipe(state, { dx: event.deltaX, dy: event.deltaY, at: Date.now() }, { atEnd })
     state = step.state
@@ -53,17 +54,12 @@ export function bindWheel(doc: Document, handlers: WheelHandlers) {
     idle = setTimeout(end, 200)
   }
 
-  const sidebar = doc.querySelector<HTMLElement>('[data-slot="vertical-tabs-sidebar"]')
-  const listen = (el: HTMLElement) => el.addEventListener("wheel", onWheel, { passive: false })
-  const drop = (el: HTMLElement) => el.removeEventListener("wheel", onWheel)
-  if (sidebar) listen(sidebar)
+  // Bound on the document, because the sidebar is mounted late and may be replaced; the target check keeps it to the
+  // sidebar's own area.
+  doc.addEventListener("wheel", onWheel, { passive: false })
   return {
-    attach(next: HTMLElement | undefined) {
-      if (sidebar) drop(sidebar)
-      if (next) listen(next)
-    },
     stop() {
-      if (sidebar) drop(sidebar)
+      doc.removeEventListener("wheel", onWheel)
       if (idle !== undefined) clearTimeout(idle)
       handlers.reveal(false)
       handlers.progress(0)

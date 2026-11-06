@@ -144,6 +144,19 @@ export default Plugin.define({
     // trying until it lands; afterwards re-place only when the host detaches our row.
     let timer: ReturnType<typeof setInterval> | undefined
     let observer: MutationObserver | undefined
+    let warned = false
+    let attempts = 0
+    // Nothing is hidden unless the sidebar is there and our strip has a box: a layout we do not understand shows every
+    // session and says so once, instead of filtering with no visible control (see DESIGN.md).
+    let filtering = false
+    const standDown = () => {
+      if (!filtering && warned) return
+      filtering = false
+      filter.stop()
+      if (warned) return
+      warned = true
+      ctx.toast.show({ title: "Spaces is off", description: "The sidebar layout changed, so sessions are not being filtered. Spaces will work again after a plugin update.", variant: "default" })
+    }
     const landed = () => {
       if (timer !== undefined) {
         clearInterval(timer)
@@ -151,7 +164,10 @@ export default Plugin.define({
       }
       const parent = strip.place() ? document.querySelector('[data-slot="vertical-tabs-mount"]') : undefined
       const side = sidebar()
-      if (side) filter.start(side)
+      const placed = document.querySelector("[data-spaces-strip]")?.getBoundingClientRect()
+      if (!side || !placed || placed.width === 0 || placed.height === 0) return standDown()
+      filtering = true
+      filter.start(side)
       sync()
       observer?.disconnect()
       observer = undefined
@@ -163,8 +179,14 @@ export default Plugin.define({
       strip.place()
     }
     const ensure = () => {
-      if (strip.place()) landed()
-      else if (timer === undefined) timer = setInterval(() => { if (strip.place()) landed() }, 400)
+      if (strip.place()) return landed()
+      if (timer !== undefined) return
+      timer = setInterval(() => {
+        attempts += 1
+        if (strip.place()) return landed()
+        // A layout with no sidebar at all (top tabs, Inbox): say so once, then stop trying until something changes.
+        if (attempts === 20) standDown()
+      }, 400)
     }
     ensure()
     onCleanup(() => {
