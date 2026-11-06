@@ -19,9 +19,9 @@ macOS only for now. The Library paths are baked in.
 ## Layout
 
 ```
-.claude/         claude code: skills, scripts, settings
+.claude/         claude code: skills, scripts, settings, sub-agent tiers (agents/)
 apps/            notch-usage: Claude account limits in the MacBook notch
-.config/         editor + wm config (nvim, zed, aerospace, ghostty, alacritty)
+.config/         editor + wm config (nvim, zed, aerospace, ghostty, alacritty), opencode agents
 .githooks/       pre-commit re-runs vendor.sh when the manifest changes
 ide/             vscode + cursor settings.json (live under Library/Application Support/)
 scripts/         vendor.sh, drift.sh, test-install.sh
@@ -30,6 +30,16 @@ scripts/         vendor.sh, drift.sh, test-install.sh
 install.sh       bootstrap; also the canonical list of symlinks
 vendor.manifest  upstream files to keep in sync
 ```
+
+## Sub-agent tiers
+
+`global/AGENTS.md` splits delegated work three ways, and each harness points them at its own models:
+
+| Tier | Does | OpenCode | Claude Code |
+|---|---|---|---|
+| scout | read-only: find code, research, root-cause traces, log triage | `.config/opencode/agent/scout.md` (DeepSeek V4.1 Flash via Go) | `.claude/agents/scout.md` (haiku) |
+| worker | one scoped change with an acceptance check; commits, never pushes | `.config/opencode/agent/worker.md` | `.claude/agents/worker.md` |
+| builder | features, design, source conflicts, money/auth/data | `general` | `general-purpose` |
 
 Two files live here for the symlink but git ignores them: `.claude/CLAUDE.md` (personal) and `.config/nvim/lazy-lock.json` (rewrites itself on every `:Lazy update`).
 
