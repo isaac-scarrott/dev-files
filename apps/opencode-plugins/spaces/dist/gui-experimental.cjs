@@ -29,7 +29,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
@@ -80,7 +80,7 @@
   box-sizing: border-box;
   width: calc(21px * var(--spaces-pull, 0));
   height: 21px;
-  margin-left: calc(2px * var(--spaces-pull, 0));
+  margin-left: calc(6px * var(--spaces-pull, 0));
   border: 1px dashed var(--v2-border-border-base, rgba(127, 127, 127, 0.35));
   border-radius: 5px;
   background: color-mix(in srgb, var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.16)) calc(var(--spaces-pull, 0) * 100%), transparent);
