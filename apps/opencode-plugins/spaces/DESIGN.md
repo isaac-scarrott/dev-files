@@ -1,8 +1,7 @@
 # Spaces design
 
-Arc's Spaces for OpenCode sessions. The full research (row hiding, the sidebar layout, trackpad events, menus, keyboard,
-store limits, risks) is in the spike report on branch `spike/spaces` (`SPIKE.md`); this file records what the plugin does
-and why, milestone by milestone.
+Arc's Spaces for OpenCode sessions. The full research (row hiding, the sidebar layout, trackpad events, menus, keyboard, store limits, risks) is in
+`SPIKE.md` beside this file; this one records what the plugin does and why, milestone by milestone.
 
 ## Decisions already taken with the user
 
