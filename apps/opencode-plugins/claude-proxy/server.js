@@ -1,17 +1,32 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { accessSync, constants, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 
 // The Claude Agent provider spawns `claude --setting-sources=`, so ~/.claude/settings.json is never read.
 // Provider settings are served by GET /api/model and /api/provider/*, so only the base URL goes there.
 // The token never leaves this process except into the `claude` spawn env, through the model's connection env
-// (see withToken). Nothing is written to process.env, where the shell tool and MCP servers would inherit it.
+// (see withToken). The token is never written to process.env, where shell tools and MCP servers would inherit it.
 const PROVIDER = "claude-agent"
 const PACKAGE = "@opencode/claude-agent"
 const TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN"
 const HELPER_TIMEOUT_MS = 10_000
 const CACHE_MS = 30_000
+
+export function ensureClaudePath(env = process.env, home = homedir()) {
+  if (env.OPENCODE_CLAUDE_PATH) return
+  const executable = (file) => {
+    try {
+      accessSync(file, constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+  if ((env.PATH ?? "").split(path.delimiter).some((dir) => executable(path.join(dir, "claude")))) return
+  const file = path.join(home, ".local", "bin", "claude")
+  if (executable(file)) env.OPENCODE_CLAUDE_PATH = file
+}
 
 // A problem is logged once until it clears, so a broken helper does not fill the log. Messages carry names and
 // exit codes only, never a value.
@@ -126,6 +141,7 @@ export function withToken(source) {
 export default {
   id: "claude-proxy",
   async setup(ctx) {
+    ensureClaudePath()
     const baseURL = readBaseURL()
     await ctx.provider.transform((editor) => apply(editor, baseURL))
     await ctx.aisdk.hook("sdk", withToken(tokenSource()), { providerID: PROVIDER })

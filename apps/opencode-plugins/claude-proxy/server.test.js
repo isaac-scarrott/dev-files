@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { test } from "node:test"
-import plugin, { apply, readBaseURL, resolveToken, tokenSource, withToken } from "./server.js"
+import plugin, { apply, ensureClaudePath, readBaseURL, resolveToken, tokenSource, withToken } from "./server.js"
 
 function home(settings) {
   const dir = mkdtempSync(path.join(tmpdir(), "claude-proxy-"))
@@ -16,6 +16,26 @@ function home(settings) {
 function writeSettings(dir, settings) {
   writeFileSync(path.join(dir, ".claude", "settings.json"), typeof settings === "string" ? settings : JSON.stringify(settings))
 }
+
+test("Desktop's minimal PATH falls back to the native Claude install", () => {
+  const dir = home()
+  const bin = path.join(dir, ".local", "bin")
+  mkdirSync(bin, { recursive: true })
+  const file = path.join(bin, "claude")
+  writeFileSync(file, "#!/bin/sh\nexit 0\n")
+  const env = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+  ensureClaudePath(env, dir)
+  assert.equal(env.OPENCODE_CLAUDE_PATH, undefined)
+  chmodSync(file, 0o755)
+  ensureClaudePath(env, dir)
+  assert.equal(env.OPENCODE_CLAUDE_PATH, file)
+  const override = { ...env, OPENCODE_CLAUDE_PATH: "/custom/claude" }
+  ensureClaudePath(override, dir)
+  assert.equal(override.OPENCODE_CLAUDE_PATH, "/custom/claude")
+  const onPath = { PATH: bin }
+  ensureClaudePath(onPath, dir)
+  assert.equal(onPath.OPENCODE_CLAUDE_PATH, undefined)
+})
 
 const SECRET = "sk-secret-value-123"
 const logged = []
@@ -205,7 +225,7 @@ test("shape guard: a changed sdk or connection warns by name, fails soft, and ne
   assert.ok(!logged.some((line) => line.includes(SECRET)))
 })
 
-test("setup puts only the base URL in the provider settings, hooks the sdk, and never writes process.env", async (t) => {
+test("setup puts only the base URL in provider settings and keeps credentials out of process.env", async (t) => {
   const realHome = process.env.HOME
   t.after(() => (process.env.HOME = realHome))
   process.env.HOME = home({ env: { ANTHROPIC_BASE_URL: "http://x", ANTHROPIC_AUTH_TOKEN: SECRET } })
