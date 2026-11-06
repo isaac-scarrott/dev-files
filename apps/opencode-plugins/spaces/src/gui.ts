@@ -2,9 +2,10 @@ import { Command, createKeyed, Plugin, Store, Style } from "@opencode/plugin/gui
 import { Schema } from "effect"
 import { onCleanup } from "solid-js"
 import { createRowFilter } from "./dom"
+import { bindWheel } from "./wheel"
 import { createSpaceMenus } from "./menus"
-import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberLastSession, renameSpace, restoreTarget, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
-import { accentColor, css } from "./style"
+import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberLastSession, renameSpace, restoreTarget, selectSpace, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
+import { accentColor, css, swipeCss } from "./style"
 import { createStrip } from "./strip"
 
 const SpaceSchema = Schema.Struct({
@@ -31,7 +32,7 @@ const definition = Plugin.define({
 export default Plugin.define({
   ...definition,
   setup(ctx) {
-    ctx.add(Style, css)
+    ctx.add(Style, css + swipeCss)
 
     const state = (): State => settle(ctx.stores.spaces.value as State)
     const update = (change: (current: State) => State) => {
@@ -63,6 +64,26 @@ export default Plugin.define({
 
     // Rows are hidden by attribute; the host keeps its own list, so navigation is guarded in milestone 5.
     const filter = createRowFilter(document, () => new Set(hiddenTabs(state(), tabs())))
+
+    // Two-finger swipes over the sidebar change space; past the last one, the strip's plus fills and creates a space.
+    const wheel = bindWheel(document, {
+      ready: () => state().spaces.length > 1,
+      atEnd: () => state().active >= state().spaces.length - 1,
+      switchTo(direction) {
+        const current = state()
+        const index = current.active + direction
+        if (index < 0 || index >= current.spaces.length) return
+        update((now) => selectSpace(now, index))
+        const side = sidebar()
+        side?.setAttribute("data-spaces-switch", direction === 1 ? "next" : "previous")
+        setTimeout(() => side?.removeAttribute("data-spaces-switch"), 200)
+      },
+      create: () => createSpace(),
+      reveal: (on) => document.querySelector("[data-spaces-strip]")?.toggleAttribute("data-spaces-reveal", on),
+      progress: () => undefined,
+      animate: () => undefined,
+    })
+    onCleanup(() => wheel.stop())
 
     // Which tabs were already open when this plugin started: they belong to the first space, not to whatever is active.
     const startup = new Set<string>()

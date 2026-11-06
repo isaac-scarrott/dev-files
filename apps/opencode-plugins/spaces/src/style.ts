@@ -92,3 +92,32 @@ export function accentColor(accent: string | undefined): string | undefined {
   if (accent === "info" || accent === "success" || accent === "warning" || accent === "danger") return `var(--v2-state-fg-${accent})`
   return undefined
 }
+
+/** The swipe, and what a change looks like: the list slides in from the side the swipe came from. */
+export const swipeCss = `
+[data-spaces-strip][data-spaces-reveal] [data-spaces-add] {
+  opacity: 1;
+  transform: scale(1.15);
+}
+[data-spaces-strip] [data-spaces-add] {
+  transition: opacity 140ms ease, transform 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes spaces-in-next {
+  from { opacity: 0.35; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes spaces-in-previous {
+  from { opacity: 0.35; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+[data-spaces-switch="next"] [data-slot="vertical-tabs-scroll"] {
+  animation: spaces-in-next 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+[data-spaces-switch="previous"] [data-slot="vertical-tabs-scroll"] {
+  animation: spaces-in-previous 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-spaces-switch] [data-slot="vertical-tabs-scroll"] { animation: none; }
+  [data-spaces-strip] [data-spaces-add] { transition: none; }
+}
+`
