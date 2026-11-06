@@ -102,9 +102,10 @@ that, the first session the space owns — so a switch always lands inside the s
 thread on screen. A focus the plugin performs is remembered for one routed change, so it is not mistaken for the user
 opening a session elsewhere and switched away from again.
 
-Navigation from elsewhere (Home, Search, the palette) lands in the space the session belongs to, but only for a real
-change of the routed tab, never within 600ms of a switch the plugin just made — otherwise creating a space and starting
-a session in it bounced straight back.
+Navigation from elsewhere (a notification, Home, Search, the palette) lands in the space the session belongs to, and so
+does clicking into the session area when the sidebar shows another space because the last switch landed somewhere empty:
+the session on screen decides the space. A focus the plugin performs itself is exempt, and a switch made in the sidebar
+is never undone by the click that made it.
 
 ## Reordering
 

@@ -38,8 +38,6 @@ export default Plugin.define({
 
     const state = (): State => settle(ctx.stores.spaces.value as State)
     const activeId = () => state().spaces[clampActive(state())]!.id
-    // When a space change (or the focus it does) was this plugin's own, so navigation never bounces straight back.
-    let switchedAt = 0
     const update = (change: (current: State) => State) => {
       ctx.stores.spaces.update((draft) => {
         const before = settle(draft as State)
@@ -153,7 +151,6 @@ export default Plugin.define({
 
     const createSpace = () => {
       rememberCurrent()
-      switchedAt = Date.now()
       const current = state()
       const id = newSpaceId(current.spaces)
       const emoji = defaultEmoji(current.spaces)
@@ -304,6 +301,7 @@ export default Plugin.define({
       const first = tabs.find((tab) => owned(tab))
       if (first && !first.active) {
         restoring = first.key
+        setTimeout(() => { if (restoring === first.key) restoring = undefined }, 1500)
         ctx.tabs.focus(first.key)
       }
     }
@@ -314,7 +312,6 @@ export default Plugin.define({
       const target = Math.max(0, Math.min(index, current.spaces.length - 1))
       if (target === clampActive(current)) return
       rememberCurrent()
-      switchedAt = Date.now()
       update((now) => selectSpace(now, target))
       const id = state().spaces[target]?.id
       if (id) arrive(id)
@@ -346,9 +343,33 @@ export default Plugin.define({
         if (!belongs) return
         const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
         const active = current.spaces[clampActive(current)]!.id
-        if (owner !== active && Date.now() - switchedAt > 600) switchToId(owner)
+        // The session on screen decides the space: a notification, Home, Search or the palette taking you to a session
+        // also takes you to its space. Only a focus this plugin performed is exempt (see `restoring`).
+        if (owner !== active) switchToId(owner)
       },
     )
+
+    // "The session on screen decides the space" also holds when that session did not change: clicking into the session
+    // area while the sidebar shows another space (because the last switch landed somewhere empty) re-aligns it. Clicks in
+    // the sidebar are excluded, so choosing a space there is not undone.
+    const realign = () => {
+      const tab = routed()
+      if (!tab) return
+      const current = state()
+      const session = tabSession(tab)
+      const belongs = current.drafts.some((draft) => draft.tab === tab.key) ||
+        (session ? current.assigned.some((item) => item.server === session.server && item.id === session.id) : false)
+      if (!belongs) return
+      const owner = spaceOf(current, { key: tab.key, ...(session ? { session } : {}) })
+      if (owner !== current.spaces[clampActive(current)]!.id) switchToId(owner)
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest?.('[data-slot="vertical-tabs-sidebar"], [data-spaces-strip]')) return
+      realign()
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
 
     // The session a command acts on: what is routed, else the first tab that has one.
     const targetSession = () => {
