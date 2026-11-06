@@ -48,14 +48,14 @@ export const css = `
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 21px;
-  height: 21px;
+  width: 23px;
+  height: 23px;
   padding: 0;
   border: 0;
   border-radius: 5px;
   background: transparent;
   font-family: var(--v2-font-family-sans, inherit);
-  font-size: 14.6px;
+  font-size: 16px;
   line-height: 1;
   /* A space you are not in is grey and quiet; the one you are in keeps its own colours and gets no box behind it. */
   filter: grayscale(1);
@@ -81,8 +81,8 @@ export const css = `
   justify-content: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: calc(21px * var(--spaces-pull, 0));
-  height: 21px;
+  width: calc(23px * var(--spaces-pull, 0));
+  height: 23px;
   margin-left: calc(6px * var(--spaces-pull, 0));
   border: 1px dashed var(--v2-border-border-base, rgba(127, 127, 127, 0.35));
   border-radius: 5px;
