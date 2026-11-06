@@ -50,7 +50,7 @@
       "transport": "stdio",
       "command": "uvx",
       "args": [
-        "awslabs.redshift-mcp-server@latest"
+        "awslabs.redshift-mcp-server@0.1.2"
       ],
       "env": {
         "AWS_PROFILE": "default",

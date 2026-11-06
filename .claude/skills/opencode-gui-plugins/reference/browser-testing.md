@@ -24,7 +24,7 @@ Side effects to expect: the second app launches quietly (`open -g`, no focus ste
 ```sh
 S=~/git/dev-files/.claude/skills/opencode-gui-plugins/scripts   # or this checkout's path
 P=~/git/dev-files/apps/opencode-plugins
-$S/desktop-harness.sh start $P/sidebar-repos $P/snooze-archive    # ~6s, prints the CDP url
+$S/desktop-harness.sh start $P/sidebar-repos $P/snooze $P/archive    # ~6s, prints the CDP url
 # ... drive and screenshot ...
 $S/desktop-harness.sh stop
 ```
@@ -50,7 +50,7 @@ Confirm the plugin loaded before anything else: `document.querySelectorAll("styl
 
 ### Opening the plugin UI
 
-- Sidebar rows (`sidebar-repos`, `snooze-archive` sidebar): Settings → Preferences → **Side tabs** (`[data-titlebar-tab][data-orientation="vertical"]`). The default layout is top tabs, so a vertical-tab plugin shows nothing until you switch. After switching, "Back to app" is hidden; click the session tab in the sidebar instead.
+- Sidebar rows (`sidebar-repos`, `snooze`/`archive` sidebar): Settings → Preferences → **Side tabs** (`[data-titlebar-tab][data-orientation="vertical"]`). The default layout is top tabs, so a vertical-tab plugin shows nothing until you switch. After switching, "Back to app" is hidden; click the session tab in the sidebar instead.
 - Slots (`session.header` actions) render in the session header with no setup.
 - Commands: command palette.
 
