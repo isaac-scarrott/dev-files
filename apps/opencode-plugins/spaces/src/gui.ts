@@ -2,6 +2,7 @@ import { Command, createKeyed, Plugin, Store, Style } from "@opencode/plugin/gui
 import { Schema } from "effect"
 import { onCleanup } from "solid-js"
 import { createRowFilter } from "./dom"
+import { createKeyGuard } from "./keys"
 import { bindWheel } from "./wheel"
 import { createSpaceMenus } from "./menus"
 import { ACCENTS, addSpace, clampActive, defaultEmoji, deleteSpace, hiddenTabs, initialState, moveSession, newSpaceId, reconcile, rememberLastSession, renameSpace, restoreTarget, selectSpace, selectSpaceId, settle, spaceOf, type State, type TabLike } from "./model"
@@ -35,6 +36,7 @@ export default Plugin.define({
     ctx.add(Style, css + swipeCss)
 
     const state = (): State => settle(ctx.stores.spaces.value as State)
+    const activeId = () => state().spaces[clampActive(state())]!.id
     const update = (change: (current: State) => State) => {
       ctx.stores.spaces.update((draft) => {
         const next = change(settle(draft as State))
@@ -84,6 +86,26 @@ export default Plugin.define({
       animate: () => undefined,
     })
     onCleanup(() => wheel.stop())
+
+    // The host's own Alt+Arrow and Mod+1..9 walk every tab, hidden ones included. While spaces are filtering, they walk
+    // the rows on screen instead; with a single space there is nothing to guard and the host keeps its keys.
+    const guard = createKeyGuard({
+      visible: () => tabs().filter((tab) => spaceOf(state(), tab) === activeId()).map((tab) => tab.key),
+      focused: () => ctx.tabs.list().find((tab) => tab.active)?.key,
+      focus: (key) => ctx.tabs.focus(key),
+      handled: () => undefined,
+      lost: () => undefined,
+    })
+    let detach: () => void = () => undefined
+    const applyGuard = () => {
+      detach()
+      detach = state().spaces.length > 1 ? guard.attach(document) : () => undefined
+    }
+    onCleanup(() => detach())
+    createKeyed(
+      () => state().spaces.length > 1,
+      () => applyGuard(),
+    )
 
     // Which tabs were already open when this plugin started: they belong to the first space, not to whatever is active.
     const startup = new Set<string>()
@@ -364,6 +386,24 @@ export default Plugin.define({
           update((current) => selectSpaceId(current, picked))
         },
       }
+    })
+
+    const stepSpace = (direction: 1 | -1) => {
+      const current = state()
+      if (current.spaces.length < 2) return
+      const index = Math.max(0, Math.min(current.active + direction, current.spaces.length - 1))
+      if (index === current.active) return
+      update((now) => selectSpace(now, index))
+    }
+    ctx.add(Command, () => {
+      const current = state()
+      if (current.spaces.length < 2) return undefined
+      return { id: "spaces.next", title: "Next space", section: "navigation" as const, bind: "ctrl+alt+arrowright", keywords: "spaces", run: () => stepSpace(1) }
+    })
+    ctx.add(Command, () => {
+      const current = state()
+      if (current.spaces.length < 2) return undefined
+      return { id: "spaces.previous", title: "Previous space", section: "navigation" as const, bind: "ctrl+alt+arrowleft", keywords: "spaces", run: () => stepSpace(-1) }
     })
 
     for (const [id, title, action] of [
