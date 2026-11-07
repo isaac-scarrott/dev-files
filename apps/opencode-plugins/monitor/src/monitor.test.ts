@@ -243,10 +243,20 @@ test("archiving the session stops its monitors", async () => {
   await t.monitors.dispose()
 })
 
-test("maxMonitors is enforced", async () => {
-  const t = setup({ maxMonitors: 1 })
+test("maxMonitors is a service-wide safety cap", async () => {
+  const t = setup({ maxMonitors: 2 })
   await t.monitors.start(t.input)
-  await assert.rejects(t.monitors.start(t.input), /maxMonitors is 1/)
+  await t.monitors.start({ ...t.input, sessionID: "ses_2" })
+  await assert.rejects(t.monitors.start({ ...t.input, sessionID: "ses_3" }), /maxMonitors is 2/)
+  await t.monitors.dispose()
+})
+
+test("maxPerSession caps one session without blocking another", async () => {
+  const t = setup({ maxPerSession: 1 })
+  await t.monitors.start({ ...t.input, name: "mine" })
+  await assert.rejects(t.monitors.start({ ...t.input, name: "second" }), /maxPerSession is 1\. Stop one with monitor\.stop: mon_1 \(mine\)/)
+  await t.monitors.start({ ...t.input, sessionID: "ses_2", name: "theirs" })
+  assert.equal(t.monitors.count, 2)
   await t.monitors.dispose()
 })
 
@@ -352,6 +362,9 @@ test("three failed deliveries stop the monitor", async () => {
 
 test("options reject bad values", () => {
   assert.throws(() => parseOptions({ maxMonitors: 0 }), /maxMonitors/)
+  assert.throws(() => parseOptions({ maxPerSession: 0 }), /maxPerSession/)
+  assert.equal(parseOptions({}).maxMonitors, 40)
+  assert.equal(parseOptions({}).maxPerSession, 5)
   assert.equal(parseOptions({}).ttlMinutes, 1440)
 })
 

@@ -91,7 +91,12 @@ export class Monitors {
 
   async start(input: StartInput): Promise<MonitorInfo> {
     const { options, clock } = this.deps
-    if (this.running.size >= options.maxMonitors) throw new Error(`${this.running.size} monitors are running; maxMonitors is ${options.maxMonitors}. Stop one with monitor.stop first.`)
+    const mine = [...this.running.values()].filter((monitor) => monitor.def.sessionID === input.sessionID)
+    if (mine.length >= options.maxPerSession) {
+      const own = mine.map((monitor) => `${monitor.def.id} (${monitor.def.name})`).join(", ")
+      throw new Error(`${mine.length} monitors are running for session ${input.sessionID}; maxPerSession is ${options.maxPerSession}. Stop one with monitor.stop: ${own}.`)
+    }
+    if (this.running.size >= options.maxMonitors) throw new Error(`${this.running.size} monitors are running across all sessions; maxMonitors is ${options.maxMonitors}. Stop one you started with monitor.stop first${mine.length ? `: ${mine.map((monitor) => `${monitor.def.id} (${monitor.def.name})`).join(", ")}` : ""}.`)
     let id = (this.deps.newID ?? randomID)()
     while (this.running.has(id)) id = (this.deps.newID ?? randomID)()
     const now = clock.now()

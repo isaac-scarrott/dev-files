@@ -27,6 +27,10 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   window has room. A monitor never ends because of rate.
 - **Lifetime**: TTL covers the whole monitor, re-arm included. Ends on exit (no re-arm), `maxEvents`, TTL, stop, session
   archived/deleted (`session.archived`, `session.deleted`), 3 failed wakes in a row, and dispose.
+- **Caps**: `maxPerSession` (5) running monitors per session, plus `maxMonitors` (40) across the whole service as a safety
+  valve. The per-session cap is the one sessions meet in normal use (the Merger alone used to hold every slot of a
+  service-wide 5); a start refused by either cap names which one and lists the caller's own monitors to stop. Restore
+  still uses only `maxMonitors`, so a restart cannot exceed the service safety cap.
 - **Persistence**: definitions under `monitor/def/<id>`, never output. Run state under `monitor/state/<id>`: `seq`, `restartCount`,
   `events`, `lastEventAt`, `aliveAt` (heartbeat every 60 s, each wake, and clean shutdown), `lastRearmAt`, `nextRearmAt`. Writes per monitor are serialized
   and the state is removed with the definition. Missing state (older entries) reads as: unknown downtime start, due re-arm. On startup every entry with an unexpired TTL, events under `maxEvents` and an active session comes back (re-arm or not;

@@ -1,7 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 export const DEFAULTS = {
-    maxMonitors: 5,
+    maxMonitors: 40,
+    maxPerSession: 5,
     ttlMinutes: 1440,
     maxEventsPerHour: 200,
     minRearmMinutes: 1,
@@ -25,6 +26,7 @@ export function parseOptions(raw = {}) {
         throw new Error("monitor option logDir must be a path");
     return {
         maxMonitors: integer(raw, "maxMonitors"),
+        maxPerSession: integer(raw, "maxPerSession"),
         ttlMinutes: integer(raw, "ttlMinutes"),
         maxEventsPerHour: integer(raw, "maxEventsPerHour"),
         minRearmMinutes: integer(raw, "minRearmMinutes"),

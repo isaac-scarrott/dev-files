@@ -15,7 +15,7 @@ Chips animate in and out and the row moves with them: [recording](../native-ui/m
 - One more message arrives when the command exits, with its exit code.
 - `rearmMinutes` starts the command again every N minutes, ending a run that is still going (the "storefront watch" pattern). The old run's whole process group gets SIGTERM, then SIGKILL after the grace period, so subshells and `sleep`s end with it. The clock is saved: a service restart keeps the time left in the cycle (restart at minute 10 of 30: 20 left), and a restart after the mark counts as the re-arm (the restored process is fresh) with the next one set from then. Frequent restarts cannot starve it.
 - `monitor.list` shows what is running (with `pid`, `lastRearm`, `nextRearm`, `restartCount`); `monitor.stop` ends a monitor and everything it started (SIGTERM to the process group, SIGKILL after a grace period).
-- Monitors end when their session is archived or deleted, after `ttlMinutes` (default 24 h), and when the service shuts down. A plugin hot reload (the plugin module loaded again inside the running service, e.g. after a rebuild) is not a shutdown: the processes keep running and the new plugin instance adopts them, with the same pid and output, no restart count and no notice. `ttlMinutes` is the total lifetime from the first start: neither a re-arm nor a service restart extends it.
+- Monitors end when their session is archived or deleted, after `ttlMinutes` (default 24 h), and when the service shuts down. A plugin hot reload (the plugin module loaded again inside the running service, e.g. after a rebuild) is not a shutdown: the processes keep running and the new plugin instance adopts them, with the same pid and output, no restart count and no notice. `ttlMinutes` is the total lifetime from the first start: neither a re-arm nor a service restart extends it. A session may run `maxPerSession` monitors at once (5 by default); the whole service is capped at `maxMonitors` (40) as a safety valve, and a start refused by either cap says which one and lists the monitors to stop.
 - `match` is applied to every line first. Only matching lines are events: batches hold matching lines only, and `maxEvents` and `maxEventsPerHour` count matching lines.
 - `maxEvents` is a lifetime cap: the event count (what `events` shows in `monitor.list`) is saved with the monitor's state and keeps growing across re-arms and service restarts, so a monitor restored at 3 of 5 events has 2 left. It is saved with every wake, every minute and at clean shutdown; after a hard kill, events from the last seconds may be uncounted. A monitor that reached its cap is over and never restored. The `maxEventsPerHour` window is not persisted: it starts empty after a restart.
 - `session` can name another session to wake, but only the caller's own tree: itself, its parent, its children and descendants, sessions it created through `orchestrator-tools`, and its siblings (the `parent`/`child`/`sibling` relations `list_peers` shows, the `tree` scope of `send_message`). Anything else is rejected with an error.
@@ -46,7 +46,8 @@ The row needs the GUI export: the host decides a plugin's parts when the service
 ## Options
 | Option | Default | |
 |---|---|---|
-| `maxMonitors` | `5` | running monitors at once |
+| `maxMonitors` | `40` | running monitors at once, across all sessions (safety cap) |
+| `maxPerSession` | `5` | running monitors at once for one session |
 | `ttlMinutes` | `1440` | default auto-stop; the tool's `ttlMinutes` overrides |
 | `maxEventsPerHour` | `200` | per monitor, then it pauses |
 | `minRearmMinutes` | `1` | smallest `rearmMinutes` |

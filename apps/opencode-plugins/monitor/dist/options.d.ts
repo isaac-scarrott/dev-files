@@ -1,6 +1,8 @@
 export interface Options {
-    /** Running monitors at once, across all sessions. */
+    /** Running monitors at once, across all sessions: a safety cap for the shared service. */
     readonly maxMonitors: number;
+    /** Running monitors at once for one session. */
+    readonly maxPerSession: number;
     /** Auto-stop after this long unless the tool is given another ttlMinutes. */
     readonly ttlMinutes: number;
     readonly maxEventsPerHour: number;
