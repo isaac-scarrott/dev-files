@@ -16,7 +16,7 @@ There is no Linear ticket. The markdown file at `subtask_file` is the source of 
 
 ## Workflow
 
-**Orient.** Read `subtask_file` end-to-end. Read `parent_file` for overall epic context. Skim sibling tickets in `ticket_dir` referenced by the spec. Read `CLAUDE.md` and the `conventions/` files that relate to what you're about to change. Run `git log --oneline ${base_branch}..HEAD` and `git log --oneline $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')..${base_branch}` to understand any upstream sibling commits.
+**Orient.** Read `subtask_file` end-to-end. Read `parent_file` for overall epic context. Skim sibling tickets in `ticket_dir` referenced by the spec. Read `AGENTS.md` and the `conventions/` files that relate to what you're about to change. Run `git log --oneline ${base_branch}..HEAD` and `git log --oneline $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')..${base_branch}` to understand any upstream sibling commits.
 
 **Acceptance-criteria audit.** Extract the AC list from `subtask_file` (the `## Acceptance criteria` section, plus any "must" / "shall" / "MUST" elsewhere). Number them AC-1..AC-N. For each, decide and record:
 
@@ -33,7 +33,7 @@ Print the table to stdout before you start coding. This is the contract you are 
 **Plan reviewers from the diff.** Inspect `git diff ${base_branch}...HEAD`. Pick 4–8 expert reviewer angles that match what actually changed. Three angles are mandatory on every round:
 
 -   **AC-compliance** — given `subtask_file` and the diff, does each AC have a demonstrable, named artefact (test, code symbol, runtime check) that satisfies it? `ISSUES` for any AC still at `pending` or unconvincingly covered.
--   **Conventions-compliance** — does the diff respect `CLAUDE.md` and the relevant `conventions/*.md` files?
+-   **Conventions-compliance** — does the diff respect `AGENTS.md` and the relevant `conventions/*.md` files?
 -   **Tests** — are the new tests meaningful (not snapshot-only, not assertion-free), and do they exercise the failure modes the AC mentions?
 
 Then add domain-specific angles the diff warrants — correctness for the specific feature, security, PII, a11y, GraphQL, DB/migrations, CDK/IAM, event patterns, perf, i18n, error-handling — and invent angles not in that list if the diff calls for them. Print the chosen angles with one-line justifications.

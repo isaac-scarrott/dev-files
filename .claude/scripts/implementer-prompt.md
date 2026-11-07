@@ -13,7 +13,7 @@ Your user message contains JSON with:
 
 ## Workflow
 
-**Orient.** Re-fetch the subtask and parent via `mcp__linear-server__*` if the descriptions look truncated. Read `CLAUDE.md` and the `conventions/` files that relate to what you're about to change. Run `git log --oneline ${base_branch}..HEAD` and `git log --oneline $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')..${base_branch}` to understand any upstream sibling commits.
+**Orient.** Re-fetch the subtask and parent via `mcp__linear-server__*` if the descriptions look truncated. Read `AGENTS.md` and the `conventions/` files that relate to what you're about to change. Run `git log --oneline ${base_branch}..HEAD` and `git log --oneline $(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')..${base_branch}` to understand any upstream sibling commits.
 
 **Plan.** If the subtask is genuinely blocked on missing information, post a comment on the subtask via `mcp__linear-server__save_comment` explaining what's needed, and exit without a PR. Otherwise proceed.
 
