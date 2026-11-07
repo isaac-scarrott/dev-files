@@ -176,12 +176,15 @@ private struct WindowColumn: View {
     let projection: Projection?
     let now: Date
     var noLimit = false
+    /// Another window already stops you, so this one's forecast can't happen.
+    var blockedBy: String? = nil
     static let width: CGFloat = 106
 
     /// The line under the percentage says what happens next: when you'll run out, when you're back,
     /// or, when neither applies, simply when it resets.
     private var next: String {
         if noLimit { return "weekly only" }
+        if let blockedBy { return blockedBy }
         guard let p = projection, let resetsAt = p.resetsAt else { return "" }
         if p.isExhausted {
             return resetsAt.timeIntervalSince(now) < 60 ? "resetting" : "back in \(durationText(until: resetsAt, from: now))"
@@ -192,13 +195,13 @@ private struct WindowColumn: View {
 
     var body: some View {
         let pct = (projection?.utilization ?? 0).displayPercent
-        let warns = projection?.warns == true
+        let warns = projection?.warns == true && blockedBy == nil
         let next = next
         HStack(spacing: 9) {
             if noLimit {
                 NoLimitMark(size: 22, lineWidth: 2.5)
             } else {
-                Ring(projection: projection, size: 22, lineWidth: 2.5, dimmed: projection == nil)
+                Ring(projection: projection, size: 22, lineWidth: 2.5, dimmed: projection == nil || blockedBy != nil)
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%")
@@ -268,7 +271,8 @@ private struct AccountRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 16)
-            WindowColumn(projection: outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit)
+            WindowColumn(projection: outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit,
+                         blockedBy: account.noFiveHourLimit || outlook.week?.isExhausted != true ? nil : "weekly limit")
             WindowColumn(projection: outlook.week, now: now)
         }
     }

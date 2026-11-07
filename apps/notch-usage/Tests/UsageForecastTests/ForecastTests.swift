@@ -141,6 +141,18 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         #expect(abs(start.timeIntervalSince(now.addingTimeInterval(hours(1.25)))) <= 60)
     }
 
+    @Test func survivorsRateAlreadyHoldingAWeekExhaustedAccountsLoadIsNotCountedTwice() {
+        // A's week ran out two hours ago while its 5h window sits at 30%. B's measured 30%/h is already
+        // all of A's traffic, so from 50% it still burns 30%/h: out in 1h40m, not 1h.
+        let spentWeek = Projection(at: now, utilization: 100, resetsAt: now.addingTimeInterval(hours(48)),
+                                   rate: nil, projected: 100, exhaustsAt: now.addingTimeInterval(-hours(2)))
+        let a = PoolMember(fiveHour: member(30, ratePerHour: 20, resetIn: hours(3)).fiveHour,
+                           week: spentWeek, capacity: 5)
+        let start = try! #require(Forecast.blackout(.fiveHour, [a, member(50, ratePerHour: 30, resetIn: hours(4))],
+                                                   now: now)?.start)
+        #expect(abs(start.timeIntervalSince(now.addingTimeInterval(hours(1) + minutes(40)))) <= 120)
+    }
+
     @Test func fiveHourPoolTakesWeekOutagesFromTheSharedWeekForecast() {
         // On its own estimate B's week lasts 6h, past the 5h horizon. But A's week runs out first and its
         // load moves onto B's week, which then runs out inside the horizon.

@@ -227,7 +227,10 @@ extension Forecast {
         // their measured rates hold part of it. Take that part off, or redistributing it counts it twice.
         let openNow = states.indices.filter { available(states[$0], at: now) }
         for j in states.indices where !openNow.contains(j) {
-            guard let since = states[j].outSince else { continue }
+            // Out for the week without its 5h window being exhausted: it has been absorbed since the week
+            // gave out, not since a 5h exhaustion that never happened.
+            let since = states[j].outSince ?? states[j].blocked.flatMap { $0.start <= now ? $0.start : nil }
+            guard let since else { continue }
             let share = states[j].load / Double(max(openNow.count, 1))
             for i in openNow where states[i].lookback > 0 {
                 let absorbed = min(max(now.timeIntervalSince(since) / states[i].lookback, 0), 1)
