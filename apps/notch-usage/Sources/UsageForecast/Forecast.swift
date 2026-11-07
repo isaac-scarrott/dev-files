@@ -158,8 +158,20 @@ extension Forecast {
     /// For the 5h window an account that runs out of its week is out too, at the time the week simulation
     /// gives. The week ignores 5h limits: they pause an account for hours, which barely moves a weekly total.
     public static func blackout(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> Blackout? {
+        poolSimulation(kind, members, now: now).blackout
+    }
+
+    /// When each account is out of this window, keyed by index into `members`. The same simulation the
+    /// blackout comes from, so an account's own row agrees with the pool's headline.
+    public static func outageStarts(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> [Int: Date] {
+        poolSimulation(kind, members, now: now).outages.mapValues { $0.start }
+    }
+
+    /// The 5h simulation runs the week first, because an account out of its week is out of the pool.
+    static func poolSimulation(_ kind: WindowKind, _ members: [PoolMember], now: Date)
+        -> (blackout: Blackout?, outages: [Int: Outage]) {
         let weekOutages = kind == .fiveHour ? simulate(.week, members, now: now, blocks: [:]).outages : [:]
-        return simulate(kind, members, now: now, blocks: weekOutages).blackout
+        return simulate(kind, members, now: now, blocks: weekOutages)
     }
 
     /// `blocks` and the returned `outages` are keyed by index into `members`.

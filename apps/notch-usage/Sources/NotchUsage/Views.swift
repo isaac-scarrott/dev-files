@@ -189,7 +189,7 @@ private struct WindowColumn: View {
         if p.isExhausted {
             return resetsAt.timeIntervalSince(now) < 60 ? "resetting" : "back in \(durationText(until: resetsAt, from: now))"
         }
-        if let out = p.exhaustsAt { return "out in \(durationText(until: out, from: now))" }
+        if let out = p.exhaustsAt { return "out \(whenText(out, now: now))" }
         return "resets \(durationText(until: resetsAt, from: now))"
     }
 
@@ -240,6 +240,8 @@ private func agoText(_ date: Date, now: Date) -> String {
 
 private struct AccountRow: View {
     let account: AccountUsage
+    /// The pool's schedule for this account, not its own pace: see `pooledOutlooks`.
+    let outlook: Outlook
     let now: Date
 
     /// "Max 20x", "Team · Holibob": the plan leads; the org is only named when it isn't a personal one.
@@ -255,7 +257,6 @@ private struct AccountRow: View {
     }
 
     var body: some View {
-        let outlook = account.outlook
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.label)
@@ -476,10 +477,13 @@ private struct ClaudeSection: View {
     let now: Date
 
     var body: some View {
+        let outlooks = accounts.pooledOutlooks(now: now)
         ProviderSection(titles: ["5 HOURS", "WEEK"]) {
             SectionTitle(mark: "claude", title: "Claude", status: claudeStatus(accounts, now: now))
         } rows: {
-            ForEach(accounts) { AccountRow(account: $0, now: now) }
+            ForEach(accounts.indices, id: \.self) { i in
+                AccountRow(account: accounts[i], outlook: outlooks[i], now: now)
+            }
         }
     }
 }

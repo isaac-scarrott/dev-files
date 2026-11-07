@@ -98,6 +98,15 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         #expect(b?.end == now.addingTimeInterval(hours(3)))
     }
 
+    @Test func outageStartsAgreesWithTheBlackoutForTheLastOpenAccount() {
+        // Same pool as above: A is out for 3h and B at 70% carrying everything runs out at 1h, which is
+        // where the blackout begins. So B's own row must read that time, not its own-pace estimate.
+        let pool = [member(100, ratePerHour: 0, resetIn: hours(3)),
+                    member(70, ratePerHour: 30, resetIn: hours(4))]
+        let start = try! #require(Forecast.blackout(.fiveHour, pool, now: now)?.start)
+        #expect(Forecast.outageStarts(.fiveHour, pool, now: now)[1] == start)
+    }
+
     @Test func loadMovesInAbsoluteTermsBetweenDifferentSizedAccounts() {
         // Both burn 20%/h. When the small (5x) one runs out, its absolute load lands on the big (20x)
         // one as only a quarter as many percentage points: 20 + 5 = 25%/h.

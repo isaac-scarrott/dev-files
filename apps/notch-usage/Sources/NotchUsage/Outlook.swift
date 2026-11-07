@@ -39,6 +39,13 @@ struct PoolOutlook {
     var nextOut: Blackout? { fiveHour ?? week }
 }
 
+/// One pool member per account, built from that account's own outlook.
+private func poolMembers(_ accounts: [AccountUsage], _ outlooks: [Outlook]) -> [PoolMember] {
+    zip(accounts, outlooks).map { account, outlook in
+        PoolMember(fiveHour: outlook.fiveHour, week: outlook.week, capacity: account.capacity ?? assumedCapacity)
+    }
+}
+
 extension [AccountUsage] {
     /// The compact's one pair for the whole pool: capacity-weighted usage, so a 20x account's points
     /// count four times a 5x account's. The pool's own forecast decides the amber, so a moderate
@@ -73,15 +80,33 @@ extension [AccountUsage] {
 
     func poolOutlook(now: Date) -> PoolOutlook {
         let outlooks = map(\.outlook)
-        let members = zip(self, outlooks).map { account, outlook in
-            PoolMember(fiveHour: outlook.fiveHour, week: outlook.week, capacity: account.capacity ?? assumedCapacity)
-        }
+        let members = poolMembers(self, outlooks)
         return PoolOutlook(
             fiveHour: Forecast.blackout(.fiveHour, members, now: now),
             week: Forecast.blackout(.week, members, now: now),
             limitedNow: outlooks.filter { $0.fiveHour?.isExhausted == true || $0.week?.isExhausted == true }.count,
             canProject: outlooks.contains { $0.fiveHour?.rate != nil || $0.week?.rate != nil }
         )
+    }
+
+    /// Each account's outlook with the shared pool's outage start standing in for its own: load moves to
+    /// whoever is still open, so an open account runs out when the pool says, not at its own pace. A
+    /// window already at its limit keeps the time it actually ran out.
+    func pooledOutlooks(now: Date) -> [Outlook] {
+        let outlooks = map(\.outlook)
+        let members = poolMembers(self, outlooks)
+        let fiveHour = Forecast.outageStarts(.fiveHour, members, now: now)
+        let week = Forecast.outageStarts(.week, members, now: now)
+        func pooled(_ p: Projection?, outage: Date?) -> Projection? {
+            guard let p, !p.isExhausted else { return p }
+            let out = outage.flatMap { out in p.resetsAt.map { out < $0 } == true ? out : nil }
+            return Projection(at: p.at, utilization: p.utilization, resetsAt: p.resetsAt, rate: p.rate,
+                              projected: p.projected, exhaustsAt: out)
+        }
+        return outlooks.enumerated().map { i, outlook in
+            Outlook(fiveHour: pooled(outlook.fiveHour, outage: fiveHour[i]),
+                    week: pooled(outlook.week, outage: week[i]))
+        }
     }
 }
 
