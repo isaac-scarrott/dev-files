@@ -11,6 +11,7 @@ The Search models dialog lists providers A to Z and, inside each, models by outp
 ## What it does
 - Providers run A to Z by name. Favorites stays above them.
 - Models inside a provider run by output price per million tokens, highest first, ties by name. A model with no price counts as 0.
+- A favorite is listed twice: in Favorites, and under its provider with the rest of them. Losing the star leaves just the provider copy.
 - No Recent section. A model you used recently stays under its provider instead of moving out.
 - Works from every entry point (composer pill, `Cmd+'`, "Choose model", `/model`). Search, Enter, the variants flyout and favoriting behave as in the host.
 

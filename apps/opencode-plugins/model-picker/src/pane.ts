@@ -1,8 +1,9 @@
 // The model picker's results pane. The host's dialog stays alive: its shell, search field, buttons, flyout, footer,
 // selection and favorites all keep running on the host's own state. Only its results list is hidden, and this pane
 // shows the same rows in a different order: provider sections only (Favorites above them), with the models the host
-// moved into Recent back under their provider. Rows are clones of the host's rows (re-cloned when a host row changes);
-// the pointer and the arrow keys drive the host's real rows, so highlight, flyout and selection stay the host's.
+// moved into Recent or Favorites listed under their provider as well. Rows are clones of the host's rows (re-cloned
+// when a host row changes, one clone per place it appears); the pointer and the arrow keys drive the host's real rows,
+// so highlight, flyout and selection stay the host's.
 import { layout, presses, providerOf, step, type HostModel, type Rank } from "./layout"
 
 const RESULTS = '[data-slot="search-list-results"]'
@@ -72,12 +73,13 @@ const strip = (el: HTMLElement) => {
   for (const node of el.querySelectorAll("[id]")) node.removeAttribute("id")
 }
 
-function cloneRow(host: HTMLElement, fromRecent: boolean) {
+function cloneRow(host: HTMLElement, plain: boolean) {
   const row = host.cloneNode(true) as HTMLElement
   strip(row)
   row.setAttribute("data-mp-row", "")
-  // Recent and Favorites rows name their provider; under their own provider's header that is repeated.
-  if (fromRecent) row.querySelector(`${NAME} > ${FAINT}`)?.remove()
+  // Under its own provider's header the provider name is repeated, so it goes: true for a Recent row, and for a
+  // favorite listed in its provider section (its copy in Favorites keeps the label, as the host shows it).
+  if (plain) row.querySelector(`${NAME} > ${FAINT}`)?.remove()
   return row
 }
 
@@ -141,12 +143,26 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
   let snap: Snapshot | undefined
   const sections = new Map<string, HTMLElement>()
   const headers = new Map<string, { el: HTMLElement; sig: string }>()
-  const rows = new Map<string, { el: HTMLElement; sig: string; host: HTMLElement }>()
+  /** One clone per place a model is shown: Favorites and its provider section both hold one for a favorite. */
+  interface Clone {
+    el: HTMLElement
+    sig: string
+    host: HTMLElement
+    key: string
+  }
+  const rows = new Map<string, Clone>()
+  const cloned = new WeakMap<HTMLElement, Clone>()
+  const placement = (section: string, key: string) => `${section}\u0000${key}`
+  const clonesOf = (key: string) => [...rows.values()].filter((row) => row.key === key)
+  /** The pane row the highlight last settled on: which copy of a model listed twice to move away from, and which one the
+   *  host's flyout should sit beside. */
+  let anchor: HTMLElement | undefined
   const patched = new Set<HTMLElement>()
   let queued = false
   let disposed = false
   let pendingFirst = true
-  let pendingScroll: string | undefined
+  /** The row to bring into view after the next render: the first clone of `key` past `after`, the way `direction` moves. */
+  let pendingScroll: { key: string; after: number; direction: 1 | -1 } | undefined
   let syncing = false
   let frame: number | undefined
 
@@ -236,18 +252,28 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
       const rowNodes: Node[] = []
       for (const key of section.keys) {
         const host = model.rows.get(key)!
-        const raw = host.el.outerHTML + (host.section === "recent" ? "|recent" : "")
-        let row = rows.get(key)
+        // The copy under its own provider header loses the provider label; the Favorites copy keeps it.
+        const plain = host.section === "recent" || section.id === providerOf(key)
+        const raw = host.el.outerHTML + (plain ? "|plain" : "")
+        const id = placement(section.id, key)
+        let row = rows.get(id)
         if (!row || row.sig !== raw) {
-          row = { el: cloneRow(host.el, host.section === "recent"), sig: raw, host: host.el }
-          rows.set(key, row)
+          row = { el: cloneRow(host.el, plain), sig: raw, host: host.el, key }
+          rows.set(id, row)
+          cloned.set(row.el, row)
         }
         row.host = host.el
-        seenRows.add(key)
+        seenRows.add(id)
         rowNodes.push(row.el)
         if (!patched.has(host.el)) {
-          // The host places its flyout beside the row it is given: give it this pane's row's box.
-          host.el.getBoundingClientRect = () => rows.get(key)?.el.getBoundingClientRect() ?? Element.prototype.getBoundingClientRect.call(host.el)
+          // The host places its flyout beside the row it is given: give it this pane's row's box, and the copy that is
+          // lit when the model is listed twice.
+          host.el.getBoundingClientRect = () => {
+            const copies = clonesOf(key).map((copy) => copy.el)
+            const shown =
+              anchor && copies.includes(anchor) ? anchor : (copies.find((copy) => copy.hasAttribute("data-active")) ?? copies[0])
+            return shown ? shown.getBoundingClientRect() : Element.prototype.getBoundingClientRect.call(host.el)
+          }
           patched.add(host.el)
         }
       }
@@ -267,7 +293,8 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     place(results, sectionNodes)
 
     const ours = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")].map((row) => row.dataset.optionKey!)
-    if (ours.length < model.rows.size) return disengage()
+    // Every model the host lists is shown; a favorite is simply shown twice.
+    if (new Set(ours).size < model.rows.size) return disengage()
     engage()
     if (pendingFirst && ours.length > 0) {
       pendingFirst = false
@@ -276,11 +303,21 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
       if (ours[0] !== hostActive()) moveHostTo(ours[0]!)
     }
     if (pendingScroll) {
-      const wanted = pendingScroll
-      const target = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")].find((row) => row.dataset.optionKey === wanted)
+      const { key, after, direction } = pendingScroll
       pendingScroll = undefined
-      if (target && wanted === ours[0]) scroll.scrollTo?.({ top: 0 })
-      else target?.scrollIntoView?.({ block: "nearest" })
+      const list = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")]
+      const copies = list.map((row, index) => ({ row, index })).filter((entry) => entry.row.dataset.optionKey === key)
+      // Moving down takes the first copy past the row we came from, up takes the last copy before it: a favorite listed
+      // under its provider too is walked where the arrow is going, not back up to the top.
+      const target =
+        direction === 1
+          ? (copies.find((entry) => entry.index > after) ?? copies[0])
+          : ([...copies].reverse().find((entry) => entry.index < after) ?? copies[copies.length - 1])
+      if (target !== undefined) {
+        anchor = target.row
+        if (target.index === 0) scroll.scrollTo?.({ top: 0 })
+        else target.row.scrollIntoView?.({ block: "nearest" })
+      }
     }
     if (frame === undefined) frame = requestAnimationFrame(() => ((frame = undefined), !disposed && fadeHeaders(scroll)))
   }
@@ -293,19 +330,27 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
 
   const hostRow = (event: Event) => {
     const row = (event.target as Element | null)?.closest<HTMLElement>("[data-mp-row]")
-    return row ? { ours: row, host: rows.get(row.dataset.optionKey!)?.host } : undefined
+    const clone = row ? cloned.get(row) : undefined
+    return clone ? { ours: row!, host: clone.host } : undefined
   }
-  const onClick = (event: MouseEvent) => hostRow(event)?.host?.click()
+  const onClick = (event: MouseEvent) => {
+    const hit = hostRow(event)
+    if (!hit) return
+    anchor = hit.ours
+    hit.host.click()
+  }
   const onMove = (event: MouseEvent) => {
-    const target = hostRow(event)?.host
-    if (!target) return
+    const hit = hostRow(event)
+    const target = hit?.host
+    if (!hit || !target) return
+    anchor = hit.ours
     const { clientX, clientY, screenX, screenY, movementX, movementY, buttons, shiftKey, ctrlKey, altKey, metaKey } = event
     target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, composed: true, view: window, clientX, clientY, screenX, screenY, movementX, movementY, buttons, shiftKey, ctrlKey, altKey, metaKey }))
   }
   const onLeave = (event: MouseEvent) => {
     const target = event.target as HTMLElement
     if (!target.matches?.("[data-mp-row]")) return
-    const host = rows.get(target.dataset.optionKey!)?.host
+    const host = cloned.get(target)?.host
     host?.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false, view: window, clientX: event.clientX, clientY: event.clientY, relatedTarget: event.relatedTarget as EventTarget | null }))
   }
   body.addEventListener("click", onClick)
@@ -317,14 +362,21 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     if (syncing || event.target !== host.input || event.isComposing) return
     if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
-    const order = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")].map((row) => row.dataset.optionKey!)
-    if (order.length === 0) return
+    const list = [...results.querySelectorAll<HTMLElement>("[data-mp-row]")]
+    if (list.length === 0) return
     event.preventDefault()
     event.stopPropagation()
-    const active = results.querySelector<HTMLElement>("[data-mp-row][data-active]")?.dataset.optionKey
-    const next = step(order, active, event.key === "ArrowDown" ? 1 : -1)
+    const active = list.find((row) => row.hasAttribute("data-active"))?.dataset.optionKey
+    // A favorite is listed in Favorites and under its provider: the arrow walks each model once.
+    const keys = [...new Set(list.map((row) => row.dataset.optionKey!))]
+    const direction = event.key === "ArrowDown" ? 1 : -1
+    const next = step(keys, active, direction)
     if (!next) return
-    pendingScroll = next
+    // Where the highlight really is: a model shown twice is lit in both places, and the copy we last landed on is the one
+    // the next press should move away from.
+    const lit = list.findIndex((row) => row.hasAttribute("data-active"))
+    const from = anchor && list.includes(anchor) && anchor.dataset.optionKey === active ? list.indexOf(anchor) : lit
+    pendingScroll = { key: next, after: from, direction }
     moveHostTo(next)
     schedule()
   }

@@ -30,15 +30,18 @@ test("a recent model sits under its own provider; nothing is lost", () => {
   assert.deepEqual(out.map((section) => [section.id, [...section.keys].sort()]), [["alpha", ["alpha:p", "alpha:r"]], ["mid", ["mid:r"]]])
 })
 
-test("Favorites lead as the host lists them and their models stay out of the provider group", () => {
+test("a favorite leads in Favorites and stays under its provider, in price order there", () => {
   const models = [m("zeta:f2", "Two", "favorite"), m("zeta:f1", "One", "favorite"), m("zeta:p", "Plain", "zeta")]
-  const out = layout({ models, price: price({ "zeta:p": 1 }), providerName })
-  assert.deepEqual(out, [{ id: "favorite", keys: ["zeta:f2", "zeta:f1"] }, { id: "zeta", keys: ["zeta:p"] }])
+  const out = layout({ models, price: price({}), providerName })
+  assert.deepEqual(out, [
+    { id: "favorite", keys: ["zeta:f2", "zeta:f1"] },
+    { id: "zeta", keys: ["zeta:f1", "zeta:p", "zeta:f2"] },
+  ])
 })
 
-test("a provider with only favorites has no section of its own", () => {
+test("a provider with only favorites still gets a section of its own", () => {
   const out = layout({ models: [m("zeta:f", "F", "favorite")], price: price({}), providerName })
-  assert.deepEqual(out.map((section) => section.id), ["favorite"])
+  assert.deepEqual(out.map((section) => [section.id, section.keys]), [["favorite", ["zeta:f"]], ["zeta", ["zeta:f"]]])
 })
 
 test("price ties are decided by name, case-insensitively", () => {

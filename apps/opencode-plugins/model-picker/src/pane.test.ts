@@ -68,20 +68,24 @@ test("shows Favorites, then providers A to Z with recent models back under their
   assert.deepEqual(keys(dialog), [
     ["Favorites", ["zeta:fav"]],
     ["alpha labs", ["alpha:big", "alpha:recent", "alpha:mid", "alpha:low"]],
-    ["Zeta AI", ["zeta:z"]],
+    ["Zeta AI", ["zeta:fav", "zeta:z"]],
   ])
   assert.equal(dialog.querySelector('[data-slot="search-list-body"]:not([data-mp-pane])')!.hasAttribute("data-mp-hidden"), true)
   pane.dispose()
 })
 
-test("a recent row loses its provider label under its own provider; a favorite row keeps it", () => {
+test("a recent row loses its provider label under its own provider; a favorite keeps it in Favorites only", () => {
   const { dialog } = host(specs)
   const pane = attach(dialog, { price: () => prices })!
   const recent = dialog.querySelector('[data-mp-pane] [data-option-key="alpha:recent"]')!
-  const favorite = dialog.querySelector('[data-mp-pane] [data-option-key="zeta:fav"]')!
+  const copies = [...dialog.querySelectorAll<HTMLElement>('[data-mp-pane] [data-option-key="zeta:fav"]')]
   assert.equal(recent.querySelector(".text-v2-text-text-faint"), null)
   assert.equal(recent.querySelector('[data-component="tag"]')?.textContent, "Free")
-  assert.equal(favorite.querySelector(".text-v2-text-text-faint")?.textContent, "Zeta AI")
+  assert.equal(copies.length, 2, "a favorite is listed in Favorites and under its provider")
+  assert.equal(copies[0]!.closest('[data-slot="search-list-section"]')!.querySelector('[data-slot="search-list-header"]')!.textContent, "Favorites")
+  assert.equal(copies[0]!.querySelector(".text-v2-text-text-faint")?.textContent, "Zeta AI")
+  assert.equal(copies[1]!.closest('[data-slot="search-list-section"]')!.querySelector('[data-slot="search-list-header"]')!.textContent, "Zeta AI")
+  assert.equal(copies[1]!.querySelector(".text-v2-text-text-faint"), null, "the provider name is not repeated under its header")
   assert.equal(dialog.querySelectorAll('[data-mp-pane] [id]').length, dialog.querySelectorAll('[data-mp-pane] [data-slot="search-list-header"]').length)
   pane.dispose()
 })
@@ -109,6 +113,33 @@ test("arrow keys walk the pane's order and drive the host's own handler to the s
   await settle()
   assert.equal(active(), "alpha:recent")
   assert.ok(moves() > 0)
+  pane.dispose()
+})
+
+test("a favorite listed under its provider is one stop for the arrow keys, not two", async () => {
+  const { dialog, input, hostRows } = host(specs)
+  const pane = attach(dialog, { price: () => prices })!
+  await settle()
+  const press = (key: string) => input.dispatchEvent(new win.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }) as unknown as Event)
+  const active = () => hostRows().find((row) => row.hasAttribute("data-active"))!.dataset.optionKey
+  const walked = [active()]
+  for (let i = 0; i < 6; i++) (press("ArrowDown"), await settle(), walked.push(active()))
+  assert.deepEqual(walked, ["zeta:fav", "alpha:big", "alpha:recent", "alpha:mid", "alpha:low", "zeta:z", "zeta:fav"])
+  pane.dispose()
+})
+
+test("the host's flyout follows the copy of a favorite the pointer or the arrow last took", async () => {
+  const { dialog, hostRows } = host(specs)
+  const pane = attach(dialog, { price: () => prices })!
+  await settle()
+  const copies = [...dialog.querySelectorAll<HTMLElement>('[data-mp-pane] [data-option-key="zeta:fav"]')]
+  const box = (left: number) => ({ left, top: 1, right: left + 2, bottom: 3, width: 2, height: 2, x: left, y: 1, toJSON() {} }) as DOMRect
+  copies[0]!.getBoundingClientRect = () => box(10)
+  copies[1]!.getBoundingClientRect = () => box(20)
+  copies[1]!.dispatchEvent(new win.MouseEvent("mousemove", { bubbles: true, clientX: 5, clientY: 6 }) as unknown as Event)
+  await settle()
+  const real = hostRows().find((row) => row.dataset.optionKey === "zeta:fav")!
+  assert.equal(real.getBoundingClientRect().left, 20, "the copy under its provider, where the pointer is")
   pane.dispose()
 })
 

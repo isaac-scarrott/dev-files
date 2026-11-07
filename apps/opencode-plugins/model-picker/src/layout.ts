@@ -1,6 +1,7 @@
 // Pure ordering of the model picker. The host builds Favorites, Recent and one section per provider, and moves every
 // favorite and recent model out of its provider. This module takes the models the host lists, in the host's own
-// sections, and returns the sections the picker shows: Favorites as the host lists them, then one section per provider.
+// sections, and returns the sections the picker shows: Favorites as the host lists them, then one section per provider
+// holding every model of that provider. A favorite is a shortcut, not a move, so it is listed in both places.
 
 export interface HostModel {
   /** `providerID:modelID`, the host row's `data-option-key`. */
@@ -52,7 +53,6 @@ export function layout(input: LayoutInput): Section[] {
   const favorite = input.models.filter((model) => model.section === "favorite")
   const byProvider = new Map<string, HostModel[]>()
   for (const model of input.models) {
-    if (model.section === "favorite") continue
     const id = providerOf(model.key)
     byProvider.set(id, [...(byProvider.get(id) ?? []), model])
   }
