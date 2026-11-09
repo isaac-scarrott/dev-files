@@ -8,12 +8,19 @@ struct UsageWindow: Equatable, Codable {
     /// When a poll first found this window at its limit.
     var exhaustedSince: Date? = nil
 
-    /// Keeps the first sighting at the limit across polls of the same window.
+    /// Keeps the first sighting at the limit across polls of the same window. 99.6% reads as 100,
+    /// so it counts as out. A window that has reset, or dropped below the limit, carries nothing.
     func carryingExhaustion(from old: UsageWindow?, at now: Date) -> UsageWindow {
-        guard utilization >= 100 else { return self }
         var next = self
-        let sameWindow = old.flatMap { o in
-            o.resetsAt.flatMap { a in resetsAt.map { abs(a.timeIntervalSince($0)) < 120 } }
+        next.exhaustedSince = nil
+        guard utilization.rounded() >= 100 else { return next }
+        let sameWindow = old.map { o in
+            switch (o.resetsAt, resetsAt) {
+            case let (a?, b?): return abs(a.timeIntervalSince(b)) < 120
+            // No reset time either side: nothing says the window changed, so keep the sighting.
+            case (nil, nil): return true
+            default: return false
+            }
         } ?? false
         next.exhaustedSince = sameWindow ? old?.exhaustedSince ?? now : now
         return next

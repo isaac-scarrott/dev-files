@@ -171,6 +171,16 @@ extension GoAccount {
     }
 }
 
+/// A window that is out now, or will be before it resets. An exhausted window is a wall even with no
+/// reset time: nothing refills it until one appears. A reset time already past means it has refilled,
+/// so it is no wall at all. 99.6% reads as 100, so rounding decides what counts as out.
+private func wall(_ p: Projection) -> Blackout? {
+    if let resetsAt = p.resetsAt, resetsAt <= p.at { return nil }
+    if p.utilization.rounded() >= 100 { return Blackout(start: p.exhaustsAt ?? p.at, end: p.resetsAt) }
+    guard let resetsAt = p.resetsAt, let out = p.exhaustsAt, out < resetsAt else { return nil }
+    return Blackout(start: out, end: resetsAt)
+}
+
 struct GoOutlook {
     let rolling: Projection?
     let weekly: Projection?
@@ -182,13 +192,7 @@ struct GoOutlook {
     /// spending the week does not refill the month, and the 5h wall is the one you hit first.
     var nextOut: Blackout? {
         let windows = [rolling, weekly, monthly].compactMap { $0 }
-        let walls = windows.compactMap { p -> Blackout? in
-            guard let resetsAt = p.resetsAt else { return nil }
-            if p.isExhausted { return Blackout(start: p.exhaustsAt ?? p.at, end: resetsAt) }
-            guard let out = p.exhaustsAt, out < resetsAt else { return nil }
-            return Blackout(start: out, end: resetsAt)
-        }
-        return walls.min { $0.start < $1.start }
+        return windows.compactMap(wall).min { $0.start < $1.start }
     }
 }
 
@@ -226,15 +230,9 @@ extension [GoAccount] {
             let projections = outlooks.compactMap { $0[keyPath: window] }
             guard !projections.isEmpty else { return nil }
             let utilization = projections.reduce(0) { $0 + $1.utilization } / Double(projections.count)
-            let walls = projections.compactMap { p -> Blackout? in
-                guard let resetsAt = p.resetsAt else { return nil }
-                if p.isExhausted { return Blackout(start: p.exhaustsAt ?? p.at, end: resetsAt) }
-                guard let out = p.exhaustsAt, out < resetsAt else { return nil }
-                return Blackout(start: out, end: resetsAt)
-            }
-            let wall = walls.min { $0.start < $1.start }
-            return Projection(at: now, utilization: utilization, resetsAt: wall?.end, rate: nil,
-                              projected: nil, exhaustsAt: wall?.start)
+            let nearest = projections.compactMap(wall).min { $0.start < $1.start }
+            return Projection(at: now, utilization: utilization, resetsAt: nearest?.end, rate: nil,
+                              projected: nil, exhaustsAt: nearest?.start)
         }
         return GoOutlook(rolling: pooled(\.rolling), weekly: pooled(\.weekly), monthly: pooled(\.monthly))
     }

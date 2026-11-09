@@ -95,8 +95,8 @@ extension [AccountUsage] {
     func pooledOutlooks(now: Date) -> [Outlook] {
         let outlooks = map(\.outlook)
         let members = poolMembers(self, outlooks)
-        let fiveHour = Forecast.outageStarts(.fiveHour, members, now: now)
-        let week = Forecast.outageStarts(.week, members, now: now)
+        let fiveHour = Forecast.poolForecast(.fiveHour, members, now: now).outageStart
+        let week = Forecast.poolForecast(.week, members, now: now).outageStart
         func pooled(_ p: Projection?, outage: Date?) -> Projection? {
             guard let p, !p.isExhausted else { return p }
             let out = outage.flatMap { out in p.resetsAt.map { out < $0 } == true ? out : nil }

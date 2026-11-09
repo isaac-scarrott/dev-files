@@ -60,7 +60,9 @@ public struct Projection: Equatable, Sendable {
         self.exhaustsAt = exhaustsAt
     }
 
-    public var isExhausted: Bool { utilization >= 100 }
+    /// 99.6 shows as "100%" and Anthropic rounds the same way, so a reading that rounds to 100 has no
+    /// room left in it.
+    public var isExhausted: Bool { utilization.rounded() >= 100 }
     public var runsOutBeforeReset: Bool { exhaustsAt != nil }
 }
 
@@ -72,7 +74,7 @@ public enum Forecast {
         guard let resetsAt = current.resetsAt else {
             return Projection(at: current.at, utilization: u, resetsAt: nil, rate: nil, projected: nil, exhaustsAt: nil)
         }
-        if u >= 100 {
+        if u.rounded() >= 100 {
             let since = current.exhaustedSince ?? current.at
             let peak = Sample(at: since, utilization: u, resetsAt: resetsAt)
             let rate = (kind == .fiveHour ? recentRate(current: peak, history: history, kind: kind) : nil)
@@ -150,33 +152,54 @@ public struct Blackout: Equatable, Sendable {
 /// When an account is out of one window: from `start` until `end`, or for good if `end` is nil.
 typealias Outage = (start: Date, end: Date?)
 
+/// The pool's own forecast for one window: the next blackout, when each account drops out, and where
+/// each account's window lands. Display reads one of these per window so the ring arcs and the text
+/// above them come from the same simulation.
+public struct PoolForecast: Sendable {
+    public let blackout: Blackout?
+    /// Keyed by index into the `members` the forecast was made for.
+    public let outageStart: [Int: Date]
+    /// Where each member's window lands: its utilization at its own reset, or at the horizon end if it
+    /// doesn't reset within it. Uncapped below 100, exactly 100 when it ran out first.
+    public let landing: [Int: Double]
+
+    public init(blackout: Blackout?, outageStart: [Int: Date], landing: [Int: Double]) {
+        self.blackout = blackout
+        self.outageStart = outageStart
+        self.landing = landing
+    }
+}
+
 extension Forecast {
     /// Steps the pool forward through one window's length. Each available account keeps its own measured
     /// pace; when one hits its limit, its load is split evenly across the accounts still available, which
-    /// burn faster. Returns the first moment none are left.
+    /// burn faster. Returns the next stretch when none are left.
     ///
     /// For the 5h window an account that runs out of its week is out too, at the time the week simulation
     /// gives. The week ignores 5h limits: they pause an account for hours, which barely moves a weekly total.
     public static func blackout(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> Blackout? {
-        poolSimulation(kind, members, now: now).blackout
+        poolForecast(kind, members, now: now).blackout
     }
 
-    /// When each account is out of this window, keyed by index into `members`. The same simulation the
-    /// blackout comes from, so an account's own row agrees with the pool's headline.
-    public static func outageStarts(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> [Int: Date] {
-        poolSimulation(kind, members, now: now).outages.mapValues { $0.start }
+    /// One simulation, three answers: the pool's next blackout, when each account drops out, and where
+    /// each account's window lands. An account's own row therefore agrees with the pool's headline.
+    public static func poolForecast(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> PoolForecast {
+        let result = poolSimulation(kind, members, now: now)
+        return PoolForecast(blackout: result.blackout,
+                            outageStart: result.outages.mapValues { $0.start },
+                            landing: result.landing)
     }
 
     /// The 5h simulation runs the week first, because an account out of its week is out of the pool.
     static func poolSimulation(_ kind: WindowKind, _ members: [PoolMember], now: Date)
-        -> (blackout: Blackout?, outages: [Int: Outage]) {
+        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double]) {
         let weekOutages = kind == .fiveHour ? simulate(.week, members, now: now, blocks: [:]).outages : [:]
         return simulate(kind, members, now: now, blocks: weekOutages)
     }
 
-    /// `blocks` and the returned `outages` are keyed by index into `members`.
-    static func simulate(_ kind: WindowKind, _ members: [PoolMember], now: Date,
-                         blocks: [Int: Outage]) -> (blackout: Blackout?, outages: [Int: Outage]) {
+    /// `blocks`, the returned `outages` and `landing` are keyed by index into `members`.
+    static func simulate(_ kind: WindowKind, _ members: [PoolMember], now: Date, blocks: [Int: Outage])
+        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double]) {
         let step: TimeInterval = 60
 
         struct State {
@@ -206,24 +229,35 @@ extension Forecast {
             }
             // The last reading may be minutes old; carry it forward at its own pace to now.
             let sinceReading = max(now.timeIntervalSince(p.at), 0)
-            let current = p.isExhausted ? p.utilization : min(p.utilization + (p.rate ?? 0) * sinceReading, 100)
+            var current = p.utilization
+            var outSince = p.isExhausted ? p.exhaustsAt : nil
+            if !p.isExhausted {
+                let carried = p.utilization + (p.rate ?? 0) * sinceReading
+                if let rate = p.rate, rate > 0, carried.rounded() >= 100 {
+                    // The reading itself was below the limit, but the pace since took it over: it went
+                    // out at the crossing, and that is when its traffic started landing elsewhere.
+                    outSince = p.at.addingTimeInterval((100 - p.utilization) / rate)
+                    current = 100
+                } else {
+                    current = carried
+                }
+            }
             let windowAge = p.resetsAt.map { now.timeIntervalSince($0.addingTimeInterval(-kind.length)) } ?? 0
             return State(member: i, utilization: current, resetsAt: p.resetsAt, load: (p.rate ?? 0) * capacity,
-                         capacity: capacity, blocked: blocks[i],
-                         outSince: p.isExhausted ? p.exhaustsAt : nil,
+                         capacity: capacity, blocked: blocks[i], outSince: outSince,
                          lookback: kind == .fiveHour ? min(45 * 60, windowAge) : windowAge)
         }
-        guard !states.isEmpty else { return (nil, [:]) }
+        guard !states.isEmpty else { return (nil, [:], [:]) }
 
         func available(_ s: State, at t: Date) -> Bool {
-            if s.utilization >= 100 { return false }
+            if s.utilization.rounded() >= 100 { return false }
             if let b = s.blocked, t >= b.start, b.end.map({ t < $0 }) ?? true { return false }
             return true
         }
 
         func freeAgain(_ s: State, after t: Date) -> Date? {
             var free = t
-            if s.utilization >= 100 {
+            if s.utilization.rounded() >= 100 {
                 guard let r = s.resetsAt else { return nil }
                 free = max(free, r)
             }
@@ -235,47 +269,93 @@ extension Forecast {
             return free
         }
 
+        /// The earliest reason an account is out at `t`: its 5h window running out, or a week block that
+        /// has begun. An account can be out for both, and the load landed elsewhere from the first.
+        func outStart(_ s: State, at t: Date) -> Date? {
+            [s.outSince, s.blocked.flatMap { $0.start <= t ? $0.start : nil }].compactMap { $0 }.min()
+        }
+
         // Accounts still open have been absorbing the load of those already out since they ran out, so
         // their measured rates hold part of it. Take that part off, or redistributing it counts it twice.
         let openNow = states.indices.filter { available(states[$0], at: now) }
-        for j in states.indices where !openNow.contains(j) {
-            // Out for the week without its 5h window being exhausted: it has been absorbed since the week
-            // gave out, not since a 5h exhaustion that never happened.
-            let since = states[j].outSince ?? states[j].blocked.flatMap { $0.start <= now ? $0.start : nil }
-            guard let since else { continue }
+        // Oldest out first, so a later one is corrected against every account that went before it.
+        let outNow = states.indices.filter { !openNow.contains($0) }
+            .sorted { (outStart(states[$0], at: now) ?? now) < (outStart(states[$1], at: now) ?? now) }
+        for j in outNow {
+            guard let since = outStart(states[j], at: now) else { continue }
             let share = states[j].load / Double(max(openNow.count, 1))
             for i in openNow where states[i].lookback > 0 {
                 let absorbed = min(max(now.timeIntervalSince(since) / states[i].lookback, 0), 1)
                 states[i].load = max(states[i].load - share * absorbed, 0)
             }
+            // An account that went out later was open while this one's traffic was moving, so its
+            // measured rate holds part of that share: those points were carried, not stranded.
+            for i in outNow where i != j && states[i].lookback > 0 {
+                guard let ownStart = outStart(states[i], at: now), ownStart > since else { continue }
+                let absorbed = min(max(ownStart.timeIntervalSince(since) / states[i].lookback, 0), 1)
+                states[i].load = max(states[i].load - share * absorbed, 0)
+            }
         }
 
+        /// Where a window sits when it stops: its real reading, except that running out is exactly 100.
+        func landed(_ s: State) -> Double { s.utilization.rounded() >= 100 ? 100 : s.utilization }
+
         var outages: [Int: Outage] = [:]
+        var landing: [Int: Double] = [:]
+        var blackoutStart: Date?
+        var blackoutEnd: Date?
+        /// When the pool last became non-empty, if it still is: an account freeing up only ends the
+        /// blackout once it stays free, or another takes over without a gap.
+        var openSince: Date?
         var t = now
-        let end = now.addingTimeInterval(kind.length)
+        let horizon = now.addingTimeInterval(kind.length)
+        var end = horizon
         while t <= end {
             for i in states.indices {
                 if let r = states[i].resetsAt, t >= r {
+                    if r <= horizon, landing[states[i].member] == nil { landing[states[i].member] = landed(states[i]) }
                     states[i].utilization = 0
                     states[i].resetsAt = nil
                 }
-                if states[i].utilization >= 100, outages[states[i].member] == nil {
-                    outages[states[i].member] = (states[i].outSince ?? t, states[i].resetsAt)
+                // Out for any reason counts: a spent 5h window, or a week that won't take more traffic.
+                if outages[states[i].member] == nil, !available(states[i], at: t) {
+                    outages[states[i].member] = (outStart(states[i], at: t) ?? t, freeAgain(states[i], after: t))
                 }
             }
             let open = states.indices.filter { available(states[$0], at: t) }
             if open.isEmpty {
-                return (Blackout(start: t, end: states.compactMap { freeAgain($0, after: t) }.min()), outages)
+                if blackoutStart == nil { blackoutStart = t }
+                openSince = nil
+            } else {
+                if openSince == nil {
+                    openSince = t
+                    // The clear moment can sit past this window's length: a reset the week blocks again
+                    // minutes later doesn't count, so keep looking up to a window length beyond it.
+                    if blackoutStart != nil, blackoutEnd == nil { end = max(end, t.addingTimeInterval(kind.length)) }
+                }
+                if let since = openSince, t.timeIntervalSince(since) >= 30 * 60 { blackoutEnd = since }
             }
-            let stranded = states.indices.filter { !open.contains($0) }.map { states[$0].load }.reduce(0, +)
-            let share = stranded / Double(open.count)
-            for i in open where !states[i].unlimited {
-                // A fresh window opens on first use after the last one reset.
-                if states[i].resetsAt == nil { states[i].resetsAt = t.addingTimeInterval(kind.length) }
-                states[i].utilization += (states[i].load + share) / states[i].capacity * step
+            if !open.isEmpty {
+                let stranded = states.indices.filter { !open.contains($0) }.map { states[$0].load }.reduce(0, +)
+                let share = stranded / Double(open.count)
+                for i in open where !states[i].unlimited {
+                    // A fresh window opens on first use after the last one reset.
+                    if states[i].resetsAt == nil { states[i].resetsAt = t.addingTimeInterval(kind.length) }
+                    states[i].utilization += (states[i].load + share) / states[i].capacity * step
+                }
+            }
+            if t >= horizon {
+                // No reset inside the horizon: where it stands at the horizon is where it lands.
+                for i in states.indices where landing[states[i].member] == nil {
+                    landing[states[i].member] = landed(states[i])
+                }
+                if blackoutEnd != nil { break }
             }
             t = t.addingTimeInterval(step)
         }
-        return (nil, outages)
+        guard let start = blackoutStart else { return (nil, outages, landing) }
+        // Nothing stayed clear inside the horizon: the latest moment we can still place every account free.
+        let finish = blackoutEnd ?? states.compactMap { freeAgain($0, after: t) }.max()
+        return (Blackout(start: start, end: finish), outages, landing)
     }
 }
