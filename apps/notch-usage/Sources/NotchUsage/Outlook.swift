@@ -19,12 +19,17 @@ extension AccountUsage {
 
     var outlook: Outlook {
         let at = fetchedAt ?? .now
-        func sample(_ w: UsageWindow) -> Sample {
-            Sample(at: at, utilization: w.utilization, resetsAt: w.resetsAt, exhaustedSince: w.exhaustedSince)
+        func project(_ kind: WindowKind, _ window: UsageWindow?, history: [Sample]) -> Projection? {
+            guard let window else { return nil }
+            // The reset came and went before this reading: the window refilled, so the reading is stale.
+            if let resetsAt = window.resetsAt, resetsAt <= at { return .zeroed(at: at) }
+            let sample = Sample(at: at, utilization: window.utilization,
+                                resetsAt: window.resetsAt, exhaustedSince: window.exhaustedSince)
+            return Forecast.project(kind, current: sample, history: history)
         }
         return Outlook(
-            fiveHour: fiveHour.map { Forecast.project(.fiveHour, current: sample($0), history: history) },
-            week: sevenDay.map { Forecast.project(.week, current: sample($0), history: []) }
+            fiveHour: project(.fiveHour, fiveHour, history: history),
+            week: project(.week, sevenDay, history: [])
         )
     }
 }
@@ -86,13 +91,16 @@ extension [AccountUsage] {
     func compactModel(now: Date, pool: PoolOutlook? = nil) -> ClaudeCompact {
         let pool = pool ?? poolOutlook(now: now)
         let members = poolIndices
-        func average(_ window: (AccountUsage) -> UsageWindow?, countMissingAsZero: Bool) -> Double? {
+        // Read the projections, not the raw windows: a window whose reset has passed has refilled and
+        // must count as 0 rather than its stale reading.
+        let outlooks = map(\.outlook)
+        func average(_ window: (Outlook) -> Projection?, countMissingAsZero: Bool) -> Double? {
             var total = 0.0
             var used = 0.0
             for i in members {
                 let weight = Swift.max(self[i].capacity ?? assumedCapacity, 0.1)
-                if let window = window(self[i]) {
-                    used += weight * window.utilization
+                if let projection = window(outlooks[i]) {
+                    used += weight * projection.utilization
                     total += weight
                 } else if countMissingAsZero {
                     total += weight
@@ -104,7 +112,7 @@ extension [AccountUsage] {
         let noFive = poolNoFiveHourLimit
         let five = noFive ? nil : average({ $0.fiveHour }, countMissingAsZero: true)
             .map { CompactRing(utilization: $0, warns: pool.fiveHour != nil) }
-        let week = average({ $0.sevenDay }, countMissingAsZero: false)
+        let week = average({ $0.week }, countMissingAsZero: false)
             .map { CompactRing(utilization: $0, warns: pool.week != nil) }
         return ClaudeCompact(noFiveHourLimit: noFive, fiveHour: five, week: week, dimmed: members.isEmpty)
     }
@@ -119,8 +127,8 @@ extension [AccountUsage] {
     /// computes these once instead of once per surface.
     func poolForecasts(now: Date) -> PoolForecasts {
         let rows = poolRows(map(\.outlook))
-        return PoolForecasts(fiveHour: Forecast.poolForecast(.fiveHour, rows, now: now),
-                             week: Forecast.poolForecast(.week, rows, now: now))
+        let both = Forecast.poolForecasts(rows, now: now)
+        return PoolForecasts(fiveHour: both.fiveHour, week: both.week)
     }
 
     func poolOutlook(now: Date) -> PoolOutlook {
@@ -155,18 +163,33 @@ extension [AccountUsage] {
         let week = forecasts.week
         func pooled(_ p: Projection?, _ slot: Int, _ forecast: PoolForecast) -> Projection? {
             guard let p, !p.isExhausted else { return p }
-            let out = forecast.outageStart[slot].flatMap { out in
-                p.resetsAt.map { out < $0 } == true ? out : nil
+            let out = forecast.outageStart[slot].flatMap { out -> Date? in
+                // A window that just refilled has no reset time yet, so the pool's new one stands in.
+                guard let resetsAt = p.resetsAt else { return out }
+                return out < resetsAt ? out : nil
             }
+            // With nothing scheduled it stays a reading of zero, not a landing the row cannot name.
+            if p.justReset, out == nil { return p }
             let landing = forecast.landing[slot] ?? p.projected ?? p.utilization
             let projected = out == nil ? Swift.min(landing, 99.99) : Swift.max(landing, 100)
             return Projection(at: p.at, utilization: p.utilization, resetsAt: p.resetsAt, rate: p.rate,
                               projected: projected, exhaustsAt: out)
         }
+        /// Outside the pool an account keeps its own pace but has no schedule to show: no faint arc and
+        /// no "out in …" from a projection the pool never made.
+        func unprojected(_ p: Projection) -> Projection {
+            guard !p.isExhausted, !p.justReset else { return p }
+            return Projection(at: p.at, utilization: p.utilization, resetsAt: p.resetsAt, rate: p.rate,
+                              projected: nil, exhaustsAt: nil)
+        }
         var result = own
         for (slot, index) in members.enumerated() {
             result[index] = Outlook(fiveHour: pooled(own[index].fiveHour, slot, five),
                                     week: pooled(own[index].week, slot, week))
+        }
+        for index in own.indices where !members.contains(index) {
+            result[index] = Outlook(fiveHour: own[index].fiveHour.map(unprojected),
+                                    week: own[index].week.map(unprojected))
         }
         return result
     }
@@ -179,7 +202,7 @@ extension [GoAccount] {
         let combined = combinedOutlook(now: now)
         let outlooks = map(\.outlook)
         func warns(_ window: KeyPath<GoOutlook, Projection?>) -> Bool {
-            outlooks.contains { $0[keyPath: window].flatMap(wall) != nil }
+            outlooks.contains { $0[keyPath: window].flatMap { wall($0, now: now) } != nil }
         }
         func ring(_ p: Projection?, warns: Bool) -> CompactRing? {
             p.map { CompactRing(utilization: $0.utilization, warns: warns) }
@@ -197,4 +220,15 @@ extension Projection {
     /// Amber means one thing: this window will stop you before it resets. Without enough history to
     /// project, a high reading stands in.
     var warns: Bool { isExhausted || runsOutBeforeReset || (rate == nil && utilization.rounded() >= 85) }
+
+    /// A window whose reset had already passed when it was read: it refilled, so it reads zero.
+    static func zeroed(at: Date) -> Projection {
+        Projection(at: at, utilization: 0, resetsAt: nil, rate: nil, projected: 0, exhaustsAt: nil)
+    }
+
+    /// The shape `zeroed(at:)` produces: no rate, no reset and a projection of exactly zero. `Forecast`
+    /// never returns this for a live reading, so it is unambiguous.
+    var justReset: Bool {
+        utilization == 0 && resetsAt == nil && rate == nil && projected == 0 && exhaustsAt == nil
+    }
 }

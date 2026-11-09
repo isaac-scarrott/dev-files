@@ -181,6 +181,12 @@ func wall(_ p: Projection) -> Blackout? {
     return Blackout(start: out, end: resetsAt)
 }
 
+/// `wall` as seen at `now`: a reset that is already behind us refilled the window, so it is no wall.
+func wall(_ p: Projection, now: Date) -> Blackout? {
+    guard let b = wall(p), b.end.map({ $0 > now }) ?? true else { return nil }
+    return b
+}
+
 struct GoOutlook {
     let rolling: Projection?
     let weekly: Projection?
@@ -190,9 +196,9 @@ struct GoOutlook {
 
     /// The first allowance to run out and when that one comes back. These are separate walls:
     /// spending the week does not refill the month, and the 5h wall is the one you hit first.
-    var nextOut: Blackout? {
+    func nextOut(now: Date) -> Blackout? {
         let windows = [rolling, weekly, monthly].compactMap { $0 }
-        return windows.compactMap(wall).min { $0.start < $1.start }
+        return windows.compactMap { wall($0, now: now) }.min { $0.start < $1.start }
     }
 }
 
@@ -201,6 +207,8 @@ extension GoAccount {
         let at = fetchedAt ?? .now
         func project(_ kind: WindowKind, _ window: UsageWindow?, history: [Sample] = []) -> Projection? {
             guard let window else { return nil }
+            // The reset came and went before this reading: the window refilled, so the reading is stale.
+            if let resetsAt = window.resetsAt, resetsAt <= at { return .zeroed(at: at) }
             return Forecast.project(
                 kind,
                 current: Sample(at: at, utilization: window.utilization,
@@ -217,8 +225,8 @@ extension GoAccount {
 }
 
 extension [GoAccount] {
-    func nextOut() -> Blackout? {
-        compactMap { $0.outlook.nextOut }.min { $0.start < $1.start }
+    func nextOut(now: Date) -> Blackout? {
+        compactMap { $0.outlook.nextOut(now: now) }.min { $0.start < $1.start }
     }
 
     /// The compact's one triple: one key is the exact projection, several are averaged. Amber comes from
@@ -230,7 +238,7 @@ extension [GoAccount] {
             let projections = outlooks.compactMap { $0[keyPath: window] }
             guard !projections.isEmpty else { return nil }
             let utilization = projections.reduce(0) { $0 + $1.utilization } / Double(projections.count)
-            let nearest = projections.compactMap(wall).min { $0.start < $1.start }
+            let nearest = projections.compactMap { wall($0, now: now) }.min { $0.start < $1.start }
             return Projection(at: now, utilization: utilization, resetsAt: nearest?.end, rate: nil,
                               projected: nil, exhaustsAt: nearest?.start)
         }

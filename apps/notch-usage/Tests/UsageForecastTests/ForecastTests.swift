@@ -269,7 +269,8 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         let b = PoolMember(fiveHour: member(10, ratePerHour: 0, resetIn: hours(4)).fiveHour, week: week(96.5, perHour: 0.5), capacity: 5)
         let blackout = Forecast.blackout(.fiveHour, [a, b], now: now)
         let start = try! #require(blackout?.start)
-        #expect(abs(start.timeIntervalSince(now.addingTimeInterval(hours(3.5)))) <= 120)
+        // The week it comes from is stepped in 5-minute blocks, so the time can sit up to that late.
+        #expect(abs(start.timeIntervalSince(now.addingTimeInterval(hours(3.5)))) <= 300)
     }
 
     @Test func weekRunningOutTakesAnAccountOutOfTheFiveHourPool() {
@@ -311,6 +312,112 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         #expect(abs(start.timeIntervalSince(now.addingTimeInterval(hours(0.5)))) <= 60)
     }
 
+    @Test func absorptionSplitsAcrossTheAccountsOpenWhenTheLoadLanded() {
+        // A and B both ran out of their 5h window (2h and 1h ago) measuring 1%/min each; C sits at 30%
+        // and its 1%/min over the last 45m holds what it carried. When A's load landed, B was still
+        // open, so A's share went two ways: C gives back half of it, then B's whole share (B was the
+        // only one left by then). C keeps its own pace plus the 2%/min now stranded on it: 1.5%/min,
+        // so 30% reaches 100 in 47m. Dividing A's share by today's single open account takes C's whole
+        // measured pace off and leaves it burning 1%/min, out at 70m.
+        func out(_ ratePerHour: Double, since: TimeInterval) -> PoolMember {
+            let p = Projection(at: now, utilization: 100, resetsAt: now.addingTimeInterval(hours(4)),
+                               rate: ratePerHour / 3600, projected: 100, exhaustsAt: now.addingTimeInterval(-since))
+            return PoolMember(fiveHour: p, week: nil, capacity: 5)
+        }
+        let f = Forecast.poolForecast(.fiveHour, [out(60, since: hours(2)), out(60, since: hours(1)),
+                                                  member(30, ratePerHour: 60, resetIn: hours(4))], now: now)
+        let start = try! #require(f.outageStart[2])
+        #expect(abs(start.timeIntervalSince(now.addingTimeInterval(minutes(47)))) <= 120)
+        #expect(start < now.addingTimeInterval(hours(4)))
+    }
+
+    @Test func blackoutHasNoEndWhenAnAccountCanNeverReturn() {
+        // A's week is spent with no reset at all, so the pool never clears again. B's 5h window resets at
+        // 2h, but its week runs out at 2h30 and never comes back either. B still frees its 5h window
+        // first, and naming B's 100h week reset as the end would say the pool reopens with A still out.
+        let spentWeek = Projection(at: now, utilization: 100, resetsAt: nil, rate: 0,
+                                   projected: 100, exhaustsAt: now.addingTimeInterval(-hours(1)))
+        let a = PoolMember(fiveHour: member(100, ratePerHour: 0, resetIn: hours(3)).fiveHour,
+                           week: spentWeek, capacity: 5)
+        let bWeek = Projection(at: now, utilization: 90, resetsAt: now.addingTimeInterval(hours(100)),
+                               rate: 4 / 3600, projected: nil, exhaustsAt: now.addingTimeInterval(minutes(150)))
+        let b = PoolMember(fiveHour: member(100, ratePerHour: 0, resetIn: hours(2)).fiveHour,
+                           week: bWeek, capacity: 5)
+        let f = Forecast.poolForecast(.fiveHour, [a, b], now: now)
+        #expect(f.blackout?.start == now)
+        #expect(f.blackout?.end == nil)
+    }
+
+    @Test func weekSimulationStepsInFiveMinuteBlocks() {
+        // 98% at 0.7%/h is out when it rounds to 100 (99.5), 128.6m from now: the week's 5-minute step
+        // puts that at 130m. A one-minute step would report 129m, a time the UI never shows.
+        let w = Projection(at: now, utilization: 98, resetsAt: now.addingTimeInterval(hours(100)),
+                           rate: 0.7 / 3600, projected: nil, exhaustsAt: nil)
+        let start = try! #require(Forecast.blackout(.week, [PoolMember(fiveHour: nil, week: w, capacity: 5)],
+                                                    now: now)?.start)
+        #expect(start.timeIntervalSince(now) == minutes(130))
+        #expect(start.timeIntervalSince(now).truncatingRemainder(dividingBy: minutes(5)) == 0)
+    }
+
+    @Test func bothWindowsShareOneWeekSimulation() {
+        // The pair must answer exactly what asking per window answers, for the cost of one week
+        // simulation rather than two (the week is the long one: 7 days of steps).
+        func week(_ u: Double, perHour: Double) -> Projection {
+            Projection(at: now, utilization: u, resetsAt: now.addingTimeInterval(hours(100)),
+                       rate: perHour / 3600, projected: nil, exhaustsAt: nil)
+        }
+        let pool = [PoolMember(fiveHour: member(10, ratePerHour: 5, resetIn: hours(4)).fiveHour,
+                               week: week(99, perHour: 0.5), capacity: 5),
+                    PoolMember(fiveHour: member(20, ratePerHour: 5, resetIn: hours(3)).fiveHour,
+                               week: week(96.5, perHour: 0.5), capacity: 5)]
+        let both = Forecast.poolForecasts(pool, now: now)
+        let five = Forecast.poolForecast(.fiveHour, pool, now: now)
+        let single = Forecast.poolForecast(.week, pool, now: now)
+        #expect(both.fiveHour.blackout == five.blackout)
+        #expect(both.fiveHour.outageStart == five.outageStart)
+        #expect(both.fiveHour.landing == five.landing)
+        #expect(both.week.blackout == single.blackout)
+        #expect(both.week.outageStart == single.outageStart)
+        #expect(both.week.landing == single.landing)
+
+        func cheapest(_ work: () -> Void) -> Duration {
+            (0..<3).map { _ in ContinuousClock().measure(work) }.min()!
+        }
+        let pair = cheapest { _ = Forecast.poolForecasts(pool, now: now) }
+        let perWindow = cheapest {
+            _ = Forecast.poolForecast(.fiveHour, pool, now: now)
+            _ = Forecast.poolForecast(.week, pool, now: now)
+        }
+        #expect(pair < perWindow)
+    }
+
+    @Test func rowsNameTheOutageRunningWhenThePoolGoesDark() {
+        // B carries A's 1%/min while A's window is spent, so B runs out at ~34m and the pool is dark from
+        // there until A's reset at 2h. The latest row time must be the blackout start: that is the wall
+        // the headline names, and every row that is out at that moment names its own outage, not an
+        // earlier one.
+        let pool = [member(100, ratePerHour: 60, resetIn: hours(2)),
+                    member(50, ratePerHour: 30, resetIn: hours(4))]
+        let f = Forecast.poolForecast(.fiveHour, pool, now: now)
+        let dark = try! #require(f.blackout?.start)
+        let latest = try! #require(f.outageStart.values.max())
+        #expect(abs(latest.timeIntervalSince(dark)) <= 60)
+
+        // A frees its 5h window at 10m, then runs out again at ~1h once B's load joins it; B is gone at
+        // ~40m. The pool goes dark at A's second exhaustion, so A's row must name that, not the
+        // exhaustion it is in right now.
+        let again = Forecast.poolForecast(.fiveHour,
+                                          [member(100, ratePerHour: 60, resetIn: minutes(10)),
+                                           member(50, ratePerHour: 60, resetIn: hours(4))], now: now)
+        let second = try! #require(again.blackout?.start)
+        let a = try! #require(again.outageStart[0])
+        #expect(second > now.addingTimeInterval(minutes(30)))
+        #expect(a > now.addingTimeInterval(minutes(30)))
+        #expect(abs(a.timeIntervalSince(second)) <= 60)
+        let latestAgain = try! #require(again.outageStart.values.max())
+        #expect(abs(latestAgain.timeIntervalSince(second)) <= 60)
+    }
+
     @Test func weeklyPoolRunsDryWhenTheBiggerAccountGoesFirst() {
         // Live shape from 28 Oct: a 20x account at 75% resetting in 3.6 days, a 5x at 32% resetting in 5.6.
         func weekMember(_ u: Double, perDay: Double, resetIn days: Double, capacity: Double) -> PoolMember {
@@ -323,6 +430,8 @@ private func hours(_ h: Double) -> TimeInterval { h * 3600 }
         // The 20x one is out after ~1.1 days; its load then lands on the 5x one at 4x the percentage rate.
         let start = try! #require(b?.start)
         #expect(start < now.addingTimeInterval(1.6 * 86400))
-        #expect(b?.end == now.addingTimeInterval(3.6 * 86400))
+        // The week is stepped in 5-minute blocks, so a moment on its edge lands up to that late.
+        let end = try! #require(b?.end)
+        #expect(abs(end.timeIntervalSince(now.addingTimeInterval(3.6 * 86400))) <= 300)
     }
 }

@@ -158,18 +158,24 @@ struct CompactNextOut: View {
         let text: String
     }
 
-    static func wall(_ claude: [AccountUsage], _ go: [GoAccount], now: Date) -> Wall? {
-        let walls: [(label: String, mark: String, blackout: Blackout)] = [
+    static func walls(_ claude: [AccountUsage], _ go: [GoAccount], now: Date)
+        -> [(label: String, mark: String, blackout: Blackout)] {
+        [
             claude.poolOutlook(now: now).nextOut.map { ("Claude", "claude", $0) },
-            go.nextOut().map { ("OpenCode Go", "opencode", $0) }
+            go.nextOut(now: now).map { ("OpenCode Go", "opencode", $0) }
         ].compactMap { $0 }
-        guard let soonest = walls.min(by: { $0.blackout.start < $1.blackout.start }) else { return nil }
+    }
+
+    static func wall(_ claude: [AccountUsage], _ go: [GoAccount], now: Date) -> Wall? {
+        guard let soonest = walls(claude, go, now: now).min(by: { $0.blackout.start < $1.blackout.start })
+        else { return nil }
         let b = soonest.blackout
+        let back = b.end.flatMap { $0 > now ? " · back \(whenText($0, now: now))" : nil } ?? ""
         if b.start <= now.addingTimeInterval(60) {
-            let back = b.end.map { " · back \(whenText($0, now: now))" } ?? ""
             return Wall(label: soonest.label, mark: soonest.mark, text: "out" + back)
         }
-        return Wall(label: soonest.label, mark: soonest.mark, text: "out \(whenText(b.start, now: now))")
+        return Wall(label: soonest.label, mark: soonest.mark,
+                    text: "out \(whenText(b.start, now: now))")
     }
 }
 
@@ -194,30 +200,36 @@ struct ColumnModel: Equatable {
     let noLimit: Bool
     let blockedBy: String?
 
-    init(_ projection: Projection?, now: Date, noLimit: Bool = false, blockedBy: String? = nil) {
+    init(_ projection: Projection?, now: Date, noLimit: Bool = false, inPool: Bool = true,
+         blockedBy: String? = nil) {
         let pct = (projection?.utilization ?? 0).displayPercent
-        let resetPast = projection?.resetsAt.map { $0 <= now } ?? false
+        let justReset = projection?.justReset == true
+        let resetPast = justReset || (projection?.resetsAt.map { $0 <= now } ?? false)
         let projected = Swift.min(Swift.max(projection?.projected ?? pct, 0), 100)
         self.noLimit = noLimit
         self.blockedBy = noLimit ? nil : blockedBy
         solid = noLimit ? 0 : pct
         faint = noLimit ? 0 : projected
-        dimmed = projection == nil || self.blockedBy != nil || resetPast
-        amber = !noLimit && self.blockedBy == nil && !resetPast && projection?.warns == true
+        dimmed = projection == nil || self.blockedBy != nil || (resetPast && !justReset)
+        // Out of the pool nothing is scheduled for this account, so only its own limit can make it amber.
+        let warning = inPool ? projection?.warns == true : projection?.isExhausted == true
+        amber = !noLimit && self.blockedBy == nil && !resetPast && warning
         percentText = projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%"
         if noLimit {
             line = "weekly only"
         } else if resetPast {
-            line = "resetting"
+            line = "just reset"
         } else if let blockedBy = self.blockedBy {
             line = blockedBy
-        } else if let p = projection, let resetsAt = p.resetsAt {
+        } else if let p = projection {
             if p.isExhausted {
-                line = "back \(whenText(resetsAt, now: now))"
+                line = p.resetsAt.map { "back \(whenText($0, now: now))" } ?? ""
             } else if let out = p.exhaustsAt {
-                line = "out \(whenText(out, now: now))"
+                // A carried-out window crossed the limit after its reading: say it is out now, never
+                // feed a past moment to the countdown.
+                line = out > now ? "out \(whenText(out, now: now))" : "out now"
             } else {
-                line = "resets \(whenText(resetsAt, now: now))"
+                line = p.resetsAt.map { "resets \(whenText($0, now: now))" } ?? ""
             }
         } else {
             line = ""
@@ -317,7 +329,7 @@ private struct AccountRow: View {
             }
             Spacer(minLength: 16)
             WindowColumn(model: ColumnModel(
-                outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit,
+                outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit, inPool: account.inPool,
                 blockedBy: claudeBlockedBy(noLimit: account.noFiveHourLimit, week: outlook.week)
             ))
             WindowColumn(model: ColumnModel(outlook.week, now: now))
@@ -341,7 +353,7 @@ func claudeStatus(_ accounts: [AccountUsage], now: Date, pool: PoolOutlook? = ni
     let pool = pool ?? accounts.poolOutlook(now: now)
     let all = pool.members > 1 ? "All accounts" : "Your account"
     if let b = pool.nextOut {
-        let back = b.end.map { " · back \(whenText($0, now: now))" } ?? ""
+        let back = b.end.flatMap { $0 > now ? " · back \(whenText($0, now: now))" : nil } ?? ""
         if b.start <= now.addingTimeInterval(60) { return Status(text: "\(all) limited" + back, warns: true) }
         let what = pool.fiveHour == nil ? "Weekly limits run out" : "\(all) limited"
         return Status(text: "\(what) \(whenText(b.start, now: now))" + back, warns: true)
@@ -358,17 +370,15 @@ func goStatus(_ accounts: [GoAccount], now: Date) -> Status {
         let outlook = account.outlook
         let windows = [("5h", outlook.rolling), ("Weekly", outlook.weekly), ("Monthly", outlook.monthly)]
         return windows.compactMap { name, projection in
-            guard let p = projection, let resetsAt = p.resetsAt else { return nil }
-            let start = p.isExhausted ? (p.exhaustsAt ?? p.at) : p.exhaustsAt
-            guard let start, start < resetsAt else { return nil }
-            return (name, Blackout(start: start, end: resetsAt))
+            guard let p = projection, let wall = wall(p, now: now) else { return nil }
+            return (name, wall)
         }
     }
     guard let soonest = walls.min(by: { $0.wall.start < $1.wall.start }) else {
         let canProject = accounts.contains { $0.outlook.canProject }
         return Status(text: canProject ? "No limits ahead at this pace" : " ", warns: false)
     }
-    let back = soonest.wall.end.map { " · back \(whenText($0, now: now))" } ?? ""
+    let back = soonest.wall.end.flatMap { $0 > now ? " · back \(whenText($0, now: now))" : nil } ?? ""
     if soonest.wall.start <= now.addingTimeInterval(60) {
         return Status(text: "\(soonest.name) limit reached" + back, warns: true)
     }

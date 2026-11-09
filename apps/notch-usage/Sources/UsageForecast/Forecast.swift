@@ -168,6 +168,13 @@ public struct PoolForecast: Sendable {
         self.outageStart = outageStart
         self.landing = landing
     }
+
+    init(_ simulation: (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double],
+                        reported: [Int: Date])) {
+        self.init(blackout: simulation.blackout,
+                  outageStart: simulation.reported,
+                  landing: simulation.landing)
+    }
 }
 
 extension Forecast {
@@ -181,26 +188,37 @@ extension Forecast {
         poolForecast(kind, members, now: now).blackout
     }
 
-    /// One simulation, three answers: the pool's next blackout, when each account drops out, and where
-    /// each account's window lands. An account's own row therefore agrees with the pool's headline.
+    /// One simulation, four answers: the pool's next blackout, each account's outages, the time each
+    /// account's row should show, and where each account's window lands. Every surface comes from the
+    /// same run, so an account's own row agrees with the pool's headline.
     public static func poolForecast(_ kind: WindowKind, _ members: [PoolMember], now: Date) -> PoolForecast {
-        let result = poolSimulation(kind, members, now: now)
-        return PoolForecast(blackout: result.blackout,
-                            outageStart: result.outages.mapValues { $0.start },
-                            landing: result.landing)
+        if kind == .fiveHour { return poolForecasts(members, now: now).fiveHour }
+        return PoolForecast(poolSimulation(kind, members, now: now))
+    }
+
+    /// Both windows for the same pool. The 5h simulation needs the week's outages as its blocks, so
+    /// asking for the pair runs the week once instead of once per window.
+    public static func poolForecasts(_ members: [PoolMember], now: Date)
+        -> (fiveHour: PoolForecast, week: PoolForecast) {
+        let week = poolSimulation(.week, members, now: now)
+        let fiveHour = poolSimulation(.fiveHour, members, now: now, weekOutages: week.outages)
+        return (PoolForecast(fiveHour), PoolForecast(week))
     }
 
     /// The 5h simulation runs the week first, because an account out of its week is out of the pool.
-    static func poolSimulation(_ kind: WindowKind, _ members: [PoolMember], now: Date)
-        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double]) {
-        let weekOutages = kind == .fiveHour ? simulate(.week, members, now: now, blocks: [:]).outages : [:]
-        return simulate(kind, members, now: now, blocks: weekOutages)
+    static func poolSimulation(_ kind: WindowKind, _ members: [PoolMember], now: Date,
+                               weekOutages: [Int: Outage]? = nil)
+        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double], reported: [Int: Date]) {
+        let blocks = kind == .fiveHour ? (weekOutages ?? poolSimulation(.week, members, now: now).outages) : [:]
+        return simulate(kind, members, now: now, blocks: blocks)
     }
 
-    /// `blocks`, the returned `outages` and `landing` are keyed by index into `members`.
+    /// `blocks`, the returned `outages` (each member's first, used as a block) and `landing` are keyed by
+    /// index into `members`; `reported` is the outage start each row should show.
     static func simulate(_ kind: WindowKind, _ members: [PoolMember], now: Date, blocks: [Int: Outage])
-        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double]) {
-        let step: TimeInterval = 60
+        -> (blackout: Blackout?, outages: [Int: Outage], landing: [Int: Double], reported: [Int: Date]) {
+        // A week is a line over days, and every time it reports is shown rounded to 5 minutes.
+        let step: TimeInterval = kind == .week ? 5 * 60 : 60
 
         struct State {
             let member: Int
@@ -247,7 +265,7 @@ extension Forecast {
                          capacity: capacity, blocked: blocks[i], outSince: outSince,
                          lookback: kind == .fiveHour ? min(45 * 60, windowAge) : windowAge)
         }
-        guard !states.isEmpty else { return (nil, [:], [:]) }
+        guard !states.isEmpty else { return (nil, [:], [:], [:]) }
 
         func available(_ s: State, at t: Date) -> Bool {
             if s.utilization.rounded() >= 100 { return false }
@@ -275,33 +293,57 @@ extension Forecast {
             [s.outSince, s.blocked.flatMap { $0.start <= t ? $0.start : nil }].compactMap { $0 }.min()
         }
 
+        /// Whether the account was open at `t`, which is not the same as open now: an account that has
+        /// dropped out since was still taking its share then.
+        func wasOpen(_ s: State, at t: Date) -> Bool {
+            if let out = s.outSince, out <= t { return false }
+            if let b = s.blocked, t >= b.start, b.end.map({ t < $0 }) ?? true { return false }
+            return true
+        }
+
         // Accounts still open have been absorbing the load of those already out since they ran out, so
         // their measured rates hold part of it. Take that part off, or redistributing it counts it twice.
         let openNow = states.indices.filter { available(states[$0], at: now) }
         // Oldest out first, so a later one is corrected against every account that went before it.
         let outNow = states.indices.filter { !openNow.contains($0) }
             .sorted { (outStart(states[$0], at: now) ?? now) < (outStart(states[$1], at: now) ?? now) }
+        // A measured rate is everything the account burned, so no series of corrections may take more
+        // than that off it: what is left is its own pace.
+        var canGiveBack = states.map(\.load)
+        func takeBack(_ share: Double, absorbed: Double, from i: Int) {
+            let take = min(share * absorbed, canGiveBack[i])
+            canGiveBack[i] -= take
+            states[i].load = max(states[i].load - take, 0)
+        }
         for j in outNow {
             guard let since = outStart(states[j], at: now) else { continue }
-            let share = states[j].load / Double(max(openNow.count, 1))
+            // The accounts open when this one dropped out are the ones its load was shared between.
+            // Today's open count is smaller, which makes each survivor give back more than it took;
+            // and one measuring nothing was not taking a share of it.
+            let carriers = states.indices.filter { $0 != j && wasOpen(states[$0], at: since) && states[$0].load > 0 }
+            let share = states[j].load / Double(max(carriers.count, 1))
             for i in openNow where states[i].lookback > 0 {
                 let absorbed = min(max(now.timeIntervalSince(since) / states[i].lookback, 0), 1)
-                states[i].load = max(states[i].load - share * absorbed, 0)
+                takeBack(share, absorbed: absorbed, from: i)
             }
             // An account that went out later was open while this one's traffic was moving, so its
             // measured rate holds part of that share: those points were carried, not stranded.
             for i in outNow where i != j && states[i].lookback > 0 {
                 guard let ownStart = outStart(states[i], at: now), ownStart > since else { continue }
                 let absorbed = min(max(ownStart.timeIntervalSince(since) / states[i].lookback, 0), 1)
-                states[i].load = max(states[i].load - share * absorbed, 0)
+                takeBack(share, absorbed: absorbed, from: i)
             }
         }
 
         /// Where a window sits when it stops: its real reading, except that running out is exactly 100.
         func landed(_ s: State) -> Double { s.utilization.rounded() >= 100 ? 100 : s.utilization }
 
-        var outages: [Int: Outage] = [:]
+        var outages: [Int: [Outage]] = [:]
+        var inOutage: Set<Int> = []
         var landing: [Int: Double] = [:]
+        /// Each member's reset as read, before the simulation moves it: a row shows the wall of that window.
+        let initialResets = Dictionary(uniqueKeysWithValues: states.map { ($0.member, $0.resetsAt) })
+            .compactMapValues { $0 }
         var blackoutStart: Date?
         var blackoutEnd: Date?
         /// When the pool last became non-empty, if it still is: an account freeing up only ends the
@@ -316,10 +358,18 @@ extension Forecast {
                     if r <= horizon, landing[states[i].member] == nil { landing[states[i].member] = landed(states[i]) }
                     states[i].utilization = 0
                     states[i].resetsAt = nil
+                    // The window that ran out is gone, so the next time this account stops it is a new
+                    // outage, starting at its own crossing rather than back at the last one.
+                    states[i].outSince = nil
                 }
                 // Out for any reason counts: a spent 5h window, or a week that won't take more traffic.
-                if outages[states[i].member] == nil, !available(states[i], at: t) {
-                    outages[states[i].member] = (outStart(states[i], at: t) ?? t, freeAgain(states[i], after: t))
+                // Each separate stretch is kept: a window that resets and runs out again is out twice.
+                let member = states[i].member
+                if available(states[i], at: t) {
+                    inOutage.remove(member)
+                } else if inOutage.insert(member).inserted {
+                    outages[member, default: []].append((outStart(states[i], at: t) ?? t,
+                                                        freeAgain(states[i], after: t)))
                 }
             }
             let open = states.indices.filter { available(states[$0], at: t) }
@@ -353,9 +403,25 @@ extension Forecast {
             }
             t = t.addingTimeInterval(step)
         }
-        guard let start = blackoutStart else { return (nil, outages, landing) }
-        // Nothing stayed clear inside the horizon: the latest moment we can still place every account free.
-        let finish = blackoutEnd ?? states.compactMap { freeAgain($0, after: t) }.max()
-        return (Blackout(start: start, end: finish), outages, landing)
+        // What a row shows: the outage running when the pool goes dark, because that is the wall the
+        // headline names. Without a blackout, the first outage inside the window the reading is in.
+        let firstOutage = outages.mapValues { $0[0] }
+        guard let start = blackoutStart else {
+            var reported: [Int: Date] = [:]
+            for (member, list) in outages {
+                let reset = initialResets[member] ?? .distantFuture
+                if let first = list.first(where: { $0.start < reset }) { reported[member] = first.start }
+            }
+            return (nil, firstOutage, landing, reported)
+        }
+        let reported = outages.compactMapValues { list in
+            (list.last(where: { $0.start <= start }) ?? list.first)?.start
+        }
+        // Nothing stayed clear inside the horizon: the latest moment every account is free. One account
+        // with no way back makes that moment unknowable, so there is no end to name.
+        let freeMoments = states.map { freeAgain($0, after: t) }
+        let finish = blackoutEnd
+            ?? (freeMoments.contains(where: { $0 == nil }) ? nil : freeMoments.compactMap { $0 }.max())
+        return (Blackout(start: start, end: finish), firstOutage, landing, reported)
     }
 }
