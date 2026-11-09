@@ -23,6 +23,11 @@ let package = Package(
             name: "UsageForecastTests",
             dependencies: ["UsageForecast"],
             swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "NotchUsageTests",
+            dependencies: ["NotchUsage"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]
 )

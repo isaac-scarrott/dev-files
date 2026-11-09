@@ -15,7 +15,7 @@ private let amber = Color(red: 1.0, green: 0.72, blue: 0.27)
 private let panelWidth: CGFloat = 470
 private let panelPadding: CGFloat = 16
 
-private extension Double {
+extension Double {
     /// Rounded once, so the number shown and the arc drawn for it can never disagree.
     var displayPercent: Double { Swift.min(Swift.max(self, 0), 100).rounded() }
 }
@@ -30,19 +30,21 @@ func durationText(until date: Date, from now: Date) -> String {
 }
 
 struct Ring: View {
-    let projection: Projection?
+    let solid: Double
+    let faint: Double
+    let warns: Bool
     let size: CGFloat
     let lineWidth: CGFloat
     var dimmed = false
 
     var body: some View {
-        let pct = (projection?.utilization ?? 0).displayPercent
-        let ahead = (projection?.projected ?? 0).displayPercent
-        let color = projection?.warns == true ? amber : .white.opacity(0.92)
+        let pct = Swift.min(Swift.max(solid, 0), 100)
+        let ahead = Swift.min(Swift.max(faint, pct), 100)
+        let color = warns ? amber : .white.opacity(0.92)
         ZStack {
             Circle().stroke(.white.opacity(0.14), lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: Swift.max(ahead, pct) / 100)
+                .trim(from: 0, to: ahead / 100)
                 .stroke(color.opacity(0.3), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
             Circle()
                 .trim(from: 0, to: pct / 100)
@@ -51,6 +53,16 @@ struct Ring: View {
         .rotationEffect(.degrees(-90))
         .opacity(dimmed ? 0.35 : 1)
         .frame(width: size, height: size)
+    }
+}
+
+private struct CompactRingView: View {
+    let ring: CompactRing?
+    let dimmed: Bool
+
+    var body: some View {
+        Ring(solid: ring?.utilization ?? 0, faint: 0, warns: ring?.warns == true,
+             size: 12, lineWidth: 2, dimmed: dimmed)
     }
 }
 
@@ -84,15 +96,14 @@ struct CompactRings: View {
             HStack(spacing: 9) {
                 if !store.accounts.isEmpty {
                     ProviderMark(name: "claude", size: 11)
-                    let outlook = store.accounts.combinedOutlook(now: now)
-                    let dimmed = store.accounts.allSatisfy { $0.fetchedAt == nil }
+                    let compact = store.accounts.compactModel(now: now)
                     HStack(spacing: 3) {
-                        if store.accounts.poolNoFiveHourLimit {
+                        if compact.noFiveHourLimit {
                             NoLimitMark(size: 12, lineWidth: 2)
                         } else {
-                            Ring(projection: outlook.fiveHour, size: 12, lineWidth: 2, dimmed: dimmed)
+                            CompactRingView(ring: compact.fiveHour, dimmed: compact.dimmed)
                         }
-                        Ring(projection: outlook.week, size: 12, lineWidth: 2, dimmed: dimmed)
+                        CompactRingView(ring: compact.week, dimmed: compact.dimmed)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Claude, \(store.accounts.count) account\(store.accounts.count == 1 ? "" : "s")")
@@ -104,12 +115,11 @@ struct CompactRings: View {
                 }
                 if !store.goAccounts.isEmpty {
                     ProviderMark(name: "opencode", size: 11)
-                    let outlook = store.goAccounts.combinedOutlook(now: now)
-                    let dimmed = store.goAccounts.allSatisfy { $0.fetchedAt == nil }
+                    let compact = store.goAccounts.compactModel(now: now)
                     HStack(spacing: 3) {
-                        Ring(projection: outlook.rolling, size: 12, lineWidth: 2, dimmed: dimmed)
-                        Ring(projection: outlook.weekly, size: 12, lineWidth: 2, dimmed: dimmed)
-                        Ring(projection: outlook.monthly, size: 12, lineWidth: 2, dimmed: dimmed)
+                        CompactRingView(ring: compact.rolling, dimmed: compact.dimmed)
+                        CompactRingView(ring: compact.weekly, dimmed: compact.dimmed)
+                        CompactRingView(ring: compact.monthly, dimmed: compact.dimmed)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("OpenCode Go")
@@ -172,46 +182,70 @@ func whenText(_ date: Date, now: Date) -> String {
     return "in \(durationText(until: now.addingTimeInterval(rounded), from: now))"
 }
 
+/// One row column's whole state, decided once: the number shown, both arcs, the amber, the dimming
+/// and the line under it. Every surface reads this so the ring and the words cannot disagree.
+struct ColumnModel: Equatable {
+    let percentText: String
+    let solid: Double
+    let faint: Double
+    let amber: Bool
+    let dimmed: Bool
+    let line: String
+    let noLimit: Bool
+    let blockedBy: String?
+
+    init(_ projection: Projection?, now: Date, noLimit: Bool = false, blockedBy: String? = nil) {
+        let pct = (projection?.utilization ?? 0).displayPercent
+        let resetPast = projection?.resetsAt.map { $0 <= now } ?? false
+        let projected = Swift.min(Swift.max(projection?.projected ?? pct, 0), 100)
+        self.noLimit = noLimit
+        self.blockedBy = noLimit ? nil : blockedBy
+        solid = noLimit ? 0 : pct
+        faint = noLimit ? 0 : projected
+        dimmed = projection == nil || self.blockedBy != nil || resetPast
+        amber = !noLimit && self.blockedBy == nil && !resetPast && projection?.warns == true
+        percentText = projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%"
+        if noLimit {
+            line = "weekly only"
+        } else if resetPast {
+            line = "resetting"
+        } else if let blockedBy = self.blockedBy {
+            line = blockedBy
+        } else if let p = projection, let resetsAt = p.resetsAt {
+            if p.isExhausted {
+                line = "back \(whenText(resetsAt, now: now))"
+            } else if let out = p.exhaustsAt {
+                line = "out \(whenText(out, now: now))"
+            } else {
+                line = "resets \(whenText(resetsAt, now: now))"
+            }
+        } else {
+            line = ""
+        }
+    }
+}
+
 private struct WindowColumn: View {
-    let projection: Projection?
-    let now: Date
-    var noLimit = false
-    /// Another window already stops you, so this one's forecast can't happen.
-    var blockedBy: String? = nil
+    let model: ColumnModel
     static let width: CGFloat = 106
 
-    /// The line under the percentage says what happens next: when you'll run out, when you're back,
-    /// or, when neither applies, simply when it resets.
-    private var next: String {
-        if noLimit { return "weekly only" }
-        if let blockedBy { return blockedBy }
-        guard let p = projection, let resetsAt = p.resetsAt else { return "" }
-        if p.isExhausted {
-            return resetsAt.timeIntervalSince(now) < 60 ? "resetting" : "back in \(durationText(until: resetsAt, from: now))"
-        }
-        if let out = p.exhaustsAt { return "out \(whenText(out, now: now))" }
-        return "resets \(durationText(until: resetsAt, from: now))"
-    }
-
     var body: some View {
-        let pct = (projection?.utilization ?? 0).displayPercent
-        let warns = projection?.warns == true && blockedBy == nil
-        let next = next
         HStack(spacing: 9) {
-            if noLimit {
+            if model.noLimit {
                 NoLimitMark(size: 22, lineWidth: 2.5)
             } else {
-                Ring(projection: projection, size: 22, lineWidth: 2.5, dimmed: projection == nil || blockedBy != nil)
+                Ring(solid: model.solid, faint: model.faint, warns: model.amber,
+                     size: 22, lineWidth: 2.5, dimmed: model.dimmed)
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(projection == nil ? (noLimit ? "No limit" : "–") : "\(Int(pct))%")
+                Text(model.percentText)
                     .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(warns ? amber : .white)
-                    .contentTransition(.numericText(value: pct))
+                    .foregroundStyle(model.amber ? amber : .white)
+                    .contentTransition(.numericText(value: model.solid))
                 // A blank line still takes its height, so rows without one stay centred on the ring.
-                Text(next.isEmpty ? " " : next)
+                Text(model.line.isEmpty ? " " : model.line)
                     .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(warns ? amber.opacity(0.8) : .white.opacity(0.42))
+                    .foregroundStyle(model.amber ? amber.opacity(0.8) : .white.opacity(0.42))
                     .lineLimit(1)
             }
         }
@@ -238,6 +272,17 @@ private func agoText(_ date: Date, now: Date) -> String {
     return "\(m)m ago"
 }
 
+/// A held account says why it is out of rotation before it says anything else, and the staleness still
+/// rides along: pausing it is not a reason to hide that its numbers are old.
+func accountCaption(_ account: AccountUsage, identity: String, now: Date) -> String {
+    let stale = staleCaption(account.problem, fetchedAt: account.fetchedAt, now: now)
+    if account.heldBack {
+        let paused = "Paused · keeping extra usage off"
+        return stale.map { "\(paused) · \($0)" } ?? paused
+    }
+    return stale ?? identity
+}
+
 private struct AccountRow: View {
     let account: AccountUsage
     /// The pool's schedule for this account, not its own pace: see `pooledOutlooks`.
@@ -252,8 +297,7 @@ private struct AccountRow: View {
     }
 
     private var caption: String {
-        if account.heldBack { return "Paused · keeping extra usage off" }
-        return staleCaption(account.problem, fetchedAt: account.fetchedAt, now: now) ?? identity
+        accountCaption(account, identity: identity, now: now)
     }
 
     var body: some View {
@@ -272,23 +316,30 @@ private struct AccountRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 16)
-            WindowColumn(projection: outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit,
-                         blockedBy: account.noFiveHourLimit || outlook.week?.isExhausted != true ? nil : "weekly limit")
-            WindowColumn(projection: outlook.week, now: now)
+            WindowColumn(model: ColumnModel(
+                outlook.fiveHour, now: now, noLimit: account.noFiveHourLimit,
+                blockedBy: claudeBlockedBy(noLimit: account.noFiveHourLimit, week: outlook.week)
+            ))
+            WindowColumn(model: ColumnModel(outlook.week, now: now))
         }
     }
 }
 
-private struct Status {
+func claudeBlockedBy(noLimit: Bool, week: Projection?) -> String? {
+    guard !noLimit, week?.isExhausted == true else { return nil }
+    return "weekly limit"
+}
+
+struct Status: Equatable {
     let text: String
     let warns: Bool
 }
 
 /// The one sentence that answers the real question for the Claude pool: will every account be
 /// limited, when, and for how long? The nearest wall wins.
-private func claudeStatus(_ accounts: [AccountUsage], now: Date) -> Status {
-    let pool = accounts.poolOutlook(now: now)
-    let all = accounts.count > 1 ? "All accounts" : "Your account"
+func claudeStatus(_ accounts: [AccountUsage], now: Date, pool: PoolOutlook? = nil) -> Status {
+    let pool = pool ?? accounts.poolOutlook(now: now)
+    let all = pool.members > 1 ? "All accounts" : "Your account"
     if let b = pool.nextOut {
         let back = b.end.map { " · back \(whenText($0, now: now))" } ?? ""
         if b.start <= now.addingTimeInterval(60) { return Status(text: "\(all) limited" + back, warns: true) }
@@ -297,12 +348,12 @@ private func claudeStatus(_ accounts: [AccountUsage], now: Date) -> Status {
     }
     guard pool.canProject else { return Status(text: " ", warns: false) }
     let clear = "No limits ahead at this pace"
-    return Status(text: pool.limitedNow == 0 ? clear : "\(pool.limitedNow) of \(accounts.count) limited · the rest hold",
+    return Status(text: pool.limitedNow == 0 ? clear : "\(pool.limitedNow) of \(pool.members) limited · the rest hold",
                   warns: false)
 }
 
 /// Go's three windows stop it independently, so name the one that gets there first.
-private func goStatus(_ accounts: [GoAccount], now: Date) -> Status {
+func goStatus(_ accounts: [GoAccount], now: Date) -> Status {
     let walls = accounts.flatMap { account -> [(name: String, wall: Blackout)] in
         let outlook = account.outlook
         let windows = [("5h", outlook.rolling), ("Weekly", outlook.weekly), ("Monthly", outlook.monthly)]
@@ -406,6 +457,35 @@ private struct SectionDivider: View {
     }
 }
 
+struct GoRowModel: Equatable {
+    let rolling: ColumnModel
+    let weekly: ColumnModel
+    let monthly: ColumnModel
+}
+
+/// A window that is already at its limit stops the other two: name the one that resets last, since
+/// that is the wait that matters. No reset time counts as the last wait of all.
+func goBlockedBy(_ outlook: GoOutlook) -> [String?] {
+    let windows: [(name: String, projection: Projection?)] = [
+        ("5h", outlook.rolling), ("weekly", outlook.weekly), ("monthly", outlook.monthly)
+    ]
+    let exhausted = windows.filter { $0.projection?.isExhausted == true }
+    guard let last = exhausted.max(by: {
+        ($0.projection?.resetsAt ?? .distantFuture) < ($1.projection?.resetsAt ?? .distantFuture)
+    }) else {
+        return windows.map { _ in nil }
+    }
+    return windows.map { $0.projection?.isExhausted == true ? nil : "\(last.name) limit" }
+}
+
+func goRowModel(_ account: GoAccount, now: Date) -> GoRowModel {
+    let outlook = account.outlook
+    let blocked = goBlockedBy(outlook)
+    return GoRowModel(rolling: ColumnModel(outlook.rolling, now: now, blockedBy: blocked[0]),
+                      weekly: ColumnModel(outlook.weekly, now: now, blockedBy: blocked[1]),
+                      monthly: ColumnModel(outlook.monthly, now: now, blockedBy: blocked[2]))
+}
+
 private struct GoRow: View {
     let account: GoAccount
     let now: Date
@@ -416,7 +496,7 @@ private struct GoRow: View {
     }
 
     var body: some View {
-        let outlook = account.outlook
+        let model = goRowModel(account, now: now)
         let problem = staleCaption(account.problem, fetchedAt: account.fetchedAt, now: now)
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
@@ -434,9 +514,9 @@ private struct GoRow: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 16)
-            WindowColumn(projection: outlook.rolling, now: now)
-            WindowColumn(projection: outlook.weekly, now: now)
-            WindowColumn(projection: outlook.monthly, now: now)
+            WindowColumn(model: model.rolling)
+            WindowColumn(model: model.weekly)
+            WindowColumn(model: model.monthly)
         }
     }
 }
@@ -477,9 +557,11 @@ private struct ClaudeSection: View {
     let now: Date
 
     var body: some View {
-        let outlooks = accounts.pooledOutlooks(now: now)
+        let forecasts = accounts.poolForecasts(now: now)
+        let pool = accounts.poolOutlook(forecasts: forecasts)
+        let outlooks = accounts.pooledOutlooks(now: now, forecasts: forecasts)
         ProviderSection(titles: ["5 HOURS", "WEEK"]) {
-            SectionTitle(mark: "claude", title: "Claude", status: claudeStatus(accounts, now: now))
+            SectionTitle(mark: "claude", title: "Claude", status: claudeStatus(accounts, now: now, pool: pool))
         } rows: {
             ForEach(accounts.indices, id: \.self) { i in
                 AccountRow(account: accounts[i], outlook: outlooks[i], now: now)

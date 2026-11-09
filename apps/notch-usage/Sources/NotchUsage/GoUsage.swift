@@ -174,7 +174,7 @@ extension GoAccount {
 /// A window that is out now, or will be before it resets. An exhausted window is a wall even with no
 /// reset time: nothing refills it until one appears. A reset time already past means it has refilled,
 /// so it is no wall at all. 99.6% reads as 100, so rounding decides what counts as out.
-private func wall(_ p: Projection) -> Blackout? {
+func wall(_ p: Projection) -> Blackout? {
     if let resetsAt = p.resetsAt, resetsAt <= p.at { return nil }
     if p.utilization.rounded() >= 100 { return Blackout(start: p.exhaustsAt ?? p.at, end: p.resetsAt) }
     guard let resetsAt = p.resetsAt, let out = p.exhaustsAt, out < resetsAt else { return nil }
