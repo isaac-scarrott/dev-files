@@ -95,3 +95,4 @@ export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator"
 
 # Vite+ bin (https://viteplus.dev)
 . "/Users/isaac/.config/vite-plus/env"
+export PATH=$PATH:$HOME/.maestro/bin
