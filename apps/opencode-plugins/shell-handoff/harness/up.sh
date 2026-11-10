@@ -3,7 +3,7 @@
 # Stop it with harness/down.sh.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-SKILL=$(cd "$HERE/../../../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
+SKILL=$(cd "$HERE/../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
 PLUGINS=$(cd "$HERE/../.." && pwd)
 W=/private/tmp/sh-handoff
 export OC_HARNESS_ROOT=/private/tmp/oc-harness-shh OC_HARNESS_CDP_PORT=${SH_CDP:-9471} OC_HARNESS_SERVICE_PORT=${SH_SVC:-49641}

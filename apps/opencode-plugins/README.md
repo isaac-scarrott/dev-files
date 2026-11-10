@@ -50,7 +50,7 @@ scripts in the package.
 Built `dist/gui-experimental.cjs` files are tracked so registration works on a new
 checkout before installing development dependencies. Rebuild and commit them with source.
 
-Develop with the `opencode-gui-plugins` skill in `../../.claude/skills/`.
+Develop with the `opencode-gui-plugins` skill in `.claude/skills/`.
 
 ## Lint
 

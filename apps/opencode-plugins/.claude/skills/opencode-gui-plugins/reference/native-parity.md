@@ -23,7 +23,7 @@ Parity replaces the preference with a measurement.
 
 ```sh
 OC_PW_ROOT=/private/tmp/agents-live-pw OC_HARNESS_CDP_PORT=9348 \
-  node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/<plugin>/parity.spec.mjs
+  node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/<plugin>/parity.spec.mjs
 # one element while iterating:            --only session-tab-row,menu-item
 # a one-off style diff with no spec:      --ours '[data-my-row]' --native '[data-titlebar-tab]' --states rest,row,hover
 ```

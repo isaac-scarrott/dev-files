@@ -15,7 +15,7 @@ plugin (`.spike/probe-plugin`: a `Slot window.bottom` bar, a `TitlebarItem`, and
 
 ```sh
 OC_HARNESS_ROOT=/private/tmp/oc-spaces-spike OC_HARNESS_CDP_PORT=9601 OC_HARNESS_SERVICE_PORT=49701 \
-  OC_HARNESS_TURNS=2 .claude/skills/opencode-gui-plugins/scripts/desktop-harness.sh start <abs plugin dirs...>
+  OC_HARNESS_TURNS=2 apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/desktop-harness.sh start <abs plugin dirs...>
 password=$(node -e 'console.log(require("/private/tmp/oc-spaces-spike/state/opencode/service.json").password)')
 node seed-session.mjs http://127.0.0.1:49701 "$password" /private/tmp/oc-spaces-spike/project 0 --sidebar 120,40,4
 ```

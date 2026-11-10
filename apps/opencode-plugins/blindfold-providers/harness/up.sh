@@ -3,7 +3,7 @@
 # Stop it with harness/down.sh. Fixture CLIs and fake values only.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-SKILL=$(cd "$HERE/../../../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
+SKILL=$(cd "$HERE/../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
 PLUGINS=$(cd "$HERE/../.." && pwd)
 export OC_HARNESS_ROOT=/private/tmp/oc-harness-onb OC_HARNESS_CDP_PORT=${ONB_CDP:-9481} OC_HARNESS_SERVICE_PORT=${ONB_SVC:-49681}
 export NODE_OPTIONS=--max-old-space-size=1500

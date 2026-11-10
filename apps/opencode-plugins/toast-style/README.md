@@ -26,4 +26,4 @@ Kind: GUI (`gui-experimental`). Cmd+R for GUI; restart the background service (`
 None. A plugin that knows which key opens the next waiting request may set `--toast-style-go-next-hint` on `:root` (a quoted string, for example `"⌘I"`); the front waiting-request toast then shows it on its first button. `notifications` does, and only while that key opens that toast.
 
 ## Development
-`pnpm typecheck && pnpm test && pnpm build` (dist is tracked), `pnpm smoke` after a build. In a private harness with `test/probe-plugin` and this plugin loaded (see [browser-testing.md](../../../.claude/skills/opencode-gui-plugins/reference/browser-testing.md)): `OC_HARNESS_CDP_PORT=… OC_PW_ROOT=… npx tsx test/markup-probe.mjs`. Design notes and evidence: [DESIGN.md](DESIGN.md).
+`pnpm typecheck && pnpm test && pnpm build` (dist is tracked), `pnpm smoke` after a build. In a private harness with `test/probe-plugin` and this plugin loaded (see [browser-testing.md](../.claude/skills/opencode-gui-plugins/reference/browser-testing.md)): `OC_HARNESS_CDP_PORT=… OC_PW_ROOT=… npx tsx test/markup-probe.mjs`. Design notes and evidence: [DESIGN.md](DESIGN.md).

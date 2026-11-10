@@ -1,6 +1,6 @@
 // Fails when the app's toast markup no longer matches what src/host-markup.ts aims at, and when the style does not apply.
 // Needs the private harness running with test/probe-plugin and this plugin loaded:
-//   S=../../../.claude/skills/opencode-gui-plugins/scripts; $S/desktop-harness.sh start $PWD/test/probe-plugin $PWD
+//   S=../.claude/skills/opencode-gui-plugins/scripts; $S/desktop-harness.sh start $PWD/test/probe-plugin $PWD
 //   OC_HARNESS_CDP_PORT=9333 npx tsx test/markup-probe.mjs
 // playwright-core: $OC_PW_ROOT, else /private/tmp/pw.
 import assert from "node:assert/strict"

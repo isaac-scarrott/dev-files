@@ -4,7 +4,7 @@
 # Usage: harness/run-providers.sh [shots-dir]
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-SKILL=$(cd "$HERE/../../../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
+SKILL=$(cd "$HERE/../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
 PLUGINS=$(cd "$HERE/../.." && pwd)
 export OC_HARNESS_ROOT=/private/tmp/oc-harness-prov OC_HARNESS_CDP_PORT=9377 OC_HARNESS_SERVICE_PORT=49577
 export BF_CDP=http://127.0.0.1:9377 BF_ROOT=$OC_HARNESS_ROOT BF_CODE_FILE=/private/tmp/bf-run/code.js BF_REQ_LOG=/private/tmp/bf-run/req.json BF_AUDIT=/private/tmp/bf-run/audit.jsonl BF_STUB_PORT=49883

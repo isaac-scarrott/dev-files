@@ -114,7 +114,7 @@ cp "$ROOT/scripts/gen-mcp.sh" "$fixture/scripts/"
 cp "$ROOT/mcp.manifest.json" "$fixture/"
 # Replace the sandbox link so generation cannot write through to the real repo.
 rm "$HOME/.config/opencode/opencode.json"
-printf '%s\n' '{"model":"test/model","mcp":{"servers":{},"timeout":{"startup":45000}}}' > "$SANDBOX/opencode.json"
+printf '%s\n' '{"model":"test/model","mcp":{"servers":{"browse":{"type":"local","command":["browse"]}},"timeout":{"startup":45000}}}' > "$SANDBOX/opencode.json"
 ln -s "$SANDBOX/opencode.json" "$HOME/.config/opencode/opencode.json"
 printf '%s\n' 'model = "test-model"' > "$HOME/.codex/config.toml"
 check_status=0
@@ -128,8 +128,9 @@ expect "generated configs are in sync" "$check_status" "0"
 expect "OpenCode symlink preserved" "$(readlink "$HOME/.config/opencode/opencode.json")" "$SANDBOX/opencode.json"
 expect "OpenCode model preserved" "$(jq -r .model "$SANDBOX/opencode.json")" "test/model"
 expect "V2 timeout preserved" "$(jq -r .mcp.timeout.startup "$SANDBOX/opencode.json")" "45000"
-expect "all OpenCode servers rendered" "$(jq '.mcp.servers | length' "$SANDBOX/opencode.json")" \
+expect "all OpenCode servers rendered" "$(jq '.mcp.servers | del(.browse) | length' "$SANDBOX/opencode.json")" \
   "$(jq '[.servers[] | select(.targets | index("opencode"))] | length' "$fixture/mcp.manifest.json")"
+expect "tool-owned OpenCode server survives" "$(jq -r '.mcp.servers.browse.command[0]' "$SANDBOX/opencode.json")" "browse"
 expect "Codex model preserved" "$(head -n 1 "$HOME/.codex/config.toml")" 'model = "test-model"'
 sed -i '' '/^# <<< dev-files managed MCP/i\
 [mcp_servers.tool-owned]\

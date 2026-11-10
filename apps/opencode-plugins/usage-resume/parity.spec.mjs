@@ -1,6 +1,6 @@
 // Parity: usage-resume's Settings row next to a native switch row. The composer pill is a host `ComposerPill`, so there is
 // nothing of ours to compare. Run against a harness window with the plugin loaded, Settings > Preferences open, scrolled to the rows.
-//   OC_PW_ROOT=/private/tmp/ur2-pw OC_HARNESS_CDP_PORT=9361 node .claude/skills/opencode-gui-plugins/scripts/parity.mjs \
+//   OC_PW_ROOT=/private/tmp/ur2-pw OC_HARNESS_CDP_PORT=9361 node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs \
 //     --spec apps/opencode-plugins/usage-resume/parity.spec.mjs [--only settings-row]
 
 export default {

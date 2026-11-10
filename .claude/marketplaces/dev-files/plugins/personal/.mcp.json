@@ -7,14 +7,6 @@
     "type": "http",
     "url": "https://api.mobbin.com/mcp"
   },
-  "linear-server": {
-    "type": "http",
-    "url": "https://mcp.linear.app/mcp"
-  },
-  "posthog": {
-    "type": "http",
-    "url": "https://mcp.posthog.com/mcp"
-  },
   "ticktick": {
     "type": "http",
     "url": "https://mcp.ticktick.com"

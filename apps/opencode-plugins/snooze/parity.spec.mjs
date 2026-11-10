@@ -1,7 +1,7 @@
 // Parity spec for the Snoozed rows and their row action, against the live session row.
 // Harness: sidebar-repos + snooze + archive loaded, Side tabs on, three seeded top-level sessions: one open (the native
 // sibling), one archived, one snoozed (see the hand-off for how they are made). Every group is opened in `prepare`.
-// Run: OC_PW_ROOT=/private/tmp/agents-live-pw OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/snooze/parity.spec.mjs
+// Run: OC_PW_ROOT=/private/tmp/agents-live-pw OC_HARNESS_CDP_PORT=<port> node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/snooze/parity.spec.mjs
 
 const LIVE = "[data-tab-key]:not([data-tab-key^=draft])"
 const nativeRow = `${LIVE} [data-titlebar-tab]`

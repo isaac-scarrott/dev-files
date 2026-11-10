@@ -82,8 +82,12 @@ write_claude "claude-holibob"  "$PLUGINS/holibob/.mcp.json"
 OC="$HOME/.config/opencode/opencode.json"
 if [ -f "$OC" ]; then
   mcp="$(servers_for "opencode" | jq "$OPENCODE_SHAPE")"
-  content="$(jq --argjson mcp "$mcp" '
-    if .mcp.servers? then .mcp.servers = $mcp else .mcp = $mcp end
+  # Own only the manifest's names; servers other installers add (e.g. browse) stay.
+  names="$(jq '.servers | keys' "$MANIFEST")"
+  content="$(jq --argjson mcp "$mcp" --argjson names "$names" '
+    def unowned: with_entries(select(.key as $k | $names | index($k) | not));
+    if .mcp.servers? then .mcp = (.mcp | unowned) | .mcp.servers = (.mcp.servers | unowned) + $mcp
+    else .mcp = ((.mcp // {}) | unowned) + $mcp end
   ' "$OC")"
   render "$OC" "$content"
 else
@@ -101,7 +105,7 @@ block="$(servers_for "codex" | jq -r "$CODEX_TOML")"
 if [ -f "$CODEX" ]; then
   # Codex may insert its own servers inside our markers. Move those tables outside
   # the managed block rather than deleting them on the next generation.
-  names="$(servers_for "codex" | jq -r 'keys | join(" ")')"
+  names="$(jq -r '.servers | keys | join(" ")' "$MANIFEST")"
   body="$(awk -v s="$CX_START" -v e="$CX_END" -v names="$names" '
     BEGIN { split(names, list, " "); for (i in list) managed[list[i]]=1 }
     $0==s { inblk=1; keep=0; next }

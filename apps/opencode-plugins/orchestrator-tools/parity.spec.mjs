@@ -4,7 +4,7 @@
 // spec needs: plain user bubbles (alone and as a run) followed by a text part, a host subagent row and a Thought-only group, injected rows
 // (peer short, two-line and long, monitor, scheduler) consecutive and ending a run, short enough that the 1300x1500 window mounts the whole
 // timeline. Start the harness with orchestrator-tools, monitor and scheduler, open that session, then run from the repo root:
-//   OC_PW_ROOT=/private/tmp/pw OC_HARNESS_CDP_PORT=<port> node ~/.config/opencode/skills/opencode-gui-plugins/scripts/parity.mjs \
+//   OC_PW_ROOT=/private/tmp/pw OC_HARNESS_CDP_PORT=<port> node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs \
 //     --spec apps/opencode-plugins/orchestrator-tools/parity.spec.mjs
 
 const scroll = `(async () => { const v = document.querySelector("[data-slot=session-timeline-scroll] .scroll-view__viewport"); v.scrollTop = v.scrollHeight; await new Promise((r) => setTimeout(r, 400)) })()`

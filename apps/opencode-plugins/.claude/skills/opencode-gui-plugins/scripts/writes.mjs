@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import fs from "node:fs"
 import path from "node:path"
 const MODE = process.argv[2] ?? "bare", SECS = +(process.argv[3] ?? 90), ACT = process.argv[4] ?? "mix"
-const ROOT = "/private/tmp/oc-writes", S = "/Users/isaac/git/dev-files-perf/.claude/skills/opencode-gui-plugins/scripts", P = "/Users/isaac/git/dev-files-perf/apps/opencode-plugins"
+const ROOT = "/private/tmp/oc-writes", S = "/Users/isaac/git/dev-files-perf/apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts", P = "/Users/isaac/git/dev-files-perf/apps/opencode-plugins"
 const env = { ...process.env, OC_HARNESS_ROOT: ROOT, OC_HARNESS_CDP_PORT: "9631", OC_HARNESS_SERVICE_PORT: "49731", OC_HARNESS_TURNS: "200", OC_HARNESS_REALISTIC: "1", NODE_OPTIONS: "--max-old-space-size=1500" }
 const sh = (...a) => execFileSync(`${S}/desktop-harness.sh`, a, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

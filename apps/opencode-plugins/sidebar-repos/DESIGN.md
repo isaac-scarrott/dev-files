@@ -4,7 +4,7 @@ GUI plugin for OpenCode Desktop 2.2.5 that changes the Side tabs rows: the proje
 
 ## Decisions
 
-Reason for each DOM hook, against the "no extension point" list in [host-architecture.md §8](../../../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary). The CSS goes through `ctx.add(Style, …)`, the data through `ctx.tabs`, `ctx.sessions` and each server's `data`, and the icons through `ctx.ui.Icon`; everything below is DOM because tab rows have no extension point.
+Reason for each DOM hook, against the "no extension point" list in [host-architecture.md §8](../.claude/skills/opencode-gui-plugins/reference/host-architecture.md#8-public-and-internal-boundary). The CSS goes through `ctx.add(Style, …)`, the data through `ctx.tabs`, `ctx.sessions` and each server's `data`, and the icons through `ctx.ui.Icon`; everything below is DOM because tab rows have no extension point.
 
 - **Sibling badge before the title** (`[data-sidebar-repo]`): the host has no slot for a row's label. A sibling is injected and removed on cleanup; the title node is never rewritten, so rename keeps working. Grid rules are scoped with `:has(> [data-sidebar-repo])` so rows without a badge are untouched.
 - **Status icons** (`[data-sidebar-status-icon]`): the host draws one mark for "attention". The plugin hides that mark on a row with `data-sidebar-attention` and mounts the app's own catalog icon (`warning` for a permission, `help` for a question) with `ctx.ui.Icon`, rendered under the plugin's owner. Unread stays the blue dot and busy the ring. Errors are not marked, as in the host.
@@ -25,7 +25,7 @@ Reason for each DOM hook, against the "no extension point" list in [host-archite
 
 ## Performance
 
-Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated harness app, 9 open tabs (a 500-turn session, six 30-turn sessions, a 60-turn session with a peer message every 10 turns, Side tabs layout), no model; median of 3 runs of one script per row, CDP `Performance.getMetrics` per second, `MutationObserver` callbacks counted through a patched constructor. Idle is 30s untouched; scroll is 5s of 900px steps per frame; stream appends one node per frame to the last timeline row for 8s; switch is 10 tab switches. Script ms/s is main-thread scripting; busy ms/s is all main-thread task time. The bar in performance.md says "within 3% of bare scripting time"; read here as 3 points of main-thread time, since bare scripting in a switch is under 1%.
+Method: [performance.md](../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated harness app, 9 open tabs (a 500-turn session, six 30-turn sessions, a 60-turn session with a peer message every 10 turns, Side tabs layout), no model; median of 3 runs of one script per row, CDP `Performance.getMetrics` per second, `MutationObserver` callbacks counted through a patched constructor. Idle is 30s untouched; scroll is 5s of 900px steps per frame; stream appends one node per frame to the last timeline row for 8s; switch is 10 tab switches. Script ms/s is main-thread scripting; busy ms/s is all main-thread task time. The bar in performance.md says "within 3% of bare scripting time"; read here as 3 points of main-thread time, since bare scripting in a switch is under 1%.
 
 | Scenario | Bare (script / busy ms/s) | Before | After | Bar | Result |
 | --- | --- | --- | --- | --- | --- |

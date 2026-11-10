@@ -22,7 +22,7 @@ Side effects to expect: the second app launches quietly (`open -g`, no focus ste
 ## Recipe
 
 ```sh
-S=~/git/dev-files/.claude/skills/opencode-gui-plugins/scripts   # or this checkout's path
+S=~/git/dev-files/apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts   # or this checkout's path
 P=~/git/dev-files/apps/opencode-plugins
 $S/desktop-harness.sh start $P/sidebar-repos $P/snooze $P/archive    # ~6s, prints the CDP url
 # ... drive and screenshot ...

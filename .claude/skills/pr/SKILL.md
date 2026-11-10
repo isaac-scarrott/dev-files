@@ -161,6 +161,8 @@ Concrete evidence that the change works. Show a before and after.
 
 Screenshots are S-tier - when the environment is set up for it and the change is visual.
 
+Attach images with `gh pr create|edit --attach` (gh ≥ 2.99; see `--help`). Only markdown refs get rewritten, so for a sized `<img>` attach first, then reuse the `user-attachments` URL.
+
 Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
 
 ### Merge Danger

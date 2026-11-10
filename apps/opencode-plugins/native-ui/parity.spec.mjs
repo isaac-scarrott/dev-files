@@ -1,7 +1,7 @@
 // Parity spec for the native-ui library: every component next to its native sibling in the harness window, with the
 // demo plugin (./demo, built with `vite build` after `pnpm install` there) loaded beside sidebar-repos and
 // snooze-archive and two seeded sessions open (scripts/seed-session.mjs; the keys below are theirs).
-// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=9348 node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/native-ui/parity.spec.mjs
+// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=9348 node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/native-ui/parity.spec.mjs
 
 const LIVE = "[data-tab-key]:not([data-tab-key^=draft])"
 // The native sibling is the first seeded session's row, named by key so re-opening a tab (which appends it) cannot

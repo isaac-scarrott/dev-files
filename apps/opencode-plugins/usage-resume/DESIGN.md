@@ -207,7 +207,7 @@ the detector expects.
 
 ## Performance
 
-Not measured yet. Method and bars: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
+Not measured yet. Method and bars: [performance.md](../.claude/skills/opencode-gui-plugins/reference/performance.md) (seeded 500-prompt session, bare vs plugin, three runs, median). Fill the table below when measured.
 
 Standing cost, read from the source (not measured):
 - A body-wide `MutationObserver` plus a `resize` listener and rAF to place the composer button (`src/gui.tsx`).

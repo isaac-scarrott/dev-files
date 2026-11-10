@@ -6,7 +6,6 @@
 mattpocock/skills main skills/productivity/grill-me/SKILL.md .claude/skills/grill-me/SKILL.md
 mattpocock/skills main skills/productivity/grilling/SKILL.md .claude/skills/grilling/SKILL.md
 mattpocock/skills main skills/productivity/handoff/SKILL.md .claude/skills/handoff/SKILL.md
-mattpocock/skills main skills/productivity/wait-what/SKILL.md .claude/skills/wait-what/SKILL.md
 
 # mattpocock/skills — productivity/writing-for-agents
 mattpocock/skills main skills/productivity/writing-for-agents/SKILL.md .claude/skills/writing-for-agents/SKILL.md
@@ -19,17 +18,11 @@ mattpocock/skills main skills/engineering/wizard/template.sh .claude/skills/wiza
 # mattpocock/skills — engineering/grill-with-docs
 mattpocock/skills main skills/engineering/grill-with-docs/SKILL.md .claude/skills/grill-with-docs/SKILL.md
 
-# mattpocock/skills — engineering/improve-codebase-architecture
-mattpocock/skills main skills/engineering/improve-codebase-architecture/SKILL.md .claude/skills/improve-codebase-architecture/SKILL.md
-mattpocock/skills main skills/engineering/improve-codebase-architecture/HTML-REPORT.md .claude/skills/improve-codebase-architecture/HTML-REPORT.md
-
-# cursor/plugins — cursor-team-kit/thermo-nuclear-code-quality-review
-# (strip disable-model-invocation so agents can run it; tracks upstream otherwise)
-cursor/plugins main cursor-team-kit/skills/thermo-nuclear-code-quality-review/SKILL.md .claude/skills/thermo-nuclear-code-quality-review/SKILL.md | sed '/^disable-model-invocation:/d'
-
 # humanlayer/skills — show-me
 humanlayer/skills main plugins/show-me/skills/show-me/SKILL.md .claude/skills/show-me/SKILL.md
 
 # mattpocock/skills — engineering (moved from in-progress)
-mattpocock/skills main skills/engineering/pr/SKILL.md .claude/skills/pr/SKILL.md
 mattpocock/skills main skills/engineering/retro/SKILL.md .claude/skills/retro/SKILL.md
+
+# blader/humanizer — AI-tell patterns, folded into write-in-my-voice (frontmatter stripped so it isn't a separate skill)
+blader/humanizer main SKILL.md .claude/skills/write-in-my-voice/HUMANIZER.md | awk 'n>1; /^---$/{n++}'

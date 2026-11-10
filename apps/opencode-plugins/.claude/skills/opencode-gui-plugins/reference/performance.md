@@ -5,7 +5,7 @@ A plugin is done when it is **free**: indistinguishable from the app without it.
 The tool is `scripts/perf.mjs`. It drives the isolated harness over CDP, restarts the app per run, and prints one table.
 
 ```sh
-cd ~/git/dev-files/.claude/skills/opencode-gui-plugins/scripts
+cd ~/git/dev-files/apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts
 mkdir -p /private/tmp/pw && (cd /private/tmp/pw && npm i playwright-core)          # once, public registry
 node perf.mjs --runs 3 --out /private/tmp/oc-perf                                  # bare, null, every GUI plugin alone, all together
 node perf.mjs --plugins timeline-rail,sidebar-repos --only-all --scenarios open,reopen,stream   # a subset; --only-all = bare, null, all

@@ -1,7 +1,7 @@
 // Parity spec for the tab mark: our mark in the first session tab against the host's own status slot in a plain tab.
 // Needs the harness with notifications and sidebar-repos loaded, side tabs, and at least three open session tabs
 // (scripts/seed-session.mjs plus a few more imports). The mark is made by publishing one `info` through the hub's sink.
-// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/notifications/parity.spec.mjs
+// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=<port> node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/notifications/parity.spec.mjs
 
 const SESSION_TABS = "[data-tab-key^=sidecar]"
 const publish = `

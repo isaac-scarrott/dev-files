@@ -4,7 +4,7 @@
 # Fake CLIs and values only. Usage: harness/run-flow.sh [shots-dir]    (BF_PARITY=1 adds the parity spec)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-SKILL=$(cd "$HERE/../../../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
+SKILL=$(cd "$HERE/../../.claude/skills/opencode-gui-plugins/scripts" && pwd)
 PLUGINS=$(cd "$HERE/../.." && pwd)
 RUN=/private/tmp/bf-flow-run
 export OC_HARNESS_ROOT=/private/tmp/oc-harness-flow OC_HARNESS_CDP_PORT=9611 OC_HARNESS_SERVICE_PORT=49711

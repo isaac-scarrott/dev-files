@@ -357,7 +357,7 @@ frame, no rect or style read and no observer rebuilt while scrolling, the line f
 wheel forwarding, keyboard, chevrons, window limits with 5,000 messages, zero `loadMore` calls, hide conditions). The
 slot tests run the observers against fakes that follow the browser's rules (an intersection target is reported only when
 its state against the root changes; a resize target is reported once after it is observed). Live verification runs against a second, isolated desktop app
-driven over CDP (`.claude/skills/opencode-gui-plugins/reference/browser-testing.md`); GUI plugins do not load on the
+driven over CDP (`apps/opencode-plugins/.claude/skills/opencode-gui-plugins/reference/browser-testing.md`); GUI plugins do not load on the
 web build.
 
 Harness, 2.2.5, isolated root, window 1400x1000 (strip 40px, gutter persistent), seeded sessions of 50, 300 and 5,000
@@ -401,7 +401,7 @@ Not verified live: touch and `pointer: coarse`, reduced motion, a gutter under 4
 
 ## Performance
 
-Method: [performance.md](../../../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated desktop app (OpenCode
+Method: [performance.md](../.claude/skills/opencode-gui-plugins/reference/performance.md). Isolated desktop app (OpenCode
 2.2.5, own root, 1708x1044 window, 120Hz), a seeded realistic 500-turn session (reasoning and tool parts, long replies,
 every 25th taller than the viewport; about 22,000 DOM nodes mounted) and four short sessions, `desktop-harness.sh`, CDP
 `Performance.getMetrics` and the `Profiler` (100us). Scroll: scroller unpinned, `scrollTop` writes, 500 frames of 150px

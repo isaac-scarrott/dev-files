@@ -1,13 +1,11 @@
 ---
 name: write-in-my-voice
 description: >
-  Writes and rewrites prose in Isaac's personal voice, using a fingerprint
-  extracted from his own writing. Use when drafting or editing anything that
+  Writes, rewrites and de-AIs prose. Use when drafting or editing anything that
   should sound like Isaac (the user) wrote it himself: posts, replies, READMEs,
-  docs, blurbs, bios, emails, messages, or any first-person writing. Especially
-  important for anything personal or reflective, where generic AI writing drifts
-  furthest from him. Pairs with the `humanizer` skill, which it calls to strip
-  residual AI tells.
+  docs, blurbs, bios, emails, messages, or any first-person writing. Also use to
+  strip AI tells (not-X-but-Y contrasts, one-line closers, forced triads, dashes,
+  inflated claims, stock AI words, bold labels, filler) from any text, his or not.
 ---
 
 # Write in my voice
@@ -16,6 +14,10 @@ Write so it sounds like Isaac, not like an AI imitating a casual person. The
 voice is specific. Match it, don't approximate it.
 
 Full fingerprint and worked examples: see [VOICE-PROFILE.md](VOICE-PROFILE.md).
+AI-tell patterns and the editing process: see [HUMANIZER.md](HUMANIZER.md).
+
+Text that isn't Isaac's (a PR body, someone else's draft, neutral docs): follow
+HUMANIZER.md alone, in the text's own voice.
 
 ## The shape
 
@@ -81,8 +83,8 @@ Over-polished copy that reads like marketing. A little roughness is human; leave
 1. Read the task. If it's long-form, sketch the claim → example → takeaway beats.
 2. Draft in the voice above. Pull phrasing from [VOICE-PROFILE.md](VOICE-PROFILE.md),
    not from generic "casual" defaults.
-3. **Run the `humanizer` skill on the draft**, passing this voice profile as the
-   writing sample for its Voice Calibration step. Keep the voice, strip the tells.
+3. **Run [HUMANIZER.md](HUMANIZER.md) on the draft**, with VOICE-PROFILE.md as
+   its writing sample. Keep the voice, strip the tells.
 4. Final pass against **Never** and the checklist below.
 
 ## Self-check before delivering

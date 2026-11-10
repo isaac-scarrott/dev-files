@@ -57,42 +57,46 @@
     "/Users/isaac/git/dev-files/apps/opencode-plugins/spaces"
   ],
   "mcp": {
-    "paper": {
-      "type": "remote",
-      "url": "http://127.0.0.1:29979/mcp"
-    },
-    "mobbin": {
-      "type": "remote",
-      "url": "https://api.mobbin.com/mcp"
-    },
-    "linear-server": {
-      "type": "remote",
-      "url": "https://mcp.linear.app/mcp"
-    },
-    "posthog": {
-      "type": "remote",
-      "url": "https://mcp.posthog.com/mcp"
-    },
-    "ticktick": {
-      "type": "remote",
-      "url": "https://mcp.ticktick.com"
-    },
-    "redshift": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "awslabs.redshift-mcp-server@0.1.2"
-      ],
-      "environment": {
-        "PATH": "{env:HOME}/.local/bin:{env:PATH}",
-        "AWS_PROFILE": "default",
-        "AWS_DEFAULT_REGION": "eu-west-1",
-        "FASTMCP_LOG_LEVEL": "INFO"
+    "servers": {
+      "browse": {
+        "type": "local",
+        "command": [
+          "/Users/isaac/.local/bin/browse",
+          "mcp"
+        ],
+        "environment": {
+          "OPENCODE_BROWSER_RUNTIME": "auto-update"
+        }
+      },
+      "paper": {
+        "type": "remote",
+        "url": "http://127.0.0.1:29979/mcp"
+      },
+      "mobbin": {
+        "type": "remote",
+        "url": "https://api.mobbin.com/mcp"
+      },
+      "ticktick": {
+        "type": "remote",
+        "url": "https://mcp.ticktick.com"
+      },
+      "redshift": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "awslabs.redshift-mcp-server@0.1.2"
+        ],
+        "environment": {
+          "PATH": "{env:HOME}/.local/bin:{env:PATH}",
+          "AWS_PROFILE": "default",
+          "AWS_DEFAULT_REGION": "eu-west-1",
+          "FASTMCP_LOG_LEVEL": "INFO"
+        }
+      },
+      "datadog-mcp": {
+        "type": "remote",
+        "url": "https://mcp.datadoghq.eu/v1/mcp"
       }
-    },
-    "datadog-mcp": {
-      "type": "remote",
-      "url": "https://mcp.datadoghq.eu/v1/mcp"
     }
   }
 }

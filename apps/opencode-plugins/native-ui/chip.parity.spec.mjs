@@ -4,7 +4,7 @@
 // at it, Background activity on Left. The chips are the host's own `ComposerPill` capsules, so style parity is the host's CSS
 // applying to both; what the spec proves is that nothing in the plugin overrides it and that the popover rows read like the
 // host's activity rows.
-// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=9341 node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/native-ui/chip.parity.spec.mjs
+// Run: OC_PW_ROOT=... OC_HARNESS_CDP_PORT=9341 node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/native-ui/chip.parity.spec.mjs
 
 const NATIVE = '[data-slot="session-activity-chip"]'
 const MONITOR = '[data-slot="session-plugin-pill"][aria-label*="monitor"]'
