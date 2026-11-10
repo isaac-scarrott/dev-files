@@ -50,6 +50,7 @@ Builders inherit whatever environment you leave them, so shaping it is orchestra
 ## Trust, but verify
 
 - Builders commit; you verify and land. Re-run the checks yourself before anything leaves the machine. A report of green is a claim.
+- A builder that ends its turn while one of its monitors runs is waiting, not finished: the monitor wakes it when the command exits, even after a server restart. Leave it be until its final report (check `monitor.list` if unsure), and never tell it to wait in the foreground instead, because a restart kills foreground waits. Re-prompt only a builder that stopped with no monitor running.
 - Challenge proposals, especially cross-cutting ones such as API semantics, shared primitives and data contracts. When a fix looks too big or too clever, commission a read-only audit of root cause and correct usage before building. The right fix is often "we were using it wrong".
 - Rebase and verify in a workspace nobody else is using. A builder switching branches under your test run produces false results.
 - Say exactly what was and wasn't verified. Known flakes get a re-run and a name, not a shrug.
