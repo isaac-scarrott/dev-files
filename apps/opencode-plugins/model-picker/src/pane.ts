@@ -77,6 +77,9 @@ function cloneRow(host: HTMLElement, plain: boolean) {
   const row = host.cloneNode(true) as HTMLElement
   strip(row)
   row.setAttribute("data-mp-row", "")
+  // The host marks the row it is on; a model listed twice would then be lit in both places. The pane lights exactly one
+  // copy after laying out (see `light`), the one the pointer or the arrow is on.
+  row.removeAttribute("data-active")
   // Under its own provider's header the provider name is repeated, so it goes: true for a Recent row, and for a
   // favorite listed in its provider section (its copy in Favorites keeps the label, as the host shows it).
   if (plain) row.querySelector(`${NAME} > ${FAINT}`)?.remove()
@@ -149,14 +152,15 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     sig: string
     host: HTMLElement
     key: string
+    /** `section\u0000key`: the place this copy sits, stable when the clone element is replaced. */
+    placement: string
   }
   const rows = new Map<string, Clone>()
   const cloned = new WeakMap<HTMLElement, Clone>()
   const placement = (section: string, key: string) => `${section}\u0000${key}`
   const clonesOf = (key: string) => [...rows.values()].filter((row) => row.key === key)
-  /** The pane row the highlight last settled on: which copy of a model listed twice to move away from, and which one the
-   *  host's flyout should sit beside. */
-  let anchor: HTMLElement | undefined
+  /** The copy the highlight last settled on, by placement: which one to lit, move away from, and place the flyout beside. */
+  let anchor: string | undefined
   const patched = new Set<HTMLElement>()
   let queued = false
   let disposed = false
@@ -170,6 +174,14 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     if (!snap) return undefined
     for (const [key, row] of snap.rows) if (row.el.hasAttribute("data-active")) return key
     return snap.order[0]
+  }
+
+  /** Lights exactly one copy of the active model: the one the pointer or the arrow is on, else the first (Favorites). */
+  const light = () => {
+    const active = hostActive()
+    const wanted = active === undefined ? undefined : anchor !== undefined && rows.get(anchor)?.key === active ? anchor : undefined
+    const lit = active === undefined ? undefined : (wanted !== undefined ? rows.get(wanted) : clonesOf(active)[0])
+    for (const row of rows.values()) row.el.toggleAttribute("data-active", row === lit)
   }
 
   // Moves the host's highlight with its own arrow-key handler, so its state, flyout and `keyboard` flag follow.
@@ -254,11 +266,13 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
         const host = model.rows.get(key)!
         // The copy under its own provider header loses the provider label; the Favorites copy keeps it.
         const plain = host.section === "recent" || section.id === providerOf(key)
-        const raw = host.el.outerHTML + (plain ? "|plain" : "")
+        // The host's active mark is left out of the signature: the pane lights one copy itself, so a move of the highlight
+        // must not rebuild the rows it passes.
+        const raw = host.el.outerHTML.replace(/^(<[^>]*?) data-active(?:="[^"]*")?/, "$1") + (plain ? "|plain" : "")
         const id = placement(section.id, key)
         let row = rows.get(id)
         if (!row || row.sig !== raw) {
-          row = { el: cloneRow(host.el, plain), sig: raw, host: host.el, key }
+          row = { el: cloneRow(host.el, plain), sig: raw, host: host.el, key, placement: id }
           rows.set(id, row)
           cloned.set(row.el, row)
         }
@@ -269,10 +283,9 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
           // The host places its flyout beside the row it is given: give it this pane's row's box, and the copy that is
           // lit when the model is listed twice.
           host.el.getBoundingClientRect = () => {
-            const copies = clonesOf(key).map((copy) => copy.el)
-            const shown =
-              anchor && copies.includes(anchor) ? anchor : (copies.find((copy) => copy.hasAttribute("data-active")) ?? copies[0])
-            return shown ? shown.getBoundingClientRect() : Element.prototype.getBoundingClientRect.call(host.el)
+            const copies = clonesOf(key)
+            const shown = copies.find((copy) => copy.placement === anchor) ?? copies[0]
+            return shown ? shown.el.getBoundingClientRect() : Element.prototype.getBoundingClientRect.call(host.el)
           }
           patched.add(host.el)
         }
@@ -314,11 +327,12 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
           ? (copies.find((entry) => entry.index > after) ?? copies[0])
           : ([...copies].reverse().find((entry) => entry.index < after) ?? copies[copies.length - 1])
       if (target !== undefined) {
-        anchor = target.row
+        anchor = cloned.get(target.row)?.placement
         if (target.index === 0) scroll.scrollTo?.({ top: 0 })
         else target.row.scrollIntoView?.({ block: "nearest" })
       }
     }
+    light()
     if (frame === undefined) frame = requestAnimationFrame(() => ((frame = undefined), !disposed && fadeHeaders(scroll)))
   }
 
@@ -331,19 +345,22 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
   const hostRow = (event: Event) => {
     const row = (event.target as Element | null)?.closest<HTMLElement>("[data-mp-row]")
     const clone = row ? cloned.get(row) : undefined
-    return clone ? { ours: row!, host: clone.host } : undefined
+    return clone ? { ours: row!, host: clone.host, placement: clone.placement } : undefined
   }
   const onClick = (event: MouseEvent) => {
     const hit = hostRow(event)
     if (!hit) return
-    anchor = hit.ours
+    anchor = hit.placement
     hit.host.click()
   }
   const onMove = (event: MouseEvent) => {
     const hit = hostRow(event)
     const target = hit?.host
     if (!hit || !target) return
-    anchor = hit.ours
+    anchor = hit.placement
+    // The host's row is already the active one when the pointer moves between two copies of the same model, so nothing
+    // is observed and no render follows: relight here, or the previous copy keeps the highlight.
+    light()
     const { clientX, clientY, screenX, screenY, movementX, movementY, buttons, shiftKey, ctrlKey, altKey, metaKey } = event
     target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, composed: true, view: window, clientX, clientY, screenX, screenY, movementX, movementY, buttons, shiftKey, ctrlKey, altKey, metaKey }))
   }
@@ -375,7 +392,8 @@ export function attach(dialog: HTMLElement, env: PaneEnv): Pane | undefined {
     // Where the highlight really is: a model shown twice is lit in both places, and the copy we last landed on is the one
     // the next press should move away from.
     const lit = list.findIndex((row) => row.hasAttribute("data-active"))
-    const from = anchor && list.includes(anchor) && anchor.dataset.optionKey === active ? list.indexOf(anchor) : lit
+    const taken = anchor === undefined ? -1 : list.findIndex((row) => cloned.get(row)?.placement === anchor)
+    const from = taken !== -1 && list[taken]?.dataset.optionKey === active ? taken : lit
     pendingScroll = { key: next, after: from, direction }
     moveHostTo(next)
     schedule()

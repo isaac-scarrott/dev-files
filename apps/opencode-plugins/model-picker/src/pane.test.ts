@@ -35,6 +35,15 @@ function host(specs: Spec[]) {
   const dialog = doc.querySelector<HTMLElement>(".model-dialog")!
   const input = dialog.querySelector<HTMLInputElement>("input")!
   const hostRows = () => [...dialog.querySelectorAll<HTMLElement>('[data-mp-hidden] [data-slot="search-list-row"]')]
+  // The host's own hover handler: the row under the pointer becomes the active one, and touching the row that is already
+  // active changes no markup (a framework re-render), so the pane cannot wait for an observed change to relight. The pane's
+  // clones carry the host's data-slots, so only rows in the host's hidden list count.
+  dialog.addEventListener("mousemove", (event) => {
+    const row = (event.target as HTMLElement).closest?.('[data-slot="search-list-row"]')
+    if (!row || row.closest("[data-mp-pane]") || row.hasAttribute("data-active")) return
+    hostRows().forEach((item) => item.removeAttribute("data-active"))
+    row.setAttribute("data-active", "")
+  })
   // The host's own arrow handler: moves its highlight one row through its own order, wrapping.
   let moves = 0
   input.addEventListener("keydown", (event) => {
@@ -125,6 +134,29 @@ test("a favorite listed under its provider is one stop for the arrow keys, not t
   const walked = [active()]
   for (let i = 0; i < 6; i++) (press("ArrowDown"), await settle(), walked.push(active()))
   assert.deepEqual(walked, ["zeta:fav", "alpha:big", "alpha:recent", "alpha:mid", "alpha:low", "zeta:z", "zeta:fav"])
+  pane.dispose()
+})
+
+test("a favorite is lit once: only the copy the pointer is on", async () => {
+  const { dialog, hostRows } = host(specs)
+  const pane = attach(dialog, { price: () => prices })!
+  await settle()
+  // The favorite is the host's active model already: hovering its other copy changes no host markup, so the pane must
+  // relight on the move itself rather than wait for a re-render.
+  hostRows().forEach((row) => row.removeAttribute("data-active"))
+  hostRows().find((row) => row.dataset.optionKey === "zeta:fav")!.setAttribute("data-active", "")
+  await settle()
+  const copies = [...dialog.querySelectorAll<HTMLElement>('[data-mp-pane] [data-option-key="zeta:fav"]')]
+  const lit = () => [...dialog.querySelectorAll<HTMLElement>('[data-mp-pane] [data-option-key="zeta:fav"][data-active]')]
+  const header = (row: Element) => row.closest('[data-slot="search-list-section"]')!.querySelector('[data-slot="search-list-header"]')!.textContent
+
+  assert.equal(lit().length, 1)
+  assert.equal(header(lit()[0]!), "Favorites")
+
+  copies[1]!.dispatchEvent(new win.MouseEvent("mousemove", { bubbles: true, clientX: 4, clientY: 4 }) as unknown as Event)
+  await settle()
+  assert.equal(lit().length, 1, "the copy under the pointer only")
+  assert.equal(header(lit()[0]!), "Zeta AI")
   pane.dispose()
 })
 

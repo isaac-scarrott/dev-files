@@ -3,7 +3,7 @@
 // plugin's (and lifts the dialog's 480px cap), so every plugin element sits beside the host element it clones.
 // Needs the harness started with seeded providers (OC_HARNESS_EXTRA_CONFIG, see DESIGN.md) and one starred model,
 // alpha:a-big, so Favorites exists on both sides.
-// Run: OC_PW_ROOT=<dir with playwright-core> OC_HARNESS_CDP_PORT=<port> node .claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/model-picker/parity.spec.mjs
+// Run: OC_PW_ROOT=<dir with playwright-core> OC_HARNESS_CDP_PORT=<port> node apps/opencode-plugins/.claude/skills/opencode-gui-plugins/scripts/parity.mjs --spec apps/opencode-plugins/model-picker/parity.spec.mjs
 
 const OURS = "[data-mp-pane]"
 const NATIVE = '[data-slot="search-list-body"]:not([data-mp-pane])'
