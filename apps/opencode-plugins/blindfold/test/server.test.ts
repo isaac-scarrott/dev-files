@@ -122,7 +122,34 @@ test("fails when the user cancels or no TUI responds", async () => {
   expect(await handlers().ack({ requestID: requestID() })).toEqual({ accepted: false })
 
   unreachable()
-  await expect(request()).rejects.toThrow("No OpenCode window or TUI with blindfold responded")
+  await expect(request()).rejects.toThrow("No OpenCode window or TUI with blindfold answered")
+})
+
+test("an unreachable window tells the agent to stop and ask, not hunt for the secret", async () => {
+  const { tools, unreachable } = await harness()
+  unreachable()
+  const get = tools.get("get")!.execute({ name: "DATADOG_API_KEY", reason: "Read the dashboards" }, context)
+  await expect(get).rejects.toThrow(
+    "Stop and tell the user you need DATADOG_API_KEY and why; never look for a secret in the keychain, shell config, env files or other repos.",
+  )
+})
+
+test("blocks shell commands that read a secret from the macOS keychain", async () => {
+  const { hooks } = await harness()
+  const before = async (command: string) => hooks.get("tool.execute.before")!({ tool: "shell", input: { command } })
+  const blocked = "Reading secrets from the macOS keychain is blocked. Get the secret with `blindfold.get`"
+  for (const command of [
+    "security find-generic-password -s datadog -w",
+    "security find-internet-password -s api.example.com -w",
+    "security dump-keychain",
+    "sudo security -q find-generic-password -a me -s github -w",
+  ]) await expect(before(command)).rejects.toThrow(blocked)
+  for (const command of ["security find-identity -v", "security list-keychains", "ls ~/.config", "grep -rn Token src"]) {
+    expect(await before(command)).toBeUndefined()
+  }
+
+  const off = await harness({ shell: { blockKeychain: false } })
+  expect(await off.hooks.get("tool.execute.before")!({ tool: "shell", input: { command: "security find-generic-password -w" } })).toBeUndefined()
 })
 
 test("redacts tool results, errors, model context, and provider requests", async () => {

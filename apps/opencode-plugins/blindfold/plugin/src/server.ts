@@ -20,6 +20,9 @@ const EVALUATE_IDS = new Set(["browser_evaluate", "browser.evaluate"])
 const CLOSE_IDS = new Set(["browser_tabs_close", "browser.tabs.close"])
 const MOVE_IDS = new Set(["browser_back", "browser.back", "browser_forward", "browser.forward"])
 const NAVIGATE_IDS = new Set(["browser_navigate", "browser.navigate"])
+const SHELL_TOOL = "shell"
+/** The `security` subcommands that read a password out of the macOS keychain. */
+const KEYCHAIN_READ = /(?<![A-Za-z0-9_-])security(?:\s+-[A-Za-z-]+)*\s+(?:find-generic-password|find-internet-password|dump-keychain)(?![A-Za-z0-9-])/
 /** The fill script's report when the page is not the origin the fill was for. */
 const REFUSED = /reason\\*"\s*:\s*\\*"origin/
 const PROMPT_TIMEOUT = 10 * 60_000
@@ -44,14 +47,11 @@ function failure(names: string[], status: Exclude<Answer["status"], "submitted">
   const what = names.join(", ")
   if (status === "cancelled") return provider ? `The user denied access to ${what}.` : `The user declined to provide ${what}.`
   if (status === "timeout") return `Timed out waiting for the user to provide ${what}.`
-  return [
-    `No OpenCode window or TUI with blindfold responded, so the user could not be asked for ${what}.`,
-    "Ask the user to check that blindfold is in plugins in ~/.config/opencode/opencode.json (and cli.json for the TUI).",
-  ].join(" ")
+  return `No OpenCode window or TUI with blindfold answered, so the user could not be asked for ${what}. Stop and tell the user you need ${what} and why; never look for a secret in the keychain, shell config, env files or other repos.`
 }
 
 type Settings = {
-  shell: { enabled: boolean; approve: boolean }
+  shell: { enabled: boolean; approve: boolean; blockKeychain: boolean }
   codemode: { enabled: boolean }
   secrets: Map<string, string>
   onepassword: { account?: string }
@@ -104,7 +104,7 @@ function getSettings(options: Record<string, unknown>): Settings {
   const shell = group(options, "shell")
   const codemode = group(options, "codemode")
   const settings = {
-    shell: { enabled: boolean(shell, "shell", "enabled", true), approve: boolean(shell, "shell", "approve", true) },
+    shell: { enabled: boolean(shell, "shell", "enabled", true), approve: boolean(shell, "shell", "approve", true), blockKeychain: boolean(shell, "shell", "blockKeychain", true) },
     codemode: { enabled: boolean(codemode, "codemode", "enabled", true) },
     secrets: getSecrets(options),
     onepassword: getOnePassword(options),
@@ -121,6 +121,13 @@ function getSettings(options: Record<string, unknown>): Settings {
 // Secret names are environment-variable style, so a word match covers $NAME, ${NAME}, os.environ["NAME"], and so on.
 function mentioned(names: string[], command: string) {
   return names.filter((name) => new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(command))
+}
+
+/** A shell command that reads a secret from the macOS keychain is refused: blindfold is the only way to a secret. */
+function denyKeychain(input: unknown) {
+  const command = (input as { command?: unknown } | null)?.command
+  if (typeof command !== "string" || !KEYCHAIN_READ.test(command)) return
+  throw new Error("Reading secrets from the macOS keychain is blocked. Get the secret with `blindfold.get` (or `tools.blindfold.get` in Code Mode), or ask the user.")
 }
 
 function instructions(settings: Settings) {
@@ -646,6 +653,7 @@ export default Plugin.define({
     // The placeholder from `fill` becomes the script with the values only here, after the call was recorded: the tool runs
     // with the new input, the stored call keeps the placeholder.
     await ctx.tool.hook("execute.before", (event) => {
+      if (event.tool === SHELL_TOOL && settings.shell.blockKeychain) denyKeychain(event.input)
       if (!EVALUATE_IDS.has(event.tool)) return
       const input = event.input as { tabID?: unknown; script?: unknown } | null
       if (!input || typeof input.script !== "string") return

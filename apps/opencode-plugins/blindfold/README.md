@@ -36,6 +36,7 @@ Kind: server, TUI and GUI in one package. Restart the background service (`scrip
 |---|---|---|
 | `shell.enabled` | `true` | Shell commands receive a secret they name, as an environment variable |
 | `shell.approve` | `true` | Each such command needs your approval |
+| `shell.blockKeychain` | `true` | Refuse shell commands that read a secret from the macOS keychain (`security find-generic-password`, `find-internet-password`, `dump-keychain`), pointing the agent at `blindfold.get` |
 | `codemode.enabled` | `true` | `blindfold.get` runs in Code Mode and returns the value to the code only |
 | `secrets` | none | Names the user provides up front: a plain value or `op://` reference per name |
 | `1password.account` | none | Account for `op://` reads when several are signed in. These reads never use the 1Password app (`OP_BIOMETRIC_UNLOCK_ENABLED=false`): they need a service account token or a signed-in session, and an unlocked blindfold-providers account serves them first |
