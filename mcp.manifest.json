@@ -1,5 +1,11 @@
 {
-  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode | codex. Do NOT put secrets here; use env substitution if ever needed. agentOnly: OpenCode agent that alone may use the server's tools; gen-mcp denies <server>_* for every other agent.",
+  "_comment": "Canonical MCP server manifest — single source of truth. Run scripts/gen-mcp.sh to render per-tool config. targets: claude-personal | claude-holibob | opencode | codex, or a key of opencodeProjects (OpenCode config written to <dir>/.opencode/opencode.json for each listed dir, so the server loads only in sessions under it). Do NOT put secrets here; use env substitution if ever needed. agentOnly: OpenCode agent that alone may use the server's tools; gen-mcp denies <server>_* for every other agent.",
+  "opencodeProjects": {
+    "opencode-holibob": [
+      "~/git/holibob",
+      "~/Library/Application Support/Synth/worktrees/holibob-e1b80ad7"
+    ]
+  },
   "servers": {
     "paper": {
       "transport": "http",
@@ -51,7 +57,7 @@
       },
       "targets": [
         "claude-holibob",
-        "opencode",
+        "opencode-holibob",
         "codex"
       ]
     },
@@ -60,7 +66,7 @@
       "url": "https://mcp.datadoghq.eu/v1/mcp",
       "targets": [
         "claude-holibob",
-        "opencode",
+        "opencode-holibob",
         "codex"
       ]
     }

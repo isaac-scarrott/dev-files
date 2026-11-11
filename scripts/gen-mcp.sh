@@ -95,6 +95,21 @@ else
   render "$OC" "$content"
 fi
 
+# Project-scoped OpenCode targets. OpenCode reads <dir>/.opencode/opencode.json in the session's directory and
+# every parent, past the git root, so one file per listed dir covers every checkout and worktree beneath it.
+while IFS=$'\t' read -r target dir; do
+  dir="${dir/#\~/$HOME}"
+  [ -d "$dir" ] || { echo "  skip: $dir (missing)"; continue; }
+  mcp="$(servers_for "$target" | jq "$OPENCODE_SHAPE")"
+  render "$dir/.opencode/opencode.json" "$(jq -n --argjson mcp "$mcp" '{"$schema":"https://opencode.ai/config.json", mcp:{servers:$mcp}}')"
+  common="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || continue
+  exclude="$common/info/exclude"
+  if ! grep -qxF '/.opencode/' "$exclude" 2>/dev/null; then
+    if [ "$CHECK" -eq 1 ]; then echo "  DRIFT: $exclude lacks /.opencode/"; drift=1
+    else mkdir -p "$common/info"; echo '/.opencode/' >> "$exclude"; echo "  wrote $exclude"; fi
+  fi
+done < <(jq -r '(.opencodeProjects // {}) | to_entries[] | .key as $t | .value[] | [$t, .] | @tsv' "$MANIFEST")
+
 # Codex shares ~/.codex/config.toml across CLI, IDE extension, and desktop app.
 # That file is Codex-owned (it rewrites hook/marketplace state) and may hold secrets,
 # so we never symlink or replace it — we maintain a marked block and leave the rest alone.

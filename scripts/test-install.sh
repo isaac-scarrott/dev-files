@@ -117,6 +117,7 @@ rm "$HOME/.config/opencode/opencode.json"
 printf '%s\n' '{"model":"test/model","mcp":{"servers":{"browse":{"type":"local","command":["browse"]}},"timeout":{"startup":45000}}}' > "$SANDBOX/opencode.json"
 ln -s "$SANDBOX/opencode.json" "$HOME/.config/opencode/opencode.json"
 printf '%s\n' 'model = "test-model"' > "$HOME/.codex/config.toml"
+mkdir -p "$HOME/git/holibob" && git -C "$HOME/git/holibob" init -q
 check_status=0
 bash "$fixture/scripts/gen-mcp.sh" --check > /dev/null || check_status=$?
 expect "check detects stale config" "$check_status" "1"
@@ -131,6 +132,9 @@ expect "V2 timeout preserved" "$(jq -r .mcp.timeout.startup "$SANDBOX/opencode.j
 expect "all OpenCode servers rendered" "$(jq '.mcp.servers | del(.browse) | length' "$SANDBOX/opencode.json")" \
   "$(jq '[.servers[] | select(.targets | index("opencode"))] | length' "$fixture/mcp.manifest.json")"
 expect "tool-owned OpenCode server survives" "$(jq -r '.mcp.servers.browse.command[0]' "$SANDBOX/opencode.json")" "browse"
+expect "project-scoped server rendered into its project" "$(jq -r '.mcp.servers["datadog-mcp"].url' "$HOME/git/holibob/.opencode/opencode.json")" "https://mcp.datadoghq.eu/v1/mcp"
+expect "project-scoped server absent from global OpenCode" "$(jq -r '.mcp.servers["datadog-mcp"] // "absent"' "$SANDBOX/opencode.json")" "absent"
+expect "project config excluded from git" "$(grep -cxF '/.opencode/' "$HOME/git/holibob/.git/info/exclude")" "1"
 expect "Codex model preserved" "$(head -n 1 "$HOME/.codex/config.toml")" 'model = "test-model"'
 sed -i '' '/^# <<< dev-files managed MCP/i\
 [mcp_servers.tool-owned]\

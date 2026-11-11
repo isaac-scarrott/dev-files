@@ -79,23 +79,6 @@
       "ticktick": {
         "type": "remote",
         "url": "https://mcp.ticktick.com"
-      },
-      "redshift": {
-        "type": "local",
-        "command": [
-          "uvx",
-          "awslabs.redshift-mcp-server@0.1.2"
-        ],
-        "environment": {
-          "PATH": "{env:HOME}/.local/bin:{env:PATH}",
-          "AWS_PROFILE": "default",
-          "AWS_DEFAULT_REGION": "eu-west-1",
-          "FASTMCP_LOG_LEVEL": "INFO"
-        }
-      },
-      "datadog-mcp": {
-        "type": "remote",
-        "url": "https://mcp.datadoghq.eu/v1/mcp"
       }
     }
   }
