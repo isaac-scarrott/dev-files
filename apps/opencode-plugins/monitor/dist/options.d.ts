@@ -12,6 +12,8 @@ export interface Options {
     /** Bytes of unsent output held per monitor; lines past it are dropped and counted. */
     readonly maxBufferBytes: number;
     readonly killGraceSeconds: number;
+    /** A shell command that sleeps this long, or loops with a sleep, is refused; 0 turns the guard off. */
+    readonly blockForegroundSleepSeconds: number;
     readonly logDir: string;
 }
 export declare const DEFAULTS: Options;
