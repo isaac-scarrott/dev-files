@@ -69,3 +69,17 @@ esc = 'mode main'
     outer.bottom =     10
     outer.top =        0
     outer.right =      10
+
+# Agents' test windows (Playwright's Chromium, Chrome for Testing, the iOS Simulator) open on workspace Z, off-screen,
+# so testing doesn't pop windows over Isaac's work. Switch to Z to watch them.
+[[on-window-detected]]
+if.app-id = 'org.chromium.Chromium'
+run = 'move-node-to-workspace Z'
+
+[[on-window-detected]]
+if.app-id = 'com.google.chrome.for.testing'
+run = 'move-node-to-workspace Z'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.iphonesimulator'
+run = 'move-node-to-workspace Z'
