@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises"
 import path from "node:path"
 import type { Plugin } from "@opencode/plugin"
 import { Error as ToolError } from "@opencode/plugin/promise/tool"
-import type { Monitors } from "./manager.js"
+import type { MonitorInfo, Monitors } from "./manager.js"
 import type { Options } from "./options.js"
 import { mayWake } from "./reach.js"
 
@@ -13,6 +13,13 @@ type Host = Pick<Plugin.Context, "session" | "permission">
 export const NAMESPACE = "monitor"
 
 const fail = (message: string) => new ToolError({ message })
+
+/** The refusal for a monitor that wakes another session: it names that session when its title is known. */
+async function foreignMonitor(host: Host, monitor: MonitorInfo): Promise<string> {
+  const owner = await host.session.get({ sessionID: monitor.session as never }).catch(() => undefined)
+  const title = owner?.title?.trim()
+  return `${monitor.id} belongs to session ${title ? `'${title}'` : monitor.session}; only that session can stop it`
+}
 
 export function describeMonitor(options: Options): string {
   return [
@@ -29,8 +36,8 @@ export function describeMonitor(options: Options): string {
   ].join("\n")
 }
 
-export const LIST_DESCRIPTION = "List the background monitors that are running: name, id, command, pid, when each started, how many events it produced over its whole life (kept across re-arms and service restarts, the count maxEvents caps), the last event, which session it wakes, restartCount (service restarts survived; a plugin reload does not count), and for re-arm monitors lastRearm and nextRearm."
-export const STOP_DESCRIPTION = "Stop a background monitor by id (see monitor.list). Its process and anything it started are ended."
+export const LIST_DESCRIPTION = "List this session's background monitors that are running: name, id, command, pid, when each started, how many events it produced over its whole life (kept across re-arms and service restarts, the count maxEvents caps), the last event, which session it wakes, restartCount (service restarts survived; a plugin reload does not count), and for re-arm monitors lastRearm and nextRearm. Monitors that wake other sessions are not listed."
+export const STOP_DESCRIPTION = "Stop this session's background monitor by id (see monitor.list). Its process and anything it started are ended. A monitor that wakes another session can only be stopped by that session."
 
 export function registerTools(editor: Editor, monitors: Monitors, host: Host, options: Options): void {
   editor.namespace({ name: NAMESPACE, description: "Run commands in the background and wake a session with their output as it happens." })
@@ -121,13 +128,21 @@ export function registerTools(editor: Editor, monitors: Monitors, host: Host, op
     "shell",
   )
 
-  add("list", LIST_DESCRIPTION, { type: "object", properties: {}, additionalProperties: false }, async () => ({ monitors: monitors.list() }))
+  add(
+    "list",
+    LIST_DESCRIPTION,
+    { type: "object", properties: {}, additionalProperties: false },
+    async (_input: Record<string, never>, context) => ({ monitors: monitors.list().filter((monitor) => monitor.session === context.sessionID) }),
+  )
 
   add(
     "stop",
     STOP_DESCRIPTION,
     { type: "object", properties: { id: { type: "string", minLength: 1, description: "Monitor id from monitor.start or monitor.list" } }, required: ["id"], additionalProperties: false },
-    async (input: { id: string }) => {
+    async (input: { id: string }, context) => {
+      const monitor = monitors.list().find((running) => running.id === input.id)
+      if (!monitor) throw fail(`No running monitor with id ${input.id}`)
+      if (monitor.session !== context.sessionID) throw fail(await foreignMonitor(host, monitor))
       const stopped = await monitors.stop(input.id)
       if (!stopped) throw fail(`No running monitor with id ${input.id}`)
       return { stopped }

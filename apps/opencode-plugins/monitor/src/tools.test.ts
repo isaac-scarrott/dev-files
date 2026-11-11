@@ -56,3 +56,57 @@ test("start resolves cwd against the session's directory, and takes an absolute 
   assert.equal(started[2].cwd, outside)
   assert.deepEqual(asserted.filter((what) => what.action === "external_directory").map((what) => what.resources), [[outside]])
 })
+
+/** The list and stop tools over two sessions: ses_me owns mon_mine, ses_merger (titled "Merger") owns mon_theirs. */
+function owned(title: string | null = "Merger") {
+  const added: any[] = []
+  const stopped: string[] = []
+  const monitors = {
+    list: () => [
+      { id: "mon_mine", name: "mine", session: "ses_me" },
+      { id: "mon_theirs", name: "merger land watch", session: "ses_merger" },
+    ],
+    stop: async (id: string) => (stopped.push(id), { id }),
+  }
+  registerTools(
+    { namespace() {}, add: (t: any) => void added.push(t) } as never,
+    monitors as never,
+    { session: { get: async ({ sessionID }: any) => (sessionID === "ses_merger" && title !== null ? { title } : {}) } } as never,
+    DEFAULTS,
+  )
+  return { added, stopped }
+}
+
+test("list answers only the monitors that wake the calling session", async () => {
+  const { added } = owned()
+  const list = added.find((t) => t.name === "list")
+  assert.deepEqual((await list.execute({}, { sessionID: "ses_me" })).output.monitors.map((monitor: any) => monitor.id), ["mon_mine"])
+  assert.deepEqual((await list.execute({}, { sessionID: "ses_merger" })).output.monitors.map((monitor: any) => monitor.id), ["mon_theirs"])
+  assert.deepEqual((await list.execute({}, { sessionID: "ses_stranger" })).output.monitors, [])
+})
+
+test("stop refuses another session's monitor, naming its session, and stops one of your own", async () => {
+  const { added, stopped } = owned()
+  const stop = added.find((t) => t.name === "stop")
+  await assert.rejects(stop.execute({ id: "mon_theirs" }, { sessionID: "ses_me" }), {
+    message: "mon_theirs belongs to session 'Merger'; only that session can stop it",
+  })
+  assert.deepEqual(stopped, [])
+  const result = await stop.execute({ id: "mon_mine" }, { sessionID: "ses_me" })
+  assert.deepEqual(result.output.stopped, { id: "mon_mine" })
+  assert.deepEqual(stopped, ["mon_mine"])
+})
+
+test("stop names the session id when the title is unknown, and keeps the unknown-id error", async () => {
+  const stop = owned(null).added.find((t) => t.name === "stop")
+  await assert.rejects(stop.execute({ id: "mon_theirs" }, { sessionID: "ses_me" }), {
+    message: "mon_theirs belongs to session ses_merger; only that session can stop it",
+  })
+  await assert.rejects(stop.execute({ id: "mon_none" }, { sessionID: "ses_me" }), { message: "No running monitor with id mon_none" })
+})
+
+test("list and stop say the monitors are this session's", () => {
+  const { added } = owned()
+  assert.match(added.find((t) => t.name === "list").description, /this session's background monitors/)
+  assert.match(added.find((t) => t.name === "stop").description, /this session's background monitor/)
+})

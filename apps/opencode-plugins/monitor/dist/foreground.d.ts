@@ -6,7 +6,7 @@
 /** The host's shell tool: the only tool whose call runs a command in the foreground. */
 export declare const SHELL_TOOL = "shell";
 /** What the agent is told when the call is refused: exactly what to do instead. */
-export declare const FOREGROUND_WAIT = "This is a foreground wait. Start it with monitor.start (Code Mode: `await tools.monitor.start({command, name})`), then end your turn: the monitor wakes you when it prints or exits, even after a restart.";
+export declare const FOREGROUND_WAIT = "This is a foreground wait. Start it with monitor.start (Code Mode: `await tools.monitor.start({command, name})`), then end your turn: the monitor wakes you when it prints or exits, even after a restart. This works for sub-agents too: ending your turn here is fine, the monitor wakes you and your parent hears from you again when you finish.";
 /** The part of a tool call the guard reads; the host's `execute.before` event has these fields and more. */
 export interface ToolCall {
     readonly tool: string;

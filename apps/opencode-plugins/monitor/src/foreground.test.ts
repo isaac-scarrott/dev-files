@@ -39,3 +39,7 @@ test("a threshold of 0 turns the guard off", () => {
   assert.equal(isForegroundWait("sleep 300", 0), false)
   assert.doesNotThrow(() => createShellGuard(0)({ tool: "shell", input: { command: "while true; do sleep 1; done" } }))
 })
+
+test("the refusal tells sub-agents that ending their turn is fine", () => {
+  assert.match(FOREGROUND_WAIT, /This works for sub-agents too: ending your turn here is fine, the monitor wakes you and your parent hears from you again when you finish\./)
+})
