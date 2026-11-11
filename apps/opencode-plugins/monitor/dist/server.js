@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin";
 import { createLog } from "./diag.js";
+import { createShellGuard } from "./foreground.js";
 import { globalRegistry } from "./handoff.js";
 import { Monitors } from "./manager.js";
 import { parseOptions } from "./options.js";
@@ -43,6 +44,9 @@ export default Plugin.define({
         const notify = (notification) => void control?.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`));
         const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000), notify });
         const tools = await ctx.tool.transform((editor) => registerTools(editor, monitors, ctx, options));
+        // A foreground wait holds the turn open until it ends, and dies with a service restart. Refuse it and say what to do
+        // instead: the same command under monitor.start wakes the session, even after a restart.
+        await ctx.tool.hook("execute.before", createShellGuard(options.blockForegroundSleepSeconds));
         // The desktop row's Stop button. A monitor belongs to one session, and only that session's row may stop it.
         const handlers = monitorControl(monitors);
         control = await ctx.rpc.register(MonitorControl, {

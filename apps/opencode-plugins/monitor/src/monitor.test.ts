@@ -366,6 +366,10 @@ test("options reject bad values", () => {
   assert.equal(parseOptions({}).maxMonitors, 40)
   assert.equal(parseOptions({}).maxPerSession, 5)
   assert.equal(parseOptions({}).ttlMinutes, 1440)
+  assert.equal(parseOptions({}).blockForegroundSleepSeconds, 30)
+  assert.equal(parseOptions({ blockForegroundSleepSeconds: 0 }).blockForegroundSleepSeconds, 0)
+  assert.throws(() => parseOptions({ blockForegroundSleepSeconds: -1 }), /blockForegroundSleepSeconds/)
+  assert.throws(() => parseOptions({ blockForegroundSleepSeconds: 1.5 }), /blockForegroundSleepSeconds/)
 })
 
 test("a monitor lost at restart wakes its session once, saying it is gone", async () => {

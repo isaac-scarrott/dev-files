@@ -55,6 +55,7 @@ The row needs the GUI export: the host decides a plugin's parts when the service
 | `maxLineChars` | `2000` | longer lines are cut |
 | `maxBufferBytes` | `65536` | unsent output held per monitor |
 | `killGraceSeconds` | `5` | SIGTERM to SIGKILL |
+| `blockForegroundSleepSeconds` | `30` | a shell command that sleeps this long, or loops with a sleep, is refused and told to use `monitor.start`; `0` turns the guard off |
 | `logDir` | `~/.local/share/opencode/monitor` | `monitor.log` (lifecycle only, never output) |
 
 ## Credits

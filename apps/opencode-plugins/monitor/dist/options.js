@@ -10,14 +10,15 @@ export const DEFAULTS = {
     maxLineChars: 2000,
     maxBufferBytes: 65_536,
     killGraceSeconds: 5,
+    blockForegroundSleepSeconds: 30,
     logDir: path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode", "monitor"),
 };
-function integer(raw, key) {
+function integer(raw, key, min = 1) {
     const value = raw[key];
     if (value === undefined)
         return DEFAULTS[key];
-    if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
-        throw new Error(`monitor option ${key} must be a positive integer`);
+    if (typeof value !== "number" || !Number.isInteger(value) || value < min)
+        throw new Error(`monitor option ${key} must be ${min === 0 ? "a non-negative" : "a positive"} integer`);
     return value;
 }
 export function parseOptions(raw = {}) {
@@ -34,6 +35,7 @@ export function parseOptions(raw = {}) {
         maxLineChars: integer(raw, "maxLineChars"),
         maxBufferBytes: integer(raw, "maxBufferBytes"),
         killGraceSeconds: integer(raw, "killGraceSeconds"),
+        blockForegroundSleepSeconds: integer(raw, "blockForegroundSleepSeconds", 0),
         logDir,
     };
 }

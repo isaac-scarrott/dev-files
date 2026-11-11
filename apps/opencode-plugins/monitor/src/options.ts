@@ -15,6 +15,8 @@ export interface Options {
   /** Bytes of unsent output held per monitor; lines past it are dropped and counted. */
   readonly maxBufferBytes: number
   readonly killGraceSeconds: number
+  /** A shell command that sleeps this long, or loops with a sleep, is refused; 0 turns the guard off. */
+  readonly blockForegroundSleepSeconds: number
   readonly logDir: string
 }
 
@@ -28,13 +30,14 @@ export const DEFAULTS: Options = {
   maxLineChars: 2000,
   maxBufferBytes: 65_536,
   killGraceSeconds: 5,
+  blockForegroundSleepSeconds: 30,
   logDir: path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode", "monitor"),
 }
 
-function integer(raw: Readonly<Record<string, unknown>>, key: Exclude<keyof Options, "logDir">): number {
+function integer(raw: Readonly<Record<string, unknown>>, key: Exclude<keyof Options, "logDir">, min = 1): number {
   const value = raw[key]
   if (value === undefined) return DEFAULTS[key]
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) throw new Error(`monitor option ${key} must be a positive integer`)
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min) throw new Error(`monitor option ${key} must be ${min === 0 ? "a non-negative" : "a positive"} integer`)
   return value
 }
 
@@ -51,6 +54,7 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Optio
     maxLineChars: integer(raw, "maxLineChars"),
     maxBufferBytes: integer(raw, "maxBufferBytes"),
     killGraceSeconds: integer(raw, "killGraceSeconds"),
+    blockForegroundSleepSeconds: integer(raw, "blockForegroundSleepSeconds", 0),
     logDir,
   }
 }
