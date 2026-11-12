@@ -34,6 +34,13 @@ export interface Memory {
     failures: number;
     cycling: boolean;
     splitter: unknown;
+    /** The newest matching lines, for a wait that has not produced a batch yet. */
+    recent: string[];
+    /** The last process exit, for a wait that returns at once after the monitor ended. */
+    lastExit: {
+        code: number | null;
+        signal: string | null;
+    } | undefined;
 }
 export interface Handoff {
     readonly def: Definition;

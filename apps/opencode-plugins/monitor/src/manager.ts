@@ -1,5 +1,5 @@
 import { claim, killParked, park, type Handoff, type Registry } from "./handoff.js"
-import { Monitor, type Definition } from "./monitor.js"
+import { Monitor, type Definition, type WaitOutcome } from "./monitor.js"
 import type { Options } from "./options.js"
 import type { Notify } from "./notify.js"
 import type { Clock, Spawn } from "./process.js"
@@ -74,6 +74,16 @@ export interface MonitorInfo {
 
 const PREFIX = "monitor/def/"
 const STATE_PREFIX = "monitor/state/"
+/** How long a monitor that ended stays answerable: `monitor.wait` on it returns its exit code and last lines at once. */
+const FINISHED_MS = 30 * 60_000
+
+/** A monitor that has ended, kept in memory so a wait that arrives just after it ended returns at once. */
+interface Finished {
+  readonly session: string
+  readonly exitCode?: number
+  readonly lines: string[]
+  readonly at: number
+}
 
 const randomID = () => `mon_${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`
 
@@ -82,6 +92,8 @@ export class Monitors {
   /** Writes of one monitor's state, in order, so a late heartbeat cannot land after the removal. */
   private readonly writes = new Map<string, Promise<unknown>>()
   private readonly finishedIDs = new Set<string>()
+  /** Monitors that ended recently: what `monitor.wait` answers when it arrives just after the end. */
+  private readonly finished = new Map<string, Finished>()
 
   constructor(private readonly deps: ManagerDeps) {}
 
@@ -123,6 +135,32 @@ export class Monitors {
 
   list(): MonitorInfo[] {
     return [...this.running.values()].map((monitor) => this.describe(monitor))
+  }
+
+  /** The session a monitor wakes, running or recently finished; undefined when there is no such monitor. */
+  owner(id: string): string | undefined {
+    const running = this.running.get(id)
+    if (running) return running.def.sessionID
+    this.pruneFinished()
+    return this.finished.get(id)?.session
+  }
+
+  /**
+   * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. Undefined when no monitor
+   * (running or recently finished) has that id. One that already ended returns its exit code and last lines at once.
+   */
+  async wait(id: string, timeoutMs: number, signal?: AbortSignal): Promise<WaitOutcome | undefined> {
+    const running = this.running.get(id)
+    if (running) return running.wait(timeoutMs, signal)
+    this.pruneFinished()
+    const done = this.finished.get(id)
+    if (!done) return undefined
+    return { state: "exited", ...(done.exitCode === undefined ? {} : { exitCode: done.exitCode }), lines: done.lines }
+  }
+
+  private pruneFinished(): void {
+    const cutoff = this.deps.clock.now() - FINISHED_MS
+    for (const [id, done] of this.finished) if (done.at < cutoff) this.finished.delete(id)
   }
 
   async stop(id: string): Promise<MonitorInfo | undefined> {
@@ -257,6 +295,13 @@ export class Monitors {
       deliver: (sessionID, text, meta) => sessions.prompt(sessionID, text, meta),
       notify: this.deps.notify,
       finished: (done) => {
+        this.finished.set(done.def.id, {
+          session: done.def.sessionID,
+          ...(done.exitCode === undefined ? {} : { exitCode: done.exitCode }),
+          lines: done.lastLines(),
+          at: clock.now(),
+        })
+        this.pruneFinished()
         if (this.running.get(done.def.id) === done) this.running.delete(done.def.id)
         if (this.deps.registry.live.get(done.def.id)?.owner === this) this.deps.registry.live.delete(done.def.id)
         this.finishedIDs.add(done.def.id)

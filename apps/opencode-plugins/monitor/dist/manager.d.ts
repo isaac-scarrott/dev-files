@@ -1,4 +1,5 @@
 import { type Registry } from "./handoff.js";
+import { type WaitOutcome } from "./monitor.js";
 import type { Options } from "./options.js";
 import type { Notify } from "./notify.js";
 import type { Clock, Spawn } from "./process.js";
@@ -74,10 +75,20 @@ export declare class Monitors {
     /** Writes of one monitor's state, in order, so a late heartbeat cannot land after the removal. */
     private readonly writes;
     private readonly finishedIDs;
+    /** Monitors that ended recently: what `monitor.wait` answers when it arrives just after the end. */
+    private readonly finished;
     constructor(deps: ManagerDeps);
     get count(): number;
     start(input: StartInput): Promise<MonitorInfo>;
     list(): MonitorInfo[];
+    /** The session a monitor wakes, running or recently finished; undefined when there is no such monitor. */
+    owner(id: string): string | undefined;
+    /**
+     * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. Undefined when no monitor
+     * (running or recently finished) has that id. One that already ended returns its exit code and last lines at once.
+     */
+    wait(id: string, timeoutMs: number, signal?: AbortSignal): Promise<WaitOutcome | undefined>;
+    private pruneFinished;
     stop(id: string): Promise<MonitorInfo | undefined>;
     /** The session was archived or deleted: its monitors have no one to wake. */
     removeSession(sessionID: string): Promise<void>;

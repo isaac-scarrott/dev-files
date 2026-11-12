@@ -207,6 +207,68 @@ test("maxEvents ends the monitor", async () => {
   assert.equal(t.monitors.count, 0)
 })
 
+test("wait returns when the monitor exits, with its code and last lines", async () => {
+  const t = setup()
+  const info = await t.monitors.start({ ...t.input, batchSeconds: 3600 })
+  const waiting = t.monitors.wait(info.id, 60_000)
+  t.sp.out(t.sp.runs[0]!, "done\n")
+  t.sp.exit(t.sp.runs[0]!, 0)
+  assert.deepEqual(await waiting, { state: "exited", exitCode: 0, lines: ["done"] })
+  assert.equal(t.wakes.length, 0, "the exit goes to the waiter, not the session")
+  assert.equal(t.monitors.count, 0)
+})
+
+test("wait returns the next batch of lines without waiting for the end", async () => {
+  const t = setup()
+  const info = await t.monitors.start(t.input)
+  const waiting = t.monitors.wait(info.id, 60_000)
+  t.sp.out(t.sp.runs[0]!, "a\nb\n")
+  await t.clock.advance(5000)
+  assert.deepEqual(await waiting, { state: "event", lines: ["a", "b"] })
+  assert.equal(t.wakes.length, 0, "the batch goes to the waiter, not the session")
+  assert.equal(t.monitors.count, 1)
+  await t.monitors.dispose()
+})
+
+test("wait returns a batch before its timeout, and times out when nothing prints", async () => {
+  const t = setup()
+  const info = await t.monitors.start(t.input)
+  const waiting = t.monitors.wait(info.id, 30_000)
+  t.sp.out(t.sp.runs[0]!, "quiet\n")
+  await t.clock.advance(5000)
+  assert.deepEqual(await waiting, { state: "event", lines: ["quiet"] })
+  assert.equal(t.wakes.length, 0)
+  const second = t.monitors.wait(info.id, 10_000)
+  await t.clock.advance(10_000)
+  assert.deepEqual(await second, { state: "timeout", lines: [] })
+  assert.equal(t.monitors.count, 1)
+  await t.monitors.dispose()
+})
+
+test("wait on a monitor that already ended returns at once with its exit code and lines", async () => {
+  const t = setup()
+  const info = await t.monitors.start({ ...t.input, batchSeconds: 3600 })
+  t.sp.out(t.sp.runs[0]!, "bye\n")
+  t.sp.exit(t.sp.runs[0]!, 7)
+  await flush()
+  assert.equal(t.monitors.owner(info.id), "ses_1")
+  assert.deepEqual(await t.monitors.wait(info.id, 60_000), { state: "exited", exitCode: 7, lines: ["bye"] })
+})
+
+test("stop ends a wait at once; a killed process has no exit code", async () => {
+  const t = setup()
+  const info = await t.monitors.start(t.input)
+  const waiting = t.monitors.wait(info.id, 60_000)
+  await t.monitors.stop(info.id)
+  assert.deepEqual(await waiting, { state: "exited", lines: [] })
+})
+
+test("wait knows no monitor id that never existed", async () => {
+  const t = setup()
+  assert.equal(t.monitors.owner("mon_none"), undefined)
+  assert.equal(await t.monitors.wait("mon_none", 1000), undefined)
+})
+
 test("stop sends SIGTERM then SIGKILL after the grace period, with no wake", async () => {
   const t = setup()
   await t.monitors.start(t.input)

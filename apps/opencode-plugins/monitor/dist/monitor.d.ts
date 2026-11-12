@@ -37,6 +37,18 @@ export interface Deps {
     readonly notify?: Notify;
 }
 export type State = "running" | "waiting" | "ended";
+/** What a waiter is given: the next batch of lines, the end of the monitor, or its own timeout. */
+export type WaitOutcome = {
+    readonly state: "exited";
+    readonly exitCode?: number;
+    readonly lines: string[];
+} | {
+    readonly state: "event";
+    readonly lines: string[];
+} | {
+    readonly state: "timeout";
+    readonly lines: string[];
+};
 /** A restore: the previous run state (restartCount already counting this restart) and the note for the first wake. */
 export interface Resume {
     readonly state: RunState;
@@ -75,6 +87,11 @@ export declare class Monitor {
     /** The command died on its own: the crash was reported as an error, so ending it is not news again. */
     private crashed;
     private readonly matcher;
+    /** The last process this monitor's command ran, for a waiter that blocks until the monitor ends. */
+    private lastExit;
+    /** Matching lines, newest last: what a waiter gets when the monitor has already ended. */
+    private recent;
+    private readonly waiters;
     constructor(def: Definition, deps: Deps);
     /**
      * A fresh start, or (with `resume`) a restore after a service restart. The process is always new; what is kept is the
@@ -84,6 +101,19 @@ export declare class Monitor {
      */
     start(resume?: Resume): void;
     get pid(): number | undefined;
+    /** The exit code of the command that ended this monitor, when it exited by itself (not when it was killed). A re-arm
+     *  monitor outlives every one of its processes, so its last process exit says nothing about why it ended. */
+    get exitCode(): number | undefined;
+    /** The lines a waiter sees when the monitor ends: the newest matching lines, capped like a wake. */
+    lastLines(): string[];
+    /**
+     * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. The end of the monitor and
+     * its batches arrive through the same hooks as a wake (`flush`, `end`, `stop`), so nothing polls.
+     */
+    wait(timeoutMs: number, signal?: AbortSignal): Promise<WaitOutcome>;
+    private exitOutcome;
+    /** Tells every blocked waiter at once; each one settles only the first time. */
+    private wakeWaiters;
     /**
      * Plugin reload: the monitor leaves this instance with its process still running. Timers stop, the pipes are held
      * by the port until another instance attaches, nothing is saved or sent and the manager is not told it finished.

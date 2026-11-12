@@ -5,6 +5,8 @@ import { downtimeWindow, parseRunState } from "./state.js";
 import { renderWake } from "./wrap.js";
 const PREFIX = "monitor/def/";
 const STATE_PREFIX = "monitor/state/";
+/** How long a monitor that ended stays answerable: `monitor.wait` on it returns its exit code and last lines at once. */
+const FINISHED_MS = 30 * 60_000;
 const randomID = () => `mon_${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`;
 export class Monitors {
     deps;
@@ -12,6 +14,8 @@ export class Monitors {
     /** Writes of one monitor's state, in order, so a late heartbeat cannot land after the removal. */
     writes = new Map();
     finishedIDs = new Set();
+    /** Monitors that ended recently: what `monitor.wait` answers when it arrives just after the end. */
+    finished = new Map();
     constructor(deps) {
         this.deps = deps;
     }
@@ -53,6 +57,34 @@ export class Monitors {
     }
     list() {
         return [...this.running.values()].map((monitor) => this.describe(monitor));
+    }
+    /** The session a monitor wakes, running or recently finished; undefined when there is no such monitor. */
+    owner(id) {
+        const running = this.running.get(id);
+        if (running)
+            return running.def.sessionID;
+        this.pruneFinished();
+        return this.finished.get(id)?.session;
+    }
+    /**
+     * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. Undefined when no monitor
+     * (running or recently finished) has that id. One that already ended returns its exit code and last lines at once.
+     */
+    async wait(id, timeoutMs, signal) {
+        const running = this.running.get(id);
+        if (running)
+            return running.wait(timeoutMs, signal);
+        this.pruneFinished();
+        const done = this.finished.get(id);
+        if (!done)
+            return undefined;
+        return { state: "exited", ...(done.exitCode === undefined ? {} : { exitCode: done.exitCode }), lines: done.lines };
+    }
+    pruneFinished() {
+        const cutoff = this.deps.clock.now() - FINISHED_MS;
+        for (const [id, done] of this.finished)
+            if (done.at < cutoff)
+                this.finished.delete(id);
     }
     async stop(id) {
         const monitor = this.running.get(id);
@@ -190,6 +222,13 @@ export class Monitors {
             deliver: (sessionID, text, meta) => sessions.prompt(sessionID, text, meta),
             notify: this.deps.notify,
             finished: (done) => {
+                this.finished.set(done.def.id, {
+                    session: done.def.sessionID,
+                    ...(done.exitCode === undefined ? {} : { exitCode: done.exitCode }),
+                    lines: done.lastLines(),
+                    at: clock.now(),
+                });
+                this.pruneFinished();
                 if (this.running.get(done.def.id) === done)
                     this.running.delete(done.def.id);
                 if (this.deps.registry.live.get(done.def.id)?.owner === this)
