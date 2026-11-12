@@ -19,6 +19,13 @@ test("a short sleep, or another command, is not", () => {
 test("a polling loop is a foreground wait whatever the sleep's length", () => {
   assert.equal(isForegroundWait("until gh pr checks; do sleep 20; done", 30), true)
   assert.equal(isForegroundWait("while true; do sleep 1; done", 30), true)
+  assert.equal(isForegroundWait("for i in $(seq 1 23); do gh pr checks; sleep 5; done", 30), true)
+  assert.equal(isForegroundWait("for i in 1 2 3; do sleep 1; done", 30), true)
+})
+
+test("a for loop that does real work is not a wait", () => {
+  assert.equal(isForegroundWait("for f in *.ts; do echo $f; done", 30), false)
+  assert.equal(isForegroundWait("for f in *.ts; do npm test -- $f; done", 30), false)
 })
 
 test("a sleep that is data, not a command, is not a wait", () => {
@@ -40,6 +47,9 @@ test("a threshold of 0 turns the guard off", () => {
   assert.doesNotThrow(() => createShellGuard(0)({ tool: "shell", input: { command: "while true; do sleep 1; done" } }))
 })
 
-test("the refusal tells sub-agents that ending their turn is fine", () => {
-  assert.match(FOREGROUND_WAIT, /This works for sub-agents too: ending your turn here is fine, the monitor wakes you and your parent hears from you again when you finish\./)
+test("the refusal points at monitor.wait for sub-agents and results needed now", () => {
+  assert.match(FOREGROUND_WAIT, /Start the command with monitor\.start/)
+  assert.match(FOREGROUND_WAIT, /end your turn/)
+  assert.match(FOREGROUND_WAIT, /call monitor\.wait\(\{id\}\)/)
+  assert.match(FOREGROUND_WAIT, /sub-agent/)
 })

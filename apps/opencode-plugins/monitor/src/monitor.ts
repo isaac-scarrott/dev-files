@@ -40,6 +40,17 @@ export interface Deps {
 
 export type State = "running" | "waiting" | "ended"
 
+/** What a waiter is given: the next batch of lines, the end of the monitor, or its own timeout. */
+export type WaitOutcome =
+  | { readonly state: "exited"; readonly exitCode?: number; readonly lines: string[] }
+  | { readonly state: "event"; readonly lines: string[] }
+  | { readonly state: "timeout"; readonly lines: string[] }
+
+/** One blocked `monitor.wait`: settled by the next event batch, the end of the monitor, its timeout or its abort. */
+interface Waiter {
+  readonly settle: (outcome: WaitOutcome) => void
+}
+
 const HOUR = 3_600_000
 const MAX_DELIVERY_FAILURES = 3
 const HEARTBEAT_MS = 60_000
@@ -82,6 +93,11 @@ export class Monitor {
   /** The command died on its own: the crash was reported as an error, so ending it is not news again. */
   private crashed = false
   private readonly matcher: RegExp | undefined
+  /** The last process this monitor's command ran, for a waiter that blocks until the monitor ends. */
+  private lastExit: { code: number | null; signal: string | null } | undefined
+  /** Matching lines, newest last: what a waiter gets when the monitor has already ended. */
+  private recent: string[] = []
+  private readonly waiters = new Set<Waiter>()
 
   constructor(readonly def: Definition, private readonly deps: Deps) {
     this.splitter = new LineSplitter(deps.options.maxLineChars)
@@ -120,6 +136,55 @@ export class Monitor {
     return this.child?.pid
   }
 
+  /** The exit code of the command that ended this monitor, when it exited by itself (not when it was killed). A re-arm
+   *  monitor outlives every one of its processes, so its last process exit says nothing about why it ended. */
+  get exitCode(): number | undefined {
+    if (this.def.rearmMinutes !== undefined) return undefined
+    return this.lastExit?.code ?? undefined
+  }
+
+  /** The lines a waiter sees when the monitor ends: the newest matching lines, capped like a wake. */
+  lastLines(): string[] {
+    return [...this.recent]
+  }
+
+  /**
+   * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. The end of the monitor and
+   * its batches arrive through the same hooks as a wake (`flush`, `end`, `stop`), so nothing polls.
+   */
+  wait(timeoutMs: number, signal?: AbortSignal): Promise<WaitOutcome> {
+    if (this.state === "ended") return Promise.resolve(this.exitOutcome())
+    if (signal?.aborted) return Promise.resolve({ state: "timeout", lines: [] })
+    return new Promise<WaitOutcome>((resolve) => {
+      let timer: unknown
+      let abort: (() => void) | undefined
+      const waiter: Waiter = {
+        settle: (outcome) => {
+          if (!this.waiters.delete(waiter)) return
+          if (timer !== undefined) this.deps.clock.clearTimeout(timer)
+          if (signal && abort) signal.removeEventListener("abort", abort)
+          resolve(outcome)
+        },
+      }
+      this.waiters.add(waiter)
+      timer = this.deps.clock.setTimeout(() => waiter.settle({ state: "timeout", lines: [] }), Math.max(0, timeoutMs))
+      if (signal) {
+        abort = () => waiter.settle({ state: "timeout", lines: [] })
+        signal.addEventListener("abort", abort, { once: true })
+      }
+    })
+  }
+
+  private exitOutcome(): WaitOutcome {
+    const exitCode = this.exitCode
+    return { state: "exited", ...(exitCode === undefined ? {} : { exitCode }), lines: this.lastLines() }
+  }
+
+  /** Tells every blocked waiter at once; each one settles only the first time. */
+  private wakeWaiters(outcome: WaitOutcome): void {
+    for (const waiter of [...this.waiters]) waiter.settle(outcome)
+  }
+
   /**
    * Plugin reload: the monitor leaves this instance with its process still running. Timers stop, the pipes are held
    * by the port until another instance attaches, nothing is saved or sent and the manager is not told it finished.
@@ -127,6 +192,7 @@ export class Monitor {
   detach(): Handoff {
     this.closing = true
     this.clearTimers()
+    this.wakeWaiters({ state: "timeout", lines: [] })
     this.port?.detach()
     const handoff: Handoff = {
       def: this.def,
@@ -151,6 +217,8 @@ export class Monitor {
         failures: this.failures,
         cycling: this.cycling,
         splitter: this.splitter,
+        recent: this.recent,
+        lastExit: this.lastExit,
       },
     }
     this.child = undefined
@@ -186,6 +254,8 @@ export class Monitor {
     this.failures = m.failures
     this.cycling = m.cycling
     this.splitter = m.splitter as LineSplitter
+    this.recent = m.recent
+    this.lastExit = m.lastExit
     this.ttlTimer = clock.setTimeout(() => void this.end("it reached its time limit (start it again to keep watching)"), Math.max(0, this.def.expiresAt - now))
     this.heartbeatTimer = clock.setTimeout(() => this.heartbeat(), HEARTBEAT_MS)
     if (this.def.rearmMinutes !== undefined && this.nextRearmAt !== undefined) this.cycleTimer = clock.setTimeout(() => this.cycle(), Math.max(0, this.nextRearmAt - now))
@@ -239,6 +309,7 @@ export class Monitor {
     this.state = "ended"
     await this.chain
     this.deps.finished(this, reason)
+    this.wakeWaiters(this.exitOutcome())
   }
 
   /** After a handover: waits for wakes still being delivered, then records the last-alive time. */
@@ -256,6 +327,7 @@ export class Monitor {
   async dispose(): Promise<void> {
     this.closing = true
     this.clearTimers()
+    this.wakeWaiters({ state: "timeout", lines: [] })
     await this.terminate()
     this.state = "ended"
     await this.chain
@@ -291,6 +363,7 @@ export class Monitor {
       },
       exit: (code, signal) => {
         if (this.child !== child) return
+        this.lastExit = { code, signal }
         this.child = undefined
         child.kill("SIGKILL") // stray members of the process group
         for (const line of this.splitter.flush()) this.accept(line)
@@ -336,6 +409,8 @@ export class Monitor {
   private accept(line: string): void {
     if (this.closing || this.state === "ended") return
     if (this.matcher && !this.matcher.test(line)) return
+    this.recent.push(line)
+    if (this.recent.length > this.deps.options.maxLinesPerWake) this.recent.shift()
     const { options, clock } = this.deps
     const now = clock.now()
     while (this.window.length > 0 && now - this.window[0]! >= HOUR) this.window.shift()
@@ -378,6 +453,16 @@ export class Monitor {
     this.batchTimer = undefined
     const notes = [...this.notes, ...extra]
     if (this.pending.length === 0 && this.dropped === 0 && notes.length === 0) return
+    // A batch a waiter is blocked on goes to the waiter, not the session: a wake would steer the session and interrupt
+    // the tool call that is waiting for it. Notes wait for the next batch.
+    if (!this.closing && this.pending.length > 0 && this.waiters.size > 0) {
+      const lines = this.pending
+      this.pending = []
+      this.pendingBytes = 0
+      this.dropped = 0
+      this.wakeWaiters({ state: "event", lines: [...lines] })
+      return
+    }
     this.seq += 1
     const seq = this.seq
     const restart = this.restartNotice
@@ -412,7 +497,10 @@ export class Monitor {
     this.state = "ended"
     this.deps.log(`${this.def.id} (${this.def.name}): ${reason}`)
     if (!this.crashed) this.tell({ kind: "info", title: "Monitor ended", body: `"${this.def.name}": ${reason}`, key: "ended" })
-    this.flush([`Monitor ended: ${reason}.`])
+    // The waiter gets the end before the session is told: a wake would steer the session and interrupt the tool call.
+    const awaited = this.waiters.size > 0
+    this.wakeWaiters(this.exitOutcome())
+    if (!awaited) this.flush([`Monitor ended: ${reason}.`])
     await this.chain
     this.deps.finished(this, reason)
   }
