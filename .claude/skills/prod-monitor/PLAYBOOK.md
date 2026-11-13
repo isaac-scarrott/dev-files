@@ -12,7 +12,7 @@ A long-running script, run as a background monitor that re-arms itself (e.g. eve
 - orphan payments
 - new critical/high dependency alerts
 
-Re-arm it before it expires: start a new one, then stop the old, and make the script kill any older copy itself so two never run at once. Edit it safely: back it up, edit, check the syntax (`bash -n`); changes take effect on the next re-arm. Confirm a change in state with a second reading before reporting it.
+Re-arm it before it expires: start a new one, then stop the old, and make the script kill any older copy itself so two never run at once. Edit it safely: back it up, edit, check the syntax (`bash -n`); changes take effect on the next re-arm. Confirm a change in state with a second reading before reporting it. Gate each loop on a local-network canary (two well-known URLs): while both fail, skip the probes and report one "network down" line and one "back" line, rather than a flood of false outages. When many hosts and APIs fail at once anyway, check the monitoring vendor's own synthetics, which run from its servers, before treating anything as down.
 
 ## Deploys
 1. On `queued`/`in_progress`, note the PR title. For risky areas (auth, payments, partner APIs, infrastructure), book a 30-minute post-deploy error sweep against the same window a week earlier.
