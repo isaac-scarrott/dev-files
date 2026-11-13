@@ -86,7 +86,7 @@ When the owner wants a batch landed at once, build one GitHub stack (`gh stack`,
 
 ## Standing practice
 
-- **Teardown is part of the run.** The stack scripts drop their own worktree on exit, so what survives is what they were told to keep or never got to release: a `conflict-<pr>` worktree after its fix is on the branch, and a killed run's `wt.*`. Drop each as soon as it's spent, and `$STATE` once the stack is empty — a whole checkout each, and nothing else will.
+- **Teardown is part of the run.** Take every scratch worktree from `ensure_wt` (source `scripts/_stack-env.sh`), never a `git worktree add` of your own under `$STATE`: its worktree drops on exit, and the next `ensure_wt` reclaims one a killed run left. A `conflict-<pr>` worktree is yours to drop once its fix is on the branch, and `$STATE` once the stack is empty.
 - **One writer per branch at a time.** The merger owns pushes to a PR it is landing (update-branch, master merges); the builder owns the rest. Before touching a branch a builder may be pushing to, or while one is, tell them, and hold any watcher that would push (retarget, update-branch) until they say READY. Never close and reopen a PR inside a stack to unstick it: it can unlink the stack. Retarget it to trunk instead, which re-evaluates mergeability.
 - **A PR you were not handed is not yours.** A draft or another session's PR is theirs to mark ready; ask the owner before you do, and say what is stopping it meanwhile.
 - **Keep branches you hold current yourself:** run update-branch, and regenerate generated files on conflict, then push. A source conflict goes back as a change request.

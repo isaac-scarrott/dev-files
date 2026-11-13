@@ -1,21 +1,35 @@
 # Sourced by the stack scripts. State lives outside any session scratchpad so a crash doesn't lose it:
 #   $STATE/stack.txt      "<pr> <branch>" per line, bottom → top
-#   $STATE/wt.*           each run's own detached worktree (never checks out a branch), removed on exit,
-#                         so concurrent scripts never merge or check out under each other
+#   $STATE/wt.<pid>.*     each run's own detached worktree (never checks out a branch), removed on exit,
+#                         so concurrent scripts never merge or check out under each other. A killed run
+#                         skips its EXIT trap; the next ensure_wt reclaims any wt.* whose pid is dead.
 #   $STATE/conflict-<pr>  a run's worktree kept, mid-merge, for a conflict someone has to resolve
 #   $STATE/unstick.{log,done}
-# The EXIT trap below only covers a run that gets to exit, so a kept conflict, a killed run's
-# wt.* and $STATE itself are the caller's to reclaim.
+# A kept conflict and $STATE itself are the caller's to reclaim.
 R=${GH_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 trunk=${TRUNK:-$(gh repo view "$R" --json defaultBranchRef -q .defaultBranchRef.name)}
 STATE=${MERGER_STATE:-$HOME/.claude/orchestrator-state/merger/${R//\//-}}
 ST=$STATE/stack.txt; WT=""; mkdir -p "$STATE"; touch "$ST"
 CI_WORKFLOW=${CI_WORKFLOW:-ci.yml}
 QUIET=$STATE/hooks.log   # checkout/merge hooks (installs, codegen) write here, not to the caller
+# reclaim_dead_wt: drop worktrees left by killed runs. wt.<pid>.* goes once its pid is gone; a legacy
+# wt.* with no pid goes after a day untouched. Runs in the background so it never slows a script.
+reclaim_dead_wt() {
+  local w id
+  for w in "$STATE"/wt.*; do
+    [ -d "$w" ] || continue
+    id=${w##*/wt.}; id=${id%%.*}
+    if [[ $id =~ ^[0-9]+$ ]]; then kill -0 "$id" 2>/dev/null && continue
+    else [ -n "$(find "$w" -maxdepth 0 -mmin +1440)" ] || continue; fi
+    rm -rf "$w"
+  done
+  git --git-dir="$COMMON" worktree prune
+}
 ensure_wt() {
   [ -n "$WT" ] && return 0
   COMMON=$(git rev-parse --path-format=absolute --git-common-dir)
-  WT=$(mktemp -d "$STATE/wt.XXXXXX"); trap 'drop_wt $?' EXIT
+  (reclaim_dead_wt >>"$QUIET" 2>&1 &)
+  WT=$(mktemp -d "$STATE/wt.$$.XXXXXX"); trap 'drop_wt $?' EXIT
   git worktree add -q --detach "$WT" "origin/$trunk" >>"$QUIET" 2>&1
 }
 # use_wt <dir>: adopt a kept conflict worktree; it's removed on exit only if the run succeeds

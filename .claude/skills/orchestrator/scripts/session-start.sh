@@ -25,6 +25,14 @@ row=$(grep -E '^\| merger \|' "$ledger" | head -1)
 holder=$(awk -F'|' '{gsub(/ /,"",$3); print $3}' <<<"$row")
 note=$(awk -F'|' '{sub(/^ +/,"",$8); sub(/ +$/,"",$8); print $8}' <<<"$row")
 
+# Killed sessions never tear down their worktrees, so every session start reclaims landed ones,
+# in the background and at most once every 6 hours.
+stamp="$common/orchestration/reclaim.stamp"
+if [ -z "$(find "$stamp" -mmin -360 2>/dev/null)" ]; then
+    touch "$stamp"
+    (cd "$cwd" && nohup "$HOME/.claude/skills/orchestrator/scripts/reclaim-worktrees.sh" >/dev/null 2>&1 &)
+fi
+
 ledger_py="$HOME/.claude/skills/orchestrator/scripts/ledger.py"
 if [ -z "$row" ]; then
     merger_line="The ledger has no merger row."
