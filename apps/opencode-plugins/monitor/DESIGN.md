@@ -13,6 +13,12 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   host's own shell tool uses the same action and resource) and `external_directory` for a `cwd` outside the session
   directory. `options.permission: "shell"` also lets the host treat the tool as shell. Re-arm restarts and restores reuse
   the first approval.
+- **Foreground wait guard**: `execute.before` refuses a shell call that would hold the turn open (a `sleep` of
+  `blockForegroundSleepSeconds` or more, or a `sleep` inside a `while`/`until`/`for` loop) and says to use
+  `monitor.start`/`monitor.wait`. Quoted strings and heredoc bodies are data, not commands: `cargo test … --nocapture` was
+  refused three times because `sleep 0.02` was in the body of the probe script the same call wrote (`<<EOF`, `<<'EOF'`,
+  `<<"EOF"`, `<<-EOF`, and several on one line). `<<<` is a here-string and `<<` inside `(( … ))` is a shift, so neither
+  starts a body; an unterminated body runs to the end and is data throughout.
 - **Untrusted output**: lines are XML-escaped (`& < >`), so a line holding `</monitor-event>` cannot close the block;
   the name is escaped as an attribute. Plugin notices (pause, restart, ended) travel in a separate
   `<monitor-notice>` block. Every wake ends with a trailer.
@@ -52,7 +58,19 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   The SDK gives no dispose reason, so a real shutdown is told apart by the process: a `SIGTERM`/`SIGINT`/`SIGHUP` listener (installed once, only for signals the host already handles, so it cannot stop a signal from ending the process) marks `shuttingDown`, after which `dispose` terminates as before (SIGTERM, grace, SIGKILL) and anything already parked is signalled the same way. A process `exit` hook is the backstop that signals every group left. Only a restarted service process (empty registry) takes the restore path that counts and announces. Rejected: a detached child writing to a log file that any instance tails. It would also survive a hard kill of the service, but needs a file protocol, offset persistence, log cleanup and a second liveness check (pid reuse); the ask was reload != restart, and reload is fully covered in-process.
 - **Lost at restart**: a definition that is not restored (TTL passed, `maxEvents` reached, `maxMonitors` hit) wakes its session
   once with a `<monitor-notice>`: gone, can be started again. The stored entry is removed before the wake, so repeated
-  restarts or a failed wake never announce it twice. Archived/deleted sessions get nothing.
+  restarts or a failed wake never announce it twice. Archived/deleted sessions get nothing. A loss older than an hour says
+  nothing at all: the notice would steer a session that has moved on, and on 2026-11-15 that steering was the deadlock.
+  State more than 24 h past its TTL is purged without a notice (nothing remembers it).
+- **Restore never runs inside setup** (2026-11-15 21:44: after a restart all 8 sessions in one project stayed `busy`).
+  `setup` used to `await restore()`, and a lost-monitor notice is a steer into a session whose project cannot take it
+  until that project's plugin instances have finished their own `setup` — a circular wait. Now `setup` logs that it is
+  loaded and calls `restoreAfterSetup()`, which defers to a macrotask: the promise `setup` returns has settled before the
+  first notice is delivered. Notices are not awaited by the restore either, so a session that will not take one cannot
+  hold up the monitors after it.
+- **Name or id** (2026-11-15: two agents passed `monitor.start`'s name to `monitor.wait`/`stop` and got "No monitor with
+  id vitest-flags"). `id` now also takes the name, resolved by `resolve.ts` when exactly one monitor of the calling
+  session has it; two matches are refused as ambiguous rather than guessed, and a miss lists that session's own ids and
+  names. An id always means itself, even another session's, so the refusal that names its session still comes first.
 - **TTL**: `expiresAt` is stored absolute and set once at the first start. Re-arms and restarts never move it (tested). Expiry
   wakes as before; there is no renew option.
 - **Event count**: `events` (matched lines accepted as events) is persisted in the run state and restored, so `maxEvents` is a true

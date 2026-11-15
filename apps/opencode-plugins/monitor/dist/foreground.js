@@ -69,6 +69,104 @@ function closingQuote(command, from) {
     }
     return command.length;
 }
+/** `<<` at `at` opening a heredoc: its delimiter and the index just past it, or undefined when it is not one. */
+function heredocAt(command, at) {
+    let index = at + 2;
+    let tabs = false;
+    if (command[index] === "-") {
+        tabs = true;
+        index++;
+    }
+    while (command[index] === " " || command[index] === "\t")
+        index++;
+    const quote = command[index];
+    if (quote === "'" || quote === '"') {
+        const close = command.indexOf(quote, index + 1);
+        const end = close === -1 ? command.length : close;
+        const delimiter = command.slice(index + 1, end);
+        return delimiter === "" ? undefined : { heredoc: { delimiter, tabs }, end: close === -1 ? command.length : close + 1 };
+    }
+    const start = index;
+    while (index < command.length && !/[\s|&;()<>]/.test(command[index]))
+        index += command[index] === "\\" ? 2 : 1;
+    const delimiter = command.slice(start, index);
+    return delimiter === "" ? undefined : { heredoc: { delimiter, tabs }, end: index };
+}
+/**
+ * The command with heredoc bodies blanked out of the text. Everything from `<<WORD` (`<<'WORD'`, `<<"WORD"`, `<<-WORD`)
+ * to the line that is WORD alone is data fed to a command's stdin, never a command of its own, so a `sleep` in it is not
+ * a foreground wait: `cargo test … --nocapture` was refused three times because `sleep 0.02` appeared in the body of the
+ * heredoc that wrote its helper script. `<<<` is a here-string, not a heredoc, and `<<` inside `(( … ))` is a shift.
+ */
+function withoutHeredocs(command) {
+    let out = "";
+    let index = 0;
+    while (index < command.length) {
+        const lineStart = index;
+        const pending = [];
+        let quote;
+        let arithmetic = 0;
+        while (index < command.length && command[index] !== "\n") {
+            const char = command[index];
+            if (quote) {
+                if (char === "\\" && quote === '"')
+                    index += 2;
+                else {
+                    if (char === quote)
+                        quote = undefined;
+                    index++;
+                }
+                continue;
+            }
+            if (char === "'" || char === '"') {
+                quote = char;
+                index++;
+                continue;
+            }
+            if (char === "\\") {
+                index += 2;
+                continue;
+            }
+            // Arithmetic: `$((x << 2))` and `for ((…))` shift, they do not redirect.
+            if (char === "(" && command[index + 1] === "(") {
+                arithmetic++;
+                index += 2;
+                continue;
+            }
+            if (char === ")" && command[index + 1] === ")" && arithmetic > 0) {
+                arithmetic--;
+                index += 2;
+                continue;
+            }
+            if (arithmetic === 0 && char === "<" && command[index + 1] === "<" && command[index + 2] !== "<") {
+                const found = heredocAt(command, index);
+                if (found) {
+                    pending.push(found.heredoc);
+                    index = found.end;
+                    continue;
+                }
+            }
+            index++;
+        }
+        out += command.slice(lineStart, index);
+        if (index < command.length) {
+            out += "\n";
+            index++;
+        }
+        // The bodies follow, in the order the line opened them; each one's closing line goes with it.
+        for (const heredoc of pending) {
+            while (index < command.length) {
+                const newline = command.indexOf("\n", index);
+                const end = newline === -1 ? command.length : newline;
+                const body = command.slice(index, end);
+                index = newline === -1 ? command.length : newline + 1;
+                if ((heredoc.tabs ? body.replace(/^\t+/, "") : body) === heredoc.delimiter)
+                    break;
+            }
+        }
+    }
+    return out;
+}
 /** `/usr/bin/sleep` and `sleep` run the same program. */
 const name = (word) => word.slice(word.lastIndexOf("/") + 1);
 /** How long `sleep`'s argument lasts, or undefined when it is not a plain duration (`$DELAY`). */
@@ -84,7 +182,7 @@ function duration(argument) {
 export function isForegroundWait(command, thresholdSeconds) {
     if (thresholdSeconds <= 0)
         return false;
-    const tokens = words(command);
+    const tokens = words(withoutHeredocs(command));
     let atCommand = true;
     let looping = false;
     for (let index = 0; index < tokens.length; index++) {

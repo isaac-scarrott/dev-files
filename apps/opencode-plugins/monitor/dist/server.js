@@ -54,8 +54,10 @@ export default Plugin.define({
             list: (input) => handlers.list(input),
             stop: (input) => handlers.stop(input),
         });
-        // After the control is registered, so what restore announces (restarted, lost) can be sent.
-        await monitors.restore();
+        // After the control is registered, so what restore announces (restarted, lost) can be sent, and after this setup
+        // returns: a lost-monitor notice steers a session, and a session in a project whose own plugin setup has not
+        // returned cannot take it (a circular wait that left eight sessions busy on 2026-11-15 21:44).
+        monitors.restoreAfterSetup();
         const abort = new AbortController();
         const listen = async () => {
             while (!abort.signal.aborted) {

@@ -269,6 +269,17 @@ test("wait knows no monitor id that never existed", async () => {
   assert.equal(await t.monitors.wait("mon_none", 1000), undefined)
 })
 
+test("known names the running monitors and, for the wait window, the ones that just ended", async () => {
+  const t = setup()
+  const info = await t.monitors.start({ ...t.input, name: "vitest-flags" })
+  assert.deepEqual(t.monitors.known(), [{ id: info.id, name: "vitest-flags", session: "ses_1" }])
+  t.sp.exit(t.sp.runs[0]!, 0)
+  await flush()
+  assert.deepEqual(t.monitors.known(), [{ id: info.id, name: "vitest-flags", session: "ses_1" }])
+  t.clock.t += 31 * 60_000
+  assert.deepEqual(t.monitors.known(), [])
+})
+
 test("stop sends SIGTERM then SIGKILL after the grace period, with no wake", async () => {
   const t = setup()
   await t.monitors.start(t.input)
@@ -432,6 +443,49 @@ test("options reject bad values", () => {
   assert.equal(parseOptions({ blockForegroundSleepSeconds: 0 }).blockForegroundSleepSeconds, 0)
   assert.throws(() => parseOptions({ blockForegroundSleepSeconds: -1 }), /blockForegroundSleepSeconds/)
   assert.throws(() => parseOptions({ blockForegroundSleepSeconds: 1.5 }), /blockForegroundSleepSeconds/)
+})
+
+test("a restore runs after setup returns, and a notice that never arrives cannot hold setup", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, name: "plain", ttlMinutes: 1 })
+  t.clock.t += 120_000
+  const prompts: string[] = []
+  let release!: () => void
+  const never = new Promise<void>((resolve) => (release = resolve))
+  const second = new Monitors({
+    ...newProcess(t.deps),
+    sessions: { state: async () => "active", prompt: async (sessionID) => (prompts.push(sessionID), await never) },
+  })
+  const returning = (async () => {
+    second.restoreAfterSetup()
+    return "setup returned"
+  })()
+  assert.equal(await returning, "setup returned") // resolves although the notice below never will
+  assert.deepEqual(prompts, []) // nothing was delivered inside setup
+  await new Promise<void>((resolve) => setTimeout(resolve, 20))
+  assert.deepEqual(prompts, ["ses_1"]) // the notice starts after it
+  assert.equal(second.count, 0)
+  release()
+})
+
+test("a monitor that expired over an hour before the restart is dropped without a notice", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, name: "old", ttlMinutes: 1 })
+  t.clock.t += 90 * 60_000
+  await new Monitors(newProcess(t.deps)).restore()
+  assert.equal(t.storage.size, 0)
+  assert.equal(t.wakes.length, 0)
+  assert.ok(t.logs.some((line) => line.includes("not restored: its time limit passed") && line.includes("no notice")), t.logs.join("\n"))
+})
+
+test("a definition whose time limit passed over a day ago is purged without reading its state", async () => {
+  const t = setup()
+  await t.monitors.start({ ...t.input, name: "ancient", ttlMinutes: 1 })
+  t.clock.t += 25 * 3_600_000
+  await new Monitors(newProcess(t.deps)).restore()
+  assert.equal(t.storage.size, 0)
+  assert.equal(t.wakes.length, 0)
+  assert.ok(t.logs.some((line) => line.includes("ancient") && line.includes("purged")), t.logs.join("\n"))
 })
 
 test("a monitor lost at restart wakes its session once, saying it is gone", async () => {

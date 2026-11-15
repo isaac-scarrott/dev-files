@@ -69,6 +69,12 @@ export interface MonitorInfo {
     readonly pid?: number;
     readonly paused?: boolean;
 }
+/** A monitor a tool call can name, running or ended recently: an id, and the name the caller may have used instead. */
+export interface Named {
+    readonly id: string;
+    readonly name: string;
+    readonly session: string;
+}
 export declare class Monitors {
     private readonly deps;
     private readonly running;
@@ -77,12 +83,19 @@ export declare class Monitors {
     private readonly finishedIDs;
     /** Monitors that ended recently: what `monitor.wait` answers when it arrives just after the end. */
     private readonly finished;
+    /** The instance is gone: a restore still queued from its setup must not start anything. */
+    private disposed;
     constructor(deps: ManagerDeps);
     get count(): number;
     start(input: StartInput): Promise<MonitorInfo>;
     list(): MonitorInfo[];
     /** The session a monitor wakes, running or recently finished; undefined when there is no such monitor. */
     owner(id: string): string | undefined;
+    /**
+     * Every monitor a call can name: the running ones, then the ones that ended within the wait window. `monitor.wait` and
+     * `monitor.stop` take an id, and an agent that passes the name it gave at start gets it resolved from here.
+     */
+    known(): Named[];
     /**
      * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. Undefined when no monitor
      * (running or recently finished) has that id. One that already ended returns its exit code and last lines at once.
@@ -93,11 +106,20 @@ export declare class Monitors {
     /** The session was archived or deleted: its monitors have no one to wake. */
     removeSession(sessionID: string): Promise<void>;
     /**
+     * Start the restore after the caller's setup has returned. A restore announces lost monitors by steering their
+     * sessions, and a session whose project is still booting its plugins cannot take that until its own setup returns:
+     * on 2026-11-15 21:44 every session in that project stayed busy waiting for a setup that was waiting for them.
+     * A macrotask, not a microtask, so the promise setup returns has settled before the first delivery starts.
+     */
+    restoreAfterSetup(): void;
+    /**
      * Monitors from a previous run. Every one still within its ttl and event cap comes back (its command starts fresh) and
-     * the first wake says so. The rest are forgotten and their session is told once that they are gone.
+     * the first wake says so. The rest are forgotten, and their session is told once that they are gone, unless the loss
+     * is old enough that the notice would only interrupt a session that has moved on.
      */
     restore(): Promise<void>;
     private tell;
+    /** Tells a session its monitor is gone. Failure is logged, never retried: the definition is already removed. */
     private announceLost;
     /**
      * Service shutdown ends every process. A plugin reload (the module loaded again in the same process) leaves them

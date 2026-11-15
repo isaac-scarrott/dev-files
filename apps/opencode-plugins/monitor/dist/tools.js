@@ -2,8 +2,23 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Error as ToolError } from "@opencode/plugin/promise/tool";
 import { mayWake } from "./reach.js";
+import { resolveMonitor } from "./resolve.js";
 export const NAMESPACE = "monitor";
 const fail = (message) => new ToolError({ message });
+/** The ids and names of this session's monitors, for an error that says what the caller could have meant instead. */
+const describeOwn = (own) => own.map((monitor) => `${monitor.id} (${monitor.name})`).join(", ");
+/**
+ * The refusal for a name or id that matched nothing of the caller's: what was asked, then the ids and names it could
+ * have used. A name matching two of them is ambiguous rather than guessed: the ids differ and the caller has both.
+ */
+function noSuchMonitor(what, given, resolution) {
+    if (resolution.reason === "ambiguous") {
+        return `${resolution.candidates.length} of this session's monitors are named ${given}: ${describeOwn(resolution.candidates)}. Pass the id instead.`;
+    }
+    return resolution.own.length === 0
+        ? `No ${what} with id or name ${given}: this session has none.`
+        : `No ${what} with id or name ${given}. This session's monitors: ${describeOwn(resolution.own)}.`;
+}
 /** The refusal for a monitor that wakes another session: it names that session when its title is known. */
 async function foreignMonitor(host, monitor, action = "stop") {
     const owner = await host.session.get({ sessionID: monitor.session }).catch(() => undefined);
@@ -26,8 +41,8 @@ export function describeMonitor(options) {
     ].join("\n");
 }
 export const LIST_DESCRIPTION = "List this session's background monitors that are running: name, id, command, pid, when each started, how many events it produced over its whole life (kept across re-arms and service restarts, the count maxEvents caps), the last event, which session it wakes, restartCount (service restarts survived; a plugin reload does not count), and for re-arm monitors lastRearm and nextRearm. Monitors that wake other sessions are not listed.";
-export const STOP_DESCRIPTION = "Stop this session's background monitor by id (see monitor.list). Its process and anything it started are ended. A monitor that wakes another session can only be stopped by that session.";
-export const WAIT_DESCRIPTION = "Wait for one of this session's monitors to print or end, instead of polling it or sleeping. Returns when it produces its next batch of lines (state event), when it ends (state exited, with exitCode and its last lines), or when the timeout passes (state timeout; default 20 minutes, at most 30). A monitor that has already ended returns at once. Use it from a sub-agent, or when you need the result before you can continue; otherwise end your turn and let the monitor wake you. A service restart ends the call without a result: call wait again once the monitor is back.";
+export const STOP_DESCRIPTION = "Stop this session's background monitor by id or by the name you gave at start (see monitor.list). Its process and anything it started are ended. A monitor that wakes another session can only be stopped by that session.";
+export const WAIT_DESCRIPTION = "Wait for one of this session's monitors, by id or name, to print or end, instead of polling it or sleeping. Returns when it produces its next batch of lines (state event), when it ends (state exited, with exitCode and its last lines), or when the timeout passes (state timeout; default 20 minutes, at most 30). A monitor that has already ended returns at once. Use it from a sub-agent, or when you need the result before you can continue; otherwise end your turn and let the monitor wake you. A service restart ends the call without a result: call wait again once the monitor is back.";
 export function registerTools(editor, monitors, host, options) {
     editor.namespace({ name: NAMESPACE, description: "Run commands in the background and wake a session with their output as it happens." });
     const output = { type: "object", additionalProperties: true };
@@ -118,21 +133,24 @@ export function registerTools(editor, monitors, host, options) {
         }
     }, "shell");
     add("list", LIST_DESCRIPTION, { type: "object", properties: {}, additionalProperties: false }, async (_input, context) => ({ monitors: monitors.list().filter((monitor) => monitor.session === context.sessionID) }));
-    add("stop", STOP_DESCRIPTION, { type: "object", properties: { id: { type: "string", minLength: 1, description: "Monitor id from monitor.start or monitor.list" } }, required: ["id"], additionalProperties: false }, async (input, context) => {
-        const monitor = monitors.list().find((running) => running.id === input.id);
+    add("stop", STOP_DESCRIPTION, { type: "object", properties: { id: { type: "string", minLength: 1, description: "Monitor id, or the name you gave it at monitor.start (see monitor.list)" } }, required: ["id"], additionalProperties: false }, async (input, context) => {
+        const resolved = resolveMonitor(monitors.known(), input.id, context.sessionID);
+        if ("reason" in resolved)
+            throw fail(noSuchMonitor("running monitor", input.id, resolved));
+        const monitor = monitors.list().find((running) => running.id === resolved.id);
         if (!monitor)
-            throw fail(`No running monitor with id ${input.id}`);
+            throw fail(`No running monitor with id ${resolved.id}: it already ended`);
         if (monitor.session !== context.sessionID)
             throw fail(await foreignMonitor(host, monitor));
-        const stopped = await monitors.stop(input.id);
+        const stopped = await monitors.stop(resolved.id);
         if (!stopped)
-            throw fail(`No running monitor with id ${input.id}`);
+            throw fail(`No running monitor with id ${resolved.id}: it already ended`);
         return { stopped };
     });
     add("wait", WAIT_DESCRIPTION, {
         type: "object",
         properties: {
-            id: { type: "string", minLength: 1, description: "Monitor id from monitor.start or monitor.list" },
+            id: { type: "string", minLength: 1, description: "Monitor id, or the name you gave it at monitor.start (see monitor.list)" },
             timeoutMinutes: { type: "integer", minimum: 1, maximum: 30, description: "Minutes to wait before returning state timeout (default 20, at most 30)" },
         },
         required: ["id"],
@@ -141,14 +159,17 @@ export function registerTools(editor, monitors, host, options) {
         const minutes = input.timeoutMinutes ?? 20;
         if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30)
             throw fail("timeoutMinutes must be an integer from 1 to 30");
-        const owner = monitors.owner(input.id);
+        const resolved = resolveMonitor(monitors.known(), input.id, context.sessionID);
+        if ("reason" in resolved)
+            throw fail(noSuchMonitor("monitor", input.id, resolved));
+        const owner = monitors.owner(resolved.id);
         if (owner === undefined)
-            throw fail(`No monitor with id ${input.id}`);
+            throw fail(`No monitor with id ${resolved.id}`);
         if (owner !== context.sessionID)
-            throw fail(await foreignMonitor(host, { id: input.id, session: owner }, "wait for"));
-        const result = await monitors.wait(input.id, minutes * 60_000, context.signal);
+            throw fail(await foreignMonitor(host, { id: resolved.id, session: owner }, "wait for"));
+        const result = await monitors.wait(resolved.id, minutes * 60_000, context.signal);
         if (!result)
-            throw fail(`No monitor with id ${input.id}`);
+            throw fail(`No monitor with id ${resolved.id}`);
         return result;
     });
 }

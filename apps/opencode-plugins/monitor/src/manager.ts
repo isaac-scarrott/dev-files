@@ -76,13 +76,25 @@ const PREFIX = "monitor/def/"
 const STATE_PREFIX = "monitor/state/"
 /** How long a monitor that ended stays answerable: `monitor.wait` on it returns its exit code and last lines at once. */
 const FINISHED_MS = 30 * 60_000
+/** A monitor whose end is older than this says nothing at the next restart: its session has moved on. */
+const NOTICE_MAX_AGE_MS = 60 * 60_000
+/** A definition this far past its time limit is dropped without reading its state: nothing is left worth telling. */
+const PURGE_AFTER_MS = 24 * 60 * 60_000
 
 /** A monitor that has ended, kept in memory so a wait that arrives just after it ended returns at once. */
 interface Finished {
+  readonly name: string
   readonly session: string
   readonly exitCode?: number
   readonly lines: string[]
   readonly at: number
+}
+
+/** A monitor a tool call can name, running or ended recently: an id, and the name the caller may have used instead. */
+export interface Named {
+  readonly id: string
+  readonly name: string
+  readonly session: string
 }
 
 const randomID = () => `mon_${Math.random().toString(16).slice(2, 8).padEnd(6, "0")}`
@@ -94,6 +106,8 @@ export class Monitors {
   private readonly finishedIDs = new Set<string>()
   /** Monitors that ended recently: what `monitor.wait` answers when it arrives just after the end. */
   private readonly finished = new Map<string, Finished>()
+  /** The instance is gone: a restore still queued from its setup must not start anything. */
+  private disposed = false
 
   constructor(private readonly deps: ManagerDeps) {}
 
@@ -146,6 +160,18 @@ export class Monitors {
   }
 
   /**
+   * Every monitor a call can name: the running ones, then the ones that ended within the wait window. `monitor.wait` and
+   * `monitor.stop` take an id, and an agent that passes the name it gave at start gets it resolved from here.
+   */
+  known(): Named[] {
+    this.pruneFinished()
+    return [
+      ...[...this.running.values()].map((monitor) => ({ id: monitor.def.id, name: monitor.def.name, session: monitor.def.sessionID })),
+      ...[...this.finished].map(([id, done]) => ({ id, name: done.name, session: done.session })),
+    ]
+  }
+
+  /**
    * Blocks until the monitor produces its next batch of lines, ends, or `timeoutMs` passes. Undefined when no monitor
    * (running or recently finished) has that id. One that already ended returns its exit code and last lines at once.
    */
@@ -178,40 +204,69 @@ export class Monitors {
   }
 
   /**
+   * Start the restore after the caller's setup has returned. A restore announces lost monitors by steering their
+   * sessions, and a session whose project is still booting its plugins cannot take that until its own setup returns:
+   * on 2026-11-15 21:44 every session in that project stayed busy waiting for a setup that was waiting for them.
+   * A macrotask, not a microtask, so the promise setup returns has settled before the first delivery starts.
+   */
+  restoreAfterSetup(): void {
+    setTimeout(() => {
+      void this.restore().catch((error) => this.deps.log(`restore failed: ${String(error)}`))
+    }, 0)
+  }
+
+  /**
    * Monitors from a previous run. Every one still within its ttl and event cap comes back (its command starts fresh) and
-   * the first wake says so. The rest are forgotten and their session is told once that they are gone.
+   * the first wake says so. The rest are forgotten, and their session is told once that they are gone, unless the loss
+   * is old enough that the notice would only interrupt a session that has moved on.
    */
   async restore(): Promise<void> {
     const { store, clock, log, sessions, options } = this.deps
     const now = clock.now()
+    const ago = (since: number) => {
+      const minutes = Math.max(0, Math.round((now - since) / 60_000))
+      return minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`
+    }
     for (const { key, value } of await store.scan(PREFIX)) {
+      if (this.disposed) return
       const def = value as Definition
       if (def.origin !== this.deps.origin) continue
+      if (!this.deps.registry.live.has(def.id) && !this.deps.registry.parked.has(def.id) && def.expiresAt <= now - PURGE_AFTER_MS) {
+        // Days-old leftovers: no one remembers the monitor, so there is nothing to say and no state worth keeping.
+        log(`${def.id} (${def.name}): purged: its time limit passed ${ago(def.expiresAt)} ago`)
+        await store.remove(key)
+        await store.remove(STATE_PREFIX + def.id)
+        continue
+      }
       const previous = parseRunState(await store.get(STATE_PREFIX + def.id))
       const active = (await sessions.state(def.sessionID)) === "active"
       // Nothing awaits between this claim and the adoption below (which registers the new owner), so a monitor that
       // survived a reload always has exactly one owner, however many instances restore at once.
       const survivor = claim(this.deps.registry, def.id)
-      const forget = async (why: string, notify: boolean) => {
-        log(`${def.id} (${def.name}): not restored: ${why}`)
+      const forget = async (why: string, notify: boolean, lostAt: number) => {
+        // A monitor that expired (or was last seen alive) over an hour before this restart woke nobody: its session has
+        // moved on, and the notice would steer a session that may still be booting its own plugins.
+        const stale = now - lostAt > NOTICE_MAX_AGE_MS
+        log(`${def.id} (${def.name}): not restored: ${why}${notify && active && stale ? ` (gone ${ago(lostAt)}: no notice)` : ""}`)
         // Removed before the wake, so a failed or repeated restart cannot announce it twice.
         if (survivor) this.release(survivor)
         await store.remove(key)
         await store.remove(STATE_PREFIX + def.id)
-        if (notify && active) await this.announceLost(def, previous)
+        // Not awaited: steering a session that will not take the notice must not hold up the monitors after it.
+        if (notify && active && !stale) void this.announceLost(def, previous)
       }
       if (survivor && active) {
         // A plugin reload, not a restart: the process kept running, so nothing is counted or announced.
         log(`${def.id} (${def.name}): adopted after a plugin reload (pid ${survivor.child?.pid ?? "none"})`)
         this.create(def).adopt(survivor)
       } else if (def.expiresAt <= now) {
-        await forget("its time limit passed", true)
+        await forget("its time limit passed", true, def.expiresAt)
       } else if (def.maxEvents !== undefined && (previous?.events ?? 0) >= def.maxEvents) {
-        await forget(`it already reached its limit of ${def.maxEvents} events`, true)
+        await forget(`it already reached its limit of ${def.maxEvents} events`, true, previous?.aliveAt ?? def.createdAt)
       } else if (!active) {
-        await forget(`session ${def.sessionID} is gone or archived`, false)
+        await forget(`session ${def.sessionID} is gone or archived`, false, previous?.aliveAt ?? def.createdAt)
       } else if (this.running.size >= options.maxMonitors) {
-        await forget(`maxMonitors ${options.maxMonitors} reached`, true)
+        await forget(`maxMonitors ${options.maxMonitors} reached`, true, previous?.aliveAt ?? def.createdAt)
       } else {
         const monitor = this.create(def)
         const restartCount = (previous?.restartCount ?? 0) + 1
@@ -233,6 +288,7 @@ export class Monitors {
     }
   }
 
+  /** Tells a session its monitor is gone. Failure is logged, never retried: the definition is already removed. */
   private async announceLost(def: Definition, previous: RunState | undefined): Promise<void> {
     this.tell(def, { kind: "info", title: "Monitor lost", body: `"${def.name}" was lost when OpenCode restarted`, key: "lost" })
     const now = this.deps.clock.now()
@@ -261,6 +317,7 @@ export class Monitors {
    */
   async dispose(): Promise<void> {
     const { registry, clock, options } = this.deps
+    this.disposed = true
     const all = [...this.running.values()]
     this.running.clear()
     if (registry.shuttingDown) {
@@ -296,6 +353,7 @@ export class Monitors {
       notify: this.deps.notify,
       finished: (done) => {
         this.finished.set(done.def.id, {
+          name: done.def.name,
           session: done.def.sessionID,
           ...(done.exitCode === undefined ? {} : { exitCode: done.exitCode }),
           lines: done.lastLines(),

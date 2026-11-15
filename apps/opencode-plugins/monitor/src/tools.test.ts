@@ -64,12 +64,15 @@ function owned(title: string | null = "Merger") {
   const added: any[] = []
   const stopped: string[] = []
   const waited: { id: string; timeoutMs: number }[] = []
+  const running = () => [
+    { id: "mon_mine", name: "mine", session: "ses_me" },
+    { id: "mon_theirs", name: "merger land watch", session: "ses_merger" },
+  ]
   const monitors = {
-    list: () => [
-      { id: "mon_mine", name: "mine", session: "ses_me" },
-      { id: "mon_theirs", name: "merger land watch", session: "ses_merger" },
-    ],
-    owner: (id: string) => (id === "mon_mine" ? "ses_me" : id === "mon_theirs" ? "ses_merger" : undefined),
+    list: running,
+    // What the manager knows: the running ones, then the ones that ended within the wait window.
+    known: () => [...running(), { id: "mon_done", name: "tests", session: "ses_me" }],
+    owner: (id: string) => (id === "mon_mine" || id === "mon_done" ? "ses_me" : id === "mon_theirs" ? "ses_merger" : undefined),
     stop: async (id: string) => (stopped.push(id), { id }),
     wait: async (id: string, timeoutMs: number) => (waited.push({ id, timeoutMs }), { state: "exited", exitCode: 0, lines: ["done"] }),
   }
@@ -107,7 +110,55 @@ test("stop names the session id when the title is unknown, and keeps the unknown
   await assert.rejects(stop.execute({ id: "mon_theirs" }, { sessionID: "ses_me" }), {
     message: "mon_theirs belongs to session ses_merger; only that session can stop it",
   })
-  await assert.rejects(stop.execute({ id: "mon_none" }, { sessionID: "ses_me" }), { message: "No running monitor with id mon_none" })
+  await assert.rejects(stop.execute({ id: "mon_none" }, { sessionID: "ses_me" }), {
+    message: "No running monitor with id or name mon_none. This session's monitors: mon_mine (mine), mon_done (tests).",
+  })
+})
+
+test("stop and wait take the name given at start when exactly one of this session's monitors has it", async () => {
+  const { added, stopped, waited } = owned()
+  const stop = added.find((t) => t.name === "stop")
+  const wait = added.find((t) => t.name === "wait")
+  assert.deepEqual((await stop.execute({ id: "mine" }, { sessionID: "ses_me" })).output.stopped, { id: "mon_mine" })
+  assert.deepEqual(stopped, ["mon_mine"])
+  const result = await wait.execute({ id: "tests" }, { sessionID: "ses_me" })
+  assert.deepEqual(result.output, { state: "exited", exitCode: 0, lines: ["done"] })
+  assert.deepEqual(waited, [{ id: "mon_done", timeoutMs: 1_200_000 }])
+})
+
+test("a name that matches two of this session's monitors is refused with both ids", async () => {
+  const added: any[] = []
+  registerTools(
+    { namespace() {}, add: (t: any) => void added.push(t) } as never,
+    {
+      list: () => [
+        { id: "mon_a", name: "tests", session: "ses_me" },
+        { id: "mon_b", name: "tests", session: "ses_me" },
+      ],
+      known: () => [
+        { id: "mon_a", name: "tests", session: "ses_me" },
+        { id: "mon_b", name: "tests", session: "ses_me" },
+      ],
+      owner: (id: string) => (id === "mon_a" || id === "mon_b" ? "ses_me" : undefined),
+      stop: async () => undefined,
+      wait: async () => ({ state: "timeout", lines: [] }),
+    } as never,
+    { session: { get: async () => ({}) } } as never,
+    DEFAULTS,
+  )
+  for (const name of ["stop", "wait"]) {
+    await assert.rejects(added.find((t) => t.name === name).execute({ id: "tests" }, { sessionID: "ses_me" }), {
+      message: "2 of this session's monitors are named tests: mon_a (tests), mon_b (tests). Pass the id instead.",
+    })
+  }
+})
+
+test("another session's name is not resolved: the refusal lists this session's own monitors", async () => {
+  const { added } = owned()
+  const stop = added.find((t) => t.name === "stop")
+  await assert.rejects(stop.execute({ id: "merger land watch" }, { sessionID: "ses_me" }), {
+    message: "No running monitor with id or name merger land watch. This session's monitors: mon_mine (mine), mon_done (tests).",
+  })
 })
 
 test("list and stop say the monitors are this session's", () => {
@@ -142,7 +193,9 @@ test("wait uses 20 minutes by default and the given timeout at most 30", async (
 test("wait keeps the unknown-id error and the description names the three outcomes", async () => {
   const { added } = owned()
   const wait = added.find((t) => t.name === "wait")
-  await assert.rejects(wait.execute({ id: "mon_none" }, { sessionID: "ses_me" }), { message: "No monitor with id mon_none" })
+  await assert.rejects(wait.execute({ id: "mon_none" }, { sessionID: "ses_me" }), {
+    message: "No monitor with id or name mon_none. This session's monitors: mon_mine (mine), mon_done (tests).",
+  })
   assert.match(wait.description, /state exited, with exitCode and its last lines/)
   assert.match(wait.description, /state timeout/)
   assert.match(wait.description, /already ended returns at once/)
