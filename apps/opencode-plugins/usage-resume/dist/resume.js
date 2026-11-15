@@ -1,5 +1,5 @@
-import { detectProviderCooldown, detectUsageLimit } from "./detect.js";
-import { decide } from "./plan.js";
+import { detectProviderCooldown, detectTransientFailure, detectUsageLimit } from "./detect.js";
+import { decide, decideTransient } from "./plan.js";
 import { LIMIT_LIKE, oneLine } from "./diag.js";
 import { availability } from "./usage.js";
 const limitedKey = (sessionID) => `limited/${sessionID}`;
@@ -118,7 +118,10 @@ export class Resumer {
     attempts(sessionID) {
         return this.state.attempts[sessionID];
     }
-    /** A run failed. If it is a Claude usage limit and the session's toggle is on, start waiting for it to clear. */
+    /**
+     * A run failed. A usage limit starts waiting when the session opted in; a transient provider error starts waiting
+     * without asking, since it is neither a usage wall nor a choice the user makes.
+     */
     async onFailed(sessionID, error, at) {
         if (!error)
             return;
@@ -127,38 +130,59 @@ export class Resumer {
         if (info && info.location.directory !== this.directory)
             return;
         this.log(`${sessionID}: run failed type=${error.type ?? "?"} status=${error.status ?? "-"} message="${oneLine(error.message)}"`);
+        // A usage wall first: a 429 that carries a limit is not transient, and neither is a cooldown.
         const limit = detectUsageLimit(error, at) ?? detectProviderCooldown(error);
-        if (!limit) {
+        const transient = limit || !this.options.transientRetry ? undefined : detectTransientFailure(error);
+        if (!limit && !transient) {
             if (LIMIT_LIKE.test(`${error.message ?? ""} ${error.response?.body ?? ""}`)) {
                 this.log(`${sessionID}: error reads like a limit but is not one the detector knows; not resuming`);
                 await this.samples.saveFirst("unmatched-limit-like-error", error);
             }
             return;
         }
-        this.log(`${sessionID}: usage limit detected kind=${limit.kind ?? "unknown"} resetsAt=${limit.resetsAt ? new Date(limit.resetsAt).toISOString() : "not stated"}`);
-        await this.samples.saveFirst("limit-error", error);
         if (!info)
             return this.skip(sessionID, "session not found");
         if (info.time.archived !== undefined)
             return this.skip(sessionID, "archived");
         if (info.parentID !== undefined)
             return this.skip(sessionID, "subagent");
+        if (limit)
+            return this.onLimit(sessionID, info, error, limit, at);
+        if (transient)
+            return this.onTransient(sessionID, transient, at);
+    }
+    /** A usage limit: record it for the pill, then wait only if this session opted in. */
+    async onLimit(sessionID, info, error, limit, at) {
+        this.log(`${sessionID}: usage limit detected kind=${limit.kind ?? "unknown"} resetsAt=${limit.resetsAt ? new Date(limit.resetsAt).toISOString() : "not stated"}`);
+        await this.samples.saveFirst("limit-error", error);
         await this.markLimited(sessionID, limit, at);
         const toggle = await this.toggles.effective(sessionID, true, info.time.created);
         if (!toggle.on) {
             this.tell(sessionID, "error", "Usage limit reached", "limit", "Auto-resume is off for this session.");
             return this.skip(sessionID, toggle.why);
         }
-        const attempts = this.state.attempts[sessionID];
-        if (attempts && attempts.count >= this.options.maxAttempts) {
-            this.log(`${sessionID}: skip: attempt cap reached (${attempts.count}/${this.options.maxAttempts} resumes)`);
-            this.tell(sessionID, "error", "Usage limit reached again, not resuming", "giveup", `Stopped after ${attempts.count} automatic resumes.`);
-            await this.notice(sessionID, `Usage limit reached again after ${attempts.count} automatic resumes. Not resuming automatically.`);
-            delete this.state.waiting[sessionID];
-            await this.save();
+        if (await this.capped(sessionID, "Usage limit reached again"))
             return;
-        }
         await this.register(sessionID, limit, at);
+    }
+    /** A provider error that is expected to clear: retry it on its own schedule, no opt-in and no usage reading. */
+    async onTransient(sessionID, transient, at) {
+        this.log(`${sessionID}: transient provider error (${transient.reason}); retrying automatically`);
+        if (await this.capped(sessionID, "Provider error again"))
+            return;
+        await this.registerTransient(sessionID, at, this.state.attempts[sessionID]?.count ?? 0);
+    }
+    /** The attempt cap: tells the user and stops, returning true when it applied. */
+    async capped(sessionID, again) {
+        const attempts = this.state.attempts[sessionID];
+        if (!attempts || attempts.count < this.options.maxAttempts)
+            return false;
+        this.log(`${sessionID}: skip: attempt cap reached (${attempts.count}/${this.options.maxAttempts} resumes)`);
+        this.tell(sessionID, "error", `${again}, not resuming`, "giveup", `Stopped after ${attempts.count} automatic resumes.`);
+        await this.notice(sessionID, `${again} after ${attempts.count} automatic resumes. Not resuming automatically.`);
+        delete this.state.waiting[sessionID];
+        await this.save();
+        return true;
     }
     skip(sessionID, reason) {
         this.log(`${sessionID}: not resuming: ${reason}`);
@@ -229,9 +253,32 @@ export class Resumer {
         await this.save();
         this.changed(sessionID);
     }
+    /**
+     * A transient failure has its own delay and asks nothing of the usage endpoint. Announcing it would only repeat the
+     * failed run's own error; a retry that works starts a turn that reports for itself.
+     */
+    async registerTransient(sessionID, stalledAt, prior) {
+        const delays = this.options.transientBackoffMs;
+        const delay = delays[Math.min(prior, delays.length - 1)];
+        const notBefore = stalledAt + delay;
+        this.state.waiting[sessionID] = {
+            sessionID,
+            stalledAt,
+            notBefore,
+            dueAt: notBefore,
+            mode: "transient",
+            unverified: 0,
+            announcements: 0,
+        };
+        this.log(`${sessionID}: scheduled first check at ${new Date(notBefore).toISOString()} (transient provider error, retry ${prior + 1}/${this.options.maxAttempts} in ${Math.round(delay / 1000)}s)`);
+        await this.save();
+        this.changed(sessionID);
+    }
     async evaluate(waiting) {
-        const readings = await this.usage.refresh().catch(() => []);
         const now = this.clock.now();
+        if (waiting.mode === "transient")
+            return decideTransient(waiting, now);
+        const readings = await this.usage.refresh().catch(() => []);
         const a = availability(readings, now, waiting.stalledAt);
         const nextPoll = this.usage.nextPollAt(readings.map((r) => r.id));
         return decide(waiting, a, now, this.options.marginMs, nextPoll);
@@ -253,10 +300,13 @@ export class Resumer {
             return this.drop(sessionID, "touched since the stall");
         if (info.outcome !== undefined && info.outcome !== "failed")
             return this.drop(sessionID, `finished ${info.outcome}`);
-        // The toggle can be turned off while waiting; it is read again at the moment of resuming.
-        const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created);
-        if (!toggle.on)
-            return this.drop(sessionID, toggle.why);
+        // A transient retry does not depend on the usage-limit opt-in. For a limit, the toggle can be turned off while
+        // waiting; it is read again at the moment of resuming.
+        if (waiting.mode !== "transient") {
+            const toggle = await this.toggles.effective(sessionID, info.parentID === undefined, info.time.created);
+            if (!toggle.on)
+                return this.drop(sessionID, toggle.why);
+        }
         const decision = await this.evaluate(waiting);
         if (decision.action === "wait") {
             waiting.dueAt = decision.at;
@@ -274,7 +324,8 @@ export class Resumer {
         await this.save();
         try {
             await this.host.session.prompt({ sessionID, text: this.options.prompt, delivery: "queue" });
-            this.log(`${sessionID}: resumed (${decision.verified ? "usage verified" : "reset time only"})`);
+            const how = waiting.mode === "transient" ? "after a transient provider error" : decision.verified ? "usage verified" : "reset time only";
+            this.log(`${sessionID}: resumed (${how})`);
         }
         catch (error) {
             this.log(`${sessionID}: resume failed: ${String(error)}`);

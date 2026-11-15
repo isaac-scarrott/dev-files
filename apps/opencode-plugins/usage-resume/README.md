@@ -1,6 +1,6 @@
 # Usage resume
 
-When a Claude usage limit stops a session you opted in, it waits for your accounts to recover and then continues the session for you.
+When a Claude usage limit stops a session you opted in, or a run fails on a transient provider error, it waits and then continues the session for you.
 
 > **Credit:** the usage-limit message text it detects is Claude Code's (Anthropic). Knowledge only, no code.
 
@@ -10,10 +10,13 @@ When a Claude usage limit stops a session you opted in, it waits for your accoun
 - Also recognises cliproxy's "All credentials for model claude-… are cooling down" 429 (OpenCode's `provider.rate-limit`,
   which drops the status, body and reset time): there the retry is left to OpenCode, and once the run has stopped the
   plugin resumes on the usage reading instead of a stated time.
+- Also retries a top-level session whose run failed on a transient provider error — HTTP 500/502/503/504, "overloaded",
+  "Request timed out", `provider.internal`, `provider.transport` — with no opt-in and no usage poll: after 2, 10 then 30
+  minutes, then gives up. 4xx, auth and invalid-request failures are not retried.
 - Works out when any of your cliproxy Claude accounts has the limiting window free again, waits for that reset plus a margin, re-checks real usage, then queues one "Continue." prompt.
 - Tells you through the shared notification system ([notifications](../notifications) when installed, else a toast of its own with Open): an error "Usage limit reached, resumes 14:05" (or "Usage limit reached" with "Auto-resume is off for this session." when you did not opt in), an info "Resumes 15:10" when the time moves, and an error when it gives up after the attempt cap. A resume that works says nothing: it starts a turn and the run reports for itself.
 - Adds a timeline notice with the resume time. Survives restarts and sleep: deadlines are checked every 30 seconds.
-- Gives up on a session after 3 resumes without a completed run, and drops stalls older than 8 days. Subagent sessions are never resumed.
+- Gives up on a session after 3 resumes without a completed run (for either kind of stall), and drops stalls older than 8 days. Subagent sessions are never resumed.
 - Logs every failed run, detected limit, schedule, resume and skip with its reason (tokens redacted) to `~/.local/share/opencode/usage-resume/usage-resume.log`, and keeps the first real limit error as `limit-error.json` for detector tests.
 - Only reads the cliproxy auth files and the usage endpoint, at the notch app's pace (5 minute floor per account, 30 minute backoff cap). It never enables or spends extra usage.
 
@@ -41,6 +44,8 @@ Durations are seconds.
 | `marginSeconds` | `60` | wait after the computed reset before checking |
 | `maxAttempts` | `3` | resumes per session before giving up (reset when a run completes) |
 | `retryBackoffSeconds` | `300` | extra wait after a repeat stall, doubled each time |
+| `transientRetry` | `true` | retry a run that failed on a transient provider error, no opt-in |
+| `transientBackoffSeconds` | `[120, 600, 1800]` | waits before each transient retry; the last one repeats |
 | `maxWaitHours` | `192` | drop stalls older than this |
 | `tickSeconds` | `30` | how often due sessions are looked at (sleep-safe) |
 | `staggerSeconds` | `1` | pause between resuming sessions |

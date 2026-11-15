@@ -13,6 +13,10 @@ export interface Options {
   readonly maxAttempts: number
   /** Extra wait after the first resume fails again, doubled for each further one. */
   readonly retryBackoffMs: number
+  /** Resume a top-level session whose run failed on a transient provider error, with no usage-limit opt-in. */
+  readonly transientRetry: boolean
+  /** Waits before each automatic retry of a transient failure; the last one repeats. */
+  readonly transientBackoffMs: readonly number[]
   /** Stalls older than this are dropped. */
   readonly maxWaitMs: number
   /** Pause between resuming two sessions. */
@@ -32,6 +36,8 @@ export const DEFAULTS: Options = {
   tickMs: 30_000,
   maxAttempts: 3,
   retryBackoffMs: 5 * 60_000,
+  transientRetry: true,
+  transientBackoffMs: [2 * 60_000, 10 * 60_000, 30 * 60_000],
   maxWaitMs: 8 * 86_400_000,
   staggerMs: 1_000,
   authDir: path.join(os.homedir(), ".cli-proxy-api"),
@@ -63,6 +69,15 @@ function flag(raw: Readonly<Record<string, unknown>>, key: string, fallback: boo
   return value
 }
 
+function secondsList(raw: Readonly<Record<string, unknown>>, key: string, fallback: readonly number[]): number[] {
+  const value = raw[key]
+  if (value === undefined) return [...fallback]
+  if (!Array.isArray(value) || value.length === 0 || value.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0)) {
+    throw new Error(`${NAME} ${key} must be a non-empty array of seconds`)
+  }
+  return (value as number[]).map((v) => v * 1000)
+}
+
 /** Durations are given in seconds (`marginSeconds`, `tickSeconds`, …) and held in ms. */
 export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Options {
   const attempts = raw.maxAttempts
@@ -75,6 +90,8 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Optio
     tickMs: seconds(raw, "tickSeconds", DEFAULTS.tickMs, 1),
     maxAttempts: (attempts as number | undefined) ?? DEFAULTS.maxAttempts,
     retryBackoffMs: seconds(raw, "retryBackoffSeconds", DEFAULTS.retryBackoffMs, 0),
+    transientRetry: flag(raw, "transientRetry", DEFAULTS.transientRetry),
+    transientBackoffMs: secondsList(raw, "transientBackoffSeconds", DEFAULTS.transientBackoffMs),
     maxWaitMs: seconds(raw, "maxWaitHours", DEFAULTS.maxWaitMs / 3600, 1) * 3600,
     staggerMs: seconds(raw, "staggerSeconds", DEFAULTS.staggerMs, 0),
     authDir: text(raw, "authDir", DEFAULTS.authDir, false),

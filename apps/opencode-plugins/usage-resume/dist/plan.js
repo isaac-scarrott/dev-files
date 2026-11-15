@@ -4,10 +4,19 @@ export const UNVERIFIED_LIMIT = 2;
  * fresh usage reading can exist, so a check is never scheduled before it could learn anything.
  */
 export function decide(w, a, now, marginMs, nextPoll) {
+    if (w.mode === "transient")
+        return decideTransient(w, now);
     const raw = decideUnbounded(w, a, now, marginMs, nextPoll);
     if (raw.action === "resume")
         return now < w.notBefore ? { action: "wait", at: w.notBefore } : raw;
     return raw.at < w.notBefore ? { ...raw, at: w.notBefore } : raw;
+}
+/**
+ * Pure. A transient provider error needs no usage reading: retry when its backoff is up. Nothing here speaks for the
+ * provider, so a resume is never "verified"; a run that fails again inflates the attempt count and the next delay.
+ */
+export function decideTransient(w, now) {
+    return now < w.notBefore ? { action: "wait", at: w.notBefore } : { action: "resume", verified: false };
 }
 function decideUnbounded(w, a, now, marginMs, nextPoll) {
     // An overage rejection is the extra-usage allowance, which the 5h/7d windows do not describe: trust only the error.

@@ -37,6 +37,23 @@ const MAX_AHEAD_MS = 8 * 86_400_000
 // "Retry-After") never reaches us: only usage readings can say when to try again.
 const COOLDOWN_TEXT = /all credentials for model [\w.-]*claude[\w.-]* are cooling down/i
 
+// A provider failure that clears on its own. Not a 4xx (the request or the credentials are wrong, so a retry repeats the
+// mistake) and not a 429 (a rate or usage wall, handled above). Seen live on 2026-11-13 and 2026-11-15; the strings are
+// in the tests.
+const TRANSIENT_HTTP = new Set([500, 502, 503, 504])
+const HTTP_IN_MESSAGE = /\bHTTP[ /](\d{3})\b/i
+const TRANSIENT_TEXT: ReadonlyArray<readonly [RegExp, TransientFailure["reason"]]> = [
+  [/\boverloaded\b/i, "overloaded"],
+  [/\brequest timed out\b/i, "timeout"],
+  [/\b(?:ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ENETUNREACH|EHOSTUNREACH)\b/, "network"],
+  [/can't reach [\w.-]+.*check the network connection/i, "network"],
+]
+
+/** Why a failure is transient: what in the error said so. */
+export interface TransientFailure {
+  readonly reason: "http" | "internal" | "network" | "overloaded" | "timeout"
+}
+
 function epoch(value: string | number | undefined, base: number): number | undefined {
   if (value === undefined) return undefined
   let ms: number
@@ -79,4 +96,25 @@ export function detectProviderCooldown(error: ErrorLike | undefined): UsageLimit
   if (!error || error.type !== "provider.rate-limit") return undefined
   if (!COOLDOWN_TEXT.test(error.message ?? "")) return undefined
   return { kind: "cooldown" }
+}
+
+/**
+ * Whether the run failed on a provider error that is expected to clear on its own, so retrying later is worth it. Run
+ * this only after the usage detectors: a 429 that carries a limit belongs to them, and is not transient.
+ */
+export function detectTransientFailure(error: ErrorLike | undefined): TransientFailure | undefined {
+  if (!error) return undefined
+  if (error.type && OPENCODE_LIMITS.test(error.type)) return undefined
+  // An explicit status is the truth: an auth or invalid-request 4xx is never transient, whatever the text says.
+  if (error.status !== undefined) {
+    if (!TRANSIENT_HTTP.has(error.status)) return undefined
+    return { reason: "http" }
+  }
+  // The Claude Agent provider reports a plain Error with no status, so the code is in the message.
+  const code = Number(HTTP_IN_MESSAGE.exec(error.message ?? "")?.[1])
+  if (Number.isInteger(code)) return TRANSIENT_HTTP.has(code) ? { reason: "http" } : undefined
+  if (error.type === "provider.transport") return { reason: "network" }
+  if (error.type === "provider.internal") return { reason: "internal" }
+  for (const [pattern, reason] of TRANSIENT_TEXT) if (pattern.test(error.message ?? "")) return { reason }
+  return undefined
 }

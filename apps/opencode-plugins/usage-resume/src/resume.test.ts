@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
-import { detectProviderCooldown, detectUsageLimit } from "./detect.js"
+import { detectProviderCooldown, detectTransientFailure, detectUsageLimit } from "./detect.js"
 import { DEFAULTS, parseOptions, type Options } from "./options.js"
 import { createLog, Samples } from "./diag.js"
 import { acquireUsage, createUsageSource } from "./hub.js"
@@ -142,6 +142,33 @@ test("ignores other failures and OpenCode's own limits", () => {
   assert.equal(detectUsageLimit({ type: "provider.rate-limit", status: 429, message: "slow down", response: { body: "{}" } }, T0), undefined)
   assert.equal(detectUsageLimit({ type: "provider.auth", message: "Run `claude auth login`" }, T0), undefined)
   assert.equal(detectUsageLimit(undefined, T0), undefined)
+})
+
+// The strings are real session errors from 2026-11-13 16:30-16:50 UTC (and 2026-11-15 for the 503), ids removed.
+test("transient provider failures are recognised from the real error strings; 4xx, auth and limits are not", () => {
+  const transient = [
+    { type: "provider.internal", message: "Anthropic returned HTTP 500. Claude Code exhausted its retries. Try again shortly." },
+    { type: "provider.internal", message: "Anthropic returned HTTP 503. Claude Code exhausted its retries. Try again shortly." },
+    { type: "provider.unknown", message: "Request timed out" },
+    { type: "provider.transport", message: "ECONNREFUSED: Unable to connect. Is the computer able to access the url?" },
+    { type: "provider.transport", message: "Can't reach opencode.ai. Check the network connection. (getaddrinfo ENOTFOUND opencode.ai)" },
+    { type: "provider.unknown", message: "The model is overloaded. Try again later." },
+    { type: "unknown", status: 502, message: "" },
+    { type: "provider.internal", message: "upstream hiccup" },
+  ]
+  for (const error of transient) assert.ok(detectTransientFailure(error), JSON.stringify(error))
+
+  const permanent = [
+    { type: "provider.internal", message: "Anthropic returned HTTP 400. Bad request." },
+    { type: "provider.unknown", status: 400, message: "Anthropic returned HTTP 500." },
+    { type: "provider.auth", message: "Run `claude auth login`" },
+    { type: "provider.rate-limit", status: 429, message: "slow down" },
+    { type: "provider.rate-limit", message: "All credentials for model claude-opus-5-5 are cooling down" },
+    { type: "provider.go-limit", message: "Opencode Go usage limit reached." },
+    { type: "unknown", message: "invalid request: unknown model" },
+    undefined,
+  ]
+  for (const error of permanent) assert.equal(detectTransientFailure(error), undefined, JSON.stringify(error))
 })
 
 test("a cliproxy cooldown is a wall with no stated reset, and only for Claude", () => {
@@ -360,6 +387,86 @@ test("a failed prompt keeps the session waiting and still counts toward the cap"
   assert.equal(r.waiting()[0]!.dueAt, T0 + HOUR + DEFAULTS.retryBackoffMs)
 })
 
+// --- transient provider failures ---
+
+const transient500 = { type: "provider.internal", message: "Anthropic returned HTTP 500. Claude Code exhausted its retries. Try again shortly." }
+
+test("a transient provider error resumes a top-level session with no opt-in, after 2 minutes and no usage poll", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  await r.onFailed("ses_1", transient500, T0)
+  const waiting = r.waiting()[0]!
+  assert.equal(waiting.mode, "transient")
+  assert.equal(waiting.dueAt, T0 + 2 * MIN)
+  assert.equal(e.fetches.length, 0, "the usage endpoint says nothing about a provider error")
+  assert.equal(e.notices.length, 0, "the failed run already told the user")
+
+  e.clock.t = T0 + 2 * MIN - 1
+  await r.tick()
+  assert.equal(e.prompts.length, 0)
+  e.clock.t = T0 + 2 * MIN
+  await r.tick()
+  assert.deepEqual(e.prompts[0], { sessionID: "ses_1", text: "Continue.", delivery: "queue" })
+
+  const log = e.logs.join("\n")
+  assert.match(log, /transient provider error \(http\); retrying automatically/)
+  assert.match(log, /scheduled first check at 2026-10-31T12:02:00.000Z \(transient provider error, retry 1\/3 in 120s\)/)
+  assert.match(log, /resumed \(after a transient provider error\)/)
+})
+
+test("transient retries back off 2, 10, then 30 minutes, give up after 3 resumes, and a completed run resets the count", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "ses_1", T0, {}, false)
+  const r = await e.make()
+  const fail = async (at: number) => {
+    stalled(e, "ses_1", at, {}, false)
+    await r.onFailed("ses_1", transient500, at)
+  }
+
+  await fail(T0)
+  for (const [i, delay] of [2 * MIN, 10 * MIN, 30 * MIN].entries()) {
+    assert.equal(r.waiting()[0]!.dueAt, e.clock.t + delay, `retry ${i + 1} waits ${delay / MIN} min`)
+    e.clock.t += delay
+    await r.tick()
+    assert.equal(e.prompts.length, i + 1)
+    if (i < 2) await fail(e.clock.t)
+  }
+
+  // Fourth failure, after three resumes without a completed run: give up and say so.
+  await fail(e.clock.t)
+  assert.equal(r.waiting().length, 0)
+  assert.equal(e.prompts.length, 3)
+  assert.equal(e.told.at(-1)!.kind, "error")
+  assert.equal(e.told.at(-1)!.title, "Provider error again, not resuming")
+  assert.equal(e.told.at(-1)!.key, "usage-resume:giveup:ses_1")
+  assert.match(e.notices.at(-1)!, /Provider error again after 3 automatic resumes/)
+  e.clock.t += HOUR
+  await r.tick()
+  assert.equal(e.prompts.length, 3)
+
+  // A completed run clears the count: the next failure waits 2 minutes again.
+  await r.onSettled("ses_1", true)
+  await fail(e.clock.t)
+  assert.equal(r.waiting()[0]!.dueAt, e.clock.t + 2 * MIN)
+})
+
+test("transient retry never touches a subagent, and transientRetry false turns it off", async () => {
+  const e = await env({ a: bothFree })
+  stalled(e, "child", T0, { parentID: "ses_p" }, false)
+  const r = await e.make()
+  await r.onFailed("child", transient500, T0)
+  assert.equal(r.waiting().length, 0)
+  assert.ok(e.logs.some((l) => /child: not resuming: subagent/.test(l)))
+
+  const off = await env({ a: bothFree }, { transientRetry: false })
+  stalled(off, "ses_1", T0, {}, false)
+  const quiet = await off.make()
+  await quiet.onFailed("ses_1", transient500, T0)
+  assert.equal(quiet.waiting().length, 0)
+  assert.equal(off.logs.some((l) => /transient provider error/.test(l)), false)
+})
+
 test("the waiting state survives a restart", async () => {
   const e = await env({ a: { five_hour: win(100, T0 + 2 * HOUR), seven_day: win(10, T0 + 99 * HOUR) } })
   stalled(e, "ses_1", T0)
@@ -468,8 +575,14 @@ test("options validate", () => {
   assert.equal(parseOptions({}).prompt, "Continue.")
   assert.equal(parseOptions({ marginSeconds: 5 }).marginMs, 5000)
   assert.equal(parseOptions({ maxWaitHours: 2 }).maxWaitMs, 2 * HOUR)
+  assert.equal(parseOptions({}).transientRetry, true)
+  assert.deepEqual(parseOptions({}).transientBackoffMs, [2 * MIN, 10 * MIN, 30 * MIN])
+  assert.equal(parseOptions({ transientRetry: false }).transientRetry, false)
+  assert.deepEqual(parseOptions({ transientBackoffSeconds: [1, 2] }).transientBackoffMs, [1000, 2000])
   assert.throws(() => parseOptions({ maxAttempts: 0 }))
   assert.throws(() => parseOptions({ prompt: " " }))
+  assert.throws(() => parseOptions({ transientBackoffSeconds: [] }))
+  assert.throws(() => parseOptions({ transientBackoffSeconds: "120" }))
 })
 
 // --- opt-in toggles and diagnostics ---

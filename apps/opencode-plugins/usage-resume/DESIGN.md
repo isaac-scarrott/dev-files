@@ -32,6 +32,26 @@ end OpenCode's own short retry of a 429 that may clear in seconds.
 Not parsed: the CLI's free text ("resets 2pm (Europe/London)"). The provider appends the ISO time whenever it knows it,
 and the usage endpoint covers the rest.
 
+### Transient provider failures
+
+Measured on 2026-11-13 16:32–16:49 UTC: eight sessions' runs failed with `provider.internal` "Anthropic returned HTTP
+500. Claude Code exhausted its retries. Try again shortly." (and 503s on 2026-11-15), `provider.unknown` "Request timed
+out", and `provider.transport` network errors ("ECONNREFUSED…", "Can't reach opencode.ai…"). None is a usage wall, so the
+usage endpoint says nothing about when to try again, and the run simply stays failed until someone types "Continue.".
+
+`detectTransientFailure` treats an explicit HTTP status of 500/502/503/504, `provider.internal`, `provider.transport`,
+and the timeout, network or "overloaded" text (which is all a `provider.unknown` gives) as transient. An explicit 4xx,
+an auth or invalid-request failure and a 429 are not: a retry would repeat the mistake or the wall. It runs after the
+usage detectors, because a 429 carrying limit text is a limit, not a transient error.
+
+A transient stall is the same `Waiting` entry with `mode: "transient"`, so tick, sleep catch-up, persistence and the
+attempt cap are the machinery already there. It differs in two ways: it never refreshes usage (`decideTransient` judges
+wall time only), and it does not consult the usage-limit opt-in — the user made no choice to opt into for a 500. The
+delays are 2, 10 then 30 minutes (`transientBackoffSeconds`), and `maxAttempts` (3) bounds the retries; a completed run
+clears the count, as it already did for limits. Give-up uses the same `giveup` notification with provider wording.
+Nothing is announced when a transient stall is detected: the failed run itself already told the user, and a retry that
+works starts a turn that reports for itself.
+
 ### Events and hooks used (plugin SDK 2.2.5)
 
 - `ctx.event.subscribe`: `session.execution.failed` (`data.error`, event `created`) marks the stall.
@@ -169,7 +189,8 @@ the detector expects.
 
 | Decision | Default | Option |
 |---|---|---|
-| Which sessions | **opt-in only.** A session is resumed only when its own toggle is on. Subagent sessions (with a parent) are never resumed and have no toggle: the parent decides what to do with a failed child | |
+| Which sessions | **opt-in only for usage limits.** A session is resumed for a limit only when its own toggle is on; a transient provider error is retried without asking. Subagent sessions (with a parent) are never resumed and have no toggle: the parent decides what to do with a failed child | `transientRetry` |
+| Transient retries | 2, 10 then 30 minutes, capped by `maxAttempts` like a limit; no usage poll, no opt-in | `transientBackoffSeconds` |
 | Prompt | `Continue.`, queued | `prompt` |
 | One resume per stall | the stall is forgotten before the prompt is sent; a new stall needs a new failure | |
 | Loop cap | 3 resumes per session, counted until the session completes a run; the Nth+1 failure posts a notice and stops | `maxAttempts` |

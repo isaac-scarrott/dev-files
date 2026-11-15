@@ -79,14 +79,28 @@ export declare class Resumer {
      */
     reconcile(sessionID?: string): Promise<void>;
     attempts(sessionID: string): Attempts | undefined;
-    /** A run failed. If it is a Claude usage limit and the session's toggle is on, start waiting for it to clear. */
+    /**
+     * A run failed. A usage limit starts waiting when the session opted in; a transient provider error starts waiting
+     * without asking, since it is neither a usage wall nor a choice the user makes.
+     */
     onFailed(sessionID: string, error: ErrorLike | undefined, at: number): Promise<void>;
+    /** A usage limit: record it for the pill, then wait only if this session opted in. */
+    private onLimit;
+    /** A provider error that is expected to clear: retry it on its own schedule, no opt-in and no usage reading. */
+    private onTransient;
+    /** The attempt cap: tells the user and stops, returning true when it applied. */
+    private capped;
     private skip;
     /** The session moved on without us (a user prompt, a run, deletion, completion): stop waiting for it. */
     onSettled(sessionID: string, completed?: boolean): Promise<void>;
     /** Look at every waiting session that is due. Call on an interval; after sleep the first call catches up. */
     tick(): Promise<void>;
     private register;
+    /**
+     * A transient failure has its own delay and asks nothing of the usage endpoint. Announcing it would only repeat the
+     * failed run's own error; a retry that works starts a turn that reports for itself.
+     */
+    private registerTransient;
     private evaluate;
     private process;
     private drop;

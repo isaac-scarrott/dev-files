@@ -14,6 +14,10 @@ export interface UsageLimit {
     /** Epoch ms the error says usage returns, if it says. */
     readonly resetsAt?: number;
 }
+/** Why a failure is transient: what in the error said so. */
+export interface TransientFailure {
+    readonly reason: "http" | "internal" | "network" | "overloaded" | "timeout";
+}
 /**
  * Whether `error` is a Claude usage limit, and when it says usage returns. `at` is when the failure was recorded
  * (epoch ms), the base for `retryAfterMs`.
@@ -26,3 +30,8 @@ export declare function detectUsageLimit(error: ErrorLike | undefined, at: numbe
  * OpenCode's own retry than ended early.
  */
 export declare function detectProviderCooldown(error: ErrorLike | undefined): UsageLimit | undefined;
+/**
+ * Whether the run failed on a provider error that is expected to clear on its own, so retrying later is worth it. Run
+ * this only after the usage detectors: a 429 that carries a limit belongs to them, and is not transient.
+ */
+export declare function detectTransientFailure(error: ErrorLike | undefined): TransientFailure | undefined;

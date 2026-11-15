@@ -9,6 +9,10 @@ export interface Options {
     readonly maxAttempts: number;
     /** Extra wait after the first resume fails again, doubled for each further one. */
     readonly retryBackoffMs: number;
+    /** Resume a top-level session whose run failed on a transient provider error, with no usage-limit opt-in. */
+    readonly transientRetry: boolean;
+    /** Waits before each automatic retry of a transient failure; the last one repeats. */
+    readonly transientBackoffMs: readonly number[];
     /** Stalls older than this are dropped. */
     readonly maxWaitMs: number;
     /** Pause between resuming two sessions. */
