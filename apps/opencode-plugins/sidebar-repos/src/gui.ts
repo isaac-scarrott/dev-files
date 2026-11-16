@@ -1,6 +1,7 @@
 import { createKeyed, Plugin, Style } from "@opencode/plugin/gui"
 import { createMemo } from "solid-js"
 import { render } from "solid-js/web"
+import { syncRequests } from "../../native-ui/src/requests"
 import { createTicker, lastActivity } from "./activity"
 import { removeTimes, renderTimes, stampActivity } from "./rowtime"
 import { attentionKind, badges, basename, truncateMiddle, type AttentionKind } from "./badges"
@@ -228,9 +229,8 @@ export default Plugin.define({
         const key = `${session.server.id}:${session.id}`
         if (formsRequested.has(key)) continue
         formsRequested.add(key)
-        const data = session.server.data
         // A pending permission or question form reads as attention; errors surface as unread, not a mark.
-        void Promise.all([data.session.permission.sync(session.id), data.session.form.sync(session.id)]).catch(() => formsRequested.delete(key))
+        void syncRequests(session.server.data, session.id).catch(() => formsRequested.delete(key))
       }
     })
 

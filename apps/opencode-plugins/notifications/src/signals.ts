@@ -1,8 +1,23 @@
 import type { NotifyInput } from "../../native-ui/src/notify-contract"
+import { pendingRequests, requestPending, REQUEST_FORM_KINDS, syncRequests, type RequestData } from "../../native-ui/src/requests"
 
 interface SessionLike {
   readonly title?: string
   readonly parentID?: string
+  readonly time?: { readonly updated?: number }
+}
+
+interface PermissionLike {
+  readonly id: string
+  readonly action?: string
+  readonly resources?: readonly string[]
+  readonly message?: string
+}
+
+interface FormLike {
+  readonly id: string
+  readonly metadata?: Record<string, unknown>
+  readonly fields?: readonly { readonly key: string; readonly title?: string; readonly description?: string; readonly options?: readonly { readonly value: string; readonly label: string }[]; readonly custom?: boolean }[]
 }
 
 /** The slice of a server's synced `data` that the host-derived signals read. */
@@ -14,8 +29,8 @@ export interface SignalData {
     family(sessionID: string): readonly string[]
     status(sessionID: string): "idle" | "running"
     sync(sessionID: string): Promise<void>
-    permission: { list(sessionID: string): readonly { id: string }[] | undefined; sync(sessionID: string): Promise<void> }
-    form: { list(sessionID: string): readonly { id: string; metadata?: Record<string, unknown> }[] | undefined; sync(sessionID: string): Promise<void> }
+    permission: { list(sessionID: string): readonly PermissionLike[] | undefined; sync(sessionID: string): Promise<void> }
+    form: { list(sessionID: string): readonly FormLike[] | undefined; sync(sessionID: string): Promise<void> }
   }
 }
 
@@ -39,9 +54,6 @@ export interface SignalDeps {
 
 /** A request is answered or auto-approved quickly: wait this long before raising a persistent toast for it. */
 export const REQUEST_DELAY_MS = 250
-
-/** The form kinds the host itself notifies for. */
-const FORM_KINDS: ReadonlySet<unknown> = new Set(["question", "mcp-elicitation", "websearch.provider"])
 
 export const keys = {
   done: (sessionID: string) => `host:done:${sessionID}`,
@@ -104,10 +116,7 @@ export function createHostSignals(deps: SignalDeps) {
     })
   }
 
-  const pending = (kind: "permission" | "form", sessionID: string, id: string) => {
-    const list = kind === "permission" ? data.session.permission.list(sessionID) : data.session.form.list(sessionID)
-    return list === undefined || list.some((item) => item.id === id)
-  }
+  const pending = (kind: "permission" | "form", sessionID: string, id: string) => requestPending(data, kind, sessionID, id)
 
   const request = async (kind: "permission" | "form", sessionID: string, id: string, title: string) => {
     const session = await lookup(sessionID)
@@ -131,7 +140,7 @@ export function createHostSignals(deps: SignalDeps) {
         data.on("session.execution.failed", (event) => void failed(String(record(event.data).sessionID), record(event.data).error)),
         data.on("permission.asked", (event) => void request("permission", String(record(event.data).sessionID), String(record(event.data).id), deps.text.permission)),
         data.on("form.created", (event) => {
-          if (!FORM_KINDS.has(formKind(event.data))) return
+          if (!REQUEST_FORM_KINDS.has(formKind(event.data))) return
           const form = record(record(event.data).form)
           void request("form", String(form.sessionID), String(form.id), deps.text.question)
         }),
@@ -147,15 +156,19 @@ export function createHostSignals(deps: SignalDeps) {
     },
     /** Reads what the server holds for a session and raises the requests still waiting for an answer. */
     async reconcile(sessionID: string): Promise<void> {
-      await Promise.all([data.session.permission.sync(sessionID), data.session.form.sync(sessionID)]).catch(() => undefined)
+      await syncRequests(data, sessionID).catch(() => undefined)
       const session = data.session.get(sessionID)
       const body = session?.title
       const target = { server, session: sessionID }
-      for (const item of data.session.permission.list(sessionID) ?? []) {
-        deps.publish({ kind: "needs-you", persistent: true, title: deps.text.permission, body, key: keys.permission(item.id), target })
-      }
-      for (const item of data.session.form.list(sessionID) ?? []) {
-        if (FORM_KINDS.has(item.metadata?.kind)) deps.publish({ kind: "needs-you", persistent: true, title: deps.text.question, body, key: keys.form(item.id), target })
+      for (const item of pendingRequests(data, { server, session: sessionID })) {
+        deps.publish({
+          kind: "needs-you",
+          persistent: true,
+          title: item.kind === "permission" ? deps.text.permission : deps.text.question,
+          body,
+          key: item.kind === "permission" ? keys.permission(item.id) : keys.form(item.id),
+          target,
+        })
       }
     },
   }
