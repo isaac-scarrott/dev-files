@@ -56,7 +56,7 @@ export function describeMonitor(options: Options): string {
 
 export const LIST_DESCRIPTION = "List this session's background monitors that are running: name, id, command, pid, when each started, how many events it produced over its whole life (kept across re-arms and service restarts, the count maxEvents caps), the last event, which session it wakes, restartCount (service restarts survived; a plugin reload does not count), and for re-arm monitors lastRearm and nextRearm. Monitors that wake other sessions are not listed."
 export const STOP_DESCRIPTION = "Stop this session's background monitor by id or by the name you gave at start (see monitor.list). Its process and anything it started are ended. A monitor that wakes another session can only be stopped by that session."
-export const WAIT_DESCRIPTION = "Wait for one of this session's monitors, by id or name, to print or end, instead of polling it or sleeping. Returns when it produces its next batch of lines (state event), when it ends (state exited, with exitCode and its last lines), or when the timeout passes (state timeout; default 20 minutes, at most 30). A monitor that has already ended returns at once. Use it from a sub-agent, or when you need the result before you can continue; otherwise end your turn and let the monitor wake you. A service restart ends the call without a result: call wait again once the monitor is back."
+export const WAIT_DESCRIPTION = "Wait for one of this session's monitors, by id or name, to print or end, instead of polling it or sleeping. Returns when it produces its next batch of lines (state event), when it ends (state exited, with exitCode and its last lines), or when the timeout passes (state timeout; default 2 minutes, at most 5; on timeout the monitor keeps running and will wake you, so end your turn rather than waiting again). A monitor that has already ended returns at once. Use it from a sub-agent, or when you need the result before you can continue; otherwise end your turn and let the monitor wake you. A service restart ends the call without a result: call wait again once the monitor is back."
 
 export function registerTools(editor: Editor, monitors: Monitors, host: Host, options: Options): void {
   editor.namespace({ name: NAMESPACE, description: "Run commands in the background and wake a session with their output as it happens." })
@@ -177,14 +177,14 @@ export function registerTools(editor: Editor, monitors: Monitors, host: Host, op
       type: "object",
       properties: {
         id: { type: "string", minLength: 1, description: "Monitor id, or the name you gave it at monitor.start (see monitor.list)" },
-        timeoutMinutes: { type: "integer", minimum: 1, maximum: 30, description: "Minutes to wait before returning state timeout (default 20, at most 30)" },
+        timeoutMinutes: { type: "integer", minimum: 1, maximum: 5, description: "Minutes to wait before returning state timeout (default 2, at most 5)" },
       },
       required: ["id"],
       additionalProperties: false,
     },
     async (input: { id: string; timeoutMinutes?: number }, context) => {
-      const minutes = input.timeoutMinutes ?? 20
-      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30) throw fail("timeoutMinutes must be an integer from 1 to 30")
+      const minutes = input.timeoutMinutes ?? 2
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 5) throw fail("timeoutMinutes must be an integer from 1 to 5")
       const resolved = resolveMonitor(monitors.known(), input.id, context.sessionID as string)
       if ("reason" in resolved) throw fail(noSuchMonitor("monitor", input.id, resolved))
       const owner = monitors.owner(resolved.id)
@@ -192,6 +192,7 @@ export function registerTools(editor: Editor, monitors: Monitors, host: Host, op
       if (owner !== context.sessionID) throw fail(await foreignMonitor(host, { id: resolved.id, session: owner }, "wait for"))
       const result = await monitors.wait(resolved.id, minutes * 60_000, context.signal)
       if (!result) throw fail(`No monitor with id ${resolved.id}`)
+      if (result.state === "timeout") return { ...result, note: "The monitor is still running and will wake this session when it prints or ends. End your turn instead of calling wait again." }
       return result
     },
   )

@@ -123,7 +123,7 @@ test("stop and wait take the name given at start when exactly one of this sessio
   assert.deepEqual(stopped, ["mon_mine"])
   const result = await wait.execute({ id: "tests" }, { sessionID: "ses_me" })
   assert.deepEqual(result.output, { state: "exited", exitCode: 0, lines: ["done"] })
-  assert.deepEqual(waited, [{ id: "mon_done", timeoutMs: 1_200_000 }])
+  assert.deepEqual(waited, [{ id: "mon_done", timeoutMs: 120_000 }])
 })
 
 test("a name that matches two of this session's monitors is refused with both ids", async () => {
@@ -176,18 +176,18 @@ test("wait refuses another session's monitor, naming its session", async () => {
   assert.deepEqual(waited, [])
 })
 
-test("wait uses 20 minutes by default and the given timeout at most 30", async () => {
+test("wait uses 2 minutes by default and the given timeout at most 5", async () => {
   const { added, waited } = owned()
   const wait = added.find((t) => t.name === "wait")
   const result = await wait.execute({ id: "mon_mine" }, { sessionID: "ses_me" })
   assert.deepEqual(result.output, { state: "exited", exitCode: 0, lines: ["done"] })
-  await wait.execute({ id: "mon_mine", timeoutMinutes: 30 }, { sessionID: "ses_me" })
+  await wait.execute({ id: "mon_mine", timeoutMinutes: 5 }, { sessionID: "ses_me" })
   assert.deepEqual(waited, [
-    { id: "mon_mine", timeoutMs: 1_200_000 },
-    { id: "mon_mine", timeoutMs: 1_800_000 },
+    { id: "mon_mine", timeoutMs: 120_000 },
+    { id: "mon_mine", timeoutMs: 300_000 },
   ])
-  await assert.rejects(wait.execute({ id: "mon_mine", timeoutMinutes: 31 }, { sessionID: "ses_me" }), { message: "timeoutMinutes must be an integer from 1 to 30" })
-  await assert.rejects(wait.execute({ id: "mon_mine", timeoutMinutes: 0 }, { sessionID: "ses_me" }), { message: "timeoutMinutes must be an integer from 1 to 30" })
+  await assert.rejects(wait.execute({ id: "mon_mine", timeoutMinutes: 6 }, { sessionID: "ses_me" }), { message: "timeoutMinutes must be an integer from 1 to 5" })
+  await assert.rejects(wait.execute({ id: "mon_mine", timeoutMinutes: 0 }, { sessionID: "ses_me" }), { message: "timeoutMinutes must be an integer from 1 to 5" })
 })
 
 test("wait keeps the unknown-id error and the description names the three outcomes", async () => {

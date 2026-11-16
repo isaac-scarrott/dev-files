@@ -7,7 +7,7 @@ import { Error as ToolError } from "@opencode/plugin/promise/tool";
 /** The host's shell tool: the only tool whose call runs a command in the foreground. */
 export const SHELL_TOOL = "shell";
 /** What the agent is told when the call is refused: exactly what to do instead. */
-export const FOREGROUND_WAIT = "This is a foreground wait. Start the command with monitor.start (Code Mode: `await tools.monitor.start({command, name})`). Then either end your turn: the monitor wakes you when it prints or exits, even after a restart. Or, if you are a sub-agent, or you need the result before you can continue, call monitor.wait({id}): it blocks until the monitor prints or exits (20 minutes by default) and returns its lines. Never sleep or loop in the foreground to wait.";
+export const FOREGROUND_WAIT = "This is a foreground wait. Start the command with monitor.start (Code Mode: `await tools.monitor.start({command, name})`). Then either end your turn: the monitor wakes you when it prints or exits, even after a restart. Or, if you are a sub-agent, or you need the result before you can continue, call monitor.wait({id}): it blocks until the monitor prints or exits (2 minutes by default, at most 5) and returns its lines. Never sleep or loop in the foreground to wait.";
 const OPERATORS = new Set([";", "&", "|", "(", ")", "{", "}", "<", ">", "\n", "`"]);
 /** Words that keep the command position open: the next word is still a command. */
 const KEYWORDS = new Set(["!", "builtin", "command", "do", "elif", "else", "env", "exec", "if", "nohup", "sudo", "then", "time", "until", "while"]);
