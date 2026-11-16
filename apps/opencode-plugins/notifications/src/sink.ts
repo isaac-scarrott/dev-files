@@ -1,4 +1,4 @@
-import { KIND_GLYPH, type KindGlyph, type Notification, type NotifySink } from "../../native-ui/src/notify-contract"
+import { KIND_GLYPH, ownerOf, type KindGlyph, type Notification, type NotifySink } from "../../native-ui/src/notify-contract"
 import { Admission, MERGE_MS, SUMMARY_MS, toastVerdict, type Presence } from "./policy"
 import { ALWAYS_SHOWN, type Settings } from "./settings"
 
@@ -151,6 +151,9 @@ export function createSink(deps: SinkDeps) {
     const presence = deps.presence(n)
     // The user is looking at it: a toast (error, needs-you) says enough, and nothing waits except a request that needs an answer.
     if (!(presence.onScreen && n.kind !== "needs-you")) deps.track.put(n, n.source === deps.self)
+    // An inbox plugin that owns `host-requests` lists them itself in one place; the host's own marks still show, so this is
+    // only its toast (and the sound, which the host already sends for its own events) that stands down.
+    if (n.kind === "needs-you" && n.source === deps.self && ownerOf("host-requests") !== undefined) return
     const verdict = toastVerdict(n, deps.settings(), presence)
     if (verdict.show) show(id, n)
     else if (verdict.hold) {

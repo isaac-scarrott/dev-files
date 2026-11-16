@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { afterEach, test } from "node:test"
 import {
-  NOTIFY_KEY, NOTIFY_PROTOCOL, acquirePublisher, activeSink, clearNotification, defaultKey, normalize, notify, notifyFromServer, provideSink,
+  NOTIFY_KEY, NOTIFY_PROTOCOL, acquirePublisher, activeSink, clearNotification, defaultKey, normalize, notify, notifyFromServer, ownerOf, provideSink,
   publishers, sourceOfEvent, type Notification, type NotifyContext, type NotifySink,
 } from "./notify-contract.js"
 
@@ -39,6 +39,32 @@ test("a toast without a target or without tabs has no action", () => {
   notify(context("q", false), { kind: "error", title: "y", target: { server: "s", session: "a" } })
   assert.equal(toasts[0].actions, undefined)
   assert.equal(toasts[1].actions, undefined)
+})
+
+test("a publisher claims a job while it runs; the claim is reference-counted and gone with the last holder", () => {
+  const first = acquirePublisher("inbox", { owns: ["host-requests"] })
+  const second = acquirePublisher("inbox", { owns: ["host-requests"] })
+  assert.equal(ownerOf("host-requests"), "inbox")
+  first()
+  assert.equal(ownerOf("host-requests"), "inbox", "the reload that overlaps the old run keeps it held")
+  second()
+  assert.equal(ownerOf("host-requests"), undefined)
+  assert.deepEqual(publishers(), [])
+  second()
+  assert.equal(ownerOf("host-requests"), undefined, "a second release does nothing")
+})
+
+test("a publisher without owns claims nothing, and a claim from one plugin does not hide another's", () => {
+  const plain = acquirePublisher("monitor")
+  const inbox = acquirePublisher("inbox", { owns: ["host-requests"] })
+  try {
+    assert.equal(ownerOf("host-requests"), "inbox")
+    assert.deepEqual(publishers(), ["inbox", "monitor"])
+  } finally {
+    plain()
+    inbox()
+  }
+  assert.equal(ownerOf("host-requests"), undefined)
 })
 
 test("the same key replaces the fallback toast and clearNotification dismisses it", () => {
