@@ -87,6 +87,11 @@ export declare class Monitors {
     private disposed;
     constructor(deps: ManagerDeps);
     get count(): number;
+    /** The process groups of this instance's running monitors: another plugin must never track or signal them. */
+    active(): {
+        sessionID: string;
+        pgid: number;
+    }[];
     start(input: StartInput): Promise<MonitorInfo>;
     list(): MonitorInfo[];
     /** The session a monitor wakes, running or recently finished; undefined when there is no such monitor. */

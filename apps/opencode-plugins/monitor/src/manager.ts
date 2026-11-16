@@ -115,6 +115,14 @@ export class Monitors {
     return this.running.size
   }
 
+  /** The process groups of this instance's running monitors: another plugin must never track or signal them. */
+  active(): { sessionID: string; pgid: number }[] {
+    return [...this.running.values()].flatMap((monitor) => {
+      const pgid = monitor.group
+      return pgid === undefined ? [] : [{ sessionID: monitor.def.sessionID, pgid }]
+    })
+  }
+
   async start(input: StartInput): Promise<MonitorInfo> {
     const { options, clock } = this.deps
     const mine = [...this.running.values()].filter((monitor) => monitor.def.sessionID === input.sessionID)

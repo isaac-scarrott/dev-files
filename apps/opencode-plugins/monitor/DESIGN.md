@@ -46,6 +46,13 @@ Server plugin for OpenCode Desktop 2.2.5. Tools: `monitor.start`, `monitor.list`
   directory and instances share storage, so each stores its `origin` directory and restores only its own.
 - **Process**: `$SHELL -c command`, `detached` so it leads a process group; kill signals `-pid`. After the leader exits the
   group gets a final SIGKILL for strays. Output is drained for at most 300 ms after exit.
+- **Other plugins can see what is running.** `server.ts` publishes `globalThis[Symbol.for("opencode.monitor.active")]`, a
+  function returning `{sessionID, pgid}[]` for the monitors this process is running (`active.ts`, `Monitors.active()`).
+  It is a function rather than a map so `session-procs`, a separate package, can read it without importing monitor; the
+  process-wide function collects every instance's own running monitors, since the plugin loads once per directory, and an
+  instance takes its source out again on dispose. `session-procs` uses it to leave monitor groups alone and to never
+  idle-reap a session that has one; without the function it assumes a monitor may be running. Tested in `active.test.ts`
+  and in `monitor.test.ts`.
 - **`session` argument**: may name only a session the caller already controls: itself, its parent, descendants, sessions
   it created (`orchestrator` metadata marker) and siblings. That is orchestrator-tools' `tree` scope (`reachable` plus
   the parent `list_peers` shows), copied into `reach.ts` since plugins are separate packages; there is no wider option.

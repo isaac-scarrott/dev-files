@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { normalize } from "../../native-ui/src/notify-contract.js"
+import { activeMonitors, publishActive } from "./active.js"
 import { LineSplitter } from "./lines.js"
 import type { Outgoing } from "./notify.js"
 import { PARK_MS, beginShutdown, newRegistry } from "./handoff.js"
@@ -1159,4 +1160,20 @@ test("a notifier that throws never breaks a monitor", async () => {
   t.sp.exit(t.sp.runs[0]!, 2)
   await t.clock.advance(0)
   assert.equal(m.count, 0)
+})
+
+test("the process-wide active query lists running monitors by session and group", async () => {
+  const t = setup()
+  const unpublish = publishActive(() => t.monitors.active())
+  try {
+    assert.deepEqual(activeMonitors(), [])
+    const info = await t.monitors.start(t.input)
+    assert.equal(info.pid, 4201)
+    assert.deepEqual(activeMonitors(), [{ sessionID: "ses_1", pgid: 4201 }])
+    // The answer follows the live run: an ended monitor is not in it.
+    await t.monitors.stop(info.id)
+    assert.deepEqual(activeMonitors(), [])
+  } finally {
+    unpublish()
+  }
 })

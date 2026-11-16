@@ -1,4 +1,5 @@
 import { Plugin } from "@opencode/plugin"
+import { publishActive } from "./active.js"
 import { createLog } from "./diag.js"
 import { createShellGuard } from "./foreground.js"
 import { globalRegistry } from "./handoff.js"
@@ -46,6 +47,8 @@ export default Plugin.define({
     let control: Awaited<ReturnType<typeof ctx.rpc.register<typeof MonitorControl>>> | undefined
     const notify: Notify = (notification) => void control?.events.emit("notify", { ...notification }).catch((error) => log(`could not send a notification: ${String(error)}`))
     const monitors = new Monitors({ options, clock: systemClock, spawn: spawnShell, store, sessions, log, origin: ctx.location.directory, registry: globalRegistry(options.killGraceSeconds * 1000), notify })
+    // Other plugins (session-procs) must leave these process groups alone; the answer is process-wide and live.
+    const unpublish = publishActive(() => monitors.active())
     const tools = await ctx.tool.transform((editor) => registerTools(editor, monitors, ctx, options))
 
     // A foreground wait holds the turn open until it ends, and dies with a service restart. Refuse it and say what to do
@@ -84,6 +87,7 @@ export default Plugin.define({
 
     return async () => {
       abort.abort()
+      unpublish()
       const registered = control
       control = undefined
       await registered?.dispose()

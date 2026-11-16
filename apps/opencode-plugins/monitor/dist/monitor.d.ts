@@ -101,6 +101,8 @@ export declare class Monitor {
      */
     start(resume?: Resume): void;
     get pid(): number | undefined;
+    /** The process group this run leads, while it runs: what session-procs needs to leave it alone. */
+    get group(): number | undefined;
     /** The exit code of the command that ended this monitor, when it exited by itself (not when it was killed). A re-arm
      *  monitor outlives every one of its processes, so its last process exit says nothing about why it ended. */
     get exitCode(): number | undefined;
