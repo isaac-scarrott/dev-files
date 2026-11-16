@@ -3,6 +3,8 @@
 One list of everything waiting for Isaac — the agent's permissions, its questions, and asks that would otherwise be prose —
 in a pinned side panel, with one notification instead of one per request.
 
+![The panel rendered from src/panel.tsx with stand-in host buttons (a preview, not a desktop screenshot)](media/panel.png)
+
 ## What it does
 - **One panel, ranked.** A pinned side tab ("Inbox · N") in every session lists what waits, most expensive first: age ×
   whether anything is blocked × the idle sessions behind the answer + what a re-ask is worth (see [DESIGN.md](DESIGN.md)).
