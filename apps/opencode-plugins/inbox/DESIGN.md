@@ -95,6 +95,4 @@ It is generic in `notify-contract.ts` (`PublisherOwnership`), not an inbox speci
 Unit tests: merge key and scope, the answered-recently reply, the idle-family scope, ranking, the notification throttle and
 escalation, rows and counts, options. `pnpm smoke` runs the built server against fakes (three asks of one question → one
 item at `×3`; answer delivers one `<inbox-answer>`; re-ask hands the answer back; dismiss; a ref across a restart) and the
-built GUI under a fake host. `media/panel.png` is `src/panel.tsx` rendered in a browser page with stand-in host buttons: the
-panel's markup and CSS, not a desktop-app screenshot. The private service run and what it showed are in the commit that
-added the plugin.
+built GUI under a fake host. The private service run and what it showed are in the commit that added the plugin.
