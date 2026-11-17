@@ -101,16 +101,6 @@ interface Registry {
   readonly v: number
   readonly publishers: Map<string, number>
   readonly sinks: NotifySink[]
-  /** Which source holds each capability, reference-counted per source. Absent in bundles that predate it. */
-  owners?: Map<PublisherOwnership, Map<string, number>>
-}
-
-/** A job only one plugin should do. `host-requests`: the app's own waiting-request toasts, replaced by one inbox list. */
-export type PublisherOwnership = "host-requests"
-
-export interface PublisherOptions {
-  /** Jobs this publisher takes over while it runs; a sink reads them with `ownerOf`. */
-  readonly owns?: readonly PublisherOwnership[]
 }
 
 const holder = () => globalThis as unknown as Record<symbol, Registry | undefined>
@@ -131,17 +121,11 @@ function release(): void {
 /**
  * A plugin announces itself for as long as it runs: call inside `setup` and return the result from the cleanup. It lets
  * the settings page list the sources that exist. Reference-counted per source id, so a reload (new setup before or after the
- * old cleanup) never drops the entry early. `options.owns` additionally claims a job another plugin checks with `ownerOf`.
+ * old cleanup) never drops the entry early.
  */
-export function acquirePublisher(source: string, options: PublisherOptions = {}): () => void {
+export function acquirePublisher(source: string): () => void {
   const found = registry(true)!
   found.publishers.set(source, (found.publishers.get(source) ?? 0) + 1)
-  const owners = (found.owners ??= new Map())
-  for (const capability of options.owns ?? []) {
-    const holders = owners.get(capability) ?? new Map<string, number>()
-    holders.set(source, (holders.get(source) ?? 0) + 1)
-    owners.set(capability, holders)
-  }
   let done = false
   return () => {
     if (done) return
@@ -151,26 +135,12 @@ export function acquirePublisher(source: string, options: PublisherOptions = {})
     const count = (current.publishers.get(source) ?? 0) - 1
     if (count > 0) current.publishers.set(source, count)
     else current.publishers.delete(source)
-    for (const capability of options.owns ?? []) {
-      const holders = current.owners?.get(capability)
-      if (!holders) continue
-      const held = (holders.get(source) ?? 0) - 1
-      if (held > 0) holders.set(source, held)
-      else holders.delete(source)
-      if (holders.size === 0) current.owners?.delete(capability)
-    }
     release()
   }
 }
 
 /** The ids of the plugins currently announced, sorted. */
 export const publishers = (): string[] => [...(registry(false)?.publishers.keys() ?? [])].sort()
-
-/** The source holding a job (`owns`), or undefined when nobody does. A sink reads this to stand aside. */
-export function ownerOf(capability: PublisherOwnership): string | undefined {
-  const holders = registry(false)?.owners?.get(capability)
-  return holders ? [...holders.keys()][0] : undefined
-}
 
 /**
  * The `notifications` plugin installs its sink. The newest sink that speaks a protocol major we know answers; the older one

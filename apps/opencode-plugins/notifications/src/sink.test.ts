@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { normalize, type Notification, type NotifyInput } from "../../native-ui/src/notify-contract"
-import { acquirePublisher } from "../../native-ui/src/notify-contract"
 import { createSink, type SinkDeps, type ToastOptions } from "./sink"
 import { Ledger } from "./ledger"
 import { defaultSettings, type Settings } from "./settings"
@@ -262,23 +261,4 @@ test("the session on screen leaves nothing waiting except a request that needs a
   send({ kind: "needs-you", title: "q", target, key: "q", persistent: true }, "notifications")
   assert.deepEqual(ledger.list().map((entry) => entry.key), ["q"])
   assert.equal(state.shown.length, 2, "the error toast and the request still show")
-})
-
-test("an inbox owning host-requests stands down the host's own needs-you toast, and only that", () => {
-  const { state, send, ledger } = rig()
-  const release = acquirePublisher("inbox", { owns: ["host-requests"] })
-  try {
-    send({ kind: "needs-you", title: "Permission needed", target, key: "host:perm:per_1", persistent: true }, "notifications")
-    assert.equal(state.shown.length, 0, "no toast for the request the inbox lists")
-    assert.deepEqual(ledger.list().map((entry) => entry.key), ["host:perm:per_1"], "it is still tracked")
-    send({ kind: "needs-you", title: "From a plugin", target, key: "plugin", persistent: true }, "monitor")
-    send({ kind: "error", title: "Run failed", target, key: "host:error:ses_1" }, "notifications")
-    send({ kind: "done", title: "Run finished", target, key: "host:done:ses_1" }, "notifications")
-    assert.deepEqual(state.shown.map((n) => n.title), ["From a plugin", "Run failed", "Run finished"], "other kinds and sources still show")
-  } finally {
-    release()
-  }
-  const once = state.shown.length
-  send({ kind: "needs-you", title: "Permission needed", target, key: "host:perm:per_2", persistent: true }, "notifications")
-  assert.equal(state.shown.length, once + 1, "back to the host's toast once the inbox is gone")
 })
