@@ -37,14 +37,14 @@ Register by absolute path in `~/.config/opencode/opencode.json`, with `dryRun` o
 
 Kind: server. Restart the background service (`scripts/opencode-safe-restart.sh`) for the first load and for option changes.
 
-**`dryRun` is the default and it is what ships registered:** it logs and reports what it would end and kills nothing. The kill guard still refuses under `dryRun` — refusing is safe, and the pattern is dangerous either way.
+**`dryRun` is the default and it is what ships registered:** it logs what it would end (to `log.jsonl` only, never to the session) and kills nothing. The kill guard still refuses under `dryRun` — refusing is safe, and the pattern is dangerous either way.
 
 ## Options
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | Off: no tracking, no scanning, no guard. |
-| `dryRun` | `true` | Log and report what would be ended; kill nothing. The guard still refuses. |
+| `dryRun` | `true` | Log what would be ended; tell no session, kill nothing. The guard still refuses. |
 | `scanSeconds` | `15` | One `ps` per interval. |
 | `idleMinutes` | `30` | A session idle this long, with no monitor, has its leftovers ended. |
 | `subagentIdleMinutes` | `10` | The same window for a sub-agent's session. |

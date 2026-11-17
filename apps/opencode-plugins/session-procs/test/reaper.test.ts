@@ -200,16 +200,18 @@ const applier = (state: FakeReap, dryRun: boolean) => ({
   },
 })
 
-test("dryRun signals nothing, says what it would end, and says it once", async () => {
+test("dryRun signals nothing, tells no session, and logs what it would end once", async () => {
   const state = fakeReap()
-  const deps = applier(state, true)
+  const logged: Record<string, unknown>[] = []
+  const deps = { ...applier(state, true), log: (entry: Record<string, unknown>) => void logged.push(entry) }
   await apply(decision(), [...state.table.procs], true, deps)
   assert.deepEqual(state.signals, [])
-  assert.equal(state.notices.length, 1)
-  assert.match(state.notices[0]!.text, /Dry run: would end 1 leftover process/)
+  assert.equal(state.notices.length, 0)
   assert.equal(state.dropped.length, 0)
+  assert.equal(logged.length, 1)
+  assert.match(String(logged[0]!.would), /Dry run: would end 1 leftover process/)
   await apply(decision(), [...state.table.procs], true, deps)
-  assert.equal(state.notices.length, 1)
+  assert.equal(logged.length, 1)
 })
 
 test("a real reap SIGTERMs the group, then SIGKILLs what ignored it", async () => {

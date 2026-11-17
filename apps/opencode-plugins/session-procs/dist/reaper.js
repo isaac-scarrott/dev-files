@@ -50,8 +50,9 @@ export async function reap(group, deps) {
     return { state: "reaped", signaled: targets.map((proc) => proc.pid), survivors };
 }
 /**
- * One decision, dry or real. In `dryRun` nothing is signalled and the notice says what would have been ended; the
- * decision is reported once, since the group stays and the same rule would otherwise fire at every scan.
+ * One decision, dry or real. In `dryRun` nothing is signalled and the decision is only logged, once, since the group
+ * stays and the same rule would otherwise fire at every scan. A dry run tells no session: on 2026-11-17 an agent read
+ * "would end … limactl" as leave to kill its own preview VM, so what a dry run would do is for the owner's log alone.
  */
 export async function apply(decision, procs, report, deps) {
     const now = deps.now();
@@ -59,9 +60,7 @@ export async function apply(decision, procs, report, deps) {
         if (deps.ledger.reported(decision.group.pgid, decision.rule))
             return;
         deps.ledger.markReported(decision.group.pgid, decision.rule);
-        deps.log({ event: "reap", dryRun: true, pgid: decision.group.pgid, rule: decision.rule, pids: decision.pids, reason: decision.reason });
-        if (report)
-            deps.reporter.queue(decision.group.sessionID, reapNotice(decision, procs, decision.pids, true), deps.reporter.notice(decision, decision.pids, true, now));
+        deps.log({ event: "reap", dryRun: true, pgid: decision.group.pgid, rule: decision.rule, pids: decision.pids, reason: decision.reason, would: reapNotice(decision, procs, decision.pids, true) });
         return;
     }
     const outcome = await reap(decision.group, deps.reap);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -108,7 +108,7 @@ test("a real shell call is adopted, marked background and reaped when its sessio
   }
 })
 
-test("a foreground shell that already exited is not adopted, and a dry run reports without killing", async () => {
+test("a foreground shell that already exited is not adopted, and a dry run logs without killing or telling the session", async () => {
   resetShared()
   const host = fakeHost()
   // dryRun on: the plugin may report, but must never signal.
@@ -122,9 +122,11 @@ test("a foreground shell that already exited is not adopted, and a dry run repor
     host.push({ type: "shell.created", data: { info: { id: "sh_1", status: "running", command: "sleep 60", cwd: "/work", shell: "/bin/bash", pid, metadata: { sessionID: "ses_a" }, time: { started: Date.now() } } } })
     assert.ok(await waitFor(() => host.storage.has(`ledger/${pid}`), 4000))
     host.push({ type: "session.archived", data: { sessionID: "ses_a" } })
-    assert.ok(await waitFor(() => host.synthetic.length > 0, 4000), "a dry run says what it would end")
-    assert.match(String(host.synthetic[0].text), /^Dry run: would end 1 process of this session \(the session was archived\)/)
+    const logFile = join(String(host.ctx.options.dir), "log.jsonl")
+    const wouldReap = () => (existsSync(logFile) ? readFileSync(logFile, "utf8") : "").split("\n").some((line) => line.includes('"dryRun":true') && line.includes("the session was archived"))
+    assert.ok(await waitFor(wouldReap, 4000), "a dry run logs what it would end")
     await settle(150)
+    assert.equal(host.synthetic.length, 0, "a dry run tells no session")
     assert.equal(alive(pid), true, "nothing is killed in a dry run")
     assert.equal(host.storage.has(`ledger/${pid}`), true, "the group stays: it is still running")
   } finally {

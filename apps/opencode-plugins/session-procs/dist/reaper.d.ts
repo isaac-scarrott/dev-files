@@ -51,7 +51,8 @@ export interface ApplyDeps {
     };
 }
 /**
- * One decision, dry or real. In `dryRun` nothing is signalled and the notice says what would have been ended; the
- * decision is reported once, since the group stays and the same rule would otherwise fire at every scan.
+ * One decision, dry or real. In `dryRun` nothing is signalled and the decision is only logged, once, since the group
+ * stays and the same rule would otherwise fire at every scan. A dry run tells no session: on 2026-11-17 an agent read
+ * "would end … limactl" as leave to kill its own preview VM, so what a dry run would do is for the owner's log alone.
  */
 export declare function apply(decision: ReapDecision, procs: readonly Proc[], report: boolean, deps: ApplyDeps): Promise<void>;
