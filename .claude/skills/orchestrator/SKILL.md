@@ -34,7 +34,7 @@ Builders inherit whatever environment you leave them, so shaping it is orchestra
 ## Split by ownership to avoid conflicts
 
 - Before fanning out, map each item to the files it will touch. Items that share files belong to one builder, or to adjacent layers of a stack, never to parallel branches.
-- Builders running at the same time each get their own worktree and their own ports, even when their files don't overlap. A shared tree means shared stashes, commits, dev servers and ports, so one builder's cleanup kills another's server and one commit sweeps up a sibling's files. Name the worktree and the ports in the brief.
+- Builders running at the same time each get their own worktree and their own ports, even when their files don't overlap. A shared tree means shared stashes, commits, dev servers and ports, so one builder's cleanup kills another's server and one commit sweeps up a sibling's files. Name the worktree and the ports in the brief. The machine is shared too: to reproduce a slow runner, throttle the thing under test (the container's `--cpus`, the browser's CPU throttling), never load the machine itself, because that skews every other builder's timings.
 - Stack a PR on another only when they would conflict or must ship together. Everything else branches off trunk, so it can merge on its own. When you do stack, tell the user the merge order and comment it on the PRs.
 - Stay current with trunk. Run a background watcher that checks for conflicts and wakes you only when one appears, instead of polling or rebasing on a timer.
 
