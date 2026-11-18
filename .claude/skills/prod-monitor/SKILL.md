@@ -51,6 +51,7 @@ You run on events: the watch, scheduled checks, messages from other sessions, an
      - **Low**: no customer impact yet. One line in the log and the next daily summary.
      Keep an open-findings list in the log, with each finding's grade, owner and date. A real finding has no "done" until it has an owner.
    - A change: ask the owner with a structured question giving options and a recommendation.
+   Ask through `question_background`, never the blocking `question`: while a question waits, the watch's events queue unread (8h42m on 2026-11-18).
 5. **Log it.** One line in the log: UTC time, facts, decision.
 6. **Report.** Plain English, numbers first, short. Lead with whether action is needed. When you were wrong, say so plainly and correct it.
 
