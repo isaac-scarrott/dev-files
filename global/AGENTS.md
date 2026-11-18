@@ -8,6 +8,7 @@
 - Implementation goes to the `general` agent on `opencode-go/deepseek-v4.1-flash`, as a defined problem with a defined output. Be strict about scope.
 - Ask for proof of work (diff, command + output, screenshot), not a summary. Do a one-step review of the diff before accepting it.
 - Opus (`claude-agent/opus`) for design and high-level work, and ideally to prepare DeepSeek handoffs (specs, UI mocks).
+- When spawning sub-agents, always pass the model explicitly as above. This counts as my explicit request.
 
 ## AWS credentials
 
