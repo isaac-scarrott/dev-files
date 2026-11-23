@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { Plugin } from "@opencode/plugin"
 import { answersFromForm, answeredText, dismissedText, failedText } from "./logic.js"
+import { acquire, type Pending } from "./registry.js"
 import { QuestionBackground, questionSchema, type Asked, type Question } from "./rpc.js"
 
 const TOOL = "question_background"
@@ -26,24 +27,22 @@ const DESCRIPTION = [
   "Use the regular question tool instead when you need the answer before you can continue. Set `multiple` on a question to let the user pick several options.",
 ].join(" ")
 
-type Pending = Asked & { claimed: boolean; formID?: string }
-
 type FormEvent = { type: string; data: { id?: string; sessionID?: string; answer?: Record<string, unknown>; form?: { id: string; metadata?: { requestID?: unknown } } } }
 
 export default Plugin.define({
   id: "question-async",
   async setup(ctx) {
-    const pending = new Map<string, Pending>()
+    // One registry for the whole process: every instance handles every form event, and the shared map is what makes
+    // exactly one of them deliver.
+    const pending = (await acquire(async () => (await ctx.storage.get(STORE_KEY)) as Pending[] | undefined)).pending
     const save = () => ctx.storage.set(STORE_KEY, JSON.parse(JSON.stringify([...pending.values()])))
 
-    // A restart keeps the host's forms; keeping the requests lets their replies still reach the session. A request
-    // that was claimed but never got its form goes back to waiting for a window.
-    const stored = (await ctx.storage.get(STORE_KEY)) as Pending[] | undefined
-    for (const request of stored ?? []) pending.set(request.requestID, { ...request, claimed: !!request.formID })
-
+    // A restart keeps the host's forms; keeping the requests lets their replies still reach the session.
     const byForm = (formID: string) => [...pending.values()].find((request) => request.formID === formID)
 
     async function deliver(request: Pending, text: string, description: string) {
+      // Claimed here, before the send: an instance that handles the same event, or a replay after a restart, finds
+      // nothing to delete. Saving first keeps storage in step with the claim.
       if (!pending.delete(request.requestID)) return
       await save()
       await ctx.session.synthetic({ sessionID: request.sessionID, text, description, delivery: "queue" })

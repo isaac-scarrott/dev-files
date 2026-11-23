@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Plugin } from "@opencode/plugin";
 import { answersFromForm, answeredText, dismissedText, failedText } from "./logic.js";
+import { acquire } from "./registry.js";
 import { QuestionBackground, questionSchema } from "./rpc.js";
 const TOOL = "question_background";
 const STORE_KEY = "pending";
@@ -25,15 +26,15 @@ const DESCRIPTION = [
 export default Plugin.define({
     id: "question-async",
     async setup(ctx) {
-        const pending = new Map();
+        // One registry for the whole process: every instance handles every form event, and the shared map is what makes
+        // exactly one of them deliver.
+        const pending = (await acquire(async () => (await ctx.storage.get(STORE_KEY)))).pending;
         const save = () => ctx.storage.set(STORE_KEY, JSON.parse(JSON.stringify([...pending.values()])));
-        // A restart keeps the host's forms; keeping the requests lets their replies still reach the session. A request
-        // that was claimed but never got its form goes back to waiting for a window.
-        const stored = (await ctx.storage.get(STORE_KEY));
-        for (const request of stored ?? [])
-            pending.set(request.requestID, { ...request, claimed: !!request.formID });
+        // A restart keeps the host's forms; keeping the requests lets their replies still reach the session.
         const byForm = (formID) => [...pending.values()].find((request) => request.formID === formID);
         async function deliver(request, text, description) {
+            // Claimed here, before the send: an instance that handles the same event, or a replay after a restart, finds
+            // nothing to delete. Saving first keeps storage in step with the claim.
             if (!pending.delete(request.requestID))
                 return;
             await save();
