@@ -3,12 +3,12 @@ import { Plugin } from "@opencode/plugin";
 import { createKillGuard, pgrep } from "./guard.js";
 import { acquire } from "./ledger.js";
 import { createLog, logField } from "./log.js";
-import { OFF_FILE, parseOptions } from "./options.js";
+import { parseOptions } from "./options.js";
 import { readPs } from "./ps.js";
 import { apply } from "./reaper.js";
 import { Reporter, runawayNotice } from "./report.js";
 import { SessionProcs } from "./rpc.js";
-import { decide, evaluateRunaway } from "./rules.js";
+import { decide, evaluateRunaway, recentlyActive } from "./rules.js";
 /** Set by the monitor plugin: the groups it runs, so a monitor's command is never mistaken for a shell's. */
 const MONITOR_ACTIVE = Symbol.for("opencode.monitor.active");
 const SHELL_TOOL = "shell";
@@ -176,9 +176,11 @@ export default Plugin.define({
         /** One reap, dry or real. The reaper re-reads the process table immediately before any signal. */
         const execute = (decision, procs, report) => apply(decision, procs, report, { dryRun: options.dryRun, now: () => Date.now(), log, reap: reapDeps, ledger, reporter });
         const procsOf = (view) => [...view.members, ...view.escapees];
+        /** The switch that silences everything, and the line it logs: plugin disabled, or the off file. */
+        const quietMode = () => (!options.enabled ? "disabled" : existsSync(options.offFile) ? `off (${options.offFile} exists)` : undefined);
         /** One pass: re-read the table, report runaways, decide, reap, deliver. */
         const scan = async () => {
-            const mode = !options.enabled ? "disabled" : existsSync(OFF_FILE) ? `off (${OFF_FILE} exists)` : undefined;
+            const mode = quietMode();
             if (mode !== undefined) {
                 if (shared.quiet !== mode)
                     log({ event: "quiet", mode });
@@ -251,14 +253,47 @@ export default Plugin.define({
             shared.events.set(key, now);
             return true;
         };
-        /** Archived or deleted: every group of that session goes now, live background jobs included. */
+        /**
+         * Archived or deleted: every group of that session goes now, live background jobs included — but only when the
+         * session's current state agrees. Both are durable events, so a restart or a reconnected stream replays old ones:
+         * a session archived and later unarchived, or a sub-agent, must not lose its processes to an event from the past.
+         * Archived does not mean finished either: a resumed session is busy or was active moments ago, and keeps its work.
+         * A deleted event acts only when the host says the session is gone; a failed lookup is not a confirmation, so a
+         * process may outlive a delete (the scan and the orphan rule remain the backstops).
+         */
         const sessionEnd = (sessionID, reason) => exclusive(async () => {
+            const mode = quietMode();
+            if (mode !== undefined) {
+                if (shared.quiet !== mode)
+                    log({ event: "quiet", mode });
+                shared.quiet = mode;
+                return;
+            }
             const snapshot = await ps();
             const views = (await ledger.sync(snapshot)).filter((view) => view.group.sessionID === sessionID);
             if (views.length === 0)
                 return;
-            const end = { exists: reason !== "deleted", archived: true, busy: false };
-            const decisions = decide({ views, sessions: new Map([[sessionID, end]]), monitors: undefined, now: Date.now(), options, runawaySince: () => undefined });
+            const cwd = views.find((view) => view.group.cwd !== undefined)?.group.cwd;
+            const current = await ask(sessionID, cwd);
+            const now = Date.now();
+            const skip = (why) => log({ event: "session-end-skipped", sessionID, reason, why });
+            if (reason === "deleted") {
+                if (current?.exists !== false) {
+                    skip(current === undefined ? "could not ask" : "still exists");
+                    return;
+                }
+            }
+            else {
+                if (current?.archived !== true) {
+                    skip("not archived now");
+                    return;
+                }
+                if (recentlyActive(current, now, options.subagentIdleMinutes)) {
+                    skip("recently active");
+                    return;
+                }
+            }
+            const decisions = decide({ views, sessions: new Map([[sessionID, current]]), monitors: undefined, now, options, runawaySince: () => undefined });
             for (const decision of decisions) {
                 const view = views.find((candidate) => candidate.group.pgid === decision.group.pgid);
                 // A deleted session has nobody to tell; an archived one still gets its notice when it comes back.
@@ -275,7 +310,7 @@ export default Plugin.define({
             log,
         });
         await ctx.tool.hook("execute.before", async (event) => {
-            if (!options.enabled || !options.guardKill || existsSync(OFF_FILE))
+            if (!options.enabled || !options.guardKill || existsSync(options.offFile))
                 return;
             await guard(event);
         });

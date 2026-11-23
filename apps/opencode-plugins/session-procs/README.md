@@ -15,12 +15,19 @@ Processes a session's shells leave behind (`&` servers, test binaries outliving 
 
 | When | What is ended |
 | --- | --- |
-| the session is archived or deleted | every group of that session, live background jobs included |
+| the session is deleted | every group of that session, live background jobs included |
+| the session is archived, not busy and idle `subagentIdleMinutes` | every group of that session, live background jobs included |
 | a sub-agent session (`parentID`) has been idle `subagentIdleMinutes`, with no monitor and not busy | leftovers only: what remains of a group whose shell exited |
 | a group is orphaned (shell exited, members reparented) and has been over `runawayCpu` for `orphanKillMinutes`, session not busy | that group |
 
 A group whose shell is still alive is a live background job and is never idle-reaped. A top-level session is never
 idle-reaped: its deliberately long-lived processes (a VM, a server) are left alone however long it idles.
+
+Archive and delete events are durable, so a restart or a reconnect replays them: before anything is ended, the event is
+checked against the session's current state. An archived event acts only while the session is still archived; a deleted
+event only when the host confirms the session is gone, and a failed lookup is not a confirmation. Archived does not
+mean finished: a session that is busy now, or that was active within `subagentIdleMinutes`, keeps its processes even
+when archived — a parent can resume a six-day-old sub-agent and run work in it.
 
 **Never killed:** anything not matched to a `shell.created` (the user's terminals, `!command`, MCP servers, the pty daemon, the service and its ancestors), a monitor's own process group, another session's groups, other uids, a reused pid, and anything at all while `enabled` is false or `~/.config/opencode/session-procs.off` exists.
 
@@ -67,7 +74,7 @@ One `ps` every `scanSeconds`: about 58 ms per scan on this machine (dominated by
 
 - A shell that has already been reaped when `shell.created` is handled cannot be matched, so its leftovers are not tracked. With `info.pid` (2.3.0) a shell that is still a zombie is: the pid and parent are enough.
 - The ledger lives on `globalThis` per service process and in `ctx.storage`; a restart re-adopts what survived. A graceful shutdown kills the host's own jobs and the pty's sessions, so usually only processes that detached themselves survive it.
-- `session.get` is answered by an instance of the session's location. Every instance offers its host calls and the scan asks the right one first; when no instance can answer (a deleted session), nothing is killed from the rules — the `session.deleted`/`session.archived` events are what end a deleted session's groups.
+- `session.get` is answered by an instance of the session's location. Every instance offers its host calls and the scan asks the right one first; when no instance can answer (a deleted session), nothing is killed from the rules, and the `session.deleted`/`session.archived` events are checked against that same current state rather than trusted (see above), so a process of a session the host cannot confirm is gone is left to exit on its own.
 
 ## Development
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -15,9 +15,12 @@ function fakeHost(storage = new Map<string, unknown>()) {
   const synthetic: any[] = []
   const emitted: any[] = []
   const queue: any[] = []
+  /** What `session.get` answers, by session: the current state the event is checked against. */
+  const sessions = new Map<string, any>([["ses_a", { id: "ses_a", time: { idle: Date.now(), archived: undefined }, parentID: undefined }]])
+  const dir = mkdtempSync(join(tmpdir(), "session-procs-plugin-"))
   let wake: (() => void) | undefined
   const ctx: any = {
-    options: { dir: mkdtempSync(join(tmpdir(), "session-procs-plugin-")), dryRun: false, scanSeconds: 1, subagentIdleMinutes: 10, killGraceSeconds: 0, guardKill: false },
+    options: { dir, offFile: join(dir, "session-procs.off"), dryRun: false, scanSeconds: 1, subagentIdleMinutes: 10, killGraceSeconds: 0, guardKill: false },
     location: { directory: "/work" },
     storage: {
       get: async (key: string) => storage.get(key),
@@ -27,7 +30,11 @@ function fakeHost(storage = new Map<string, unknown>()) {
     },
     tool: { hook: async (name: string, run: Hook) => void hooks.set(`tool:${name}`, run) },
     session: {
-      get: async () => ({ id: "ses_a", time: { idle: Date.now(), archived: undefined }, parentID: undefined }),
+      get: async ({ sessionID }: { sessionID: string }) => {
+        const info = sessions.get(sessionID)
+        if (info === undefined) throw new Error("session not found")
+        return info
+      },
       synthetic: async (input: unknown) => void synthetic.push(input),
     },
     rpc: { register: async () => ({ events: { emit: async (name: string, payload: unknown) => void emitted.push({ name, payload }) }, dispose: async () => {} }) },
@@ -48,6 +55,7 @@ function fakeHost(storage = new Map<string, unknown>()) {
     synthetic,
     emitted,
     storage,
+    sessions,
     push: (event: unknown) => { queue.push(event); wake?.() },
   }
 }
@@ -70,6 +78,31 @@ const alive = (pid: number): boolean => {
   } catch {
     return false
   }
+}
+
+type Host = ReturnType<typeof fakeHost>
+
+const logLines = (host: Host): string[] => {
+  const file = join(String(host.ctx.options.dir), "log.jsonl")
+  return existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean) : []
+}
+
+const logHas = (host: Host, needle: string): boolean => logLines(host).some((line) => line.includes(needle))
+
+/** A real background job, adopted the way a shell call is, with its group in the ledger. */
+async function adoptSleep(host: Host, sessionID = "ses_a", shellID = "sh_1"): Promise<number> {
+  const child = spawn("/bin/bash", ["-c", "sleep 60"], { detached: true, stdio: "ignore" })
+  child.unref()
+  const pid = child.pid!
+  host.push({ type: "shell.created", data: { info: { id: shellID, status: "running", command: "sleep 60", cwd: "/work", shell: "/bin/bash", pid, metadata: { sessionID }, time: { started: Date.now() } } } })
+  assert.ok(await waitFor(() => host.storage.has(`ledger/${pid}`), 4000), "the group was adopted")
+  return pid
+}
+
+const stopProcess = (pid: number) => {
+  try {
+    process.kill(-pid, "SIGKILL")
+  } catch {}
 }
 
 test("a real shell call is adopted, marked background and reaped when its session is archived", async () => {
@@ -96,14 +129,100 @@ test("a real shell call is adopted, marked background and reaped when its sessio
     assert.equal(group.shellID, "sh_1")
     assert.equal(group.background, true)
 
+    // The host now says the session is archived and idle for an hour: only then may the event reap its groups.
+    host.sessions.set("ses_a", { id: "ses_a", time: { idle: Date.now() - 3_600_000, archived: Date.now() }, parentID: undefined })
     host.push({ type: "session.archived", data: { sessionID: "ses_a" } })
     assert.ok(await waitFor(() => !alive(pid) && !host.storage.has(`ledger/${pid}`), 5000), "archiving the session ends the process and forgets it")
     assert.ok(host.synthetic.some((message) => String(message.text).startsWith("Ended 1 process of this session (the session was archived)")), JSON.stringify(host.synthetic))
     assert.ok(host.emitted.some((event) => event.name === "notify"))
   } finally {
-    try {
-      process.kill(-pid, "SIGKILL")
-    } catch {}
+    stopProcess(pid)
+    await stop?.()
+  }
+})
+
+test("an archived event for a session the host says is not archived kills nothing", async () => {
+  resetShared()
+  const host = fakeHost()
+  let stop: (() => Promise<void>) | undefined
+  let pid: number | undefined
+  try {
+    stop = (await plugin.setup(host.ctx)) as () => Promise<void>
+    pid = await adoptSleep(host)
+    // The host reports the session exists and is not archived: the event is a replay (or it was unarchived since).
+    host.push({ type: "session.archived", data: { sessionID: "ses_a" } })
+    assert.ok(await waitFor(() => logHas(host, '"why":"not archived now"'), 4000), "the replay is skipped and logged")
+    await settle(150)
+    assert.equal(alive(pid), true, "nothing is killed")
+    assert.equal(host.storage.has(`ledger/${pid}`), true, "the group stays tracked")
+    assert.equal(host.synthetic.length, 0, "a session that is not archived is told nothing")
+  } finally {
+    if (pid !== undefined) stopProcess(pid)
+    await stop?.()
+  }
+})
+
+test("an archived event for a session that is busy now kills nothing", async () => {
+  resetShared()
+  const host = fakeHost()
+  let stop: (() => Promise<void>) | undefined
+  let pid: number | undefined
+  try {
+    stop = (await plugin.setup(host.ctx)) as () => Promise<void>
+    pid = await adoptSleep(host, "ses_child", "sh_1")
+    // An archived sub-agent resumed by its parent: archived, but busy now, so its work is hands off.
+    host.sessions.set("ses_child", { id: "ses_child", parentID: "ses_a", time: { idle: Date.now() - 3_600_000, busy: Date.now(), archived: Date.now() } })
+    host.push({ type: "session.archived", data: { sessionID: "ses_child" } })
+    assert.ok(await waitFor(() => logHas(host, '"why":"recently active"'), 4000), "the resumed session is skipped and logged")
+    await settle(150)
+    assert.equal(alive(pid), true, "nothing is killed")
+    assert.equal(host.storage.has(`ledger/${pid}`), true, "the group stays tracked")
+    assert.equal(host.synthetic.length, 0, "a busy session is told nothing")
+  } finally {
+    if (pid !== undefined) stopProcess(pid)
+    await stop?.()
+  }
+})
+
+test("with the off file present, an archived event kills nothing and says so once", async () => {
+  resetShared()
+  const host = fakeHost()
+  writeFileSync(String(host.ctx.options.offFile), "")
+  let stop: (() => Promise<void>) | undefined
+  let pid: number | undefined
+  try {
+    stop = (await plugin.setup(host.ctx)) as () => Promise<void>
+    pid = await adoptSleep(host)
+    host.sessions.set("ses_a", { id: "ses_a", time: { idle: Date.now() - 3_600_000, archived: Date.now() }, parentID: undefined })
+    host.push({ type: "session.archived", data: { sessionID: "ses_a" } })
+    assert.ok(await waitFor(() => logHas(host, '"event":"quiet"'), 4000), "the off switch is logged")
+    await settle(150)
+    assert.equal(alive(pid), true, "nothing is killed while off")
+    assert.equal(host.storage.has(`ledger/${pid}`), true, "the group stays tracked")
+    assert.equal(host.synthetic.length, 0, "nothing is told while off")
+    assert.equal(logLines(host).some((line) => line.includes('"event":"session-end"')), false, "the event decides nothing while off")
+  } finally {
+    if (pid !== undefined) stopProcess(pid)
+    await stop?.()
+  }
+})
+
+test("a deleted event for a session the host still reports as existing kills nothing", async () => {
+  resetShared()
+  const host = fakeHost()
+  let stop: (() => Promise<void>) | undefined
+  let pid: number | undefined
+  try {
+    stop = (await plugin.setup(host.ctx)) as () => Promise<void>
+    pid = await adoptSleep(host)
+    // The host still has the session: the deletion is a replay, and a session that exists keeps its groups.
+    host.push({ type: "session.deleted", data: { sessionID: "ses_a" } })
+    assert.ok(await waitFor(() => logHas(host, '"event":"session-end-skipped"') && logHas(host, '"why":"still exists"'), 4000), "the replay is skipped and logged")
+    await settle(150)
+    assert.equal(alive(pid), true, "nothing is killed")
+    assert.equal(host.storage.has(`ledger/${pid}`), true, "the group stays tracked")
+  } finally {
+    if (pid !== undefined) stopProcess(pid)
     await stop?.()
   }
 })
@@ -121,6 +240,7 @@ test("a foreground shell that already exited is not adopted, and a dry run logs 
     stop = (await plugin.setup(host.ctx)) as () => Promise<void>
     host.push({ type: "shell.created", data: { info: { id: "sh_1", status: "running", command: "sleep 60", cwd: "/work", shell: "/bin/bash", pid, metadata: { sessionID: "ses_a" }, time: { started: Date.now() } } } })
     assert.ok(await waitFor(() => host.storage.has(`ledger/${pid}`), 4000))
+    host.sessions.set("ses_a", { id: "ses_a", time: { idle: Date.now() - 3_600_000, archived: Date.now() }, parentID: undefined })
     host.push({ type: "session.archived", data: { sessionID: "ses_a" } })
     const logFile = join(String(host.ctx.options.dir), "log.jsonl")
     const wouldReap = () => (existsSync(logFile) ? readFileSync(logFile, "utf8") : "").split("\n").some((line) => line.includes('"dryRun":true') && line.includes("the session was archived"))

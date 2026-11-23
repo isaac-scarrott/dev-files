@@ -21,6 +21,8 @@ export interface Options {
   readonly guardKill: boolean
   /** Where log.jsonl goes. Not documented for users: tests and the harness set it. */
   readonly dir: string
+  /** Where the off switch is looked for. Not documented for users: tests set it. */
+  readonly offFile: string
 }
 
 export const defaultDir = () => path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode", "session-procs")
@@ -38,6 +40,7 @@ export const DEFAULTS: Options = {
   killGraceSeconds: 5,
   guardKill: true,
   dir: defaultDir(),
+  offFile: OFF_FILE,
 }
 
 function integer(raw: Readonly<Record<string, unknown>>, key: "scanSeconds" | "subagentIdleMinutes" | "runawayCpu" | "runawayMinutes" | "orphanKillMinutes" | "killGraceSeconds", min: number): number {
@@ -57,6 +60,8 @@ function flag(raw: Readonly<Record<string, unknown>>, key: "enabled" | "dryRun" 
 export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Options {
   const dir = raw.dir ?? DEFAULTS.dir
   if (typeof dir !== "string" || dir === "") throw new Error("session-procs option dir must be a path")
+  const offFile = raw.offFile ?? DEFAULTS.offFile
+  if (typeof offFile !== "string" || offFile === "") throw new Error("session-procs option offFile must be a path")
   return {
     enabled: flag(raw, "enabled"),
     dryRun: flag(raw, "dryRun"),
@@ -68,5 +73,6 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Optio
     killGraceSeconds: integer(raw, "killGraceSeconds", 0),
     guardKill: flag(raw, "guardKill"),
     dir,
+    offFile,
   }
 }

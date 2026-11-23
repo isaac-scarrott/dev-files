@@ -11,11 +11,19 @@ export function evaluateRunaway(state, cpu, runawayCpu, runawayMinutes, now) {
 }
 const live = (view) => [...view.members, ...view.escapees].map((proc) => proc.pid);
 /**
+ * Archived does not mean finished: a parent can resume an archived sub-agent, which then runs work. A session that is
+ * busy now, or whose last activity is within `idleMinutes`, is hands off whatever its archive state.
+ */
+export function recentlyActive(facts, now, idleMinutes) {
+    return facts.busy || (facts.idleAt !== undefined && now - facts.idleAt < idleMinutes * 60_000);
+}
+/**
  * The reap table, as decisions and nothing else:
  *
- * | session archived or deleted       | every group of that session, live background jobs included |
- * | sub-agent idle, no monitor, not busy | leftovers only: groups whose shell exited                |
- * | orphan over the CPU line, same    | that group                                                |
+ * | session deleted                                             | every group of that session, live background jobs included |
+ * | session archived, not busy, idle `subagentIdleMinutes`       | every group of that session, live background jobs included |
+ * | sub-agent idle, no monitor, not busy                         | leftovers only: groups whose shell exited                |
+ * | orphan over the CPU line, same                               | that group                                                |
  *
  * A top-level session is never idle-reaped: its long-lived work (a VM, a server) is deliberate. A group whose shell is
  * still alive is a live background job and is never idle-reaped. A decision is taken once per group, so the sub-agent
@@ -41,6 +49,9 @@ export function decide(input) {
             continue;
         }
         if (facts.archived) {
+            // Archived does not mean finished: a resumed sub-agent is busy, or was active moments ago, and keeps its work.
+            if (recentlyActive(facts, now, options.subagentIdleMinutes))
+                continue;
             push(view, "session-end", "the session was archived");
             continue;
         }

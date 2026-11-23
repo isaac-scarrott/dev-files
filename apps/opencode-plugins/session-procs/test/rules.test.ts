@@ -61,6 +61,28 @@ test("session archived or deleted: every group of the session, live background j
   }
 })
 
+test("an archived session that is busy now is not ended: a parent can resume it", () => {
+  assert.deepEqual(run({ views: [view()], sessions: new Map([["ses_a", active({ archived: true, busy: true, parentID: "ses_parent" })]]) }), [])
+})
+
+test("an archived session active within subagentIdleMinutes is not ended", () => {
+  assert.deepEqual(run({ views: [view()], sessions: new Map([["ses_a", active({ archived: true, idleAt: NOW - 2 * 60_000 })]]) }), [])
+})
+
+test("an archived session idle for hours is still ended by session-end", () => {
+  const decisions = run({ views: [view()], sessions: new Map([["ses_a", active({ archived: true, idleAt: NOW - 6 * 60 * 60_000 })]]) })
+  assert.equal(decisions.length, 1)
+  assert.equal(decisions[0]!.rule, "session-end")
+})
+
+test("a deleted session is ended whatever its last activity", () => {
+  for (const facts of [active({ exists: false, busy: true }), active({ exists: false, idleAt: NOW - 60_000 })]) {
+    const decisions = run({ views: [view()], sessions: new Map([["ses_a", facts]]) })
+    assert.equal(decisions.length, 1)
+    assert.equal(decisions[0]!.rule, "session-end")
+  }
+})
+
 test("a session the host could not be asked is left alone", () => {
   assert.deepEqual(run({ views: [view()], sessions: new Map([["ses_a", undefined]]) }), [])
 })

@@ -13,6 +13,7 @@ export const DEFAULTS = {
     killGraceSeconds: 5,
     guardKill: true,
     dir: defaultDir(),
+    offFile: OFF_FILE,
 };
 function integer(raw, key, min) {
     const value = raw[key];
@@ -34,6 +35,9 @@ export function parseOptions(raw = {}) {
     const dir = raw.dir ?? DEFAULTS.dir;
     if (typeof dir !== "string" || dir === "")
         throw new Error("session-procs option dir must be a path");
+    const offFile = raw.offFile ?? DEFAULTS.offFile;
+    if (typeof offFile !== "string" || offFile === "")
+        throw new Error("session-procs option offFile must be a path");
     return {
         enabled: flag(raw, "enabled"),
         dryRun: flag(raw, "dryRun"),
@@ -45,5 +49,6 @@ export function parseOptions(raw = {}) {
         killGraceSeconds: integer(raw, "killGraceSeconds", 0),
         guardKill: flag(raw, "guardKill"),
         dir,
+        offFile,
     };
 }

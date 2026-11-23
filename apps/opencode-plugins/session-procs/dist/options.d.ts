@@ -18,6 +18,8 @@ export interface Options {
     readonly guardKill: boolean;
     /** Where log.jsonl goes. Not documented for users: tests and the harness set it. */
     readonly dir: string;
+    /** Where the off switch is looked for. Not documented for users: tests set it. */
+    readonly offFile: string;
 }
 export declare const defaultDir: () => string;
 export declare const OFF_FILE: string;
