@@ -9,20 +9,72 @@ export function segments(command) {
     let words = [];
     let word = "";
     let dynamic = false;
+    /** The pending word came from quotes or an escape: its digits are not a descriptor and its `>` is text. */
+    let quoted = false;
+    /** A redirection operator with no attached target: the next word is its target and is not an argument. */
+    let dropNext = false;
     let started = false;
     let index = 0;
     const endWord = () => {
-        if (started)
-            words.push({ text: word, dynamic });
+        if (started) {
+            if (dropNext)
+                dropNext = false;
+            else
+                words.push({ text: word, dynamic });
+        }
         word = "";
         dynamic = false;
+        quoted = false;
         started = false;
     };
     const endSegment = () => {
         endWord();
+        dropNext = false;
         if (words.length > 0)
             out.push(words);
         words = [];
+    };
+    /**
+     * An unquoted redirection is not an argument: consume the operator and its target, attached (`2>/dev/null`, `2>&1`,
+     * `1>/dev/null`) or a separate word (`> out.log`). A quoted target is consumed whole, separators included.
+     */
+    const skipRedirect = () => {
+        if (command[index] === "&")
+            index++;
+        if (command[index] === ">") {
+            while (command[index] === ">")
+                index++;
+            if (command[index] === "&")
+                index++;
+        }
+        else if (command[index] === "<") {
+            index++;
+            if (command[index] === "&")
+                index++;
+        }
+        const target = index;
+        while (index < command.length) {
+            const char = command[index];
+            if (char === " " || char === "\t" || char === "\r" || SEPARATOR.has(char) || char === "(" || char === ")")
+                break;
+            if (char === "'" || char === '"') {
+                index++;
+                while (index < command.length && command[index] !== char) {
+                    if (char === '"' && command[index] === "\\" && index + 1 < command.length)
+                        index++;
+                    index++;
+                }
+                index++;
+                continue;
+            }
+            if (char === "\\" && index + 1 < command.length) {
+                index += 2;
+                continue;
+            }
+            index++;
+        }
+        if (index === target)
+            dropNext = true;
     };
     while (index < command.length) {
         const char = command[index];
@@ -30,6 +82,7 @@ export function segments(command) {
             const close = command.indexOf("'", index + 1);
             const end = close === -1 ? command.length : close;
             word += command.slice(index + 1, end);
+            quoted = true;
             started = true;
             index = close === -1 ? command.length : close + 1;
             continue;
@@ -37,6 +90,7 @@ export function segments(command) {
         if (char === '"') {
             index++;
             started = true;
+            quoted = true;
             while (index < command.length && command[index] !== '"') {
                 if (command[index] === "\\" && index + 1 < command.length) {
                     word += command[index + 1];
@@ -53,6 +107,7 @@ export function segments(command) {
         }
         if (char === "\\" && index + 1 < command.length) {
             word += command[index + 1];
+            quoted = true;
             started = true;
             index += 2;
             continue;
@@ -62,6 +117,18 @@ export function segments(command) {
             word += char;
             started = true;
             index++;
+            continue;
+        }
+        if (char === ">" || char === "<" || (char === "&" && command[index + 1] === ">")) {
+            // `2>` / `1>>` may already be the pending word: that unquoted number is the descriptor, not an argument.
+            if (char !== "&" && started && !quoted && /^\d+$/.test(word)) {
+                word = "";
+                started = false;
+            }
+            else {
+                endWord();
+            }
+            skipRedirect();
             continue;
         }
         if (char === " " || char === "\t" || char === "\r") {

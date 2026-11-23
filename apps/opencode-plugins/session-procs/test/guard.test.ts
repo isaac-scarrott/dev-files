@@ -18,6 +18,27 @@ test("the kill forms the guard knows, with their patterns", () => {
   for (const [command, expected] of cases) assert.deepEqual(killCandidates(command), expected, command)
 })
 
+test("shell redirections are not arguments: the pattern is the real one", () => {
+  const cases: [string, { kind: string; pattern: string }[]][] = [
+    [`pkill -f "sdk-origin.mjs" 2>/dev/null`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [`pkill -f sdk-origin.mjs >/dev/null 2>&1`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [`pkill -f sdk-origin.mjs &>/dev/null`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [`pkill -f sdk-origin.mjs 2> /dev/null`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [`pkill -f sdk-origin.mjs 1>/dev/null`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [`pkill -f sdk-origin.mjs > out.log`, [{ kind: "pkill", pattern: "sdk-origin.mjs" }]],
+    [
+      `kill 1 2>/dev/null; sleep 2; pkill -f "sdk-origin.mjs" 2>/dev/null; pkill -f "apps/storefront.*vite" 2>/dev/null`,
+      [
+        { kind: "pkill", pattern: "sdk-origin.mjs" },
+        { kind: "pkill", pattern: "apps/storefront.*vite" },
+      ],
+    ],
+    [`pgrep -f node 2>/dev/null | xargs kill`, [{ kind: "xargs", pattern: "node" }]],
+    [`pkill -f "a>b"`, [{ kind: "pkill", pattern: "a>b" }]],
+  ]
+  for (const [command, expected] of cases) assert.deepEqual(killCandidates(command), expected, command)
+})
+
 test("unparseable or unrelated calls pass: nothing is guessed", () => {
   for (const command of ['pkill "$PATTERN"', "pkill -f $(cat pattern.txt)", "pkill", "kill 123", "echo pkill foo", "grep foo | pkill", 'bash -c "pkill foo"', "pgrep -f foo", "xargs kill < pids"]) {
     assert.deepEqual(killCandidates(command), [], command)
@@ -51,6 +72,13 @@ test("a pattern that reaches another session's process is refused, with the pids
     const message = (error as { message: string }).message
     assert.match(message, /pkill would signal 1 process this session does not own: 200 \(/)
     assert.match(message, /kill 200/)
+    return true
+  })
+})
+
+test("a redirection after the pattern does not hide it from the guard", async () => {
+  await assert.rejects(guard([100, 200])(call(`pkill -f node 2>/dev/null`)), (error: unknown) => {
+    assert.match((error as { message: string }).message, /pkill would signal 1 process this session does not own: 200 \(/)
     return true
   })
 })
