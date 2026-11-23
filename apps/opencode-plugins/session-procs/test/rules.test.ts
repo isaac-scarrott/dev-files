@@ -7,7 +7,7 @@ import { proc } from "./helpers.js"
 const START = 1_700_000_000
 const START_MS = START * 1000
 const NOW = START_MS + 3_600_000
-const options = { idleMinutes: 30, subagentIdleMinutes: 10, runawayCpu: 90, orphanKillMinutes: 30 }
+const options = { subagentIdleMinutes: 10, runawayCpu: 90, orphanKillMinutes: 30 }
 
 const group = (over: Partial<Group> = {}): Group => ({
   pgid: 4494,
@@ -66,28 +66,30 @@ test("a session the host could not be asked is left alone", () => {
 })
 
 test("a busy session is never idle-reaped", () => {
-  assert.deepEqual(run({ views: [leftover()], sessions: new Map([["ses_a", active({ busy: true })]]) }), [])
+  assert.deepEqual(run({ views: [leftover()], sessions: new Map([["ses_a", active({ busy: true, parentID: "ses_parent" })]]) }), [])
 })
 
-test("session idle for idleMinutes: the leftovers of an exited shell go, the live background job stays", () => {
+const DAYS = 3 * 24 * 60
+
+test("a top-level session idle for days is never idle-reaped, whatever its leftovers", () => {
   const line = leftover()
-  assert.deepEqual(run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 29 * 60_000 })]]) }), [])
-  const decisions = run({ views: [line, view()], sessions: new Map([["ses_a", active({ idleAt: NOW - 31 * 60_000 })]]) })
+  // Not busy, no monitor, shell exited, members alive: exactly the facts the removed idle row reaped.
+  assert.deepEqual(run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - DAYS * 60_000 })]]) }), [])
+  assert.deepEqual(run({ views: [line, view()], sessions: new Map([["ses_a", active({ idleAt: NOW - DAYS * 60_000 })]]) }), [])
+})
+
+test("a sub-agent with the same facts is reaped by subagent-idle", () => {
+  const line = leftover()
+  assert.deepEqual(run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 9 * 60_000, parentID: "ses_parent" })]]) }), [])
+  const decisions = run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - DAYS * 60_000, parentID: "ses_parent" })]]) })
   assert.equal(decisions.length, 1)
-  assert.equal(decisions[0]!.rule, "idle")
+  assert.equal(decisions[0]!.rule, "subagent-idle")
   assert.deepEqual(decisions[0]!.pids, [4495])
-})
-
-test("a sub-agent idles on the shorter window", () => {
-  const line = leftover()
-  assert.deepEqual(run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 11 * 60_000 })]]) }), [])
-  const decisions = run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 11 * 60_000, parentID: "ses_parent" })]]) })
-  assert.equal(decisions[0]?.rule, "subagent-idle")
 })
 
 test("no monitor plugin loaded means never idle-reap; a monitor for the session means the same", () => {
   const line = leftover()
-  const idle = new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000 })]])
+  const idle = new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000, parentID: "ses_parent" })]])
   assert.deepEqual(run({ views: [line], sessions: idle, monitors: undefined }), [])
   assert.deepEqual(run({ views: [line], sessions: idle, monitors: new Set(["ses_a"]) }), [])
   assert.equal(run({ views: [line], sessions: idle, monitors: new Set(["ses_b"]) }).length, 1)
@@ -101,22 +103,24 @@ test("an orphan over the CPU line for orphanKillMinutes is ended while its sessi
   assert.deepEqual(run({ views: [orphan], sessions: justIdle, runawaySince: () => NOW - 29 * 60_000 }), [])
   assert.deepEqual(run({ views: [leftover({ cpu: 50 })], sessions: justIdle, runawaySince: () => NOW - 60 * 60_000 }), [])
   assert.deepEqual(run({ views: [orphan], sessions: new Map([["ses_a", active({ busy: true })]]), runawaySince: () => NOW - 60 * 60_000 }), [])
+  // A top-level session idle for days is not idle-reaped, so the orphan row still ends its runaway group.
+  assert.equal(run({ views: [orphan], sessions: new Map([["ses_a", active({ idleAt: NOW - DAYS * 60_000 })]]), runawaySince: () => NOW - 31 * 60_000 }).at(0)?.rule, "orphan")
 })
 
 test("a group whose shell is alive is never an orphan, whatever its CPU", () => {
   assert.deepEqual(run({ views: [view({ cpu: 200, orphan: false })], runawaySince: () => NOW - 60 * 60_000 }), [])
 })
 
-test("one decision per group: the idle row speaks first", () => {
+test("one decision per group: the sub-agent idle row speaks first", () => {
   const line = leftover({ cpu: 95 })
-  const decisions = run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000 })]]), runawaySince: () => NOW - 60 * 60_000 })
+  const decisions = run({ views: [line], sessions: new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000, parentID: "ses_parent" })]]), runawaySince: () => NOW - 60 * 60_000 })
   assert.equal(decisions.length, 1)
-  assert.equal(decisions[0]!.rule, "idle")
+  assert.equal(decisions[0]!.rule, "subagent-idle")
 })
 
 test("an escapee travels with its group's decision", () => {
   const stuck = leftover({ escapees: [proc({ pid: 5000, ppid: 4495, pgid: 5000, start: START + 2, command: "detached" })] })
-  const decisions = run({ views: [stuck], sessions: new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000 })]]) })
+  const decisions = run({ views: [stuck], sessions: new Map([["ses_a", active({ idleAt: NOW - 60 * 60_000, parentID: "ses_parent" })]]) })
   assert.deepEqual(decisions[0]!.pids, [4495, 5000])
 })
 

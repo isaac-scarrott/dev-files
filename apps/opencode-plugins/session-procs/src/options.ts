@@ -7,9 +7,7 @@ export interface Options {
   /** Log and report what would be killed, kill nothing. The kill guard still refuses: refusing is safe. */
   readonly dryRun: boolean
   readonly scanSeconds: number
-  /** A session idle this long, with no monitor, has the leftovers of its exited shells ended. */
-  readonly idleMinutes: number
-  /** The same for a sub-agent session, which should not keep a leftover for its parent's full idle window. */
+  /** A sub-agent session idle this long, with no monitor, has the leftovers of its exited shells ended. Top-level sessions are never idle-reaped. */
   readonly subagentIdleMinutes: number
   /** Percent of one CPU that counts as runaway: 90 is 90% of a core, measured across the group. */
   readonly runawayCpu: number
@@ -33,7 +31,6 @@ export const DEFAULTS: Options = {
   enabled: true,
   dryRun: true,
   scanSeconds: 15,
-  idleMinutes: 30,
   subagentIdleMinutes: 10,
   runawayCpu: 90,
   runawayMinutes: 10,
@@ -43,7 +40,7 @@ export const DEFAULTS: Options = {
   dir: defaultDir(),
 }
 
-function integer(raw: Readonly<Record<string, unknown>>, key: "scanSeconds" | "idleMinutes" | "subagentIdleMinutes" | "runawayCpu" | "runawayMinutes" | "orphanKillMinutes" | "killGraceSeconds", min: number): number {
+function integer(raw: Readonly<Record<string, unknown>>, key: "scanSeconds" | "subagentIdleMinutes" | "runawayCpu" | "runawayMinutes" | "orphanKillMinutes" | "killGraceSeconds", min: number): number {
   const value = raw[key]
   if (value === undefined) return DEFAULTS[key]
   if (typeof value !== "number" || !Number.isInteger(value) || value < min) throw new Error(`session-procs option ${key} must be an integer of at least ${min}`)
@@ -64,7 +61,6 @@ export function parseOptions(raw: Readonly<Record<string, unknown>> = {}): Optio
     enabled: flag(raw, "enabled"),
     dryRun: flag(raw, "dryRun"),
     scanSeconds: integer(raw, "scanSeconds", 1),
-    idleMinutes: integer(raw, "idleMinutes", 0),
     subagentIdleMinutes: integer(raw, "subagentIdleMinutes", 0),
     runawayCpu: integer(raw, "runawayCpu", 1),
     runawayMinutes: integer(raw, "runawayMinutes", 0),

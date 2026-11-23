@@ -13,7 +13,7 @@ export interface SessionFacts {
     /** The session's own directory: the plugin instance there is the one that can answer for it. */
     readonly location?: string;
 }
-export type Rule = "session-end" | "idle" | "subagent-idle" | "orphan";
+export type Rule = "session-end" | "subagent-idle" | "orphan";
 export interface ReapDecision {
     readonly group: Group;
     readonly rule: Rule;
@@ -40,18 +40,18 @@ export interface DecideInput {
     /** Sessions with a running monitor; `undefined` when the monitor plugin is not loaded. */
     readonly monitors: ReadonlySet<string> | undefined;
     readonly now: number;
-    readonly options: Pick<Options, "idleMinutes" | "subagentIdleMinutes" | "runawayCpu" | "orphanKillMinutes">;
+    readonly options: Pick<Options, "subagentIdleMinutes" | "runawayCpu" | "orphanKillMinutes">;
     readonly runawaySince: (pgid: number) => number | undefined;
 }
 /**
  * The reap table, as decisions and nothing else:
  *
- * | session archived or deleted      | every group of that session, live background jobs included |
- * | session idle, no monitor, not busy| leftovers only: groups whose shell exited                  |
- * | sub-agent session, same conditions| the same, on the shorter sub-agent window                  |
+ * | session archived or deleted       | every group of that session, live background jobs included |
+ * | sub-agent idle, no monitor, not busy | leftovers only: groups whose shell exited                |
  * | orphan over the CPU line, same    | that group                                                |
  *
- * A group whose shell is still alive is a live background job and is never idle-reaped. A decision is taken once per
- * group, so the idle and orphan rows cannot both speak for it. A session whose facts could not be read is left alone.
+ * A top-level session is never idle-reaped: its long-lived work (a VM, a server) is deliberate. A group whose shell is
+ * still alive is a live background job and is never idle-reaped. A decision is taken once per group, so the sub-agent
+ * idle and orphan rows cannot both speak for it. A session whose facts could not be read is left alone.
  */
 export declare function decide(input: DecideInput): ReapDecision[];

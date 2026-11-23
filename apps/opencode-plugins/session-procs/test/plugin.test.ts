@@ -17,7 +17,7 @@ function fakeHost(storage = new Map<string, unknown>()) {
   const queue: any[] = []
   let wake: (() => void) | undefined
   const ctx: any = {
-    options: { dir: mkdtempSync(join(tmpdir(), "session-procs-plugin-")), dryRun: false, scanSeconds: 1, idleMinutes: 30, killGraceSeconds: 0, guardKill: false },
+    options: { dir: mkdtempSync(join(tmpdir(), "session-procs-plugin-")), dryRun: false, scanSeconds: 1, subagentIdleMinutes: 10, killGraceSeconds: 0, guardKill: false },
     location: { directory: "/work" },
     storage: {
       get: async (key: string) => storage.get(key),

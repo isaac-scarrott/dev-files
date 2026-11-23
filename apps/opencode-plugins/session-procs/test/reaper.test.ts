@@ -142,7 +142,7 @@ test("verified keeps only our uid, at or after the group start, and never 1, the
   assert.equal(verified(monitor, table, { uid: 501, servicePid: 4498, selfPid: 4499 }).length, 2)
 })
 
-const decision = (over: Partial<ReapDecision> = {}): ReapDecision => ({ group: group(), rule: "idle", pids: [4494], reason: "idle for 31m", ...over })
+const decision = (over: Partial<ReapDecision> = {}): ReapDecision => ({ group: group(), rule: "subagent-idle", pids: [4494], reason: "idle for 31m", ...over })
 
 interface FakeReap {
   readonly signals: { pid: number; signal: string }[]

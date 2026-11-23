@@ -16,11 +16,11 @@ Processes a session's shells leave behind (`&` servers, test binaries outliving 
 | When | What is ended |
 | --- | --- |
 | the session is archived or deleted | every group of that session, live background jobs included |
-| the session has been idle `idleMinutes`, with no monitor and not busy | leftovers only: what remains of a group whose shell exited |
-| the same for a sub-agent session (`parentID`), after `subagentIdleMinutes` | the same |
+| a sub-agent session (`parentID`) has been idle `subagentIdleMinutes`, with no monitor and not busy | leftovers only: what remains of a group whose shell exited |
 | a group is orphaned (shell exited, members reparented) and has been over `runawayCpu` for `orphanKillMinutes`, session not busy | that group |
 
-A group whose shell is still alive is a live background job and is never idle-reaped.
+A group whose shell is still alive is a live background job and is never idle-reaped. A top-level session is never
+idle-reaped: its deliberately long-lived processes (a VM, a server) are left alone however long it idles.
 
 **Never killed:** anything not matched to a `shell.created` (the user's terminals, `!command`, MCP servers, the pty daemon, the service and its ancestors), a monitor's own process group, another session's groups, other uids, a reused pid, and anything at all while `enabled` is false or `~/.config/opencode/session-procs.off` exists.
 
@@ -46,8 +46,7 @@ Kind: server. Restart the background service (`scripts/opencode-safe-restart.sh`
 | `enabled` | `true` | Off: no tracking, no scanning, no guard. |
 | `dryRun` | `true` | Log what would be ended; tell no session, kill nothing. The guard still refuses. |
 | `scanSeconds` | `15` | One `ps` per interval. |
-| `idleMinutes` | `30` | A session idle this long, with no monitor, has its leftovers ended. |
-| `subagentIdleMinutes` | `10` | The same window for a sub-agent's session. |
+| `subagentIdleMinutes` | `10` | A sub-agent's session idle this long, with no monitor, has its leftovers ended. Top-level sessions are never idle-reaped. |
 | `runawayCpu` | `90` | Percent of one CPU across the group that counts as runaway. |
 | `runawayMinutes` | `10` | Over `runawayCpu` this long earns one notice, once. |
 | `orphanKillMinutes` | `30` | An orphaned group over `runawayCpu` this long is ended while its session is not busy. |
