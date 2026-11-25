@@ -5,7 +5,7 @@
 
 ## Sub-agents
 
-- Implementation goes to the `general` agent on `opencode-go/deepseek-v4.1-flash`, as a defined problem with a defined output. Be strict about scope.
+- Implementation goes to the `general` agent on `opencode-go/deepseek-v4.1-flash`, as a defined problem with a defined output. Be strict about scope. Until 2026-12-05 the OpenCode Go plan is out of monthly usage, so use `claude-agent/sonnet` for implementation instead.
 - Ask for proof of work (diff, command + output, screenshot), not a summary. Do a one-step review of the diff before accepting it.
 - Opus (`claude-agent/opus`) for design and high-level work, and ideally to prepare DeepSeek handoffs (specs, UI mocks).
 - When spawning sub-agents, always pass the model explicitly as above. This counts as my explicit request.
